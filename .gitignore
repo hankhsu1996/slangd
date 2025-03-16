@@ -29,3 +29,8 @@ Thumbs.db
 *.swo
 *~
 .cursor/
+
+# Misc
+*.log
+*.log.*
+*tmp*

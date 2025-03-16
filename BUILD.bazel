@@ -16,7 +16,7 @@ cc_library(
     ],
 )
 
-# Slangd library
+# Slangd core library
 cc_library(
     name = "slangd_core",
     srcs = glob(["src/slangd/*.cpp"]),
@@ -25,10 +25,11 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":lsp",
+        "@slang",
     ],
 )
 
-# Main executable
+# Slangd executable
 cc_binary(
     name = "slangd",
     srcs = ["src/main.cpp"],
