@@ -1,0 +1,18 @@
+"""
+Build file for tests.
+"""
+
+cc_test(
+    name = "parser_test",
+    timeout = "short",
+    srcs = ["parser_test.cpp"],
+    data = glob(
+        ["testfiles/**"],
+        allow_empty = True,
+    ),
+    deps = [
+        "//:slangd_core",
+        "@catch2//:catch2_main",
+        "@slang",
+    ],
+)

@@ -2,8 +2,9 @@
 
 #include <expected>
 #include <memory>
+#include <slang/ast/Compilation.h>
+#include <slang/ast/Symbol.h>
 #include <slang/syntax/SyntaxTree.h>
-#include <slang/text/SourceManager.h>
 #include <string>
 #include <unordered_map>
 
@@ -12,73 +13,90 @@
 namespace slangd {
 
 /**
- * @brief Error types that can occur during document parsing
+ * @brief Possible errors that can occur during parsing
  */
 enum class ParseError {
-  SyntaxError,         // General syntax errors
-  FileNotFound,        // File could not be found or opened
-  EncodingError,       // Text encoding issues
-  SlangInternalError,  // Internal error in slang library
-  UnknownError         // Catch-all for other errors
+  SyntaxError,
+  FileNotFound,
+  EncodingError,
+  SlangInternalError,
+  UnknownError
 };
 
 /**
- * @brief Manages SystemVerilog documents and parsing with slang
+ * @brief Manages documents and their syntax trees
  *
- * This class handles the SystemVerilog-specific aspects of document management,
- * including parsing files with slang and extracting symbols.
+ * This class is responsible for parsing SystemVerilog documents
+ * and maintaining their syntax trees and compilation objects.
  */
 class DocumentManager {
  public:
+  /**
+   * @brief Construct a new Document Manager object
+   *
+   * @param io_context ASIO io_context for async operations
+   */
   DocumentManager(asio::io_context& io_context);
-  ~DocumentManager();
 
   /**
-   * @brief Parse a document and store its syntax tree
+   * @brief Parse a document and create a syntax tree
    *
-   * @param uri The URI of the document
-   * @param content The text content of the document
-   * @return awaitable expected with void for success or ParseError for failure
+   * @param uri The document URI
+   * @param content The document content
+   * @return asio::awaitable<std::expected<void, ParseError>> Result of the
+   * parsing operation
    */
   asio::awaitable<std::expected<void, ParseError>> ParseDocument(
       const std::string& uri, const std::string& content);
 
   /**
-   * @brief Update an existing document with new content
-   *
-   * @param uri The URI of the document
-   * @param content The new text content
-   * @return awaitable expected with void for success or ParseError for failure
-   */
-  asio::awaitable<std::expected<void, ParseError>> UpdateDocument(
-      const std::string& uri, const std::string& content);
-
-  /**
-   * @brief Remove a document from the manager
-   *
-   * @param uri The URI of the document to remove
-   */
-  asio::awaitable<void> RemoveDocument(const std::string& uri);
-
-  /**
    * @brief Get the syntax tree for a document
    *
-   * @param uri The URI of the document
-   * @return awaitable with shared_ptr to syntax tree, or nullptr if not found
+   * @param uri The document URI
+   * @return asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>> The
+   * syntax tree or nullptr if not found
    */
-  asio::awaitable<std::shared_ptr<const slang::syntax::SyntaxTree>>
-  GetSyntaxTree(const std::string& uri) const;
+  asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>> GetSyntaxTree(
+      const std::string& uri);
+
+  /**
+   * @brief Get the compilation for a document
+   *
+   * @param uri The document URI
+   * @return asio::awaitable<std::shared_ptr<slang::ast::Compilation>> The
+   * compilation or nullptr if not found
+   */
+  asio::awaitable<std::shared_ptr<slang::ast::Compilation>> GetCompilation(
+      const std::string& uri);
+
+  /**
+   * @brief Get a list of symbols defined in a document
+   *
+   * @param uri The document URI
+   * @return asio::awaitable<std::vector<const slang::ast::Symbol*>> List of
+   * symbols or empty vector if not found
+   */
+  asio::awaitable<std::vector<const slang::ast::Symbol*>> GetSymbols(
+      const std::string& uri);
 
  private:
-  // Source manager for slang parsing
-  std::unique_ptr<slang::SourceManager> source_manager_;
+  // ASIO io_context reference
+  asio::io_context& io_context_;
 
-  // Map of document URIs to their syntax trees
+  // Strand for synchronizing access to shared data
+  asio::strand<asio::io_context::executor_type> strand_;
+
+  // Maps document URIs to their syntax trees
   std::unordered_map<std::string, std::shared_ptr<slang::syntax::SyntaxTree>>
       syntax_trees_;
 
-  // Strand for synchronization
-  asio::strand<asio::io_context::executor_type> strand_;
+  // Maps document URIs to their compilation objects
+  std::unordered_map<std::string, std::shared_ptr<slang::ast::Compilation>>
+      compilations_;
+
+  // Maps document URIs to their source managers
+  std::unordered_map<std::string, std::shared_ptr<slang::SourceManager>>
+      source_managers_;
 };
 
 }  // namespace slangd
