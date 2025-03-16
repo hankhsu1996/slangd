@@ -1,0 +1,39 @@
+"""
+Build file for Slang LSP Server.
+"""
+
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+
+# LSP library
+cc_library(
+    name = "lsp",
+    srcs = glob(["src/lsp/*.cpp"]),
+    hdrs = glob(["include/lsp/*.hpp"]),
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@jsonrpc",
+    ],
+)
+
+# Slangd library
+cc_library(
+    name = "slangd_core",
+    srcs = glob(["src/slangd/*.cpp"]),
+    hdrs = glob(["include/slangd/*.hpp"]),
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":lsp",
+    ],
+)
+
+# Main executable
+cc_binary(
+    name = "slangd",
+    srcs = ["src/main.cpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":slangd_core",
+    ],
+)

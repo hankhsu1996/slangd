@@ -1,0 +1,13 @@
+Language: Cpp
+BasedOnStyle: Google
+
+# Regroup includes to improve readability and maintain consistent grouping.
+# Reference: https://clang.llvm.org/docs/ClangFormatStyleOptions.html#includeblocks
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^"(lsp|slangd)/.*"'
+    Priority: 3
+  - Regex: "^<(lsp|slangd|jsonrpc|nlohmann|fmt|spdlog|catch2|asio).*>"
+    Priority: 2
+  - Regex: "^<.*>"
+    Priority: 1

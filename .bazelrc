@@ -1,0 +1,32 @@
+# .bazelrc
+
+# Use clang as the compiler
+build --action_env=CC=clang
+build --action_env=CXX=clang++
+
+# Common settings for all builds
+build --cxxopt='-std=c++20'
+build --host_cxxopt='-std=c++20'
+
+# Enable warnings and errors
+build --cxxopt='-Wall'
+build --cxxopt='-Wextra'
+build --cxxopt='-Wpedantic'
+build --cxxopt='-Werror'
+build --cxxopt='-Wno-unused-parameter'
+
+# Build configurations for debug
+build:debug --compilation_mode=dbg
+build:debug --cxxopt='-g'
+build:debug --strip=never
+
+# For release
+build:release --compilation_mode=opt
+build:release --copt='-O3'
+build:release --strip=always
+
+# Default to release if no config specified
+build:default --config=release
+
+# Test timeout
+test --test_timeout=5

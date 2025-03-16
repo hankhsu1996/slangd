@@ -1,0 +1,35 @@
+"""
+Bazel module file for Slang LSP Server.
+"""
+
+module(
+    name = "slangd",
+    version = "0.1.0",
+)
+
+# Bazel rules for C/C++
+bazel_dep(name = "rules_cc", version = "0.1.1")
+
+# Slang SystemVerilog Compiler Library
+bazel_dep(name = "slang", version = "8.0.0")
+git_override(
+    module_name = "slang",
+    remote = "https://github.com/hankhsu1996/slang-bazel.git",
+    commit = "f4a05e354fd053ab85e855f3af1626af8d448af6",
+)
+
+# JSON-RPC C++ Library
+bazel_dep(name = "jsonrpc", version = "0.0.0")
+git_override(
+    module_name = "jsonrpc",
+    remote = "https://github.com/hankhsu1996/jsonrpc-cpp-lib.git",
+    tag = "v2.1.0",
+)
+
+# Development tools
+bazel_dep(name = "hedron_compile_commands", dev_dependency = True)
+git_override(
+    module_name = "hedron_compile_commands",
+    commit = "1e08f8e0507b6b6b1f4416a9a22cf5c28beaba93",
+    remote = "https://github.com/hedronvision/bazel-compile-commands-extractor.git",
+)
