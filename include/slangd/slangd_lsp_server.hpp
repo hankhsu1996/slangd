@@ -2,195 +2,147 @@
 
 #include <memory>
 #include <optional>
-#include <slang/syntax/SyntaxTree.h>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
-#include <asio.hpp>
+#include <asio/awaitable.hpp>
+#include <asio/io_context.hpp>
+#include <asio/strand.hpp>
 
 #include "lsp/server.hpp"
 #include "slangd/document_manager.hpp"
 
 namespace slangd {
 
+// Forward declaration
+class TestSlangdLspServer;
+
 /**
- * @brief SystemVerilog symbol types
+ * SystemVerilog symbol types mapped to LSP SymbolKind values
  */
 enum class SymbolType {
-  Module,
-  Package,
-  Interface,
-  Class,
-  Typedef,
-  Function,
-  Task,
-  Variable,
-  Parameter,
-  Port,
-  Unknown
+  Module = 3,
+  Interface = 11,
+  Parameter = 13,
+  Variable = 13,
+  Task = 12,
+  Function = 12,
+  ModuleInstance = 6,
+  Unknown = 0
 };
 
 /**
- * @brief Basic representation of a SystemVerilog symbol
+ * Represents a SystemVerilog symbol with its location
  */
 struct Symbol {
   std::string name;
-  SymbolType type;
+  SymbolType type = SymbolType::Unknown;
   std::string uri;
-  int line;
-  int character;
+  int line = 0;
+  int character = 0;
   std::string documentation;
 };
 
 /**
- * @brief SystemVerilog Language Server implementation
+ * SystemVerilog Language Server implementing the LSP protocol
  */
 class SlangdLspServer : public lsp::Server {
  public:
+  /** Constructor initializes the server with an io_context. */
   SlangdLspServer(asio::io_context& io_context);
-  ~SlangdLspServer() override;
 
-  /**
-   * @brief Override shutdown to handle LSP shutdown/exit protocol
-   */
+  /** Virtual destructor for proper cleanup. */
+  virtual ~SlangdLspServer();
+
+  /** Shutdown the server cleanly. */
   void Shutdown() override;
 
- protected:
-  /**
-   * @brief Register SystemVerilog-specific LSP method handlers with the
-   * JSON-RPC endpoint
-   *
-   * Implements the registration of all LSP protocol handlers following the
-   * delegation pattern, where each JSON-RPC method delegates to a corresponding
-   * handler method that takes JSON parameters and returns an awaitable result.
-   */
+  /** Register all LSP message handlers with the JSON-RPC endpoint. */
   void RegisterHandlers() override;
 
  private:
-  // Simplified handler methods without complex return types
-  void OnInitialize();
-  void OnTextDocumentDidOpen();
-  void OnTextDocumentCompletion();
+  /** TestSlangdLspServer is given access to private members for testing. */
+  friend class TestSlangdLspServer;
 
-  // LSP protocol handler implementations (new architecture)
-  /**
-   * @brief Handle LSP initialize request
-   * @param params JSON-RPC parameters containing client capabilities
-   * @return awaitable with server capabilities
-   */
+  /** Handle "initialize" request from client. */
   asio::awaitable<nlohmann::json> HandleInitialize(
       const std::optional<nlohmann::json>& params);
 
-  /**
-   * @brief Handle LSP shutdown request
-   * @param params JSON-RPC parameters (unused for shutdown)
-   * @return awaitable with null result as per LSP spec
-   */
+  /** Handle "shutdown" request from client. */
   asio::awaitable<nlohmann::json> HandleShutdown(
       const std::optional<nlohmann::json>& params);
 
-  /**
-   * @brief Handle LSP initialized notification
-   * @param params JSON-RPC parameters (unused for initialized)
-   * @return awaitable with void
-   */
+  /** Handle "initialized" notification from client. */
   asio::awaitable<void> HandleInitialized(
       const std::optional<nlohmann::json>& params);
 
-  /**
-   * @brief Handle LSP exit notification
-   * @param params JSON-RPC parameters (unused for exit)
-   * @return awaitable with void
-   */
+  /** Handle "exit" notification from client. */
   asio::awaitable<void> HandleExit(const std::optional<nlohmann::json>& params);
 
-  /**
-   * @brief Handle textDocument/didOpen notification
-   * @param params JSON-RPC parameters containing document URI, text, and
-   * language ID
-   * @return awaitable with void
-   */
+  /** Handle "textDocument/didOpen" notification. */
   asio::awaitable<void> HandleTextDocumentDidOpen(
       const std::optional<nlohmann::json>& params);
 
-  /**
-   * @brief Handle textDocument/didChange notification
-   * @param params JSON-RPC parameters containing document URI and changes
-   * @return awaitable with void
-   */
+  /** Handle "textDocument/didChange" notification. */
   asio::awaitable<void> HandleTextDocumentDidChange(
       const std::optional<nlohmann::json>& params);
 
-  /**
-   * @brief Handle textDocument/didClose notification
-   * @param params JSON-RPC parameters containing document URI
-   * @return awaitable with void
-   */
+  /** Handle "textDocument/didClose" notification. */
   asio::awaitable<void> HandleTextDocumentDidClose(
       const std::optional<nlohmann::json>& params);
 
-  /**
-   * @brief Handle textDocument/hover request
-   * @param params JSON-RPC parameters containing document URI and position
-   * @return awaitable with hover result JSON
-   */
+  /** Handle "textDocument/hover" request. */
   asio::awaitable<nlohmann::json> HandleTextDocumentHover(
       const std::optional<nlohmann::json>& params);
 
-  /**
-   * @brief Handle textDocument/definition request
-   * @param params JSON-RPC parameters containing document URI and position
-   * @return awaitable with definition locations JSON
-   */
+  /** Handle "textDocument/definition" request. */
   asio::awaitable<nlohmann::json> HandleTextDocumentDefinition(
       const std::optional<nlohmann::json>& params);
 
-  /**
-   * @brief Handle textDocument/completion request
-   * @param params JSON-RPC parameters containing document URI and position
-   * @return awaitable with completion items JSON
-   */
+  /** Handle "textDocument/completion" request. */
   asio::awaitable<nlohmann::json> HandleTextDocumentCompletion(
       const std::optional<nlohmann::json>& params);
 
-  /**
-   * @brief Handle workspace/symbol request
-   * @param params JSON-RPC parameters containing query string
-   * @return awaitable with symbol results JSON
-   */
+  /** Handle "workspace/symbol" request. */
   asio::awaitable<nlohmann::json> HandleWorkspaceSymbol(
       const std::optional<nlohmann::json>& params);
 
-  // SystemVerilog-specific methods
+  /** Index the workspace for SystemVerilog files and symbols. */
   asio::awaitable<void> IndexWorkspace();
+
+  /** Index a single file for symbols. */
   asio::awaitable<void> IndexFile(
       const std::string& uri, const std::string& content);
+
+  /** Find a SystemVerilog symbol by name. */
   asio::awaitable<std::optional<Symbol>> FindSymbol(const std::string& name);
+
+  /** Find SystemVerilog symbols matching a query. */
   asio::awaitable<std::vector<Symbol>> FindSymbols(const std::string& query);
 
-  // SystemVerilog parser interface using DocumentManager
+  /** Parse a SystemVerilog file and report errors. */
   asio::awaitable<std::expected<void, ParseError>> ParseFile(
       const std::string& uri, const std::string& content);
+
+  /** Extract symbols from a parsed file. */
   asio::awaitable<void> ExtractSymbols(const std::string& uri);
 
- private:
-  // Global symbol table for SystemVerilog symbols
-  std::unordered_map<std::string, Symbol> global_symbols_;
-
-  // Strand for synchronized access to global_symbols_
-  asio::strand<asio::io_context::executor_type> strand_;
-
-  // Flag to track if indexing is complete
+  // Server state
+  bool initialized_ = false;
+  bool shutdown_requested_ = false;
+  bool should_exit_ = false;
+  int exit_code_ = 0;
   bool indexing_complete_ = false;
 
-  // Document manager for handling SystemVerilog files
+  // Thread safety
+  asio::strand<asio::io_context::executor_type> strand_;
+
+  // Document management
   std::unique_ptr<DocumentManager> document_manager_;
 
-  // LSP protocol state flags
-  bool shutdown_requested_ = false;  // True if shutdown was called
-  bool should_exit_ = false;         // True if exit was called
-  int exit_code_ = 0;                // Exit code for the process
-  bool initialized_ = false;  // True if initialized notification was received
+  // Symbol storage
+  std::unordered_map<std::string, Symbol> global_symbols_;
 };
 
 }  // namespace slangd

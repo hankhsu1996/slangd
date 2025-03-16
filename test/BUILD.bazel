@@ -3,9 +3,24 @@ Build file for tests.
 """
 
 cc_test(
-    name = "parser_test",
+    name = "document_manager_test",
     timeout = "short",
-    srcs = ["parser_test.cpp"],
+    srcs = ["document_manager_test.cpp"],
+    data = glob(
+        ["testfiles/**"],
+        allow_empty = True,
+    ),
+    deps = [
+        "//:slangd_core",
+        "@catch2//:catch2_main",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "slangd_lsp_server_test",
+    timeout = "short",
+    srcs = ["slangd_lsp_server_test.cpp"],
     data = glob(
         ["testfiles/**"],
         allow_empty = True,
