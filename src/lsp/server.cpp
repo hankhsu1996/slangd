@@ -116,60 +116,6 @@ void Server::Shutdown() {
   io_context_.stop();
 }
 
-// Core LSP request handlers
-void Server::HandleInitialize() {
-  std::cout << "Initialize request received" << std::endl;
-}
-
-void Server::HandleInitialized() {
-  std::cout << "Initialized notification received" << std::endl;
-}
-
-void Server::HandleShutdown() {
-  std::cout << "Shutdown request received" << std::endl;
-  Shutdown();
-}
-
-void Server::HandleTextDocumentDidOpen(
-    const std::string& uri, const std::string& text,
-    const std::string& language_id) {
-  std::cout << "Document opened: " << uri << std::endl;
-  AddOpenFile(uri, text, language_id, 1);
-}
-
-void Server::HandleTextDocumentDidChange(
-    const std::string& uri, const std::vector<std::string>& changes) {
-  std::cout << "Document changed: " << uri << std::endl;
-  UpdateOpenFile(uri, changes);
-}
-
-void Server::HandleTextDocumentDidClose(const std::string& uri) {
-  std::cout << "Document closed: " << uri << std::endl;
-  RemoveOpenFile(uri);
-}
-
-void Server::HandleTextDocumentHover(
-    const std::string& uri, int line, int character) {
-  std::cout << "Hover request at " << uri << ":" << line << ":" << character
-            << std::endl;
-}
-
-void Server::HandleTextDocumentDefinition(
-    const std::string& uri, int line, int character) {
-  std::cout << "Definition request at " << uri << ":" << line << ":"
-            << character << std::endl;
-}
-
-void Server::HandleTextDocumentCompletion(
-    const std::string& uri, int line, int character) {
-  std::cout << "Completion request at " << uri << ":" << line << ":"
-            << character << std::endl;
-}
-
-void Server::HandleWorkspaceSymbol(const std::string& query) {
-  std::cout << "Workspace symbol request for: " << query << std::endl;
-}
-
 // File management helpers
 std::optional<std::reference_wrapper<OpenFile>> Server::GetOpenFile(
     const std::string& uri) {

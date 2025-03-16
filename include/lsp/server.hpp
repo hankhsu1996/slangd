@@ -27,7 +27,8 @@ struct OpenFile {
  * @brief Base class for LSP servers
  *
  * This class provides the core functionality for handling Language Server
- * Protocol communication using JSON-RPC.
+ * Protocol communication using JSON-RPC. It provides infrastructure and
+ * delegates specific LSP message handling to derived classes.
  */
 class Server {
  public:
@@ -51,27 +52,9 @@ class Server {
    * @brief Register LSP method handlers
    *
    * This method should be overridden by derived classes to register
-   * method handlers for specific LSP messages.
+   * method handlers for specific LSP messages using the endpoint_.
    */
   virtual void RegisterHandlers() = 0;
-
-  // Core LSP request handlers
-  virtual void HandleInitialize();
-  virtual void HandleInitialized();
-  virtual void HandleShutdown();
-  virtual void HandleTextDocumentDidOpen(
-      const std::string& uri, const std::string& text,
-      const std::string& language_id);
-  virtual void HandleTextDocumentDidChange(
-      const std::string& uri, const std::vector<std::string>& changes);
-  virtual void HandleTextDocumentDidClose(const std::string& uri);
-  virtual void HandleTextDocumentHover(
-      const std::string& uri, int line, int character);
-  virtual void HandleTextDocumentDefinition(
-      const std::string& uri, int line, int character);
-  virtual void HandleTextDocumentCompletion(
-      const std::string& uri, int line, int character);
-  virtual void HandleWorkspaceSymbol(const std::string& query);
 
   // Initialize the JSON-RPC endpoint
   void InitializeJsonRpc();
