@@ -226,8 +226,10 @@ void SlangdLspServer::RegisterHandlers() {
             strand_,
             [this, uri, text]() -> asio::awaitable<void> {
               // Parse the file and extract symbols
-              co_await ParseFile(uri, text);
-              co_await ExtractSymbols(uri);
+              auto parse_result = co_await ParseFile(uri, text);
+              if (parse_result) {  // Only extract symbols if parsing succeeded
+                co_await ExtractSymbols(uri);
+              }
             },
             asio::detached);
 
@@ -261,8 +263,10 @@ void SlangdLspServer::RegisterHandlers() {
             asio::co_spawn(
                 strand_,
                 [this, uri, text]() -> asio::awaitable<void> {
-                  co_await ParseFile(uri, text);
-                  co_await ExtractSymbols(uri);
+                  auto parse_result = co_await ParseFile(uri, text);
+                  if (parse_result) {
+                    co_await ExtractSymbols(uri);
+                  }
                 },
                 asio::detached);
           }
@@ -308,8 +312,10 @@ void SlangdLspServer::HandleTextDocumentDidOpen(
       strand_,
       [this, uri, text]() -> asio::awaitable<void> {
         // Parse the file and extract symbols
-        co_await ParseFile(uri, text);
-        co_await ExtractSymbols(uri);
+        auto parse_result = co_await ParseFile(uri, text);
+        if (parse_result) {  // Only extract symbols if parsing succeeded
+          co_await ExtractSymbols(uri);
+        }
       },
       asio::detached);
 }
@@ -366,8 +372,10 @@ void SlangdLspServer::OnTextDocumentCompletion() {}
 asio::awaitable<void> SlangdLspServer::IndexFile(
     const std::string& uri, const std::string& content) {
   // Use the document manager to handle the file
-  co_await ParseFile(uri, content);
-  co_await ExtractSymbols(uri);
+  auto parse_result = co_await ParseFile(uri, content);
+  if (parse_result) {  // Only extract symbols if parsing succeeded
+    co_await ExtractSymbols(uri);
+  }
 }
 
 asio::awaitable<void> SlangdLspServer::IndexWorkspace() {
@@ -379,11 +387,53 @@ asio::awaitable<void> SlangdLspServer::IndexWorkspace() {
   co_return;
 }
 
-asio::awaitable<void> SlangdLspServer::ParseFile(
+asio::awaitable<std::expected<void, ParseError>> SlangdLspServer::ParseFile(
     const std::string& uri, const std::string& content) {
-  // Use the DocumentManager to handle parsing
-  co_await document_manager_->ParseDocument(uri, content);
-  co_return;
+  // Forward the DocumentManager's parse result directly
+  auto parse_result = co_await document_manager_->ParseDocument(uri, content);
+
+  // If there's an error, log it and notify the client before returning
+  if (!parse_result) {
+    std::string error_message;
+    switch (parse_result.error()) {
+      case ParseError::SyntaxError:
+        error_message = "Syntax error in SystemVerilog file: " + uri;
+        break;
+      case ParseError::FileNotFound:
+        error_message = "File not found: " + uri;
+        break;
+      case ParseError::EncodingError:
+        error_message = "Text encoding error in file: " + uri;
+        break;
+      case ParseError::SlangInternalError:
+        error_message = "Internal error in slang parser for file: " + uri;
+        break;
+      case ParseError::UnknownError:
+      default:
+        error_message = "Unknown error parsing file: " + uri;
+        break;
+    }
+
+    std::cerr << "Parse error: " << error_message << std::endl;
+
+    // Send error message to client as a "window/showMessage" notification
+    if (endpoint_) {
+      nlohmann::json params = {
+          {"type", 1},  // 1 = Error
+          {"message", error_message}};
+
+      // Properly co_await the notification instead of ignoring it
+      try {
+        co_await endpoint_->SendNotification("window/showMessage", params);
+      } catch (const std::exception& e) {
+        std::cerr << "Failed to send error notification to client: " << e.what()
+                  << std::endl;
+      }
+    }
+  }
+
+  // Return the original result with error information preserved
+  co_return parse_result;
 }
 
 asio::awaitable<void> SlangdLspServer::ExtractSymbols(const std::string& uri) {

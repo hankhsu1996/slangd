@@ -83,7 +83,7 @@ class SlangdLspServer : public lsp::Server {
   asio::awaitable<std::vector<Symbol>> FindSymbols(const std::string& query);
 
   // SystemVerilog parser interface using DocumentManager
-  asio::awaitable<void> ParseFile(
+  asio::awaitable<std::expected<void, ParseError>> ParseFile(
       const std::string& uri, const std::string& content);
   asio::awaitable<void> ExtractSymbols(const std::string& uri);
 
