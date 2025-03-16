@@ -1,6 +1,8 @@
 #pragma once
 
+#include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -53,14 +55,6 @@ class Server {
    */
   virtual void RegisterHandlers() = 0;
 
-  /**
-   * @brief Register a handler for an LSP method
-   *
-   * @param method The LSP method name
-   * @param handler The handler function
-   */
-  void RegisterMethod(const std::string& method, void* handler);
-
   // Core LSP request handlers
   virtual void HandleInitialize();
   virtual void HandleInitialized();
@@ -83,7 +77,8 @@ class Server {
   void InitializeJsonRpc();
 
   // File management helpers
-  OpenFile* GetOpenFile(const std::string& uri);
+  std::optional<std::reference_wrapper<OpenFile>> GetOpenFile(
+      const std::string& uri);
   void AddOpenFile(
       const std::string& uri, const std::string& content,
       const std::string& language_id, int version);

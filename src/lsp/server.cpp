@@ -116,28 +116,6 @@ void Server::Shutdown() {
   io_context_.stop();
 }
 
-void Server::RegisterMethod(const std::string& method, void* /*handler_ptr*/) {
-  if (!endpoint_) {
-    std::cerr << "Cannot register method: endpoint not initialized"
-              << std::endl;
-    return;
-  }
-
-  std::cout << "Registering method: " << method << std::endl;
-
-  // Register a method handler for the given method
-  endpoint_->RegisterMethodCall(
-      method,
-      [method](const std::optional<nlohmann::json>& params)
-          -> asio::awaitable<nlohmann::json> {
-        std::cout << "Method called: " << method << std::endl;
-
-        // For now, just return an empty object
-        // In a real implementation, we would call the actual handler
-        co_return nlohmann::json::object();
-      });
-}
-
 // Core LSP request handlers
 void Server::HandleInitialize() {
   std::cout << "Initialize request received" << std::endl;
@@ -193,12 +171,13 @@ void Server::HandleWorkspaceSymbol(const std::string& query) {
 }
 
 // File management helpers
-OpenFile* Server::GetOpenFile(const std::string& uri) {
+std::optional<std::reference_wrapper<OpenFile>> Server::GetOpenFile(
+    const std::string& uri) {
   auto it = open_files_.find(uri);
   if (it != open_files_.end()) {
-    return &it->second;
+    return std::ref(it->second);
   }
-  return nullptr;
+  return std::nullopt;
 }
 
 void Server::AddOpenFile(
@@ -210,12 +189,13 @@ void Server::AddOpenFile(
 
 void Server::UpdateOpenFile(
     const std::string& uri, const std::vector<std::string>& /*changes*/) {
-  auto* file = GetOpenFile(uri);
-  if (file) {
+  auto file_opt = GetOpenFile(uri);
+  if (file_opt) {
     // Simplified update - in a real implementation, we would apply the changes
     // Here we just increment the version
-    file->version++;
-    std::cout << "Updated file " << uri << " to version " << file->version
+    OpenFile& file = file_opt->get();
+    file.version++;
+    std::cout << "Updated file " << uri << " to version " << file.version
               << std::endl;
   }
 }
