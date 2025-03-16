@@ -1,17 +1,15 @@
 #pragma once
 
 #include <memory>
-#include <mutex>
+#include <optional>
+#include <slang/syntax/SyntaxTree.h>
 #include <string>
 #include <unordered_map>
 
 #include <asio.hpp>
 
-// Include slang library headers
-#include <slang/syntax/SyntaxTree.h>
-#include <slang/text/SourceManager.h>
-
 #include "lsp/server.hpp"
+#include "slangd/document_manager.hpp"
 
 namespace slangd {
 
@@ -49,7 +47,7 @@ struct Symbol {
  */
 class SlangdLspServer : public lsp::Server {
  public:
-  SlangdLspServer();
+  SlangdLspServer(asio::io_context& io_context);
   ~SlangdLspServer() override;
 
  protected:
@@ -60,15 +58,15 @@ class SlangdLspServer : public lsp::Server {
 
   // Override base class handlers with SystemVerilog-specific implementations
   void HandleInitialize() override;
-  void HandleTextDocumentDidOpen(const std::string& uri,
-                                 const std::string& text,
-                                 const std::string& language_id) override;
-  void HandleTextDocumentHover(const std::string& uri, int line,
-                               int character) override;
-  void HandleTextDocumentDefinition(const std::string& uri, int line,
-                                    int character) override;
-  void HandleTextDocumentCompletion(const std::string& uri, int line,
-                                    int character) override;
+  void HandleTextDocumentDidOpen(
+      const std::string& uri, const std::string& text,
+      const std::string& language_id) override;
+  void HandleTextDocumentHover(
+      const std::string& uri, int line, int character) override;
+  void HandleTextDocumentDefinition(
+      const std::string& uri, int line, int character) override;
+  void HandleTextDocumentCompletion(
+      const std::string& uri, int line, int character) override;
   void HandleWorkspaceSymbol(const std::string& query) override;
 
  private:
@@ -78,21 +76,20 @@ class SlangdLspServer : public lsp::Server {
   void OnTextDocumentCompletion();
 
   // SystemVerilog-specific methods
-  void IndexWorkspace();
-  void IndexFile(const std::string& uri, const std::string& content);
-  Symbol* FindSymbol(const std::string& name);
-  std::vector<Symbol> FindSymbols(const std::string& query);
+  asio::awaitable<void> IndexWorkspace();
+  asio::awaitable<void> IndexFile(
+      const std::string& uri, const std::string& content);
+  asio::awaitable<std::optional<Symbol>> FindSymbol(const std::string& name);
+  asio::awaitable<std::vector<Symbol>> FindSymbols(const std::string& query);
 
-  // SystemVerilog parser interface
-  void ParseFile(const std::string& uri, const std::string& content);
-  void ExtractSymbols(const std::string& uri, const std::string& content);
+  // SystemVerilog parser interface using DocumentManager
+  asio::awaitable<void> ParseFile(
+      const std::string& uri, const std::string& content);
+  asio::awaitable<void> ExtractSymbols(const std::string& uri);
 
  private:
   // Global symbol table for SystemVerilog symbols
   std::unordered_map<std::string, Symbol> global_symbols_;
-
-  // Mutex for thread-safe access to global_symbols_
-  std::mutex symbols_mutex_;
 
   // Strand for synchronized access to global_symbols_
   asio::strand<asio::io_context::executor_type> strand_;
@@ -100,10 +97,8 @@ class SlangdLspServer : public lsp::Server {
   // Flag to track if indexing is complete
   bool indexing_complete_ = false;
 
-  // Slang library components
-  std::unique_ptr<slang::SourceManager> source_manager_;
-  std::unordered_map<std::string, std::shared_ptr<slang::syntax::SyntaxTree>>
-      syntax_trees_;
+  // Document manager for handling SystemVerilog files
+  std::unique_ptr<DocumentManager> document_manager_;
 };
 
 }  // namespace slangd

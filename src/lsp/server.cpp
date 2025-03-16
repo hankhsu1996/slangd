@@ -10,9 +10,8 @@
 
 namespace lsp {
 
-Server::Server()
-    : io_context_(std::make_shared<asio::io_context>()),
-      work_guard_(asio::make_work_guard(*io_context_)) {
+Server::Server(asio::io_context& io_context)
+    : io_context_(io_context), work_guard_(asio::make_work_guard(io_context)) {
   std::cout << "Creating LSP server" << std::endl;
 
   // Create thread pool (4 worker threads by default)
@@ -29,11 +28,11 @@ void Server::InitializeJsonRpc() {
     // In a real implementation, you might want to create a custom transport for
     // stdin/stdout
     auto transport = std::make_unique<jsonrpc::transport::PipeTransport>(
-        *io_context_, "/tmp/slangd-lsp-pipe", true);
+        io_context_, "/tmp/slangd-lsp-pipe", true);
 
     // Create the RPC endpoint
     endpoint_ = std::make_unique<jsonrpc::endpoint::RpcEndpoint>(
-        *io_context_, std::move(transport));
+        io_context_, std::move(transport));
 
     // Set up error handling
     endpoint_->SetErrorHandler(
@@ -72,7 +71,7 @@ void Server::Run() {
     for (unsigned int i = 0; i < std::thread::hardware_concurrency(); ++i) {
       thread_pool_.emplace_back([this]() {
         try {
-          io_context_->run();
+          io_context_.run();
         } catch (const std::exception& e) {
           std::cerr << "Thread exception: " << e.what() << std::endl;
         }
@@ -83,7 +82,7 @@ void Server::Run() {
 
     // Start the endpoint asynchronously
     asio::co_spawn(
-        *io_context_,
+        io_context_,
         [this]() -> asio::awaitable<void> {
           co_await endpoint_->Start();
           co_await endpoint_->WaitForShutdown();
@@ -92,7 +91,7 @@ void Server::Run() {
         asio::detached);
 
     // Run the IO context in the main thread
-    io_context_->run();
+    io_context_.run();
   } catch (const std::exception& e) {
     std::cerr << "Error running server: " << e.what() << std::endl;
   }
@@ -104,7 +103,7 @@ void Server::Shutdown() {
   if (endpoint_) {
     // Shutdown the endpoint asynchronously
     asio::co_spawn(
-        *io_context_,
+        io_context_,
         [this]() -> asio::awaitable<void> {
           co_await endpoint_->Shutdown();
           co_return;  // Explicit void return to fix linter warning
@@ -114,7 +113,7 @@ void Server::Shutdown() {
 
   // Release work guard to allow threads to finish
   work_guard_.reset();
-  io_context_->stop();
+  io_context_.stop();
 }
 
 void Server::RegisterMethod(const std::string& method, void* /*handler_ptr*/) {
@@ -153,9 +152,9 @@ void Server::HandleShutdown() {
   Shutdown();
 }
 
-void Server::HandleTextDocumentDidOpen(const std::string& uri,
-                                       const std::string& text,
-                                       const std::string& language_id) {
+void Server::HandleTextDocumentDidOpen(
+    const std::string& uri, const std::string& text,
+    const std::string& language_id) {
   std::cout << "Document opened: " << uri << std::endl;
   AddOpenFile(uri, text, language_id, 1);
 }
@@ -171,20 +170,20 @@ void Server::HandleTextDocumentDidClose(const std::string& uri) {
   RemoveOpenFile(uri);
 }
 
-void Server::HandleTextDocumentHover(const std::string& uri, int line,
-                                     int character) {
+void Server::HandleTextDocumentHover(
+    const std::string& uri, int line, int character) {
   std::cout << "Hover request at " << uri << ":" << line << ":" << character
             << std::endl;
 }
 
-void Server::HandleTextDocumentDefinition(const std::string& uri, int line,
-                                          int character) {
+void Server::HandleTextDocumentDefinition(
+    const std::string& uri, int line, int character) {
   std::cout << "Definition request at " << uri << ":" << line << ":"
             << character << std::endl;
 }
 
-void Server::HandleTextDocumentCompletion(const std::string& uri, int line,
-                                          int character) {
+void Server::HandleTextDocumentCompletion(
+    const std::string& uri, int line, int character) {
   std::cout << "Completion request at " << uri << ":" << line << ":"
             << character << std::endl;
 }
@@ -202,14 +201,15 @@ OpenFile* Server::GetOpenFile(const std::string& uri) {
   return nullptr;
 }
 
-void Server::AddOpenFile(const std::string& uri, const std::string& content,
-                         const std::string& language_id, int version) {
+void Server::AddOpenFile(
+    const std::string& uri, const std::string& content,
+    const std::string& language_id, int version) {
   OpenFile file{uri, content, language_id, version};
   open_files_[uri] = std::move(file);
 }
 
-void Server::UpdateOpenFile(const std::string& uri,
-                            const std::vector<std::string>& /*changes*/) {
+void Server::UpdateOpenFile(
+    const std::string& uri, const std::vector<std::string>& /*changes*/) {
   auto* file = GetOpenFile(uri);
   if (file) {
     // Simplified update - in a real implementation, we would apply the changes

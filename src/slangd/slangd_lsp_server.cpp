@@ -1,29 +1,21 @@
 #include "slangd/slangd_lsp_server.hpp"
 
 #include <chrono>
-#include <iostream>
-#include <thread>
-
-// Additional slang headers
 #include <slang/syntax/AllSyntax.h>
 #include <slang/syntax/SyntaxVisitor.h>
+#include <thread>
 
 namespace slangd {
 
-SlangdLspServer::SlangdLspServer() : strand_(asio::make_strand(*io_context_)) {
-  std::cout << "SlangdLspServer created" << std::endl;
-
-  // Initialize the slang source manager
-  source_manager_ = std::make_unique<slang::SourceManager>();
+SlangdLspServer::SlangdLspServer(asio::io_context& io_context)
+    : lsp::Server(io_context), strand_(asio::make_strand(io_context)) {
+  // Initialize the document manager with a reference to io_context
+  document_manager_ = std::make_unique<DocumentManager>(io_context);
 }
 
-SlangdLspServer::~SlangdLspServer() {
-  std::cout << "SlangdLspServer destroyed" << std::endl;
-}
+SlangdLspServer::~SlangdLspServer() {}
 
 void SlangdLspServer::RegisterHandlers() {
-  std::cout << "Registering handlers for SystemVerilog LSP" << std::endl;
-
   // Register standard LSP methods
   RegisterMethod("initialize", nullptr);
   RegisterMethod("textDocument/didOpen", nullptr);
@@ -35,10 +27,10 @@ void SlangdLspServer::RegisterHandlers() {
 
 // LSP method handlers
 void SlangdLspServer::HandleInitialize() {
-  std::cout << "SystemVerilog LSP initialized" << std::endl;
-
   // Start workspace indexing in a separate thread
-  asio::post(strand_, [this]() { IndexWorkspace(); });
+  asio::co_spawn(
+      strand_, [this]() -> asio::awaitable<void> { co_await IndexWorkspace(); },
+      asio::detached);
 }
 
 void SlangdLspServer::HandleTextDocumentDidOpen(
@@ -48,22 +40,21 @@ void SlangdLspServer::HandleTextDocumentDidOpen(
   lsp::Server::HandleTextDocumentDidOpen(uri, text, language_id);
 
   // Post to strand to ensure thread safety
-  asio::post(strand_, [this, uri, text]() {
-    std::cout << "Parsing SystemVerilog file: " << uri << std::endl;
-    ParseFile(uri, text);
-    ExtractSymbols(uri, text);
-  });
+  asio::co_spawn(
+      strand_,
+      [this, uri, text]() -> asio::awaitable<void> {
+        // Parse the file and extract symbols
+        co_await ParseFile(uri, text);
+        co_await ExtractSymbols(uri);
+      },
+      asio::detached);
 }
 
-void SlangdLspServer::HandleTextDocumentHover(const std::string& uri, int line,
-                                              int character) {
-  std::cout << "SystemVerilog hover request at " << uri << ":" << line << ":"
-            << character << std::endl;
-
+void SlangdLspServer::HandleTextDocumentHover(
+    const std::string& uri, int line, int character) {
   // First check in open files (lightweight operation)
   auto* file = GetOpenFile(uri);
   if (!file) {
-    std::cout << "File not open: " << uri << std::endl;
     return;
   }
 
@@ -71,15 +62,11 @@ void SlangdLspServer::HandleTextDocumentHover(const std::string& uri, int line,
   // and return its documentation
 }
 
-void SlangdLspServer::HandleTextDocumentDefinition(const std::string& uri,
-                                                   int line, int character) {
-  std::cout << "SystemVerilog definition request at " << uri << ":" << line
-            << ":" << character << std::endl;
-
+void SlangdLspServer::HandleTextDocumentDefinition(
+    const std::string& uri, int line, int character) {
   // First check in open files (lightweight operation)
   auto* file = GetOpenFile(uri);
   if (!file) {
-    std::cout << "File not open: " << uri << std::endl;
     return;
   }
 
@@ -87,127 +74,78 @@ void SlangdLspServer::HandleTextDocumentDefinition(const std::string& uri,
   // and return its definition location
 }
 
-void SlangdLspServer::HandleTextDocumentCompletion(const std::string& uri,
-                                                   int line, int character) {
-  std::cout << "SystemVerilog completion request at " << uri << ":" << line
-            << ":" << character << std::endl;
-
+void SlangdLspServer::HandleTextDocumentCompletion(
+    const std::string& uri, int line, int character) {
   // This is a more complex operation, so post it to the thread pool via strand
-  asio::post(strand_, [this, uri]() {
-    // First check in open files
-    auto* file = GetOpenFile(uri);
-    if (!file) {
-      std::cout << "File not open: " << uri << std::endl;
-      return;
-    }
+  asio::co_spawn(
+      strand_,
+      [this, uri]() -> asio::awaitable<void> {
+        // First check in open files
+        auto* file = GetOpenFile(uri);
+        if (!file) {
+          co_return;
+        }
 
-    // In real implementation, would gather completion items based on context
-    std::cout << "Completion items would be generated here" << std::endl;
-  });
+        // In real implementation, would gather completion items based on
+        // context
+        co_return;
+      },
+      asio::detached);
 }
 
 void SlangdLspServer::HandleWorkspaceSymbol(const std::string& query) {
-  std::cout << "SystemVerilog workspace symbol request for: " << query
-            << std::endl;
-
   // This is a more complex operation, so post it to the thread pool via strand
-  asio::post(strand_, [this, query]() {
-    auto symbols = FindSymbols(query);
-    std::cout << "Found " << symbols.size() << " symbols matching '" << query
-              << "'" << std::endl;
-  });
+  asio::co_spawn(
+      strand_,
+      [this, query]() -> asio::awaitable<void> {
+        auto symbols = co_await FindSymbols(query);
+        co_return;
+      },
+      asio::detached);
 }
 
 // Legacy methods (simplified handlers from original skeleton)
-void SlangdLspServer::OnInitialize() {
-  std::cout << "Legacy initialize request received" << std::endl;
-  HandleInitialize();
-}
+void SlangdLspServer::OnInitialize() { HandleInitialize(); }
 
-void SlangdLspServer::OnTextDocumentDidOpen() {
-  std::cout << "Legacy document opened" << std::endl;
-}
+void SlangdLspServer::OnTextDocumentDidOpen() {}
 
-void SlangdLspServer::OnTextDocumentCompletion() {
-  std::cout << "Legacy completion request received" << std::endl;
-}
+void SlangdLspServer::OnTextDocumentCompletion() {}
 
 // SystemVerilog-specific methods
-void SlangdLspServer::IndexWorkspace() {
-  std::cout << "Starting workspace indexing" << std::endl;
+asio::awaitable<void> SlangdLspServer::IndexFile(
+    const std::string& uri, const std::string& content) {
+  // Use the document manager to handle the file
+  co_await ParseFile(uri, content);
+  co_await ExtractSymbols(uri);
+}
 
+asio::awaitable<void> SlangdLspServer::IndexWorkspace() {
   // Simulating indexing work
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
   // In real implementation, would recursively find and parse all .sv files
-
-  std::cout << "Workspace indexing complete" << std::endl;
   indexing_complete_ = true;
+  co_return;
 }
 
-void SlangdLspServer::IndexFile(const std::string& uri,
-                                const std::string& content) {
-  std::cout << "Indexing file: " << uri << std::endl;
-  ParseFile(uri, content);
-  ExtractSymbols(uri, content);
+asio::awaitable<void> SlangdLspServer::ParseFile(
+    const std::string& uri, const std::string& content) {
+  // Use the DocumentManager to handle parsing
+  co_await document_manager_->ParseDocument(uri, content);
+  co_return;
 }
 
-Symbol* SlangdLspServer::FindSymbol(const std::string& name) {
-  std::lock_guard<std::mutex> lock(symbols_mutex_);
-  auto it = global_symbols_.find(name);
-  if (it != global_symbols_.end()) {
-    return &it->second;
-  }
-  return nullptr;
-}
-
-std::vector<Symbol> SlangdLspServer::FindSymbols(const std::string& query) {
-  std::vector<Symbol> results;
-  std::lock_guard<std::mutex> lock(symbols_mutex_);
-
-  // Simple substring search (in real implementation would use fuzzy matching)
-  for (const auto& [name, symbol] : global_symbols_) {
-    if (name.find(query) != std::string::npos) {
-      results.push_back(symbol);
-    }
+asio::awaitable<void> SlangdLspServer::ExtractSymbols(const std::string& uri) {
+  // Get the syntax tree from the document manager
+  auto syntax_tree = co_await document_manager_->GetSyntaxTree(uri);
+  if (!syntax_tree) {
+    co_return;
   }
 
-  return results;
-}
-
-void SlangdLspServer::ParseFile(const std::string& uri,
-                                const std::string& content) {
-  std::cout << "Parsing SystemVerilog file: " << uri << std::endl;
-
-  try {
-    // Use slang directly to parse SystemVerilog content
-    auto syntax_tree =
-        slang::syntax::SyntaxTree::fromText(content, *source_manager_, uri);
-
-    if (!syntax_tree) {
-      std::cerr << "Failed to parse file: " << uri << std::endl;
-      return;
-    }
-
-    // Store the syntax tree for future reference
-    syntax_trees_[uri] = syntax_tree;
-
-    std::cout << "Successfully parsed file: " << uri << std::endl;
-  } catch (const std::exception& e) {
-    std::cerr << "Exception parsing file " << uri << ": " << e.what()
-              << std::endl;
-  }
-}
-
-void SlangdLspServer::ExtractSymbols(const std::string& uri,
-                                     const std::string& /*content*/) {
-  std::cout << "Extracting symbols from: " << uri << std::endl;
+  // Switch to the strand for synchronized access to global_symbols_
+  co_await asio::post(strand_, asio::use_awaitable);
 
   // In this simplified version, just create some example symbols
-  // In a real implementation, we would traverse the syntax tree to find symbols
-
-  std::lock_guard<std::mutex> lock(symbols_mutex_);
-
   // Add a dummy module symbol
   std::string module_name = "example_module";
   Symbol module;
@@ -229,9 +167,36 @@ void SlangdLspServer::ExtractSymbols(const std::string& uri,
   iface.character = 0;
   iface.documentation = "Example SystemVerilog interface";
   global_symbols_[iface_name] = iface;
+  co_return;
+}
 
-  std::cout << "Added " << global_symbols_.size()
-            << " symbols to global symbol table" << std::endl;
+asio::awaitable<std::optional<Symbol>> SlangdLspServer::FindSymbol(
+    const std::string& name) {
+  // Switch to the strand for synchronized access to global_symbols_
+  co_await asio::post(strand_, asio::use_awaitable);
+
+  auto it = global_symbols_.find(name);
+  if (it != global_symbols_.end()) {
+    co_return it->second;
+  }
+  co_return std::nullopt;
+}
+
+asio::awaitable<std::vector<Symbol>> SlangdLspServer::FindSymbols(
+    const std::string& query) {
+  // Switch to the strand for synchronized access to global_symbols_
+  co_await asio::post(strand_, asio::use_awaitable);
+
+  std::vector<Symbol> results;
+
+  // Simple substring search (in real implementation would use fuzzy matching)
+  for (const auto& [name, symbol] : global_symbols_) {
+    if (name.find(query) != std::string::npos) {
+      results.push_back(symbol);
+    }
+  }
+
+  co_return results;
 }
 
 }  // namespace slangd

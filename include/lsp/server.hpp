@@ -29,7 +29,7 @@ struct OpenFile {
  */
 class Server {
  public:
-  Server();
+  Server(asio::io_context& io_context);
   virtual ~Server();
 
   /**
@@ -65,18 +65,18 @@ class Server {
   virtual void HandleInitialize();
   virtual void HandleInitialized();
   virtual void HandleShutdown();
-  virtual void HandleTextDocumentDidOpen(const std::string& uri,
-                                         const std::string& text,
-                                         const std::string& language_id);
+  virtual void HandleTextDocumentDidOpen(
+      const std::string& uri, const std::string& text,
+      const std::string& language_id);
   virtual void HandleTextDocumentDidChange(
       const std::string& uri, const std::vector<std::string>& changes);
   virtual void HandleTextDocumentDidClose(const std::string& uri);
-  virtual void HandleTextDocumentHover(const std::string& uri, int line,
-                                       int character);
-  virtual void HandleTextDocumentDefinition(const std::string& uri, int line,
-                                            int character);
-  virtual void HandleTextDocumentCompletion(const std::string& uri, int line,
-                                            int character);
+  virtual void HandleTextDocumentHover(
+      const std::string& uri, int line, int character);
+  virtual void HandleTextDocumentDefinition(
+      const std::string& uri, int line, int character);
+  virtual void HandleTextDocumentCompletion(
+      const std::string& uri, int line, int character);
   virtual void HandleWorkspaceSymbol(const std::string& query);
 
   // Initialize the JSON-RPC endpoint
@@ -84,15 +84,16 @@ class Server {
 
   // File management helpers
   OpenFile* GetOpenFile(const std::string& uri);
-  void AddOpenFile(const std::string& uri, const std::string& content,
-                   const std::string& language_id, int version);
-  void UpdateOpenFile(const std::string& uri,
-                      const std::vector<std::string>& changes);
+  void AddOpenFile(
+      const std::string& uri, const std::string& content,
+      const std::string& language_id, int version);
+  void UpdateOpenFile(
+      const std::string& uri, const std::vector<std::string>& changes);
   void RemoveOpenFile(const std::string& uri);
 
  protected:
   std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint_;
-  std::shared_ptr<asio::io_context> io_context_;
+  asio::io_context& io_context_;
   asio::executor_work_guard<asio::io_context::executor_type> work_guard_;
 
   // Thread pool for background processing
