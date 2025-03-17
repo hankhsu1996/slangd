@@ -1,51 +1,17 @@
 #include "slangd/document_manager.hpp"
 
-#include <fstream>
 #include <string>
 
 #include <asio.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "tools/cpp/runfiles/runfiles.h"
-
-using bazel::tools::cpp::runfiles::Runfiles;
-
-// Helper to get path to test files using Bazel runfiles
-std::string GetTestFilePath(const std::string& filename) {
-  // Get the runfiles object using CreateForTest which is specifically designed
-  // for cc_test rules
-  std::string error;
-  std::unique_ptr<bazel::tools::cpp::runfiles::Runfiles> runfiles(
-      bazel::tools::cpp::runfiles::Runfiles::CreateForTest(&error));
-  if (!runfiles) {
-    throw std::runtime_error("Failed to create runfiles object: " + error);
-  }
-
-  // The path should be relative to the workspace root
-  std::string path = runfiles->Rlocation("slangd/test/testfiles/" + filename);
-
-  if (path.empty()) {
-    throw std::runtime_error(
-        "Could not find test file in runfiles: " + filename);
-  }
-
-  return path;
-}
-
-// Helper function to read a file into a string
-std::string ReadFile(const std::string& path) {
-  std::ifstream file(path);
-  if (!file.is_open()) {
-    throw std::runtime_error("Could not open file: " + path);
-  }
-  return std::string(
-      std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
-}
+#include "fixture_utils.hpp"
 
 // Helper to run async test functions with coroutines
 template <typename F>
 void RunTest(F&& test_fn) {
   asio::io_context io_context;
+
   bool completed = false;
   std::exception_ptr exception;
 

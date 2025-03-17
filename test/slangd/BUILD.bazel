@@ -1,0 +1,55 @@
+"""
+Build file for slangd tests.
+"""
+
+filegroup(
+    name = "fixtures",
+    srcs = glob(["fixtures/**"]),
+)
+
+cc_test(
+    name = "document_manager_test",
+    timeout = "short",
+    srcs = [
+        "document_manager_test.cpp",
+        "fixture_utils.hpp",
+    ],
+    data = [
+        ":fixtures",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@bazel_tools//tools/cpp/runfiles",
+        "@catch2//:catch2_main",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "slangd_lsp_server_test",
+    timeout = "short",
+    srcs = ["slangd_lsp_server_test.cpp"],
+    deps = [
+        "//:slangd_core",
+        "@catch2//:catch2_main",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "symbol_utils_test",
+    timeout = "short",
+    srcs = [
+        "fixture_utils.hpp",
+        "symbol_utils_test.cpp",
+    ],
+    data = [
+        ":fixtures",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@bazel_tools//tools/cpp/runfiles",
+        "@catch2//:catch2_main",
+        "@slang",
+    ],
+)

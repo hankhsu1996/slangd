@@ -1,0 +1,13 @@
+"""
+Build file for LSP tests.
+"""
+
+cc_test(
+    name = "document_symbol_test",
+    timeout = "short",
+    srcs = ["document_symbol_test.cpp"],
+    deps = [
+        "//:lsp",
+        "@catch2//:catch2_main",
+    ],
+)
