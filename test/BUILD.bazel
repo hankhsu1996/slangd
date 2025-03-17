@@ -12,6 +12,7 @@ cc_test(
     ),
     deps = [
         "//:slangd_core",
+        "@bazel_tools//tools/cpp/runfiles",
         "@catch2//:catch2_main",
         "@slang",
     ],

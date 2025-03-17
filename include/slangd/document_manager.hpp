@@ -73,11 +73,11 @@ class DocumentManager {
    * @brief Get a list of symbols defined in a document
    *
    * @param uri The document URI
-   * @return asio::awaitable<std::vector<const slang::ast::Symbol*>> List of
-   * symbols or empty vector if not found
+   * @return asio::awaitable<std::vector<std::shared_ptr<const
+   * slang::ast::Symbol>>> List of symbols or empty vector if not found
    */
-  asio::awaitable<std::vector<const slang::ast::Symbol*>> GetSymbols(
-      const std::string& uri);
+  asio::awaitable<std::vector<std::shared_ptr<const slang::ast::Symbol>>>
+  GetSymbols(const std::string& uri);
 
  private:
   // ASIO io_context reference
