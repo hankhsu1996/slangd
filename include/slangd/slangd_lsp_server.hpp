@@ -4,7 +4,6 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
-#include <vector>
 
 #include <asio/awaitable.hpp>
 #include <asio/io_context.hpp>
@@ -92,34 +91,12 @@ class SlangdLspServer : public lsp::Server {
   asio::awaitable<void> HandleTextDocumentDidClose(
       const std::optional<nlohmann::json>& params);
 
-  /** Handle "textDocument/hover" request. */
-  asio::awaitable<nlohmann::json> HandleTextDocumentHover(
-      const std::optional<nlohmann::json>& params);
-
-  /** Handle "textDocument/definition" request. */
-  asio::awaitable<nlohmann::json> HandleTextDocumentDefinition(
-      const std::optional<nlohmann::json>& params);
-
-  /** Handle "textDocument/completion" request. */
-  asio::awaitable<nlohmann::json> HandleTextDocumentCompletion(
-      const std::optional<nlohmann::json>& params);
-
-  /** Handle "workspace/symbol" request. */
-  asio::awaitable<nlohmann::json> HandleWorkspaceSymbol(
-      const std::optional<nlohmann::json>& params);
-
   /** Index the workspace for SystemVerilog files and symbols. */
   asio::awaitable<void> IndexWorkspace();
 
   /** Index a single file for symbols. */
   asio::awaitable<void> IndexFile(
       const std::string& uri, const std::string& content);
-
-  /** Find a SystemVerilog symbol by name. */
-  asio::awaitable<std::optional<Symbol>> FindSymbol(const std::string& name);
-
-  /** Find SystemVerilog symbols matching a query. */
-  asio::awaitable<std::vector<Symbol>> FindSymbols(const std::string& query);
 
   /** Parse a SystemVerilog file and report errors. */
   asio::awaitable<std::expected<void, ParseError>> ParseFile(

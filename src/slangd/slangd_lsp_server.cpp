@@ -73,35 +73,7 @@ void SlangdLspServer::RegisterHandlers() {
         return HandleInitialized(params);
       });
 
-  endpoint_->RegisterMethodCall(
-      "textDocument/hover",
-      [this](const std::optional<nlohmann::json>& params)
-          -> asio::awaitable<nlohmann::json> {
-        return HandleTextDocumentHover(params);
-      });
-
-  endpoint_->RegisterMethodCall(
-      "textDocument/definition",
-      [this](const std::optional<nlohmann::json>& params)
-          -> asio::awaitable<nlohmann::json> {
-        return HandleTextDocumentDefinition(params);
-      });
-
-  endpoint_->RegisterMethodCall(
-      "textDocument/completion",
-      [this](const std::optional<nlohmann::json>& params)
-          -> asio::awaitable<nlohmann::json> {
-        return HandleTextDocumentCompletion(params);
-      });
-
-  endpoint_->RegisterMethodCall(
-      "workspace/symbol",
-      [this](const std::optional<nlohmann::json>& params)
-          -> asio::awaitable<nlohmann::json> {
-        return HandleWorkspaceSymbol(params);
-      });
-
-  // Register notifications
+  // Register notifications for document synchronization
   endpoint_->RegisterNotification(
       "textDocument/didOpen",
       [this](const std::optional<nlohmann::json>& params)
@@ -135,13 +107,10 @@ asio::awaitable<nlohmann::json> SlangdLspServer::HandleInitialize(
       strand_, [this]() -> asio::awaitable<void> { co_await IndexWorkspace(); },
       asio::detached);
 
-  // Return initialize result
+  // Return initialize result with updated capabilities
   nlohmann::json capabilities = {
       {"textDocumentSync", 1},  // 1 = Full sync
-      {"hoverProvider", true},
-      {"definitionProvider", true},
-      {"completionProvider", {{"triggerCharacters", {"."}}}},
-      {"workspaceSymbolProvider", true}};
+  };
 
   nlohmann::json result = {
       {"capabilities", capabilities},
@@ -282,156 +251,6 @@ asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidClose(
   co_return;
 }
 
-asio::awaitable<nlohmann::json> SlangdLspServer::HandleTextDocumentHover(
-    const std::optional<nlohmann::json>& params) {
-  if (!params) {
-    co_return nullptr;
-  }
-
-  const auto& param_val = params.value();
-  const auto& uri = param_val["textDocument"]["uri"].get<std::string>();
-  const auto& position = param_val["position"];
-  [[maybe_unused]] const int line = position["line"].get<int>();
-  [[maybe_unused]] const int character = position["character"].get<int>();
-
-  // Check if the file is open
-  auto file_opt = GetOpenFile(uri);
-  if (!file_opt) {
-    co_return nullptr;  // Return null for not found
-  }
-
-  // Post to strand for thread safety
-  co_await asio::post(strand_, asio::use_awaitable);
-
-  // In a real implementation, look up the symbol at the given position
-  // For now, return a placeholder hover response
-  nlohmann::json hover_response = {
-      {"contents",
-       {{"kind", "markdown"},
-        {"value",
-         "**SystemVerilog Entity**\n\nThis is a placeholder hover "
-         "response. In a complete implementation, this would show "
-         "documentation for the symbol at the current position."}}},
-      {"range",
-       {{"start", {{"line", line}, {"character", character}}},
-        {"end", {{"line", line}, {"character", character + 5}}}}}};
-
-  co_return hover_response;
-}
-
-asio::awaitable<nlohmann::json> SlangdLspServer::HandleTextDocumentDefinition(
-    const std::optional<nlohmann::json>& params) {
-  if (!params) {
-    co_return nullptr;
-  }
-
-  const auto& param_val = params.value();
-  const auto& uri = param_val["textDocument"]["uri"].get<std::string>();
-  const auto& position = param_val["position"];
-  [[maybe_unused]] const int line = position["line"].get<int>();
-  [[maybe_unused]] const int character = position["character"].get<int>();
-
-  // Check if the file is open
-  auto file_opt = GetOpenFile(uri);
-  if (!file_opt) {
-    co_return nullptr;  // Return null for not found
-  }
-
-  // Post to strand for thread safety
-  co_await asio::post(strand_, asio::use_awaitable);
-
-  // In a real implementation, we would look up the symbol definition
-  // For now, return a dummy location (back to the same position)
-  nlohmann::json location = {
-      {"uri", uri},
-      {"range",
-       {{"start", {{"line", line}, {"character", character}}},
-        {"end", {{"line", line}, {"character", character + 5}}}}}};
-
-  // Return an array with one location
-  co_return nlohmann::json::array({location});
-}
-
-asio::awaitable<nlohmann::json> SlangdLspServer::HandleTextDocumentCompletion(
-    const std::optional<nlohmann::json>& params) {
-  if (!params) {
-    co_return nullptr;
-  }
-
-  const auto& param_val = params.value();
-  const auto& uri = param_val["textDocument"]["uri"].get<std::string>();
-  const auto& position = param_val["position"];
-  [[maybe_unused]] const int line = position["line"].get<int>();
-  [[maybe_unused]] const int character = position["character"].get<int>();
-
-  // Check if the file is open
-  auto file_opt = GetOpenFile(uri);
-  if (!file_opt) {
-    co_return nullptr;  // Return null for not found
-  }
-
-  // Post to strand for thread safety
-  co_await asio::post(strand_, asio::use_awaitable);
-
-  // In a real implementation, we would compute context-aware completions
-  // For now, return some dummy completion items
-  nlohmann::json completions = {
-      {"isIncomplete", false},
-      {"items", nlohmann::json::array(
-                    {{{"label", "module"},
-                      {"kind", 14},  // 14 = Keyword
-                      {"detail", "SystemVerilog module keyword"},
-                      {"insertText",
-                       "module ${1:name} (\n\t${2}\n);\n\t${0}\nendmodule"}},
-                     {{"label", "if"},
-                      {"kind", 14},  // 14 = Keyword
-                      {"detail", "SystemVerilog if statement"},
-                      {"insertText", "if (${1:condition}) begin\n\t${0}\nend"}},
-                     {{"label", "always_comb"},
-                      {"kind", 14},  // 14 = Keyword
-                      {"detail", "SystemVerilog always_comb block"},
-                      {"insertText", "always_comb begin\n\t${0}\nend"}}})}};
-
-  co_return completions;
-}
-
-asio::awaitable<nlohmann::json> SlangdLspServer::HandleWorkspaceSymbol(
-    const std::optional<nlohmann::json>& params) {
-  if (!params) {
-    co_return nlohmann::json::array();
-  }
-
-  const auto& param_val = params.value();
-  const auto& query = param_val["query"].get<std::string>();
-
-  // Post to strand for thread safety
-  co_await asio::post(strand_, asio::use_awaitable);
-
-  // Find symbols matching the query
-  auto symbols = co_await FindSymbols(query);
-
-  // Convert to LSP format
-  nlohmann::json symbol_results = nlohmann::json::array();
-  for (const auto& symbol : symbols) {
-    symbol_results.push_back(
-        {{"name", symbol.name},
-         {"kind", static_cast<int>(
-                      symbol.type)},  // Convert SymbolType to LSP SymbolKind
-         {"location",
-          {{"uri", symbol.uri},
-           {"range",
-            {{"start",
-              {{"line", symbol.line}, {"character", symbol.character}}},
-             {"end",
-              {{"line", symbol.line},
-               {"character",
-                symbol.character +
-                    static_cast<int>(symbol.name.length())}}}}}}}});
-  }
-
-  co_return symbol_results;
-}
-
 //------------------------------------------------------------------------------
 // SystemVerilog-specific Methods for Indexing and Symbols
 //------------------------------------------------------------------------------
@@ -452,35 +271,6 @@ asio::awaitable<void> SlangdLspServer::IndexFile(
   if (parse_result) {  // Only extract symbols if parsing succeeded
     co_await ExtractSymbols(uri);
   }
-}
-
-asio::awaitable<std::optional<Symbol>> SlangdLspServer::FindSymbol(
-    const std::string& name) {
-  // Switch to the strand for synchronized access to global_symbols_
-  co_await asio::post(strand_, asio::use_awaitable);
-
-  auto it = global_symbols_.find(name);
-  if (it != global_symbols_.end()) {
-    co_return it->second;
-  }
-  co_return std::nullopt;
-}
-
-asio::awaitable<std::vector<Symbol>> SlangdLspServer::FindSymbols(
-    const std::string& query) {
-  // Switch to the strand for synchronized access to global_symbols_
-  co_await asio::post(strand_, asio::use_awaitable);
-
-  std::vector<Symbol> results;
-
-  // Simple substring search (in real implementation would use fuzzy matching)
-  for (const auto& [name, symbol] : global_symbols_) {
-    if (name.find(query) != std::string::npos) {
-      results.push_back(symbol);
-    }
-  }
-
-  co_return results;
 }
 
 //------------------------------------------------------------------------------

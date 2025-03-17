@@ -47,12 +47,6 @@ class TestSlangdLspServer {
   static asio::awaitable<void> TestIndexFile(
       SlangdLspServer& server, const std::string& uri,
       const std::string& content);
-
-  static asio::awaitable<std::vector<Symbol>> TestFindSymbols(
-      SlangdLspServer& server, const std::string& query);
-
-  static asio::awaitable<nlohmann::json> TestHandleWorkspaceSymbol(
-      SlangdLspServer& server, const std::optional<nlohmann::json>& params);
 };
 
 // Implementation of the test methods
@@ -62,17 +56,7 @@ asio::awaitable<void> TestSlangdLspServer::TestIndexFile(
   return server.IndexFile(uri, content);
 }
 
-asio::awaitable<std::vector<Symbol>> TestSlangdLspServer::TestFindSymbols(
-    SlangdLspServer& server, const std::string& query) {
-  return server.FindSymbols(query);
-}
-
-asio::awaitable<nlohmann::json> TestSlangdLspServer::TestHandleWorkspaceSymbol(
-    SlangdLspServer& server, const std::optional<nlohmann::json>& params) {
-  return server.HandleWorkspaceSymbol(params);
-}
-
-TEST_CASE("SlangdLspServer symbol extraction", "[lsp][slangd]") {
+TEST_CASE("SlangdLspServer basic indexing", "[lsp][slangd]") {
   // Set up a server with io_context for asynchronous operation
   asio::io_context io_context;
   SlangdLspServer server(io_context);
@@ -89,24 +73,7 @@ TEST_CASE("SlangdLspServer symbol extraction", "[lsp][slangd]") {
             server, uri, kTestFileContent);
 
         // Print a debug statement to verify indexing
-        std::cout << "Test file indexed, searching for symbols..." << std::endl;
-
-        // Search for symbols
-        auto symbols =
-            co_await TestSlangdLspServer::TestFindSymbols(server, "test");
-        REQUIRE(!symbols.empty());
-        REQUIRE(symbols.size() == 1);
-        REQUIRE(symbols[0].name == "test_module");
-        REQUIRE(symbols[0].type == SymbolType::Module);
-
-        // Test workspace/symbol request handling
-        nlohmann::json params = {{"query", "test"}};
-        auto result = co_await TestSlangdLspServer::TestHandleWorkspaceSymbol(
-            server, params);
-
-        REQUIRE(!result.empty());
-        REQUIRE(result.size() == 1);
-        REQUIRE(result[0]["name"] == "test_module");
+        std::cout << "Test file indexed successfully" << std::endl;
 
         test_complete = true;
       },
