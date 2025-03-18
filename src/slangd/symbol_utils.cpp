@@ -1,11 +1,12 @@
 #include "include/slangd/symbol_utils.hpp"
 
-#include <iostream>
+#include <unordered_set>
 
 #include "slang/ast/Scope.h"
 #include "slang/ast/Symbol.h"
 #include "slang/ast/symbols/CompilationUnitSymbols.h"
 #include "slang/ast/symbols/InstanceSymbols.h"
+#include "slang/ast/symbols/ParameterSymbols.h"
 #include "slang/ast/types/Type.h"
 #include "slang/text/SourceManager.h"
 
@@ -15,12 +16,6 @@ namespace slangd {
 lsp::SymbolKind MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol) {
   using SK = slang::ast::SymbolKind;
   using LK = lsp::SymbolKind;
-
-  std::cout << "Mapping symbol '" << symbol.name << "' to LSP kind"
-            << std::endl;
-
-  std::cout << "Symbol kind: " << slang::ast::toString(symbol.kind)
-            << std::endl;
 
   if (symbol.kind == SK::Instance) {
     try {
@@ -151,28 +146,42 @@ bool ShouldIncludeSymbol(
     uri_filename = uri.substr(uri_last_slash + 1);
   }
 
-  std::cout << "Symbol '" << symbol.name << "' source path: '"
-            << source_file_path << "', URI filename: '" << uri_filename << "'"
-            << std::endl;
-
   // Just match based on filenames for now
   bool is_from_current_doc = (source_file_path == uri_filename);
 
-  if (!is_from_current_doc) {
-    std::cout << "Skipping symbol '" << symbol.name
-              << "' from different file: " << source_file_path << std::endl;
-  }
-
   return is_from_current_doc;
+}
+
+void ProcessScopeMembers(
+    const slang::ast::Scope& scope, lsp::DocumentSymbol& parent_symbol,
+    const std::shared_ptr<slang::SourceManager>& source_manager,
+    const std::string& uri) {
+  // Each scope gets its own set of seen names
+  std::unordered_set<std::string> scope_seen_names;
+
+  for (const auto& member : scope.members()) {
+    std::vector<lsp::DocumentSymbol> child_symbols;
+    BuildDocumentSymbolHierarchy(
+        member, child_symbols, source_manager, uri, scope_seen_names);
+    for (auto& child : child_symbols) {
+      parent_symbol.children.push_back(std::move(child));
+    }
+  }
 }
 
 void BuildDocumentSymbolHierarchy(
     const slang::ast::Symbol& symbol,
     std::vector<lsp::DocumentSymbol>& document_symbols,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    const std::string& uri) {
+    const std::string& uri, std::unordered_set<std::string>& seen_names) {
   // Only include symbols from the current document
   if (!ShouldIncludeSymbol(symbol, source_manager, uri)) return;
+
+  // Skip if we've seen this name already in current scope
+  if (!symbol.name.empty() &&
+      seen_names.find(std::string(symbol.name)) != seen_names.end()) {
+    return;
+  }
 
   // Create a document symbol for this symbol
   lsp::DocumentSymbol doc_symbol;
@@ -195,28 +204,24 @@ void BuildDocumentSymbolHierarchy(
         GetSymbolNameLocationRange(symbol, source_manager);
   }
 
-  //   print the current symbol name, print if this is a scope
-  std::cout << "Processing symbol: " << symbol.name
-            << " (scope: " << (symbol.isScope() ? "true" : "false") << ")"
-            << std::endl;
+  // Add this symbol name to seen names in current scope to prevent duplicates
+  if (!doc_symbol.name.empty()) {
+    seen_names.insert(doc_symbol.name);
+  }
 
-  // Process children for scope symbols (but not instances)
-  if (symbol.isScope() && symbol.kind != slang::ast::SymbolKind::Instance) {
+  // Process children - handle different kinds of scopes
+  if (symbol.isScope()) {
+    // Direct scope
     const auto& scope = symbol.as<slang::ast::Scope>();
+    ProcessScopeMembers(scope, doc_symbol, source_manager, uri);
+  } else if (symbol.kind == slang::ast::SymbolKind::Instance) {
+    // Instance symbol - need to use its body
+    const auto& instance = symbol.as<slang::ast::InstanceSymbol>();
+    const auto& body = instance.body;
 
-    // Process regular members
-    for (const auto& member : scope.members()) {
-      // Recursively process child symbols
-      std::vector<lsp::DocumentSymbol> child_symbols;
-      BuildDocumentSymbolHierarchy(member, child_symbols, source_manager, uri);
-
-      // Add non-empty child symbols to this symbol's children
-      if (!child_symbols.empty()) {
-        // Add children to the children vector
-        for (auto& child : child_symbols) {
-          doc_symbol.children.push_back(std::move(child));
-        }
-      }
+    if (body.isScope()) {
+      const auto& scope = body.as<slang::ast::Scope>();
+      ProcessScopeMembers(scope, doc_symbol, source_manager, uri);
     }
   }
 
@@ -231,22 +236,22 @@ std::vector<lsp::DocumentSymbol> GetDocumentSymbols(
     const std::shared_ptr<slang::SourceManager>& source_manager,
     const std::string& uri) {
   std::vector<lsp::DocumentSymbol> result;
+  std::unordered_set<std::string> seen_names;
 
   // Get top-level definitions (modules, interfaces, etc.)
   for (const auto& def : compilation.getDefinitions()) {
     auto& definition_symbol = def->as<slang::ast::DefinitionSymbol>();
     auto& inst_symbol = slang::ast::InstanceSymbol::createDefault(
         compilation, definition_symbol);
-    BuildDocumentSymbolHierarchy(inst_symbol, result, source_manager, uri);
+    BuildDocumentSymbolHierarchy(
+        inst_symbol, result, source_manager, uri, seen_names);
   }
 
   // Get packages
   for (const auto& package : compilation.getPackages()) {
-    BuildDocumentSymbolHierarchy(*package, result, source_manager, uri);
+    BuildDocumentSymbolHierarchy(
+        *package, result, source_manager, uri, seen_names);
   }
-
-  // NOTE: We don't have direct access to the compilation's root symbol
-  // Use only definitions and packages for now, which should cover most cases
 
   return result;
 }

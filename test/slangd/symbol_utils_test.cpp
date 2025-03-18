@@ -60,8 +60,6 @@ TEST_CASE("GetDocumentSymbols extracts basic interface", "[symbol_utils]") {
   REQUIRE(symbols[0].kind == lsp::SymbolKind::Interface);
 }
 
-/* Commenting out for incremental implementation
-
 TEST_CASE("GetDocumentSymbols extracts module parameters", "[symbol_utils]") {
   // Module with parameters
   std::string module_params_code = R"(
@@ -71,32 +69,20 @@ TEST_CASE("GetDocumentSymbols extracts module parameters", "[symbol_utils]") {
   )";
 
   auto symbols = ExtractSymbolsFromString(module_params_code);
-
   REQUIRE(symbols.size() == 1);
   REQUIRE(symbols[0].name == "mod_with_params");
   REQUIRE(symbols[0].kind == lsp::SymbolKind::Module);
-
-  std::cout << "Symbols: " << symbols[0].children.size() << std::endl;
-
-  // Check for parameter as child
-  REQUIRE(!symbols[0].children.empty());
-  bool has_param = false;
-
-  for (const auto& child : symbols[0].children) {
-    if (child.name == "WIDTH" && child.kind == lsp::SymbolKind::Constant) {
-      has_param = true;
-      break;
-    }
-  }
-
-  REQUIRE(has_param);
+  REQUIRE(symbols[0].children.size() == 1);
+  REQUIRE(symbols[0].children[0].name == "WIDTH");
+  REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::Constant);
 }
-
 
 TEST_CASE("GetDocumentSymbols extracts module ports", "[symbol_utils]") {
   // Module with ports
   std::string module_ports_code = R"(
-    module mod_with_ports(
+    module mod_with_ports #(
+      parameter WIDTH = 8
+    )(
       input clk,
       output data
     );
@@ -104,22 +90,20 @@ TEST_CASE("GetDocumentSymbols extracts module ports", "[symbol_utils]") {
   )";
 
   auto symbols = ExtractSymbolsFromString(module_ports_code);
-
   REQUIRE(symbols.size() == 1);
   REQUIRE(symbols[0].name == "mod_with_ports");
+  REQUIRE(symbols[0].kind == lsp::SymbolKind::Module);
+  REQUIRE(symbols[0].children.size() == 3);
 
-  // Check for ports as children
-  bool has_clk = false;
-  bool has_data = false;
-
-  for (const auto& child : symbols[0].children) {
-    if (child.name == "clk") has_clk = true;
-    if (child.name == "data") has_data = true;
-  }
-
-  REQUIRE(has_clk);
-  REQUIRE(has_data);
+  REQUIRE(symbols[0].children[0].name == "WIDTH");
+  REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::Constant);
+  REQUIRE(symbols[0].children[1].name == "clk");
+  REQUIRE(symbols[0].children[1].kind == lsp::SymbolKind::Variable);
+  REQUIRE(symbols[0].children[2].name == "data");
+  REQUIRE(symbols[0].children[2].kind == lsp::SymbolKind::Variable);
 }
+
+/* Commenting out for incremental implementation
 
 TEST_CASE("GetDocumentSymbols extracts enum type", "[symbol_utils]") {
   // Package with enum

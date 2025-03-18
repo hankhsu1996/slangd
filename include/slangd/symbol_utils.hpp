@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "lsp/document_symbol.hpp"
@@ -58,18 +59,33 @@ bool ShouldIncludeSymbol(
     const std::string& uri);
 
 /**
+ * Processes the members of a scope and adds them as children to the parent
+ * symbol.
+ *
+ * @param scope The scope to process
+ * @param parent_symbol The parent symbol to add children to
+ * @param source_manager The source manager to use for location information
+ * @param uri The URI of the current document
+ */
+void ProcessScopeMembers(
+    const slang::ast::Scope& scope, lsp::DocumentSymbol& parent_symbol,
+    const std::shared_ptr<slang::SourceManager>& source_manager,
+    const std::string& uri);
+
+/**
  * Recursively builds a document symbol hierarchy for a given symbol.
  *
  * @param symbol The root symbol to start building from
  * @param document_symbols Output vector to append document symbols to
  * @param source_manager The source manager to use for location information
  * @param uri The URI of the current document
+ * @param seen_names Set of symbol names already processed in the current scope
  */
 void BuildDocumentSymbolHierarchy(
     const slang::ast::Symbol& symbol,
     std::vector<lsp::DocumentSymbol>& document_symbols,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    const std::string& uri);
+    const std::string& uri, std::unordered_set<std::string>& seen_names);
 
 /**
  * Gets all document symbols for a given compilation and URI.
