@@ -6,11 +6,28 @@
 #include "slang/ast/Symbol.h"
 #include "slang/ast/symbols/CompilationUnitSymbols.h"
 #include "slang/ast/symbols/InstanceSymbols.h"
+#include "slang/ast/symbols/MemberSymbols.h"
 #include "slang/ast/symbols/ParameterSymbols.h"
+#include "slang/ast/types/AllTypes.h"
 #include "slang/ast/types/Type.h"
 #include "slang/text/SourceManager.h"
+#include "spdlog/spdlog.h"
 
 namespace slangd {
+
+// Helper function to unwrap TransparentMember symbols
+const slang::ast::Symbol& GetUnwrappedSymbol(const slang::ast::Symbol& symbol) {
+  using SK = slang::ast::SymbolKind;
+
+  // If not a TransparentMember, return directly
+  if (symbol.kind != SK::TransparentMember) {
+    return symbol;
+  }
+
+  // Recursively unwrap
+  return GetUnwrappedSymbol(
+      symbol.as<slang::ast::TransparentMemberSymbol>().wrapped);
+}
 
 // Maps a Slang symbol to an LSP symbol kind
 lsp::SymbolKind MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol) {
@@ -18,16 +35,27 @@ lsp::SymbolKind MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol) {
   using LK = lsp::SymbolKind;
 
   if (symbol.kind == SK::Instance) {
-    try {
-      auto& instance = symbol.as<slang::ast::InstanceSymbol>();
-      if (instance.isModule()) {
-        return LK::Module;
-      } else if (instance.isInterface()) {
-        return LK::Interface;
-      }
-    } catch (...) {
-      // If casting failed, default to Object
+    auto& instance = symbol.as<slang::ast::InstanceSymbol>();
+    if (instance.isModule()) {
+      return LK::Module;
+    } else if (instance.isInterface()) {
+      return LK::Interface;
+    } else {
       return LK::Object;
+    }
+  }
+
+  // if is type alias, need to get the canonical type and use that to determine
+  // the symbol kind
+  if (symbol.kind == SK::TypeAlias) {
+    auto& type_alias = symbol.as<slang::ast::TypeAliasType>();
+    auto& canonical_type = type_alias.getCanonicalType();
+
+    switch (canonical_type.kind) {
+      case SK::EnumType:
+        return LK::Enum;
+      default:
+        return LK::TypeParameter;
     }
   }
 
@@ -160,9 +188,12 @@ void ProcessScopeMembers(
   std::unordered_set<std::string> scope_seen_names;
 
   for (const auto& member : scope.members()) {
+    // Unwrap at the boundary before passing to BuildDocumentSymbolHierarchy
+    const auto& unwrapped_member = GetUnwrappedSymbol(member);
+
     std::vector<lsp::DocumentSymbol> child_symbols;
     BuildDocumentSymbolHierarchy(
-        member, child_symbols, source_manager, uri, scope_seen_names);
+        unwrapped_member, child_symbols, source_manager, uri, scope_seen_names);
     for (auto& child : child_symbols) {
       parent_symbol.children.push_back(std::move(child));
     }
@@ -174,6 +205,16 @@ void BuildDocumentSymbolHierarchy(
     std::vector<lsp::DocumentSymbol>& document_symbols,
     const std::shared_ptr<slang::SourceManager>& source_manager,
     const std::string& uri, std::unordered_set<std::string>& seen_names) {
+  // Now symbol is expected to be already unwrapped at the entry point
+
+  // spdlog the symbol name, kind, location (file:line:col)
+  spdlog::debug(
+      "Symbol: name={} kind={} location={}:{}:{} is_scope={}", symbol.name,
+      slang::ast::toString(symbol.kind),
+      source_manager->getFileName(symbol.location),
+      source_manager->getLineNumber(symbol.location),
+      source_manager->getColumnNumber(symbol.location), symbol.isScope());
+
   // Only include symbols from the current document
   if (!ShouldIncludeSymbol(symbol, source_manager, uri)) return;
 
@@ -243,14 +284,18 @@ std::vector<lsp::DocumentSymbol> GetDocumentSymbols(
     auto& definition_symbol = def->as<slang::ast::DefinitionSymbol>();
     auto& inst_symbol = slang::ast::InstanceSymbol::createDefault(
         compilation, definition_symbol);
+
+    // Unwrap at the boundary before passing to BuildDocumentSymbolHierarchy
     BuildDocumentSymbolHierarchy(
-        inst_symbol, result, source_manager, uri, seen_names);
+        GetUnwrappedSymbol(inst_symbol), result, source_manager, uri,
+        seen_names);
   }
 
   // Get packages
   for (const auto& package : compilation.getPackages()) {
+    // Unwrap at the boundary before passing to BuildDocumentSymbolHierarchy
     BuildDocumentSymbolHierarchy(
-        *package, result, source_manager, uri, seen_names);
+        GetUnwrappedSymbol(*package), result, source_manager, uri, seen_names);
   }
 
   return result;

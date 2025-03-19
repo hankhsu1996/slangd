@@ -15,43 +15,37 @@
 namespace slangd {
 
 /**
- * Maps a Slang symbol to an LSP symbol kind.
+ * Helper function to unwrap TransparentMember symbols
  *
- * @param symbol The Slang symbol to map
+ * @param symbol The symbol to unwrap
+ * @return The unwrapped symbol
+ */
+const slang::ast::Symbol& GetUnwrappedSymbol(const slang::ast::Symbol& symbol);
+
+/**
+ * Maps a Slang symbol to an LSP symbol kind
+ *
+ * @param symbol The symbol to map (must be already unwrapped)
  * @return The corresponding LSP symbol kind
  */
 lsp::SymbolKind MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol);
 
 /**
- * Converts a Slang source location to an LSP range.
- *
- * @param location The Slang source location
- * @param source_manager The source manager to use for location information
- * @return The corresponding LSP range
+ * Converts a Slang source location to an LSP range
  */
 lsp::Range ConvertSlangLocationToLspRange(
     const slang::SourceLocation& location,
     const std::shared_ptr<slang::SourceManager>& source_manager);
 
 /**
- * Gets the selection range for a symbol (typically just the name).
- *
- * @param symbol The symbol to get the selection range for
- * @param source_manager The source manager to use for location information
- * @return The LSP range corresponding to the symbol name
+ * Gets a range that covers just the symbol's name
  */
 lsp::Range GetSymbolNameLocationRange(
     const slang::ast::Symbol& symbol,
     const std::shared_ptr<slang::SourceManager>& source_manager);
 
 /**
- * Determines if a symbol should be included in the document symbols for a given
- * URI.
- *
- * @param symbol The symbol to check
- * @param source_manager The source manager to use for location information
- * @param uri The URI of the current document
- * @return true if the symbol should be included, false otherwise
+ * Determines if a symbol should be included in document symbols
  */
 bool ShouldIncludeSymbol(
     const slang::ast::Symbol& symbol,
@@ -59,13 +53,9 @@ bool ShouldIncludeSymbol(
     const std::string& uri);
 
 /**
- * Processes the members of a scope and adds them as children to the parent
- * symbol.
+ * Process members of a scope
  *
- * @param scope The scope to process
- * @param parent_symbol The parent symbol to add children to
- * @param source_manager The source manager to use for location information
- * @param uri The URI of the current document
+ * This function handles unwrapping of scope members before processing.
  */
 void ProcessScopeMembers(
     const slang::ast::Scope& scope, lsp::DocumentSymbol& parent_symbol,
@@ -73,13 +63,9 @@ void ProcessScopeMembers(
     const std::string& uri);
 
 /**
- * Recursively builds a document symbol hierarchy for a given symbol.
+ * Recursively builds a hierarchy of document symbols
  *
- * @param symbol The root symbol to start building from
- * @param document_symbols Output vector to append document symbols to
- * @param source_manager The source manager to use for location information
- * @param uri The URI of the current document
- * @param seen_names Set of symbol names already processed in the current scope
+ * @param symbol The symbol to process (must be already unwrapped)
  */
 void BuildDocumentSymbolHierarchy(
     const slang::ast::Symbol& symbol,
@@ -88,12 +74,10 @@ void BuildDocumentSymbolHierarchy(
     const std::string& uri, std::unordered_set<std::string>& seen_names);
 
 /**
- * Gets all document symbols for a given compilation and URI.
+ * Gets document symbols for a compilation
  *
- * @param compilation The compilation containing the symbols
- * @param source_manager The source manager to use for location information
- * @param uri The URI of the current document
- * @return A vector of document symbols representing the hierarchy
+ * This is an entry point function that handles unwrapping symbols
+ * before passing them to internal functions.
  */
 std::vector<lsp::DocumentSymbol> GetDocumentSymbols(
     slang::ast::Compilation& compilation,

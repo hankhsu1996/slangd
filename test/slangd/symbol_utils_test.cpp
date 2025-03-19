@@ -3,12 +3,19 @@
 #include <string>
 
 #include <asio.hpp>
-#include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_all.hpp>
 #include <slang/ast/Compilation.h>
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/text/SourceManager.h>
+#include <spdlog/spdlog.h>
 
 #include "include/lsp/document_symbol.hpp"
+
+int main(int argc, char* argv[]) {
+  spdlog::set_level(spdlog::level::debug);
+  spdlog::set_pattern("[%l] %v");
+  return Catch::Session().run(argc, argv);
+}
 
 // Helper function that combines compilation and symbol extraction
 std::vector<lsp::DocumentSymbol> ExtractSymbolsFromString(
@@ -32,6 +39,7 @@ TEST_CASE("GetDocumentSymbols extracts basic module", "[symbol_utils]") {
   )";
 
   auto symbols = ExtractSymbolsFromString(module_code);
+
   REQUIRE(symbols.size() == 1);
   REQUIRE(symbols[0].kind == lsp::SymbolKind::Module);
 }
@@ -44,6 +52,7 @@ TEST_CASE("GetDocumentSymbols extracts basic package", "[symbol_utils]") {
   )";
 
   auto symbols = ExtractSymbolsFromString(package_code);
+
   REQUIRE(symbols.size() == 1);
   REQUIRE(symbols[0].kind == lsp::SymbolKind::Package);
 }
@@ -56,6 +65,7 @@ TEST_CASE("GetDocumentSymbols extracts basic interface", "[symbol_utils]") {
   )";
 
   auto symbols = ExtractSymbolsFromString(interface_code);
+
   REQUIRE(symbols.size() == 1);
   REQUIRE(symbols[0].kind == lsp::SymbolKind::Interface);
 }
@@ -69,9 +79,11 @@ TEST_CASE("GetDocumentSymbols extracts module parameters", "[symbol_utils]") {
   )";
 
   auto symbols = ExtractSymbolsFromString(module_params_code);
+
   REQUIRE(symbols.size() == 1);
   REQUIRE(symbols[0].name == "mod_with_params");
   REQUIRE(symbols[0].kind == lsp::SymbolKind::Module);
+
   REQUIRE(symbols[0].children.size() == 1);
   REQUIRE(symbols[0].children[0].name == "WIDTH");
   REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::Constant);
@@ -90,11 +102,12 @@ TEST_CASE("GetDocumentSymbols extracts module ports", "[symbol_utils]") {
   )";
 
   auto symbols = ExtractSymbolsFromString(module_ports_code);
+
   REQUIRE(symbols.size() == 1);
   REQUIRE(symbols[0].name == "mod_with_ports");
   REQUIRE(symbols[0].kind == lsp::SymbolKind::Module);
-  REQUIRE(symbols[0].children.size() == 3);
 
+  REQUIRE(symbols[0].children.size() == 3);
   REQUIRE(symbols[0].children[0].name == "WIDTH");
   REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::Constant);
   REQUIRE(symbols[0].children[1].name == "clk");
@@ -103,10 +116,10 @@ TEST_CASE("GetDocumentSymbols extracts module ports", "[symbol_utils]") {
   REQUIRE(symbols[0].children[2].kind == lsp::SymbolKind::Variable);
 }
 
-/* Commenting out for incremental implementation
-
 TEST_CASE("GetDocumentSymbols extracts enum type", "[symbol_utils]") {
   // Package with enum
+  // Note that in SystemVerilog, enum members are flattened into the parent
+  // package scope.
   std::string enum_code = R"(
     package pkg_with_enum;
       typedef enum { RED, GREEN, BLUE } color_t;
@@ -117,20 +130,20 @@ TEST_CASE("GetDocumentSymbols extracts enum type", "[symbol_utils]") {
 
   REQUIRE(symbols.size() == 1);
   REQUIRE(symbols[0].name == "pkg_with_enum");
+  REQUIRE(symbols[0].kind == lsp::SymbolKind::Package);
 
-  // Check for enum type as child
-  bool has_enum = false;
-
-  for (const auto& child : symbols[0].children) {
-    if (child.name == "color_t") {
-      has_enum = true;
-      REQUIRE(child.kind == lsp::SymbolKind::TypeParameter);
-      break;
-    }
-  }
-
-  REQUIRE(has_enum);
+  REQUIRE(symbols[0].children.size() == 4);
+  REQUIRE(symbols[0].children[0].name == "RED");
+  REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::Constant);
+  REQUIRE(symbols[0].children[1].name == "GREEN");
+  REQUIRE(symbols[0].children[1].kind == lsp::SymbolKind::Constant);
+  REQUIRE(symbols[0].children[2].name == "BLUE");
+  REQUIRE(symbols[0].children[2].kind == lsp::SymbolKind::Constant);
+  REQUIRE(symbols[0].children[3].name == "color_t");
+  REQUIRE(symbols[0].children[3].kind == lsp::SymbolKind::Enum);
 }
+
+/* Commenting out for incremental implementation
 
 TEST_CASE("GetDocumentSymbols extracts struct type", "[symbol_utils]") {
   // Package with struct
