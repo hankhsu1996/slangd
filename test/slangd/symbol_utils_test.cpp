@@ -70,23 +70,28 @@ TEST_CASE("GetDocumentSymbols extracts basic interface", "[symbol_utils]") {
   REQUIRE(symbols[0].kind == lsp::SymbolKind::Interface);
 }
 
-TEST_CASE("GetDocumentSymbols extracts module parameters", "[symbol_utils]") {
-  // Module with parameters
+TEST_CASE(
+    "GetDocumentSymbols extracts module with parameters and variables",
+    "[symbol_utils]") {
+  // Module with parameters and variables
   std::string module_params_code = R"(
-    module mod_with_params;
-      parameter WIDTH = 8;
+    module mod_with_param_and_var (
+      parameter int WIDTH = 8;
+      logic [WIDTH-1:0] data;
     endmodule
   )";
 
   auto symbols = ExtractSymbolsFromString(module_params_code);
 
   REQUIRE(symbols.size() == 1);
-  REQUIRE(symbols[0].name == "mod_with_params");
+  REQUIRE(symbols[0].name == "mod_with_param_and_var");
   REQUIRE(symbols[0].kind == lsp::SymbolKind::Module);
 
-  REQUIRE(symbols[0].children.size() == 1);
+  REQUIRE(symbols[0].children.size() == 2);
   REQUIRE(symbols[0].children[0].name == "WIDTH");
   REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::Constant);
+  REQUIRE(symbols[0].children[1].name == "data");
+  REQUIRE(symbols[0].children[1].kind == lsp::SymbolKind::Variable);
 }
 
 TEST_CASE("GetDocumentSymbols extracts module ports", "[symbol_utils]") {
