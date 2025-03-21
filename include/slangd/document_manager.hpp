@@ -2,13 +2,15 @@
 
 #include <expected>
 #include <memory>
-#include <slang/ast/Compilation.h>
-#include <slang/ast/Symbol.h>
-#include <slang/syntax/SyntaxTree.h>
 #include <string>
 #include <unordered_map>
 
 #include <asio.hpp>
+#include <slang/ast/Compilation.h>
+#include <slang/ast/Symbol.h>
+#include <slang/syntax/SyntaxTree.h>
+
+#include "lsp/document_symbol.hpp"
 
 namespace slangd {
 
@@ -78,6 +80,16 @@ class DocumentManager {
    */
   asio::awaitable<std::vector<std::shared_ptr<const slang::ast::Symbol>>>
   GetSymbols(const std::string& uri);
+
+  /**
+   * @brief Get hierarchical document symbols defined in a document
+   *
+   * @param uri The document URI
+   * @return asio::awaitable<std::vector<lsp::DocumentSymbol>> Hierarchical
+   * document symbols or empty vector if not found
+   */
+  asio::awaitable<std::vector<lsp::DocumentSymbol>> GetDocumentSymbols(
+      const std::string& uri);
 
  private:
   // ASIO io_context reference

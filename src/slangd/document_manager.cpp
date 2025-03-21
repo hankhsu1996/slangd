@@ -2,6 +2,8 @@
 
 #include <iostream>
 #include <memory>
+#include <string>
+
 #include <slang/ast/Compilation.h>
 #include <slang/ast/Symbol.h>
 #include <slang/ast/symbols/BlockSymbols.h>
@@ -11,7 +13,8 @@
 #include <slang/ast/symbols/VariableSymbols.h>
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/text/SourceManager.h>
-#include <string>
+
+#include "slangd/symbol_utils.hpp"
 
 namespace slangd {
 
@@ -133,6 +136,35 @@ DocumentManager::GetSymbols(const std::string& uri) {
             << std::endl;
 
   co_return symbols;
+}
+
+asio::awaitable<std::vector<lsp::DocumentSymbol>>
+DocumentManager::GetDocumentSymbols(const std::string& uri) {
+  // Ensure thread safety
+  co_await asio::post(strand_, asio::use_awaitable);
+
+  std::vector<lsp::DocumentSymbol> document_symbols;
+
+  // Get the compilation for this document
+  auto comp_it = compilations_.find(uri);
+  auto sm_it = source_managers_.find(uri);
+
+  // If either compilation or source manager is missing, return empty vector
+  if (comp_it == compilations_.end() || sm_it == source_managers_.end()) {
+    co_return document_symbols;
+  }
+
+  auto& compilation = comp_it->second;
+  auto& source_manager = sm_it->second;
+
+  // Use the symbol utility to extract document symbols
+  document_symbols =
+      slangd::GetDocumentSymbols(*compilation, source_manager, uri);
+
+  std::cout << "Found " << document_symbols.size()
+            << " document symbols in: " << uri << std::endl;
+
+  co_return document_symbols;
 }
 
 }  // namespace slangd

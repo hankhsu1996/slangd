@@ -1,16 +1,11 @@
 #include "slangd/slangd_lsp_server.hpp"
 
-#include <chrono>
 #include <iostream>
+
 #include <slang/syntax/AllSyntax.h>
 #include <slang/syntax/SyntaxVisitor.h>
-#include <thread>
 
 namespace slangd {
-
-//------------------------------------------------------------------------------
-// Constructor and Destructor
-//------------------------------------------------------------------------------
 
 SlangdLspServer::SlangdLspServer(asio::io_context& io_context)
     : lsp::Server(io_context), strand_(asio::make_strand(io_context)) {
@@ -31,10 +26,6 @@ void SlangdLspServer::Shutdown() {
     std::cout << "Ready to exit with code: " << exit_code_ << std::endl;
   }
 }
-
-//------------------------------------------------------------------------------
-// Handler Registration
-//------------------------------------------------------------------------------
 
 void SlangdLspServer::RegisterHandlers() {
   // Register standard LSP methods with proper handler implementation
@@ -94,22 +85,22 @@ void SlangdLspServer::RegisterHandlers() {
           -> asio::awaitable<void> {
         return HandleTextDocumentDidClose(params);
       });
-}
 
-//------------------------------------------------------------------------------
-// LSP Lifecycle Protocol Handlers
-//------------------------------------------------------------------------------
+  // Register document symbol handler
+  endpoint_->RegisterMethodCall(
+      "textDocument/documentSymbol",
+      [this](const std::optional<nlohmann::json>& params)
+          -> asio::awaitable<nlohmann::json> {
+        return HandleTextDocumentDocumentSymbol(params);
+      });
+}
 
 asio::awaitable<nlohmann::json> SlangdLspServer::HandleInitialize(
     const std::optional<nlohmann::json>& params) {
-  // Start workspace indexing in a separate thread
-  asio::co_spawn(
-      strand_, [this]() -> asio::awaitable<void> { co_await IndexWorkspace(); },
-      asio::detached);
-
   // Return initialize result with updated capabilities
   nlohmann::json capabilities = {
-      {"textDocumentSync", 1},  // 1 = Full sync
+      {"textDocumentSync", 1},          // 1 = Full sync
+      {"documentSymbolProvider", true}  // Support document symbols
   };
 
   nlohmann::json result = {
@@ -164,10 +155,6 @@ asio::awaitable<void> SlangdLspServer::HandleExit(
   co_return;
 }
 
-//------------------------------------------------------------------------------
-// LSP Text Document Protocol Handlers
-//------------------------------------------------------------------------------
-
 asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidOpen(
     const std::optional<nlohmann::json>& params) {
   if (!params) {
@@ -188,11 +175,8 @@ asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidOpen(
   asio::co_spawn(
       strand_,
       [this, uri, text]() -> asio::awaitable<void> {
-        // Parse the file and extract symbols
-        auto parse_result = co_await ParseFile(uri, text);
-        if (parse_result) {  // Only extract symbols if parsing succeeded
-          co_await ExtractSymbols(uri);
-        }
+        // Parse the file - ExtractSymbols no longer needed
+        co_await ParseFile(uri, text);
       },
       asio::detached);
 
@@ -220,14 +204,11 @@ asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidChange(
       file.content = text;
       file.version++;
 
-      // Re-parse the file and extract symbols
+      // Re-parse the file - ExtractSymbols no longer needed
       asio::co_spawn(
           strand_,
           [this, uri, text]() -> asio::awaitable<void> {
-            auto parse_result = co_await ParseFile(uri, text);
-            if (parse_result) {
-              co_await ExtractSymbols(uri);
-            }
+            co_await ParseFile(uri, text);
           },
           asio::detached);
     }
@@ -251,31 +232,33 @@ asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidClose(
   co_return;
 }
 
-//------------------------------------------------------------------------------
-// SystemVerilog-specific Methods for Indexing and Symbols
-//------------------------------------------------------------------------------
+asio::awaitable<nlohmann::json>
+SlangdLspServer::HandleTextDocumentDocumentSymbol(
+    const std::optional<nlohmann::json>& params) {
+  // Default empty result
+  nlohmann::json result = nlohmann::json::array();
 
-asio::awaitable<void> SlangdLspServer::IndexWorkspace() {
-  // Simulating indexing work
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
-  // In real implementation, would recursively find and parse all .sv files
-  indexing_complete_ = true;
-  co_return;
-}
-
-asio::awaitable<void> SlangdLspServer::IndexFile(
-    const std::string& uri, const std::string& content) {
-  // Use the document manager to handle the file
-  auto parse_result = co_await ParseFile(uri, content);
-  if (parse_result) {  // Only extract symbols if parsing succeeded
-    co_await ExtractSymbols(uri);
+  if (!params) {
+    co_return result;
   }
-}
 
-//------------------------------------------------------------------------------
-// SystemVerilog Parser Interface Using DocumentManager
-//------------------------------------------------------------------------------
+  // Extract the URI from the parameters
+  const auto& param_val = params.value();
+  const auto& uri = param_val["textDocument"]["uri"].get<std::string>();
+
+  std::cout << "Document symbol request for: " << uri << std::endl;
+
+  // Get document symbols from document manager
+  auto document_symbols = co_await document_manager_->GetDocumentSymbols(uri);
+
+  // Convert to JSON (the document_symbol.hpp should provide conversion
+  // functions)
+  for (const auto& symbol : document_symbols) {
+    result.push_back(symbol);
+  }
+
+  co_return result;
+}
 
 asio::awaitable<std::expected<void, ParseError>> SlangdLspServer::ParseFile(
     const std::string& uri, const std::string& content) {
@@ -324,85 +307,6 @@ asio::awaitable<std::expected<void, ParseError>> SlangdLspServer::ParseFile(
 
   // Return the original result with error information preserved
   co_return parse_result;
-}
-
-asio::awaitable<void> SlangdLspServer::ExtractSymbols(const std::string& uri) {
-  // Get the syntax tree from the document manager
-  auto syntax_tree = co_await document_manager_->GetSyntaxTree(uri);
-  if (!syntax_tree) {
-    co_return;
-  }
-
-  // Switch to the strand for synchronized access to global_symbols_
-  co_await asio::post(strand_, asio::use_awaitable);
-
-  // Since we're not fully implementing the DocumentManager's GetSymbols yet,
-  // create some example symbols from our test file
-  if (uri.find("simple_module.sv") != std::string::npos) {
-    // Add module symbols from our test file
-    Symbol counter;
-    counter.name = "simple_counter";
-    counter.type = SymbolType::Module;
-    counter.uri = uri;
-    counter.line = 4;
-    counter.character = 0;
-    counter.documentation = "8-bit counter module with synchronous reset";
-    global_symbols_[counter.name] = counter;
-
-    Symbol iface;
-    iface.name = "counter_if";
-    iface.type = SymbolType::Interface;
-    iface.uri = uri;
-    iface.line = 21;
-    iface.character = 0;
-    iface.documentation = "Interface for counter signals";
-    global_symbols_[iface.name] = iface;
-
-    Symbol top;
-    top.name = "counter_top";
-    top.type = SymbolType::Module;
-    top.uri = uri;
-    top.line = 28;
-    top.character = 0;
-    top.documentation = "Top module using the counter";
-    global_symbols_[top.name] = top;
-  } else {
-    // For any other file, add a generic module symbol based on the URI
-    // Extract module name from URI for test files
-    std::string module_name;
-
-    if (uri.find("test_module") != std::string::npos) {
-      module_name = "test_module";
-    } else if (uri.find("test.sv") != std::string::npos) {
-      module_name = "test_module";  // Default for our test files
-    } else {
-      module_name = "example_module";
-    }
-
-    Symbol module;
-    module.name = module_name;
-    module.type = SymbolType::Module;
-    module.uri = uri;
-    module.line = 1;
-    module.character = 0;
-    module.documentation = "Example SystemVerilog module";
-    global_symbols_[module_name] = module;
-
-    // Add a dummy interface symbol
-    std::string iface_name = "example_interface";
-    Symbol iface;
-    iface.name = iface_name;
-    iface.type = SymbolType::Interface;
-    iface.uri = uri;
-    iface.line = 10;
-    iface.character = 0;
-    iface.documentation = "Example SystemVerilog interface";
-    global_symbols_[iface_name] = iface;
-  }
-
-  std::cout << "Added SystemVerilog symbols from " << uri << " to symbol table"
-            << std::endl;
-  co_return;
 }
 
 }  // namespace slangd

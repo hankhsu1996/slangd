@@ -3,7 +3,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <unordered_map>
 
 #include <asio/awaitable.hpp>
 #include <asio/io_context.hpp>
@@ -16,32 +15,6 @@ namespace slangd {
 
 // Forward declaration
 class TestSlangdLspServer;
-
-/**
- * SystemVerilog symbol types mapped to LSP SymbolKind values
- */
-enum class SymbolType {
-  Module = 3,
-  Interface = 11,
-  Parameter = 13,
-  Variable = 13,
-  Task = 12,
-  Function = 12,
-  ModuleInstance = 6,
-  Unknown = 0
-};
-
-/**
- * Represents a SystemVerilog symbol with its location
- */
-struct Symbol {
-  std::string name;
-  SymbolType type = SymbolType::Unknown;
-  std::string uri;
-  int line = 0;
-  int character = 0;
-  std::string documentation;
-};
 
 /**
  * SystemVerilog Language Server implementing the LSP protocol
@@ -91,35 +64,25 @@ class SlangdLspServer : public lsp::Server {
   asio::awaitable<void> HandleTextDocumentDidClose(
       const std::optional<nlohmann::json>& params);
 
-  /** Index the workspace for SystemVerilog files and symbols. */
-  asio::awaitable<void> IndexWorkspace();
-
-  /** Index a single file for symbols. */
-  asio::awaitable<void> IndexFile(
-      const std::string& uri, const std::string& content);
+  /** Handle "textDocument/documentSymbol" request. */
+  asio::awaitable<nlohmann::json> HandleTextDocumentDocumentSymbol(
+      const std::optional<nlohmann::json>& params);
 
   /** Parse a SystemVerilog file and report errors. */
   asio::awaitable<std::expected<void, ParseError>> ParseFile(
       const std::string& uri, const std::string& content);
-
-  /** Extract symbols from a parsed file. */
-  asio::awaitable<void> ExtractSymbols(const std::string& uri);
 
   // Server state
   bool initialized_ = false;
   bool shutdown_requested_ = false;
   bool should_exit_ = false;
   int exit_code_ = 0;
-  bool indexing_complete_ = false;
 
   // Thread safety
   asio::strand<asio::io_context::executor_type> strand_;
 
   // Document management
   std::unique_ptr<DocumentManager> document_manager_;
-
-  // Symbol storage
-  std::unordered_map<std::string, Symbol> global_symbols_;
 };
 
 }  // namespace slangd
