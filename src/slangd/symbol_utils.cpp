@@ -54,6 +54,11 @@ lsp::SymbolKind MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol) {
     switch (canonical_type.kind) {
       case SK::EnumType:
         return LK::Enum;
+      case SK::PackedStructType:
+      case SK::UnpackedStructType:
+      case SK::PackedUnionType:
+      case SK::UnpackedUnionType:
+        return LK::Struct;
       default:
         return LK::TypeParameter;
     }
@@ -263,6 +268,26 @@ void BuildDocumentSymbolHierarchy(
     if (body.isScope()) {
       const auto& scope = body.as<slang::ast::Scope>();
       ProcessScopeMembers(scope, doc_symbol, source_manager, uri);
+    }
+  } else if (symbol.kind == slang::ast::SymbolKind::TypeAlias) {
+    // Handle TypeAlias - check if it's a struct type
+    auto& typeAlias = symbol.as<slang::ast::TypeAliasType>();
+    auto& canonicalType = typeAlias.getCanonicalType();
+
+    if (canonicalType.kind == slang::ast::SymbolKind::PackedStructType) {
+      auto& structType = canonicalType.as<slang::ast::PackedStructType>();
+      ProcessScopeMembers(structType, doc_symbol, source_manager, uri);
+    } else if (
+        canonicalType.kind == slang::ast::SymbolKind::UnpackedStructType) {
+      auto& structType = canonicalType.as<slang::ast::UnpackedStructType>();
+      ProcessScopeMembers(structType, doc_symbol, source_manager, uri);
+    } else if (canonicalType.kind == slang::ast::SymbolKind::PackedUnionType) {
+      auto& unionType = canonicalType.as<slang::ast::PackedUnionType>();
+      ProcessScopeMembers(unionType, doc_symbol, source_manager, uri);
+    } else if (
+        canonicalType.kind == slang::ast::SymbolKind::UnpackedUnionType) {
+      auto& unionType = canonicalType.as<slang::ast::UnpackedUnionType>();
+      ProcessScopeMembers(unionType, doc_symbol, source_manager, uri);
     }
   }
 

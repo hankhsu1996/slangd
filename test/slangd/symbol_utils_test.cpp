@@ -148,8 +148,6 @@ TEST_CASE("GetDocumentSymbols extracts enum type", "[symbol_utils]") {
   REQUIRE(symbols[0].children[3].kind == lsp::SymbolKind::Enum);
 }
 
-/* Commenting out for incremental implementation
-
 TEST_CASE("GetDocumentSymbols extracts struct type", "[symbol_utils]") {
   // Package with struct
   std::string struct_code = R"(
@@ -165,20 +163,20 @@ TEST_CASE("GetDocumentSymbols extracts struct type", "[symbol_utils]") {
 
   REQUIRE(symbols.size() == 1);
   REQUIRE(symbols[0].name == "pkg_with_struct");
+  REQUIRE(symbols[0].kind == lsp::SymbolKind::Package);
 
-  // Check for struct type as child
-  bool has_struct = false;
+  REQUIRE(symbols[0].children.size() == 1);
+  REQUIRE(symbols[0].children[0].name == "my_struct_t");
+  REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::Struct);
 
-  for (const auto& child : symbols[0].children) {
-    if (child.name == "my_struct_t") {
-      has_struct = true;
-      REQUIRE(child.kind == lsp::SymbolKind::TypeParameter);
-      break;
-    }
-  }
-
-  REQUIRE(has_struct);
+  REQUIRE(symbols[0].children[0].children.size() == 2);
+  REQUIRE(symbols[0].children[0].children[0].name == "a");
+  REQUIRE(symbols[0].children[0].children[0].kind == lsp::SymbolKind::Variable);
+  REQUIRE(symbols[0].children[0].children[1].name == "b");
+  REQUIRE(symbols[0].children[0].children[1].kind == lsp::SymbolKind::Variable);
 }
+
+/* Commenting out for incremental implementation
 
 TEST_CASE("GetDocumentSymbols extracts functions", "[symbol_utils]") {
   // Package with function
