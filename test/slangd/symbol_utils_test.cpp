@@ -176,8 +176,6 @@ TEST_CASE("GetDocumentSymbols extracts struct type", "[symbol_utils]") {
   REQUIRE(symbols[0].children[0].children[1].kind == lsp::SymbolKind::Variable);
 }
 
-/* Commenting out for incremental implementation
-
 TEST_CASE("GetDocumentSymbols extracts functions", "[symbol_utils]") {
   // Package with function
   std::string function_code = R"(
@@ -192,23 +190,16 @@ TEST_CASE("GetDocumentSymbols extracts functions", "[symbol_utils]") {
 
   REQUIRE(symbols.size() == 1);
   REQUIRE(symbols[0].name == "pkg_with_function");
+  REQUIRE(symbols[0].kind == lsp::SymbolKind::Package);
 
-  // Check for function as child
-  bool has_function = false;
-
-  for (const auto& child : symbols[0].children) {
-    if (child.name == "add") {
-      has_function = true;
-      REQUIRE(child.kind == lsp::SymbolKind::Function);
-      break;
-    }
-  }
-
-  REQUIRE(has_function);
+  REQUIRE(symbols[0].children.size() == 1);
+  REQUIRE(symbols[0].children[0].name == "add");
+  REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::Function);
 }
 
-TEST_CASE("GetDocumentSymbols extracts multiple top-level symbols",
-"[symbol_utils]") {
+TEST_CASE(
+    "GetDocumentSymbols extracts multiple top-level symbols",
+    "[symbol_utils]") {
   // Multiple top-level entities
   std::string multi_code = R"(
     module module1; endmodule
@@ -219,40 +210,10 @@ TEST_CASE("GetDocumentSymbols extracts multiple top-level symbols",
   auto symbols = ExtractSymbolsFromString(multi_code);
 
   REQUIRE(symbols.size() == 3);
-
-  bool has_module1 = false;
-  bool has_module2 = false;
-  bool has_package1 = false;
-
-  for (const auto& symbol : symbols) {
-    if (symbol.name == "module1") has_module1 = true;
-    if (symbol.name == "module2") has_module2 = true;
-    if (symbol.name == "package1") has_package1 = true;
-  }
-
-  REQUIRE(has_module1);
-  REQUIRE(has_module2);
-  REQUIRE(has_package1);
+  REQUIRE(symbols[0].name == "module1");
+  REQUIRE(symbols[0].kind == lsp::SymbolKind::Module);
+  REQUIRE(symbols[1].name == "module2");
+  REQUIRE(symbols[1].kind == lsp::SymbolKind::Module);
+  REQUIRE(symbols[2].name == "package1");
+  REQUIRE(symbols[2].kind == lsp::SymbolKind::Package);
 }
-
-TEST_CASE("ConvertSlangLocationToLspRange works correctly", "[symbol_utils]") {
-  auto source_manager = std::make_shared<slang::SourceManager>();
-
-  SECTION("Returns empty range for invalid location") {
-    slang::SourceLocation empty_loc;
-    auto range =
-        slangd::ConvertSlangLocationToLspRange(empty_loc, source_manager);
-
-    REQUIRE(range.start.line == 0);
-    REQUIRE(range.start.character == 0);
-    REQUIRE(range.end.line == 0);
-    REQUIRE(range.end.character == 0);
-  }
-}
-
-TEST_CASE("ShouldIncludeSymbol filters symbols correctly", "[symbol_utils]") {
-  // This would require deeper mocking of Slang symbols and source manager
-  // which is beyond the scope of this test
-  SUCCEED("Tested implicitly through GetDocumentSymbols tests");
-}
-*/
