@@ -6,6 +6,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "lsp/basic.hpp"
+
 namespace lsp {
 
 /**
@@ -46,22 +48,6 @@ enum class SymbolKind {
 enum class SymbolTag { Deprecated = 1 };
 
 /**
- * Position in a document (zero-based)
- */
-struct Position {
-  int line;
-  int character;
-};
-
-/**
- * Range in a document (positions are zero-based)
- */
-struct Range {
-  Position start;
-  Position end;
-};
-
-/**
  * DocumentSymbol as defined by the LSP specification
  * Represents a symbol in a hierarchical structure
  */
@@ -76,13 +62,7 @@ struct DocumentSymbol {
   std::vector<DocumentSymbol> children;        // Child symbols
 };
 
-// JSON conversion functions (to be implemented in document_symbol.cpp)
-void to_json(nlohmann::json& j, const Position& p);
-void from_json(const nlohmann::json& j, Position& p);
-
-void to_json(nlohmann::json& j, const Range& r);
-void from_json(const nlohmann::json& j, Range& r);
-
+// JSON conversion functions
 void to_json(nlohmann::json& j, const SymbolKind& k);
 void from_json(const nlohmann::json& j, SymbolKind& k);
 
