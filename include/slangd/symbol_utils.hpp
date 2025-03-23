@@ -55,7 +55,7 @@ bool ShouldIncludeSymbol(
 void ProcessSymbolChildren(
     const slang::ast::Symbol& symbol, lsp::DocumentSymbol& parent_symbol,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    const std::string& uri);
+    const std::string& uri, slang::ast::Compilation& compilation);
 
 /**
  * Maps a Slang symbol to an LSP symbol kind
@@ -87,7 +87,7 @@ lsp::Range GetSymbolNameLocationRange(
 void ProcessScopeMembers(
     const slang::ast::Scope& scope, lsp::DocumentSymbol& parent_symbol,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    const std::string& uri);
+    const std::string& uri, slang::ast::Compilation& compilation);
 
 /**
  * Recursively builds a hierarchy of document symbols
@@ -98,7 +98,8 @@ void BuildDocumentSymbolHierarchy(
     const slang::ast::Symbol& symbol,
     std::vector<lsp::DocumentSymbol>& document_symbols,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    const std::string& uri, std::unordered_set<std::string>& seen_names);
+    const std::string& uri, std::unordered_set<std::string>& seen_names,
+    slang::ast::Compilation& compilation);
 
 /**
  * Gets document symbols for a compilation

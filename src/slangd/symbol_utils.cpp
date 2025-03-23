@@ -83,10 +83,8 @@ bool ShouldIncludeSymbol(
   // Include only specific types of symbols that are relevant to users
   switch (symbol.kind) {
     // Top-level design elements
-    case SK::Instance:
-    case SK::InstanceBody:
-    case SK::InstanceArray:
     case SK::Package:
+    case SK::Definition:
       return true;
 
     // Types
@@ -113,6 +111,7 @@ bool ShouldIncludeSymbol(
     case SK::Port:
     case SK::Variable:
     case SK::Net:
+    case SK::Instance:
       return true;
 
     // For enum values, include them
@@ -121,6 +120,10 @@ bool ShouldIncludeSymbol(
 
     // For struct fields, include them
     case SK::Field:
+      return true;
+
+    // For uninstantiated definitions, include them
+    case SK::UninstantiatedDef:
       return true;
 
     // Default: exclude other symbols
@@ -133,17 +136,7 @@ bool ShouldIncludeSymbol(
 lsp::SymbolKind MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol) {
   using SK = slang::ast::SymbolKind;
   using LK = lsp::SymbolKind;
-
-  if (symbol.kind == SK::Instance) {
-    auto& instance = symbol.as<slang::ast::InstanceSymbol>();
-    if (instance.isModule()) {
-      return LK::Class;
-    } else if (instance.isInterface()) {
-      return LK::Interface;
-    } else {
-      return LK::Object;
-    }
-  }
+  using DK = slang::ast::DefinitionKind;
 
   // if is type alias, need to get the canonical type and use that to determine
   // the symbol kind
@@ -164,14 +157,22 @@ lsp::SymbolKind MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol) {
     }
   }
 
+  if (symbol.kind == SK::Definition) {
+    auto& definition = symbol.as<slang::ast::DefinitionSymbol>();
+    if (definition.definitionKind == DK::Module) {
+      // In SystemVerilog, a 'module' defines encapsulated hardware with ports
+      // and internal logic. However, in software terms, it behaves more like a
+      // 'class': it has state, methods (processes), and can be instantiated
+      // multiple times. It's not just a namespace or file like software
+      // modules.
+      return LK::Class;
+    } else if (definition.definitionKind == DK::Interface) {
+      return LK::Interface;
+    }
+  }
+
   // For non-Definition symbols, use a switch on the symbol kind
   switch (symbol.kind) {
-    // Module-related
-    case SK::Instance:
-    case SK::InstanceBody:
-    case SK::InstanceArray:
-      return LK::Class;
-
     // Package
     case SK::Package:
       return LK::Package;
@@ -180,6 +181,8 @@ lsp::SymbolKind MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol) {
     case SK::Variable:
     case SK::Net:
     case SK::Port:
+    case SK::Instance:
+    case SK::UninstantiatedDef:
       return LK::Variable;
 
     case SK::Field:
@@ -254,7 +257,7 @@ lsp::Range GetSymbolNameLocationRange(
 void ProcessScopeMembers(
     const slang::ast::Scope& scope, lsp::DocumentSymbol& parent_symbol,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    const std::string& uri) {
+    const std::string& uri, slang::ast::Compilation& compilation) {
   // Each scope gets its own set of seen names
   std::unordered_set<std::string> scope_seen_names;
 
@@ -264,7 +267,8 @@ void ProcessScopeMembers(
 
     std::vector<lsp::DocumentSymbol> child_symbols;
     BuildDocumentSymbolHierarchy(
-        unwrapped_member, child_symbols, source_manager, uri, scope_seen_names);
+        unwrapped_member, child_symbols, source_manager, uri, scope_seen_names,
+        compilation);
     for (auto& child : child_symbols) {
       parent_symbol.children.push_back(std::move(child));
     }
@@ -275,21 +279,24 @@ void ProcessScopeMembers(
 void ProcessSymbolChildren(
     const slang::ast::Symbol& symbol, lsp::DocumentSymbol& parent_symbol,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    const std::string& uri) {
+    const std::string& uri, slang::ast::Compilation& compilation) {
   using SK = slang::ast::SymbolKind;
 
   // Handle different symbol types
   if (symbol.kind == SK::Package) {
     // Packages need special handling to reach their members
     const auto& package = symbol.as<slang::ast::PackageSymbol>();
-    ProcessScopeMembers(package, parent_symbol, source_manager, uri);
-  } else if (symbol.kind == SK::Instance) {
-    // Instances need special handling to reach their body
-    const auto& instance = symbol.as<slang::ast::InstanceSymbol>();
-    const auto& body = instance.body;
+    ProcessScopeMembers(
+        package, parent_symbol, source_manager, uri, compilation);
+  } else if (symbol.kind == SK::Definition) {
+    auto& definition_symbol = symbol.as<slang::ast::DefinitionSymbol>();
+    auto& inst_symbol = slang::ast::InstanceSymbol::createDefault(
+        compilation, definition_symbol);
+    const auto& body = inst_symbol.body;
     if (body.isScope()) {
       const auto& scope = body.as<slang::ast::Scope>();
-      ProcessScopeMembers(scope, parent_symbol, source_manager, uri);
+      ProcessScopeMembers(
+          scope, parent_symbol, source_manager, uri, compilation);
     }
   } else if (symbol.kind == SK::TypeAlias) {
     // Type aliases need to be unwrapped to process their members
@@ -299,16 +306,20 @@ void ProcessSymbolChildren(
     if (canonicalType.kind == SK::PackedStructType) {
       auto& structType = canonicalType.as<slang::ast::PackedStructType>();
       // Make sure to process all members of the struct
-      ProcessScopeMembers(structType, parent_symbol, source_manager, uri);
+      ProcessScopeMembers(
+          structType, parent_symbol, source_manager, uri, compilation);
     } else if (canonicalType.kind == SK::UnpackedStructType) {
       auto& structType = canonicalType.as<slang::ast::UnpackedStructType>();
-      ProcessScopeMembers(structType, parent_symbol, source_manager, uri);
+      ProcessScopeMembers(
+          structType, parent_symbol, source_manager, uri, compilation);
     } else if (canonicalType.kind == SK::PackedUnionType) {
       auto& unionType = canonicalType.as<slang::ast::PackedUnionType>();
-      ProcessScopeMembers(unionType, parent_symbol, source_manager, uri);
+      ProcessScopeMembers(
+          unionType, parent_symbol, source_manager, uri, compilation);
     } else if (canonicalType.kind == SK::UnpackedUnionType) {
       auto& unionType = canonicalType.as<slang::ast::UnpackedUnionType>();
-      ProcessScopeMembers(unionType, parent_symbol, source_manager, uri);
+      ProcessScopeMembers(
+          unionType, parent_symbol, source_manager, uri, compilation);
     }
   }
   // else if kind is "field" need to check the type. if is struct or union, we
@@ -318,16 +329,20 @@ void ProcessSymbolChildren(
     auto& type = field.getType();
     if (type.kind == SK::PackedStructType) {
       auto& structType = type.as<slang::ast::PackedStructType>();
-      ProcessScopeMembers(structType, parent_symbol, source_manager, uri);
+      ProcessScopeMembers(
+          structType, parent_symbol, source_manager, uri, compilation);
     } else if (type.kind == SK::UnpackedStructType) {
       auto& structType = type.as<slang::ast::UnpackedStructType>();
-      ProcessScopeMembers(structType, parent_symbol, source_manager, uri);
+      ProcessScopeMembers(
+          structType, parent_symbol, source_manager, uri, compilation);
     } else if (type.kind == SK::PackedUnionType) {
       auto& unionType = type.as<slang::ast::PackedUnionType>();
-      ProcessScopeMembers(unionType, parent_symbol, source_manager, uri);
+      ProcessScopeMembers(
+          unionType, parent_symbol, source_manager, uri, compilation);
     } else if (type.kind == SK::UnpackedUnionType) {
       auto& unionType = type.as<slang::ast::UnpackedUnionType>();
-      ProcessScopeMembers(unionType, parent_symbol, source_manager, uri);
+      ProcessScopeMembers(
+          unionType, parent_symbol, source_manager, uri, compilation);
     }
   }
   // For all other symbol types, don't traverse
@@ -337,7 +352,8 @@ void BuildDocumentSymbolHierarchy(
     const slang::ast::Symbol& symbol,
     std::vector<lsp::DocumentSymbol>& document_symbols,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    const std::string& uri, std::unordered_set<std::string>& seen_names) {
+    const std::string& uri, std::unordered_set<std::string>& seen_names,
+    slang::ast::Compilation& compilation) {
   // Now symbol is expected to be already unwrapped at the entry point
 
   // spdlog the symbol name, kind, location (file:line:col)
@@ -375,7 +391,7 @@ void BuildDocumentSymbolHierarchy(
   seen_names.insert(doc_symbol.name);
 
   // Process children with type-specific traversal logic
-  ProcessSymbolChildren(symbol, doc_symbol, source_manager, uri);
+  ProcessSymbolChildren(symbol, doc_symbol, source_manager, uri, compilation);
 
   // Only add this symbol if it has a valid range or has children
   if (symbol.location || !doc_symbol.children.empty()) {
@@ -392,21 +408,16 @@ std::vector<lsp::DocumentSymbol> GetDocumentSymbols(
 
   // Get top-level definitions (modules, interfaces, etc.)
   for (const auto& def : compilation.getDefinitions()) {
-    auto& definition_symbol = def->as<slang::ast::DefinitionSymbol>();
-    auto& inst_symbol = slang::ast::InstanceSymbol::createDefault(
-        compilation, definition_symbol);
-
-    // Unwrap at the boundary before passing to BuildDocumentSymbolHierarchy
     BuildDocumentSymbolHierarchy(
-        GetUnwrappedSymbol(inst_symbol), result, source_manager, uri,
-        seen_names);
+        GetUnwrappedSymbol(*def), result, source_manager, uri, seen_names,
+        compilation);
   }
 
   // Get packages
   for (const auto& package : compilation.getPackages()) {
-    // Unwrap at the boundary before passing to BuildDocumentSymbolHierarchy
     BuildDocumentSymbolHierarchy(
-        GetUnwrappedSymbol(*package), result, source_manager, uri, seen_names);
+        GetUnwrappedSymbol(*package), result, source_manager, uri, seen_names,
+        compilation);
   }
 
   return result;

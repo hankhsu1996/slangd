@@ -276,3 +276,52 @@ TEST_CASE("GetDocumentSymbols extracts type parameters", "[symbol_utils]") {
   REQUIRE(symbols[0].children[2].name == "data_out");
   REQUIRE(symbols[0].children[2].kind == lsp::SymbolKind::Variable);
 }
+
+TEST_CASE(
+    "GetDocumentSymbols extracts module instantiation", "[symbol_utils]") {
+  std::string module_inst_code = R"(
+    module submodule;
+      logic [7:0] a;
+    endmodule
+
+    module mod_with_inst;
+      submodule submod();
+    endmodule
+  )";
+
+  auto symbols = ExtractSymbolsFromString(module_inst_code);
+
+  REQUIRE(symbols.size() == 2);
+  REQUIRE(symbols[0].name == "mod_with_inst");
+  REQUIRE(symbols[0].kind == lsp::SymbolKind::Class);
+  REQUIRE(symbols[1].name == "submodule");
+  REQUIRE(symbols[1].kind == lsp::SymbolKind::Class);
+
+  REQUIRE(symbols[0].children.size() == 1);
+  REQUIRE(symbols[0].children[0].name == "submod");
+  REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::Variable);
+
+  REQUIRE(symbols[1].children.size() == 1);
+  REQUIRE(symbols[1].children[0].name == "a");
+  REQUIRE(symbols[1].children[0].kind == lsp::SymbolKind::Variable);
+}
+
+TEST_CASE(
+    "GetDocumentSymbols extracts unknown module instantiation",
+    "[symbol_utils]") {
+  std::string module_inst_code = R"(
+    module mod_with_inst;
+      submodule submod();
+    endmodule
+  )";
+
+  auto symbols = ExtractSymbolsFromString(module_inst_code);
+
+  REQUIRE(symbols.size() == 1);
+  REQUIRE(symbols[0].name == "mod_with_inst");
+  REQUIRE(symbols[0].kind == lsp::SymbolKind::Class);
+
+  REQUIRE(symbols[0].children.size() == 1);
+  REQUIRE(symbols[0].children[0].name == "submod");
+  REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::Variable);
+}
