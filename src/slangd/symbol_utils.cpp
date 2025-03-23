@@ -105,6 +105,7 @@ bool ShouldIncludeSymbol(
 
     // Important declarations
     case SK::Parameter:
+    case SK::TypeParameter:
     case SK::Modport:
       return true;
 
@@ -189,9 +190,11 @@ lsp::SymbolKind MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol) {
     case SK::EnumValue:
       return LK::Constant;
 
+    case SK::TypeParameter:
+      return LK::TypeParameter;
+
     // Type-related
     case SK::TypeAlias:
-    case SK::TypeParameter:
     case SK::ForwardingTypedef:
       return LK::TypeParameter;
 

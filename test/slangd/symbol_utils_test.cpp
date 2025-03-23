@@ -250,3 +250,29 @@ TEST_CASE("GetDocumentSymbols extracts nested struct", "[symbol_utils]") {
       symbols[0].children[0].children[0].children[0].kind ==
       lsp::SymbolKind::Field);
 }
+
+TEST_CASE("GetDocumentSymbols extracts type parameters", "[symbol_utils]") {
+  std::string type_param_code = R"(
+    module mod_with_type_param #(
+      parameter type T = logic [7:0]
+    )(
+      input T data,
+      output T data_out
+    );
+    endmodule
+  )";
+
+  auto symbols = ExtractSymbolsFromString(type_param_code);
+
+  REQUIRE(symbols.size() == 1);
+  REQUIRE(symbols[0].name == "mod_with_type_param");
+  REQUIRE(symbols[0].kind == lsp::SymbolKind::Class);
+
+  REQUIRE(symbols[0].children.size() == 3);
+  REQUIRE(symbols[0].children[0].name == "T");
+  REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::TypeParameter);
+  REQUIRE(symbols[0].children[1].name == "data");
+  REQUIRE(symbols[0].children[1].kind == lsp::SymbolKind::Variable);
+  REQUIRE(symbols[0].children[2].name == "data_out");
+  REQUIRE(symbols[0].children[2].kind == lsp::SymbolKind::Variable);
+}
