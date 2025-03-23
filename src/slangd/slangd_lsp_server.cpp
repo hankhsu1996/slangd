@@ -234,10 +234,16 @@ SlangdLspServer::HandleTextDocumentDocumentSymbol(
   const auto& param_val = params.value();
   const auto& uri = param_val["textDocument"]["uri"].get<std::string>();
 
-  spdlog::info("Document symbol request for: {}", uri);
+  spdlog::info("Document symbol request for {}", uri);
 
   // Get document symbols from document manager
-  auto document_symbols = co_await document_manager_->GetDocumentSymbols(uri);
+  // Use the strand to ensure thread safety when accessing document symbols
+  auto document_symbols = co_await asio::co_spawn(
+      strand_,
+      [this, uri]() -> asio::awaitable<std::vector<lsp::DocumentSymbol>> {
+        return document_manager_->GetDocumentSymbols(uri);
+      },
+      asio::use_awaitable);
 
   // Convert to JSON (the document_symbol.hpp should provide conversion
   // functions)
