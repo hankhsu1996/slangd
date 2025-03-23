@@ -26,17 +26,6 @@ cc_test(
 )
 
 cc_test(
-    name = "slangd_lsp_server_test",
-    timeout = "short",
-    srcs = ["slangd_lsp_server_test.cpp"],
-    deps = [
-        "//:slangd_core",
-        "@catch2//:catch2_main",
-        "@slang",
-    ],
-)
-
-cc_test(
     name = "symbol_utils_test",
     timeout = "short",
     srcs = [

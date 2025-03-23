@@ -41,7 +41,7 @@ TEST_CASE("GetDocumentSymbols extracts basic module", "[symbol_utils]") {
   auto symbols = ExtractSymbolsFromString(module_code);
 
   REQUIRE(symbols.size() == 1);
-  REQUIRE(symbols[0].kind == lsp::SymbolKind::Module);
+  REQUIRE(symbols[0].kind == lsp::SymbolKind::Class);
 }
 
 TEST_CASE("GetDocumentSymbols extracts basic package", "[symbol_utils]") {
@@ -85,7 +85,7 @@ TEST_CASE(
 
   REQUIRE(symbols.size() == 1);
   REQUIRE(symbols[0].name == "mod_with_param_and_var");
-  REQUIRE(symbols[0].kind == lsp::SymbolKind::Module);
+  REQUIRE(symbols[0].kind == lsp::SymbolKind::Class);
 
   REQUIRE(symbols[0].children.size() == 2);
   REQUIRE(symbols[0].children[0].name == "WIDTH");
@@ -110,7 +110,7 @@ TEST_CASE("GetDocumentSymbols extracts module ports", "[symbol_utils]") {
 
   REQUIRE(symbols.size() == 1);
   REQUIRE(symbols[0].name == "mod_with_ports");
-  REQUIRE(symbols[0].kind == lsp::SymbolKind::Module);
+  REQUIRE(symbols[0].kind == lsp::SymbolKind::Class);
 
   REQUIRE(symbols[0].children.size() == 3);
   REQUIRE(symbols[0].children[0].name == "WIDTH");
@@ -211,9 +211,9 @@ TEST_CASE(
 
   REQUIRE(symbols.size() == 3);
   REQUIRE(symbols[0].name == "module1");
-  REQUIRE(symbols[0].kind == lsp::SymbolKind::Module);
+  REQUIRE(symbols[0].kind == lsp::SymbolKind::Class);
   REQUIRE(symbols[1].name == "module2");
-  REQUIRE(symbols[1].kind == lsp::SymbolKind::Module);
+  REQUIRE(symbols[1].kind == lsp::SymbolKind::Class);
   REQUIRE(symbols[2].name == "package1");
   REQUIRE(symbols[2].kind == lsp::SymbolKind::Package);
 }

@@ -37,7 +37,7 @@ lsp::SymbolKind MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol) {
   if (symbol.kind == SK::Instance) {
     auto& instance = symbol.as<slang::ast::InstanceSymbol>();
     if (instance.isModule()) {
-      return LK::Module;
+      return LK::Class;
     } else if (instance.isInterface()) {
       return LK::Interface;
     } else {
@@ -70,7 +70,7 @@ lsp::SymbolKind MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol) {
     case SK::Instance:
     case SK::InstanceBody:
     case SK::InstanceArray:
-      return LK::Module;
+      return LK::Class;
 
     // Package
     case SK::Package:
@@ -229,15 +229,14 @@ void BuildDocumentSymbolHierarchy(
     return;
   }
 
+  // Skip unnamed symbols
+  if (symbol.name.empty()) {
+    return;
+  }
+
   // Create a document symbol for this symbol
   lsp::DocumentSymbol doc_symbol;
   doc_symbol.name = std::string(symbol.name);
-
-  // If the symbol has no name, use a default based on kind
-  if (doc_symbol.name.empty()) {
-    doc_symbol.name =
-        "<unnamed " + std::string(slang::ast::toString(symbol.kind)) + ">";
-  }
 
   // Get the symbol kind from our mapping function
   doc_symbol.kind = MapSymbolToLspSymbolKind(symbol);
@@ -251,9 +250,7 @@ void BuildDocumentSymbolHierarchy(
   }
 
   // Add this symbol name to seen names in current scope to prevent duplicates
-  if (!doc_symbol.name.empty()) {
-    seen_names.insert(doc_symbol.name);
-  }
+  seen_names.insert(doc_symbol.name);
 
   // Process children - handle different kinds of scopes
   if (symbol.isScope()) {
