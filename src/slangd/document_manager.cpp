@@ -34,40 +34,36 @@ asio::awaitable<std::expected<void, ParseError>> DocumentManager::ParseDocument(
   // Ensure thread safety for data structures
   co_await asio::post(strand_, asio::use_awaitable);
 
-  try {
-    // Create a new source manager for this document if it doesn't exist
-    if (source_managers_.find(uri) == source_managers_.end()) {
-      source_managers_[uri] = std::make_shared<slang::SourceManager>();
-    }
-    // Use direct reference to the managed SourceManager object
-    auto& source_manager = *source_managers_[uri];
-
-    // Parse the document
-    std::string_view content_view(content);
-    auto syntax_tree =
-        slang::syntax::SyntaxTree::fromText(content_view, source_manager, uri);
-
-    // Store the syntax tree
-    syntax_trees_[uri] = syntax_tree;
-
-    // Create a new compilation if needed
-    if (compilations_.find(uri) == compilations_.end()) {
-      compilations_[uri] = std::make_shared<slang::ast::Compilation>();
-    }
-
-    // Add the syntax tree to the compilation
-    auto& compilation = compilations_[uri];
-    compilation->addSyntaxTree(syntax_tree);
-
-    spdlog::info("Successfully parsed {}", uri);
-    co_return std::expected<void, ParseError>{};
-  } catch (const std::exception& e) {
-    spdlog::error("Error parsing document {}: {}", uri, e.what());
-    co_return std::unexpected(ParseError::SlangInternalError);
-  } catch (...) {
-    spdlog::error("Unknown error parsing document {}", uri);
-    co_return std::unexpected(ParseError::UnknownError);
+  // Create a new source manager for this document if it doesn't exist
+  if (source_managers_.find(uri) == source_managers_.end()) {
+    source_managers_[uri] = std::make_shared<slang::SourceManager>();
   }
+
+  auto& source_manager = *source_managers_[uri];
+  std::string_view content_view(content);
+
+  // Parse the document - fromText handles syntax errors via diagnostics
+  auto syntax_tree =
+      slang::syntax::SyntaxTree::fromText(content_view, source_manager, uri);
+
+  // Handle failure to create tree (rare)
+  if (!syntax_tree) {
+    spdlog::error("Failed to create syntax tree for document {}", uri);
+    co_return std::unexpected(ParseError::SlangInternalError);
+  }
+
+  // Store the syntax tree
+  syntax_trees_[uri] = syntax_tree;
+
+  // Create a new compilation
+  compilations_[uri] = std::make_shared<slang::ast::Compilation>();
+  auto& compilation = compilations_[uri];
+
+  // Add the syntax tree to the compilation
+  compilation->addSyntaxTree(syntax_tree);
+
+  spdlog::info("Successfully parsed {}", uri);
+  co_return std::expected<void, ParseError>{};
 }
 
 asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>>
