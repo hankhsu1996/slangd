@@ -1,7 +1,6 @@
 #include "lsp/server.hpp"
 
 #include <iostream>
-#include <thread>
 
 #include <asio.hpp>
 #include <jsonrpc/endpoint/endpoint.hpp>
@@ -10,105 +9,42 @@
 
 namespace lsp {
 
-Server::Server(asio::io_context& io_context)
-    : io_context_(io_context), work_guard_(asio::make_work_guard(io_context)) {
-  std::cout << "Creating LSP server" << std::endl;
+Server::Server(
+    asio::io_context& io_context,
+    std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint)
+    : endpoint_(std::move(endpoint)),
+      io_context_(io_context),
+      work_guard_(asio::make_work_guard(io_context)) {}
 
-  // Create thread pool (4 worker threads by default)
-  const unsigned int thread_count = std::thread::hardware_concurrency();
-  const unsigned int num_threads = thread_count > 0 ? thread_count : 4;
-  std::cout << "Creating thread pool with " << num_threads << " threads"
-            << std::endl;
-}
+Server::~Server() { Shutdown(); }
 
-// Initialize the JSON-RPC endpoint with a pipe transport
-void Server::InitializeJsonRpc() {
-  try {
-    // For demonstration purposes, use a pipe transport
-    // In a real implementation, you might want to create a custom transport for
-    // stdin/stdout
-    auto transport = std::make_unique<jsonrpc::transport::PipeTransport>(
-        io_context_, "/tmp/slangd-lsp-pipe", true);
+auto Server::Run() -> asio::awaitable<void> {
+  // Register method handlers
+  RegisterHandlers();
 
-    // Create the RPC endpoint
-    endpoint_ = std::make_unique<jsonrpc::endpoint::RpcEndpoint>(
-        io_context_, std::move(transport));
-
-    // Set up error handling
-    endpoint_->SetErrorHandler(
-        [](jsonrpc::endpoint::ErrorCode code, const std::string& message) {
-          std::cerr << "JSON-RPC error: " << message
-                    << " (code: " << static_cast<int>(code) << ")" << std::endl;
-        });
-
-    std::cout << "JSON-RPC endpoint initialized with pipe transport"
-              << std::endl;
-  } catch (const std::exception& e) {
-    std::cerr << "Error initializing JSON-RPC: " << e.what() << std::endl;
-  }
-}
-
-Server::~Server() {
-  Shutdown();
-
-  // Wait for all threads to complete
-  for (auto& thread : thread_pool_) {
-    if (thread.joinable()) {
-      thread.join();
-    }
-  }
-}
-
-void Server::Run() {
-  try {
-    // Initialize JSON-RPC endpoint
-    InitializeJsonRpc();
-
-    // Register method handlers
-    RegisterHandlers();
-
-    // Start worker threads
-    for (unsigned int i = 0; i < std::thread::hardware_concurrency(); ++i) {
-      thread_pool_.emplace_back([this]() {
-        try {
-          io_context_.run();
-        } catch (const std::exception& e) {
-          std::cerr << "Thread exception: " << e.what() << std::endl;
-        }
-      });
-    }
-
-    std::cout << "Starting JSON-RPC endpoint" << std::endl;
-
-    // Start the endpoint asynchronously
-    asio::co_spawn(
-        io_context_,
-        [this]() -> asio::awaitable<void> {
-          co_await endpoint_->Start();
-          co_await endpoint_->WaitForShutdown();
-          co_return;
-        },
-        asio::detached);
-
-    // Run the IO context in the main thread
-    io_context_.run();
-  } catch (const std::exception& e) {
-    std::cerr << "Error running server: " << e.what() << std::endl;
-  }
+  // Start the endpoint and wait for shutdown
+  co_await endpoint_->Start();
+  co_await endpoint_->WaitForShutdown();
 }
 
 void Server::Shutdown() {
   std::cout << "Server shutting down" << std::endl;
 
   if (endpoint_) {
-    // Shutdown the endpoint asynchronously
+    // Shutdown the endpoint
     asio::co_spawn(
         io_context_,
-        [this]() -> asio::awaitable<void> {
-          co_await endpoint_->Shutdown();
-          co_return;  // Explicit void return to fix linter warning
-        },
-        asio::detached);
+        [this]() -> asio::awaitable<void> { co_await endpoint_->Shutdown(); },
+        // Simple lambda to log errors
+        [](std::exception_ptr e) {
+          if (e) {
+            try {
+              std::rethrow_exception(e);
+            } catch (const std::exception& ex) {
+              std::cerr << "Error in shutdown: " << ex.what() << std::endl;
+            }
+          }
+        });
   }
 
   // Release work guard to allow threads to finish

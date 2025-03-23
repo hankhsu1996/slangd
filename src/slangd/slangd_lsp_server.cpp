@@ -7,8 +7,11 @@
 
 namespace slangd {
 
-SlangdLspServer::SlangdLspServer(asio::io_context& io_context)
-    : lsp::Server(io_context), strand_(asio::make_strand(io_context)) {
+SlangdLspServer::SlangdLspServer(
+    asio::io_context& io_context,
+    std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint)
+    : lsp::Server(io_context, std::move(endpoint)),
+      strand_(asio::make_strand(io_context)) {
   // Initialize the document manager with a reference to io_context
   document_manager_ = std::make_unique<DocumentManager>(io_context);
 }

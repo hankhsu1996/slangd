@@ -4,7 +4,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -32,15 +31,25 @@ struct OpenFile {
  */
 class Server {
  public:
-  Server(asio::io_context& io_context);
+  /**
+   * @brief Constructor that accepts a pre-configured RPC endpoint
+   *
+   * @param io_context ASIO io_context for async operations
+   * @param endpoint Pre-configured JSON-RPC endpoint
+   */
+  Server(
+      asio::io_context& io_context,
+      std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint);
+
   virtual ~Server();
 
   /**
    * @brief Initialize and start the LSP server
    *
    * This method starts the server and handles messages until shutdown
+   * @return asio::awaitable<void> Awaitable that completes when server stops
    */
-  virtual void Run();
+  virtual auto Run() -> asio::awaitable<void>;
 
   /**
    * @brief Shut down the server
@@ -56,9 +65,6 @@ class Server {
    */
   virtual void RegisterHandlers() = 0;
 
-  // Initialize the JSON-RPC endpoint
-  void InitializeJsonRpc();
-
   // File management helpers
   std::optional<std::reference_wrapper<OpenFile>> GetOpenFile(
       const std::string& uri);
@@ -73,9 +79,6 @@ class Server {
   std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint_;
   asio::io_context& io_context_;
   asio::executor_work_guard<asio::io_context::executor_type> work_guard_;
-
-  // Thread pool for background processing
-  std::vector<std::thread> thread_pool_;
 
   // Map of open document URIs to their content
   std::unordered_map<std::string, OpenFile> open_files_;

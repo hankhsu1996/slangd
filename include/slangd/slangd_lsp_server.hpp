@@ -21,8 +21,10 @@ class TestSlangdLspServer;
  */
 class SlangdLspServer : public lsp::Server {
  public:
-  /** Constructor initializes the server with an io_context. */
-  SlangdLspServer(asio::io_context& io_context);
+  /** Constructor that accepts a pre-configured RPC endpoint. */
+  SlangdLspServer(
+      asio::io_context& io_context,
+      std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint);
 
   /** Virtual destructor for proper cleanup. */
   virtual ~SlangdLspServer();
@@ -77,6 +79,7 @@ class SlangdLspServer : public lsp::Server {
   bool shutdown_requested_ = false;
   bool should_exit_ = false;
   int exit_code_ = 0;
+  std::string pipe_name_;  // Store pipe name if provided
 
   // Thread safety
   asio::strand<asio::io_context::executor_type> strand_;
