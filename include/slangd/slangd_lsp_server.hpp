@@ -29,9 +29,6 @@ class SlangdLspServer : public lsp::Server {
   /** Virtual destructor for proper cleanup. */
   virtual ~SlangdLspServer();
 
-  /** Shutdown the server cleanly. */
-  void Shutdown() override;
-
   /** Register all LSP message handlers with the JSON-RPC endpoint. */
   void RegisterHandlers() override;
 
@@ -77,9 +74,6 @@ class SlangdLspServer : public lsp::Server {
   // Server state
   bool initialized_ = false;
   bool shutdown_requested_ = false;
-  bool should_exit_ = false;
-  int exit_code_ = 0;
-  std::string pipe_name_;  // Store pipe name if provided
 
   // Thread safety
   asio::strand<asio::io_context::executor_type> strand_;

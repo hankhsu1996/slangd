@@ -1,9 +1,8 @@
 #include "slangd/slangd_lsp_server.hpp"
 
-#include <iostream>
-
 #include <slang/syntax/AllSyntax.h>
 #include <slang/syntax/SyntaxVisitor.h>
+#include <spdlog/spdlog.h>
 
 namespace slangd {
 
@@ -17,18 +16,6 @@ SlangdLspServer::SlangdLspServer(
 }
 
 SlangdLspServer::~SlangdLspServer() {}
-
-void SlangdLspServer::Shutdown() {
-  std::cout << "SlangdLspServer shutting down" << std::endl;
-
-  // Call base class implementation to clean up resources
-  lsp::Server::Shutdown();
-
-  // Check exit state set by HandleExit
-  if (should_exit_) {
-    std::cout << "Ready to exit with code: " << exit_code_ << std::endl;
-  }
-}
 
 void SlangdLspServer::RegisterHandlers() {
   // Register standard LSP methods with proper handler implementation
@@ -118,7 +105,7 @@ asio::awaitable<nlohmann::json> SlangdLspServer::HandleShutdown(
   // Set shutdown flag to indicate server is shutting down
   shutdown_requested_ = true;
 
-  std::cout << "SlangdLspServer shutdown request received" << std::endl;
+  spdlog::info("SlangdLspServer shutdown request received");
 
   // Return empty/null result as per LSP spec
   co_return nullptr;
@@ -129,7 +116,7 @@ asio::awaitable<void> SlangdLspServer::HandleInitialized(
   // Mark server as initialized
   initialized_ = true;
 
-  std::cout << "SlangdLspServer initialized notification received" << std::endl;
+  spdlog::info("SlangdLspServer initialized notification received");
 
   // This would be a good place to send server-initiated requests
   // such as workspace configuration requests or client registrations
@@ -143,14 +130,12 @@ asio::awaitable<void> SlangdLspServer::HandleExit(
   // Otherwise, exit with error code 1 as per LSP spec
   int exit_code = shutdown_requested_ ? 0 : 1;
 
-  // Note: We can't actually exit the process here as it would be abrupt
-  // Instead, we'll set a flag and let the main loop handle the exit
-  should_exit_ = true;
-  exit_code_ = exit_code;
+  spdlog::info(
+      "SlangdLspServer exit notification received, will exit with code: {}",
+      exit_code);
 
-  std::cout
-      << "SlangdLspServer exit notification received, will exit with code: "
-      << exit_code << std::endl;
+  // Clean up resources using base class Shutdown
+  co_await lsp::Server::Shutdown();
 
   // Signal io_context to stop
   io_context_.stop();
@@ -172,7 +157,7 @@ asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidOpen(
 
   // Use file management helpers directly
   AddOpenFile(uri, text, language_id, 1);
-  std::cout << "Document opened: " << uri << std::endl;
+  spdlog::info("Document opened: {}", uri);
 
   // Post to strand to ensure thread safety
   asio::co_spawn(
@@ -249,7 +234,7 @@ SlangdLspServer::HandleTextDocumentDocumentSymbol(
   const auto& param_val = params.value();
   const auto& uri = param_val["textDocument"]["uri"].get<std::string>();
 
-  std::cout << "Document symbol request for: " << uri << std::endl;
+  spdlog::info("Document symbol request for: {}", uri);
 
   // Get document symbols from document manager
   auto document_symbols = co_await document_manager_->GetDocumentSymbols(uri);
@@ -290,7 +275,7 @@ asio::awaitable<std::expected<void, ParseError>> SlangdLspServer::ParseFile(
         break;
     }
 
-    std::cerr << "Parse error: " << error_message << std::endl;
+    spdlog::error("Parse error: {}", error_message);
 
     // Send error message to client as a "window/showMessage" notification
     if (endpoint_) {
@@ -302,8 +287,8 @@ asio::awaitable<std::expected<void, ParseError>> SlangdLspServer::ParseFile(
       try {
         co_await endpoint_->SendNotification("window/showMessage", params);
       } catch (const std::exception& e) {
-        std::cerr << "Failed to send error notification to client: " << e.what()
-                  << std::endl;
+        spdlog::error(
+            "Failed to send error notification to client: {}", e.what());
       }
     }
   }

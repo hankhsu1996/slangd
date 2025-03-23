@@ -1,6 +1,5 @@
 #include "slangd/document_manager.hpp"
 
-#include <iostream>
 #include <memory>
 #include <string>
 
@@ -13,6 +12,7 @@
 #include <slang/ast/symbols/VariableSymbols.h>
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/text/SourceManager.h>
+#include <spdlog/spdlog.h>
 
 #include "slangd/symbol_utils.hpp"
 
@@ -26,7 +26,7 @@ void CollectSymbolsRecursively(
 
 DocumentManager::DocumentManager(asio::io_context& io_context)
     : io_context_(io_context), strand_(asio::make_strand(io_context)) {
-  std::cout << "DocumentManager initialized" << std::endl;
+  spdlog::info("DocumentManager initialized");
 }
 
 asio::awaitable<std::expected<void, ParseError>> DocumentManager::ParseDocument(
@@ -59,14 +59,13 @@ asio::awaitable<std::expected<void, ParseError>> DocumentManager::ParseDocument(
     auto& compilation = compilations_[uri];
     compilation->addSyntaxTree(syntax_tree);
 
-    std::cout << "Successfully parsed " << uri << std::endl;
+    spdlog::info("Successfully parsed {}", uri);
     co_return std::expected<void, ParseError>{};
   } catch (const std::exception& e) {
-    std::cerr << "Error parsing document " << uri << ": " << e.what()
-              << std::endl;
+    spdlog::error("Error parsing document {}: {}", uri, e.what());
     co_return std::unexpected(ParseError::SlangInternalError);
   } catch (...) {
-    std::cerr << "Unknown error parsing document " << uri << std::endl;
+    spdlog::error("Unknown error parsing document {}", uri);
     co_return std::unexpected(ParseError::UnknownError);
   }
 }
@@ -132,8 +131,7 @@ DocumentManager::GetSymbols(const std::string& uri) {
   symbols.push_back(root_ptr);
 
   // Output the number of symbols found for debugging
-  std::cout << "Found " << symbols.size() << " symbols in document: " << uri
-            << std::endl;
+  spdlog::info("Found {} symbols in document: {}", symbols.size(), uri);
 
   co_return symbols;
 }
@@ -160,9 +158,6 @@ DocumentManager::GetDocumentSymbols(const std::string& uri) {
   // Use the symbol utility to extract document symbols
   document_symbols =
       slangd::GetDocumentSymbols(*compilation, source_manager, uri);
-
-  std::cout << "Found " << document_symbols.size()
-            << " document symbols in: " << uri << std::endl;
 
   co_return document_symbols;
 }

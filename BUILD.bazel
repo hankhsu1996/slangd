@@ -13,6 +13,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "@jsonrpc",
+        "@spdlog",
     ],
 )
 
@@ -26,6 +27,7 @@ cc_library(
     deps = [
         ":lsp",
         "@slang",
+        "@spdlog",
     ],
 )
 
@@ -36,5 +38,6 @@ cc_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":slangd_core",
+        "@spdlog",
     ],
 )

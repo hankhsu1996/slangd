@@ -53,8 +53,11 @@ class Server {
 
   /**
    * @brief Shut down the server
+   *
+   * @return asio::awaitable<void> Awaitable that completes when shutdown is
+   * done
    */
-  virtual void Shutdown();
+  virtual auto Shutdown() -> asio::awaitable<void>;
 
  protected:
   /**

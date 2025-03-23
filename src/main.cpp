@@ -1,15 +1,15 @@
-#include <iostream>
 #include <memory>
 #include <string>
 
 #include <asio.hpp>
 #include <jsonrpc/endpoint/endpoint.hpp>
-#include <jsonrpc/transport/pipe_transport.hpp>
+#include <jsonrpc/transport/framed_pipe_transport.hpp>
+#include <spdlog/spdlog.h>
 
 #include "slangd/slangd_lsp_server.hpp"
 
 using jsonrpc::endpoint::RpcEndpoint;
-using jsonrpc::transport::PipeTransport;
+using jsonrpc::transport::FramedPipeTransport;
 using slangd::SlangdLspServer;
 
 int main(int argc, char* argv[]) {
@@ -19,27 +19,27 @@ int main(int argc, char* argv[]) {
   // Basic argument validation
   const std::string pipe_prefix = "--pipe=";
   if (args.size() < 2 || !args[1].starts_with(pipe_prefix)) {
-    std::cerr << "Usage: <executable> --pipe=<pipe name>" << std::endl;
+    spdlog::error("Usage: <executable> --pipe=<pipe name>");
     return 1;
   }
 
   const std::string pipe_name = args[1].substr(pipe_prefix.length());
-  std::cout << "Using pipe: " << pipe_name << std::endl;
+  spdlog::info("Using pipe: {}", pipe_name);
 
   // Create the IO context
   asio::io_context io_context;
 
   // Create transport and endpoint
   auto transport =
-      std::make_unique<PipeTransport>(io_context, pipe_name, false);
+      std::make_unique<FramedPipeTransport>(io_context, pipe_name, false);
 
   auto endpoint =
       std::make_unique<RpcEndpoint>(io_context, std::move(transport));
 
   // Set up error handling
   endpoint->SetErrorHandler([](auto code, const auto& message) {
-    std::cerr << "JSON-RPC error: " << message
-              << " (code: " << static_cast<int>(code) << ")" << std::endl;
+    spdlog::error(
+        "JSON-RPC error: {} (code: {})", message, static_cast<int>(code));
   });
 
   // Create the server
@@ -48,19 +48,28 @@ int main(int argc, char* argv[]) {
 
   // Start the server asynchronously
   asio::co_spawn(
-      io_context, [&server]() { return server->Run(); },
-      [](std::exception_ptr e) {
-        if (e) {
-          try {
-            std::rethrow_exception(e);
-          } catch (const std::exception& ex) {
-            std::cerr << "Server terminated with error: " << ex.what()
-                      << std::endl;
-          }
-        } else {
-          std::cout << "Server terminated gracefully" << std::endl;
+      io_context,
+      [&server]() -> asio::awaitable<void> {
+        try {
+          // Run the server
+          co_await server->Run();
+          spdlog::info("Server run completed");
+        } catch (const std::exception& ex) {
+          // Log the error
+          spdlog::error("Server error: {}", ex.what());
         }
-      });
+
+        // Regardless of how we exit Run(), try to shut down gracefully
+        // This is outside the try/catch block
+        if (server) {
+          try {
+            co_await server->Shutdown();
+          } catch (const std::exception& shutdown_ex) {
+            spdlog::error("Shutdown error: {}", shutdown_ex.what());
+          }
+        }
+      },
+      asio::detached);
 
   // Run io_context
   io_context.run();

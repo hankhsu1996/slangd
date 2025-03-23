@@ -26,6 +26,9 @@ git_override(
     tag = "v2.1.0",
 )
 
+# SPDLOG Logging Library
+bazel_dep(name = "spdlog", version = "1.15.1")
+
 # Testing framework
 bazel_dep(name = "catch2", version = "3.8.0")
 

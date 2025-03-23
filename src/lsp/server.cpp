@@ -1,11 +1,10 @@
 #include "lsp/server.hpp"
 
-#include <iostream>
-
 #include <asio.hpp>
 #include <jsonrpc/endpoint/endpoint.hpp>
 #include <jsonrpc/transport/pipe_transport.hpp>
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 namespace lsp {
 
@@ -16,7 +15,7 @@ Server::Server(
       io_context_(io_context),
       work_guard_(asio::make_work_guard(io_context)) {}
 
-Server::~Server() { Shutdown(); }
+Server::~Server() = default;
 
 auto Server::Run() -> asio::awaitable<void> {
   // Register method handlers
@@ -27,24 +26,12 @@ auto Server::Run() -> asio::awaitable<void> {
   co_await endpoint_->WaitForShutdown();
 }
 
-void Server::Shutdown() {
-  std::cout << "Server shutting down" << std::endl;
+auto Server::Shutdown() -> asio::awaitable<void> {
+  spdlog::info("Server shutting down");
 
   if (endpoint_) {
-    // Shutdown the endpoint
-    asio::co_spawn(
-        io_context_,
-        [this]() -> asio::awaitable<void> { co_await endpoint_->Shutdown(); },
-        // Simple lambda to log errors
-        [](std::exception_ptr e) {
-          if (e) {
-            try {
-              std::rethrow_exception(e);
-            } catch (const std::exception& ex) {
-              std::cerr << "Error in shutdown: " << ex.what() << std::endl;
-            }
-          }
-        });
+    // Directly await the endpoint shutdown
+    co_await endpoint_->Shutdown();
   }
 
   // Release work guard to allow threads to finish
@@ -77,8 +64,7 @@ void Server::UpdateOpenFile(
     // Here we just increment the version
     OpenFile& file = file_opt->get();
     file.version++;
-    std::cout << "Updated file " << uri << " to version " << file.version
-              << std::endl;
+    spdlog::info("Updated file {} to version {}", uri, file.version);
   }
 }
 
