@@ -8,6 +8,7 @@
 #include "slang/ast/symbols/InstanceSymbols.h"
 #include "slang/ast/symbols/MemberSymbols.h"
 #include "slang/ast/symbols/ParameterSymbols.h"
+#include "slang/ast/symbols/VariableSymbols.h"
 #include "slang/ast/types/AllTypes.h"
 #include "slang/ast/types/Type.h"
 #include "slang/text/SourceManager.h"
@@ -34,6 +35,11 @@ bool ShouldIncludeSymbol(
     const std::shared_ptr<slang::SourceManager>& source_manager,
     const std::string& uri) {
   using SK = slang::ast::SymbolKind;
+
+  // add kind of symbol
+  spdlog::debug(
+      "Checking if symbol {} of kind {} should be included", symbol.name,
+      slang::ast::toString(symbol.kind));
 
   // Skip symbols without a valid location
   if (!symbol.location) {
@@ -119,22 +125,6 @@ bool ShouldIncludeSymbol(
     // Default: exclude other symbols
     default:
       return false;
-  }
-}
-
-// Determines whether to traverse a symbol's children
-bool ShouldTraverseSymbolChildren(const slang::ast::Symbol& symbol) {
-  using SK = slang::ast::SymbolKind;
-
-  // Some symbol types should not have their children traversed
-  switch (symbol.kind) {
-    // Don't traverse into function/task bodies - just show the declaration
-    case SK::Subroutine:
-      return false;
-
-    // For all other symbol types, allow traversal if they have children
-    default:
-      return true;
   }
 }
 
@@ -262,8 +252,6 @@ void ProcessScopeMembers(
     const slang::ast::Scope& scope, lsp::DocumentSymbol& parent_symbol,
     const std::shared_ptr<slang::SourceManager>& source_manager,
     const std::string& uri) {
-  spdlog::debug("Processing scope members: {}", scope.asSymbol().name);
-
   // Each scope gets its own set of seen names
   std::unordered_set<std::string> scope_seen_names;
 
@@ -305,11 +293,6 @@ void ProcessSymbolChildren(
     auto& typeAlias = symbol.as<slang::ast::TypeAliasType>();
     auto& canonicalType = typeAlias.getCanonicalType();
 
-    // log kind of canonicalType
-    spdlog::debug(
-        "Type alias: {} {}", slang::ast::toString(canonicalType.kind),
-        canonicalType.toString());
-
     if (canonicalType.kind == SK::PackedStructType) {
       auto& structType = canonicalType.as<slang::ast::PackedStructType>();
       // Make sure to process all members of the struct
@@ -322,6 +305,25 @@ void ProcessSymbolChildren(
       ProcessScopeMembers(unionType, parent_symbol, source_manager, uri);
     } else if (canonicalType.kind == SK::UnpackedUnionType) {
       auto& unionType = canonicalType.as<slang::ast::UnpackedUnionType>();
+      ProcessScopeMembers(unionType, parent_symbol, source_manager, uri);
+    }
+  }
+  // else if kind is "field" need to check the type. if is struct or union, we
+  // n=might have nested fields!
+  else if (symbol.kind == SK::Field) {
+    auto& field = symbol.as<slang::ast::FieldSymbol>();
+    auto& type = field.getType();
+    if (type.kind == SK::PackedStructType) {
+      auto& structType = type.as<slang::ast::PackedStructType>();
+      ProcessScopeMembers(structType, parent_symbol, source_manager, uri);
+    } else if (type.kind == SK::UnpackedStructType) {
+      auto& structType = type.as<slang::ast::UnpackedStructType>();
+      ProcessScopeMembers(structType, parent_symbol, source_manager, uri);
+    } else if (type.kind == SK::PackedUnionType) {
+      auto& unionType = type.as<slang::ast::PackedUnionType>();
+      ProcessScopeMembers(unionType, parent_symbol, source_manager, uri);
+    } else if (type.kind == SK::UnpackedUnionType) {
+      auto& unionType = type.as<slang::ast::UnpackedUnionType>();
       ProcessScopeMembers(unionType, parent_symbol, source_manager, uri);
     }
   }
