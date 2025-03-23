@@ -29,6 +29,115 @@ const slang::ast::Symbol& GetUnwrappedSymbol(const slang::ast::Symbol& symbol) {
       symbol.as<slang::ast::TransparentMemberSymbol>().wrapped);
 }
 
+bool ShouldIncludeSymbol(
+    const slang::ast::Symbol& symbol,
+    const std::shared_ptr<slang::SourceManager>& source_manager,
+    const std::string& uri) {
+  using SK = slang::ast::SymbolKind;
+
+  // Skip symbols without a valid location
+  if (!symbol.location) {
+    return false;
+  }
+
+  // Skip unnamed symbols
+  if (symbol.name.empty()) {
+    return false;
+  }
+
+  // Skip symbols that are compiler-generated (no source location)
+  if (source_manager->isPreprocessedLoc(symbol.location)) {
+    return false;
+  }
+
+  // Check if the symbol is from the current document
+  auto full_source_path =
+      std::string(source_manager->getFileName(symbol.location));
+
+  // Extract just the filename part
+  std::string source_file_path = full_source_path;
+  size_t last_slash = full_source_path.find_last_of("/\\");
+  if (last_slash != std::string::npos) {
+    source_file_path = full_source_path.substr(last_slash + 1);
+  }
+
+  // Extract filename from URI too
+  std::string uri_filename = uri;
+  size_t uri_last_slash = uri.find_last_of("/\\");
+  if (uri_last_slash != std::string::npos) {
+    uri_filename = uri.substr(uri_last_slash + 1);
+  }
+
+  // Just match based on filenames for now
+  bool is_from_current_doc = (source_file_path == uri_filename);
+  if (!is_from_current_doc) {
+    return false;
+  }
+
+  // Include only specific types of symbols that are relevant to users
+  switch (symbol.kind) {
+    // Top-level design elements
+    case SK::Instance:
+    case SK::InstanceBody:
+    case SK::InstanceArray:
+    case SK::Package:
+      return true;
+
+    // Types
+    case SK::TypeAlias:
+    case SK::EnumType:
+    case SK::PackedStructType:
+    case SK::UnpackedStructType:
+    case SK::PackedUnionType:
+    case SK::UnpackedUnionType:
+    case SK::ClassType:
+      return true;
+
+    // Functions and Tasks
+    case SK::Subroutine:
+      return true;
+
+    // Important declarations
+    case SK::Parameter:
+    case SK::Modport:
+      return true;
+
+    // For variables, only include ports and parameters
+    case SK::Port:
+    case SK::Variable:
+    case SK::Net:
+      return true;
+
+    // For enum values, include them
+    case SK::EnumValue:
+      return true;
+
+    // For struct fields, include them
+    case SK::Field:
+      return true;
+
+    // Default: exclude other symbols
+    default:
+      return false;
+  }
+}
+
+// Determines whether to traverse a symbol's children
+bool ShouldTraverseSymbolChildren(const slang::ast::Symbol& symbol) {
+  using SK = slang::ast::SymbolKind;
+
+  // Some symbol types should not have their children traversed
+  switch (symbol.kind) {
+    // Don't traverse into function/task bodies - just show the declaration
+    case SK::Subroutine:
+      return false;
+
+    // For all other symbol types, allow traversal if they have children
+    default:
+      return true;
+  }
+}
+
 // Maps a Slang symbol to an LSP symbol kind
 lsp::SymbolKind MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol) {
   using SK = slang::ast::SymbolKind;
@@ -80,9 +189,11 @@ lsp::SymbolKind MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol) {
     case SK::Variable:
     case SK::Net:
     case SK::Port:
+      return LK::Variable;
+
     case SK::Field:
     case SK::ClassProperty:
-      return LK::Variable;
+      return LK::Field;
 
     case SK::Parameter:
     case SK::EnumValue:
@@ -147,48 +258,12 @@ lsp::Range GetSymbolNameLocationRange(
   return ConvertSlangLocationToLspRange(symbol.location, source_manager);
 }
 
-bool ShouldIncludeSymbol(
-    const slang::ast::Symbol& symbol,
-    const std::shared_ptr<slang::SourceManager>& source_manager,
-    const std::string& uri) {
-  // Skip symbols without a valid location
-  if (!symbol.location) {
-    return false;
-  }
-
-  // Skip symbols that are compiler-generated (no source location)
-  if (source_manager->isPreprocessedLoc(symbol.location)) {
-    return false;
-  }
-
-  // Check if the symbol is from the current document
-  auto full_source_path =
-      std::string(source_manager->getFileName(symbol.location));
-
-  // Extract just the filename part
-  std::string source_file_path = full_source_path;
-  size_t last_slash = full_source_path.find_last_of("/\\");
-  if (last_slash != std::string::npos) {
-    source_file_path = full_source_path.substr(last_slash + 1);
-  }
-
-  // Extract filename from URI too
-  std::string uri_filename = uri;
-  size_t uri_last_slash = uri.find_last_of("/\\");
-  if (uri_last_slash != std::string::npos) {
-    uri_filename = uri.substr(uri_last_slash + 1);
-  }
-
-  // Just match based on filenames for now
-  bool is_from_current_doc = (source_file_path == uri_filename);
-
-  return is_from_current_doc;
-}
-
 void ProcessScopeMembers(
     const slang::ast::Scope& scope, lsp::DocumentSymbol& parent_symbol,
     const std::shared_ptr<slang::SourceManager>& source_manager,
     const std::string& uri) {
+  spdlog::debug("Processing scope members: {}", scope.asSymbol().name);
+
   // Each scope gets its own set of seen names
   std::unordered_set<std::string> scope_seen_names;
 
@@ -203,6 +278,54 @@ void ProcessScopeMembers(
       parent_symbol.children.push_back(std::move(child));
     }
   }
+}
+
+// Process the children of a symbol with type-specific traversal logic
+void ProcessSymbolChildren(
+    const slang::ast::Symbol& symbol, lsp::DocumentSymbol& parent_symbol,
+    const std::shared_ptr<slang::SourceManager>& source_manager,
+    const std::string& uri) {
+  using SK = slang::ast::SymbolKind;
+
+  // Handle different symbol types
+  if (symbol.kind == SK::Package) {
+    // Packages need special handling to reach their members
+    const auto& package = symbol.as<slang::ast::PackageSymbol>();
+    ProcessScopeMembers(package, parent_symbol, source_manager, uri);
+  } else if (symbol.kind == SK::Instance) {
+    // Instances need special handling to reach their body
+    const auto& instance = symbol.as<slang::ast::InstanceSymbol>();
+    const auto& body = instance.body;
+    if (body.isScope()) {
+      const auto& scope = body.as<slang::ast::Scope>();
+      ProcessScopeMembers(scope, parent_symbol, source_manager, uri);
+    }
+  } else if (symbol.kind == SK::TypeAlias) {
+    // Type aliases need to be unwrapped to process their members
+    auto& typeAlias = symbol.as<slang::ast::TypeAliasType>();
+    auto& canonicalType = typeAlias.getCanonicalType();
+
+    // log kind of canonicalType
+    spdlog::debug(
+        "Type alias: {} {}", slang::ast::toString(canonicalType.kind),
+        canonicalType.toString());
+
+    if (canonicalType.kind == SK::PackedStructType) {
+      auto& structType = canonicalType.as<slang::ast::PackedStructType>();
+      // Make sure to process all members of the struct
+      ProcessScopeMembers(structType, parent_symbol, source_manager, uri);
+    } else if (canonicalType.kind == SK::UnpackedStructType) {
+      auto& structType = canonicalType.as<slang::ast::UnpackedStructType>();
+      ProcessScopeMembers(structType, parent_symbol, source_manager, uri);
+    } else if (canonicalType.kind == SK::PackedUnionType) {
+      auto& unionType = canonicalType.as<slang::ast::PackedUnionType>();
+      ProcessScopeMembers(unionType, parent_symbol, source_manager, uri);
+    } else if (canonicalType.kind == SK::UnpackedUnionType) {
+      auto& unionType = canonicalType.as<slang::ast::UnpackedUnionType>();
+      ProcessScopeMembers(unionType, parent_symbol, source_manager, uri);
+    }
+  }
+  // For all other symbol types, don't traverse
 }
 
 void BuildDocumentSymbolHierarchy(
@@ -220,17 +343,11 @@ void BuildDocumentSymbolHierarchy(
       source_manager->getLineNumber(symbol.location),
       source_manager->getColumnNumber(symbol.location), symbol.isScope());
 
-  // Only include symbols from the current document
+  // Only include symbols from the current document and with relevant kinds
   if (!ShouldIncludeSymbol(symbol, source_manager, uri)) return;
 
   // Skip if we've seen this name already in current scope
-  if (!symbol.name.empty() &&
-      seen_names.find(std::string(symbol.name)) != seen_names.end()) {
-    return;
-  }
-
-  // Skip unnamed symbols
-  if (symbol.name.empty()) {
+  if (seen_names.find(std::string(symbol.name)) != seen_names.end()) {
     return;
   }
 
@@ -252,41 +369,8 @@ void BuildDocumentSymbolHierarchy(
   // Add this symbol name to seen names in current scope to prevent duplicates
   seen_names.insert(doc_symbol.name);
 
-  // Process children - handle different kinds of scopes
-  if (symbol.isScope()) {
-    // Direct scope
-    const auto& scope = symbol.as<slang::ast::Scope>();
-    ProcessScopeMembers(scope, doc_symbol, source_manager, uri);
-  } else if (symbol.kind == slang::ast::SymbolKind::Instance) {
-    // Instance symbol - need to use its body
-    const auto& instance = symbol.as<slang::ast::InstanceSymbol>();
-    const auto& body = instance.body;
-
-    if (body.isScope()) {
-      const auto& scope = body.as<slang::ast::Scope>();
-      ProcessScopeMembers(scope, doc_symbol, source_manager, uri);
-    }
-  } else if (symbol.kind == slang::ast::SymbolKind::TypeAlias) {
-    // Handle TypeAlias - check if it's a struct type
-    auto& typeAlias = symbol.as<slang::ast::TypeAliasType>();
-    auto& canonicalType = typeAlias.getCanonicalType();
-
-    if (canonicalType.kind == slang::ast::SymbolKind::PackedStructType) {
-      auto& structType = canonicalType.as<slang::ast::PackedStructType>();
-      ProcessScopeMembers(structType, doc_symbol, source_manager, uri);
-    } else if (
-        canonicalType.kind == slang::ast::SymbolKind::UnpackedStructType) {
-      auto& structType = canonicalType.as<slang::ast::UnpackedStructType>();
-      ProcessScopeMembers(structType, doc_symbol, source_manager, uri);
-    } else if (canonicalType.kind == slang::ast::SymbolKind::PackedUnionType) {
-      auto& unionType = canonicalType.as<slang::ast::PackedUnionType>();
-      ProcessScopeMembers(unionType, doc_symbol, source_manager, uri);
-    } else if (
-        canonicalType.kind == slang::ast::SymbolKind::UnpackedUnionType) {
-      auto& unionType = canonicalType.as<slang::ast::UnpackedUnionType>();
-      ProcessScopeMembers(unionType, doc_symbol, source_manager, uri);
-    }
-  }
+  // Process children with type-specific traversal logic
+  ProcessSymbolChildren(symbol, doc_symbol, source_manager, uri);
 
   // Only add this symbol if it has a valid range or has children
   if (symbol.location || !doc_symbol.children.empty()) {

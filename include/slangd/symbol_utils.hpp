@@ -23,6 +23,41 @@ namespace slangd {
 const slang::ast::Symbol& GetUnwrappedSymbol(const slang::ast::Symbol& symbol);
 
 /**
+ * Determines if a symbol should be included in document symbols
+ *
+ * This checks several criteria:
+ * 1. The symbol has a valid location
+ * 2. The symbol has a name
+ * 3. The symbol is from the current document
+ * 4. The symbol is of a relevant kind (module, package, function, etc.)
+ *
+ * @param symbol The symbol to evaluate
+ * @param source_manager The source manager for location information
+ * @param uri The URI of the document being processed
+ * @return True if the symbol should be included
+ */
+bool ShouldIncludeSymbol(
+    const slang::ast::Symbol& symbol,
+    const std::shared_ptr<slang::SourceManager>& source_manager,
+    const std::string& uri);
+
+/**
+ * Process the children of a symbol with type-specific traversal logic
+ *
+ * This function determines both whether to traverse a symbol's children
+ * and how to traverse them based on the symbol type
+ *
+ * @param symbol The symbol whose children should be processed
+ * @param parent_symbol The document symbol to which children will be added
+ * @param source_manager The source manager for location information
+ * @param uri The URI of the document being processed
+ */
+void ProcessSymbolChildren(
+    const slang::ast::Symbol& symbol, lsp::DocumentSymbol& parent_symbol,
+    const std::shared_ptr<slang::SourceManager>& source_manager,
+    const std::string& uri);
+
+/**
  * Maps a Slang symbol to an LSP symbol kind
  *
  * @param symbol The symbol to map (must be already unwrapped)
@@ -43,14 +78,6 @@ lsp::Range ConvertSlangLocationToLspRange(
 lsp::Range GetSymbolNameLocationRange(
     const slang::ast::Symbol& symbol,
     const std::shared_ptr<slang::SourceManager>& source_manager);
-
-/**
- * Determines if a symbol should be included in document symbols
- */
-bool ShouldIncludeSymbol(
-    const slang::ast::Symbol& symbol,
-    const std::shared_ptr<slang::SourceManager>& source_manager,
-    const std::string& uri);
 
 /**
  * Process members of a scope
