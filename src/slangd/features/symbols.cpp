@@ -14,6 +14,7 @@
 #include <slang/text/SourceManager.h>
 
 #include "slangd/utils/conversion.hpp"
+#include "slangd/utils/source_utils.hpp"
 #include "spdlog/spdlog.h"
 
 namespace slangd {
@@ -58,27 +59,8 @@ bool ShouldIncludeSymbol(
     return false;
   }
 
-  // Check if the symbol is from the current document
-  auto full_source_path =
-      std::string(source_manager->getFileName(symbol.location));
-
-  // Extract just the filename part
-  std::string source_file_path = full_source_path;
-  size_t last_slash = full_source_path.find_last_of("/\\");
-  if (last_slash != std::string::npos) {
-    source_file_path = full_source_path.substr(last_slash + 1);
-  }
-
-  // Extract filename from URI too
-  std::string uri_filename = uri;
-  size_t uri_last_slash = uri.find_last_of("/\\");
-  if (uri_last_slash != std::string::npos) {
-    uri_filename = uri.substr(uri_last_slash + 1);
-  }
-
-  // Just match based on filenames for now
-  bool is_from_current_doc = (source_file_path == uri_filename);
-  if (!is_from_current_doc) {
+  // Check if the symbol is from the current document using our utility
+  if (!IsLocationInDocument(symbol.location, source_manager, uri)) {
     return false;
   }
 
