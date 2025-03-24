@@ -131,9 +131,7 @@ std::vector<lsp::Diagnostic> ConvertDiagnostics(
     }
 
     // Add optional code and source fields
-    // Convert the diagnostic code to string
-    std::string code_str = std::to_string(diag.code.getCode());
-    lsp_diag.code = code_str;
+    lsp_diag.code = toString(diag.code);
     lsp_diag.source = "slang";
 
     result.push_back(lsp_diag);
