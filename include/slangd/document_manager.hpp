@@ -8,8 +8,10 @@
 #include <asio.hpp>
 #include <slang/ast/Compilation.h>
 #include <slang/ast/Symbol.h>
+#include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/syntax/SyntaxTree.h>
 
+#include "lsp/diagnostic.hpp"
 #include "lsp/document_symbol.hpp"
 
 namespace slangd {
@@ -21,6 +23,8 @@ enum class ParseError {
   SyntaxError,
   FileNotFound,
   EncodingError,
+  CompilationError,
+  ElaborationError,
   SlangInternalError,
   UnknownError
 };
@@ -41,14 +45,45 @@ class DocumentManager {
   DocumentManager(asio::io_context& io_context);
 
   /**
-   * @brief Parse a document and create a syntax tree
+   * @brief Parse a document's syntax only (fast)
+   *
+   * This method creates or updates a syntax tree for the document
+   * but does not perform any semantic analysis.
    *
    * @param uri The document URI
    * @param content The document content
    * @return asio::awaitable<std::expected<void, ParseError>> Result of the
    * parsing operation
    */
-  asio::awaitable<std::expected<void, ParseError>> ParseDocument(
+  asio::awaitable<std::expected<void, ParseError>> ParseSyntaxOnly(
+      const std::string& uri, const std::string& content);
+
+  /**
+   * @brief Parse a document with basic compilation (medium speed)
+   *
+   * This method creates or updates a syntax tree and performs basic
+   * compilation to find semantic errors, but does not perform full elaboration.
+   *
+   * @param uri The document URI
+   * @param content The document content
+   * @return asio::awaitable<std::expected<void, ParseError>> Result of the
+   * parsing operation
+   */
+  asio::awaitable<std::expected<void, ParseError>> ParseWithBasicCompilation(
+      const std::string& uri, const std::string& content);
+
+  /**
+   * @brief Parse a document with full elaboration (slow)
+   *
+   * This method creates or updates a syntax tree, performs compilation,
+   * and runs full elaboration for complete semantic analysis.
+   *
+   * @param uri The document URI
+   * @param content The document content
+   * @return asio::awaitable<std::expected<void, ParseError>> Result of the
+   * parsing operation
+   */
+  asio::awaitable<std::expected<void, ParseError>> ParseWithFullElaboration(
       const std::string& uri, const std::string& content);
 
   /**
@@ -89,6 +124,16 @@ class DocumentManager {
    * document symbols or empty vector if not found
    */
   asio::awaitable<std::vector<lsp::DocumentSymbol>> GetDocumentSymbols(
+      const std::string& uri);
+
+  /**
+   * @brief Get diagnostics for a document
+   *
+   * @param uri The document URI
+   * @return asio::awaitable<std::vector<lsp::Diagnostic>> Diagnostics for the
+   * document
+   */
+  asio::awaitable<std::vector<lsp::Diagnostic>> GetDocumentDiagnostics(
       const std::string& uri);
 
  private:

@@ -10,6 +10,8 @@
 #include <asio.hpp>
 #include <jsonrpc/endpoint/endpoint.hpp>
 
+#include "lsp/diagnostic.hpp"
+
 namespace lsp {
 
 /**
@@ -41,7 +43,7 @@ class Server {
       asio::io_context& io_context,
       std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint);
 
-  virtual ~Server();
+  ~Server() = default;
 
   /**
    * @brief Initialize and start the LSP server
@@ -67,6 +69,16 @@ class Server {
    * method handlers for specific LSP messages using the endpoint_.
    */
   virtual void RegisterHandlers() = 0;
+
+  /**
+   * @brief Publish diagnostics to the client
+   *
+   * @param uri Document URI
+   * @param diagnostics List of diagnostics to publish
+   * @param version Optional document version
+   */
+  auto PublishDiagnostics(const PublishDiagnosticsParams& params)
+      -> asio::awaitable<void>;
 
   // File management helpers
   std::optional<std::reference_wrapper<OpenFile>> GetOpenFile(

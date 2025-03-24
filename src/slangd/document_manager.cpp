@@ -10,10 +10,12 @@
 #include <slang/ast/symbols/InstanceSymbols.h>
 #include <slang/ast/symbols/MemberSymbols.h>
 #include <slang/ast/symbols/VariableSymbols.h>
+#include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
+#include "slangd/features/diagnostics.hpp"
 #include "slangd/features/symbols.hpp"
 
 namespace slangd {
@@ -29,7 +31,8 @@ DocumentManager::DocumentManager(asio::io_context& io_context)
   spdlog::info("DocumentManager initialized");
 }
 
-asio::awaitable<std::expected<void, ParseError>> DocumentManager::ParseDocument(
+asio::awaitable<std::expected<void, ParseError>>
+DocumentManager::ParseSyntaxOnly(
     const std::string& uri, const std::string& content) {
   // Ensure thread safety for data structures
   co_await asio::post(strand_, asio::use_awaitable);
@@ -42,27 +45,74 @@ asio::awaitable<std::expected<void, ParseError>> DocumentManager::ParseDocument(
   auto& source_manager = *source_managers_[uri];
   std::string_view content_view(content);
 
-  // Parse the document - fromText handles syntax errors via diagnostics
+  // Parse the document to create a syntax tree
+  // Slang handles syntax errors internally via diagnostics
   auto syntax_tree =
       slang::syntax::SyntaxTree::fromText(content_view, source_manager, uri);
 
-  // Handle failure to create tree (rare)
+  // This should be extremely rare - handle only critical failures
   if (!syntax_tree) {
-    spdlog::error("Failed to create syntax tree for document {}", uri);
+    spdlog::error("Critical failure creating syntax tree for document {}", uri);
     co_return std::unexpected(ParseError::SlangInternalError);
   }
 
   // Store the syntax tree
   syntax_trees_[uri] = syntax_tree;
 
-  // Create a new compilation
+  spdlog::debug("Syntax tree created for document: {}", uri);
+  co_return std::expected<void, ParseError>{};
+}
+
+asio::awaitable<std::expected<void, ParseError>>
+DocumentManager::ParseWithBasicCompilation(
+    const std::string& uri, const std::string& content) {
+  // First perform syntax parsing
+  auto syntax_result = co_await ParseSyntaxOnly(uri, content);
+  if (!syntax_result) {
+    co_return syntax_result;  // Forward the error
+  }
+
+  // Ensure thread safety for compilation
+  co_await asio::post(strand_, asio::use_awaitable);
+
+  // Create a new compilation for clean state
+  // This prevents multiple versions of the same file in one compilation
   compilations_[uri] = std::make_shared<slang::ast::Compilation>();
-  auto& compilation = compilations_[uri];
+  auto& compilation = *compilations_[uri];
 
   // Add the syntax tree to the compilation
-  compilation->addSyntaxTree(syntax_tree);
+  compilation.addSyntaxTree(syntax_trees_[uri]);
 
-  spdlog::info("Successfully parsed {}", uri);
+  spdlog::debug("Basic compilation completed for document: {}", uri);
+  co_return std::expected<void, ParseError>{};
+}
+
+asio::awaitable<std::expected<void, ParseError>>
+DocumentManager::ParseWithFullElaboration(
+    const std::string& uri, const std::string& content) {
+  // First perform basic compilation
+  auto compilation_result = co_await ParseWithBasicCompilation(uri, content);
+  if (!compilation_result) {
+    co_return compilation_result;  // Forward the error
+  }
+
+  // Ensure thread safety for elaboration
+  co_await asio::post(strand_, asio::use_awaitable);
+
+  // Ensure we have a compilation
+  auto comp_it = compilations_.find(uri);
+  if (comp_it == compilations_.end()) {
+    spdlog::error("No compilation found for document: {}", uri);
+    co_return std::unexpected(ParseError::CompilationError);
+  }
+
+  // Get the root to force elaboration
+  auto& compilation = *comp_it->second;
+
+  // Handle elaboration failures via diagnostics, not exceptions
+  compilation.getRoot();
+
+  spdlog::debug("Full elaboration completed for document: {}", uri);
   co_return std::expected<void, ParseError>{};
 }
 
@@ -156,6 +206,41 @@ DocumentManager::GetDocumentSymbols(const std::string& uri) {
       slangd::GetDocumentSymbols(*compilation, source_manager, uri);
 
   co_return document_symbols;
+}
+
+asio::awaitable<std::vector<lsp::Diagnostic>>
+DocumentManager::GetDocumentDiagnostics(const std::string& uri) {
+  // Ensure thread safety
+  co_await asio::post(strand_, asio::use_awaitable);
+
+  std::vector<lsp::Diagnostic> diagnostics;
+
+  // Get the compilation and syntax tree for this document
+  auto comp_it = compilations_.find(uri);
+  auto tree_it = syntax_trees_.find(uri);
+  auto sm_it = source_managers_.find(uri);
+
+  // If any required component is missing, return empty vector
+  if (comp_it == compilations_.end() || tree_it == syntax_trees_.end() ||
+      sm_it == source_managers_.end()) {
+    co_return diagnostics;
+  }
+
+  auto& compilation = comp_it->second;
+  auto& syntax_tree = tree_it->second;
+  auto& source_manager = sm_it->second;
+
+  // Create a diagnostic engine using the document's source manager
+  // This ensures proper location information for diagnostics
+  slang::DiagnosticEngine diagnostic_engine(*source_manager);
+
+  // Use the diagnostic utility to extract diagnostics
+  diagnostics = slangd::GetDocumentDiagnostics(
+      syntax_tree, compilation, source_manager, diagnostic_engine, uri);
+
+  spdlog::info("Found {} diagnostics in document: {}", diagnostics.size(), uri);
+
+  co_return diagnostics;
 }
 
 }  // namespace slangd

@@ -15,8 +15,6 @@ Server::Server(
       io_context_(io_context),
       work_guard_(asio::make_work_guard(io_context)) {}
 
-Server::~Server() = default;
-
 auto Server::Run() -> asio::awaitable<void> {
   // Register method handlers
   RegisterHandlers();
@@ -69,5 +67,11 @@ void Server::UpdateOpenFile(
 }
 
 void Server::RemoveOpenFile(const std::string& uri) { open_files_.erase(uri); }
+
+auto Server::PublishDiagnostics(const PublishDiagnosticsParams& params)
+    -> asio::awaitable<void> {
+  co_await endpoint_->SendNotification(
+      "textDocument/publishDiagnostics", nlohmann::json(params));
+}
 
 }  // namespace lsp

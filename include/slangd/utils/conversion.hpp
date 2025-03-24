@@ -16,4 +16,10 @@ lsp::Range ConvertSlangLocationToLspRange(
     const slang::SourceLocation& location,
     const std::shared_ptr<slang::SourceManager>& source_manager);
 
+// convert const std::optional<nlohmann::json>& json to LSP strong type
+template <typename T>
+T FromJson(const std::optional<nlohmann::json>& json) {
+  return json.value().get<T>();
+}
+
 }  // namespace slangd

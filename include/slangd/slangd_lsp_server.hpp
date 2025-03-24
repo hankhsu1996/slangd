@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <optional>
-#include <string>
 
 #include <asio/awaitable.hpp>
 #include <asio/io_context.hpp>
@@ -25,9 +24,6 @@ class SlangdLspServer : public lsp::Server {
   SlangdLspServer(
       asio::io_context& io_context,
       std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint);
-
-  /** Virtual destructor for proper cleanup. */
-  virtual ~SlangdLspServer();
 
   /** Register all LSP message handlers with the JSON-RPC endpoint. */
   void RegisterHandlers() override;
@@ -63,13 +59,13 @@ class SlangdLspServer : public lsp::Server {
   asio::awaitable<void> HandleTextDocumentDidClose(
       const std::optional<nlohmann::json>& params);
 
+  /** Handle "textDocument/didSave" notification. */
+  asio::awaitable<void> HandleTextDocumentDidSave(
+      const std::optional<nlohmann::json>& params);
+
   /** Handle "textDocument/documentSymbol" request. */
   asio::awaitable<nlohmann::json> HandleTextDocumentDocumentSymbol(
       const std::optional<nlohmann::json>& params);
-
-  /** Parse a SystemVerilog file and report errors. */
-  asio::awaitable<std::expected<void, ParseError>> ParseFile(
-      const std::string& uri, const std::string& content);
 
   // Server state
   bool initialized_ = false;
