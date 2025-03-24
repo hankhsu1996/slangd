@@ -75,9 +75,12 @@ DocumentManager::ParseWithBasicCompilation(
   // Ensure thread safety for compilation
   co_await asio::post(strand_, asio::use_awaitable);
 
-  // Create a new compilation for clean state
-  // This prevents multiple versions of the same file in one compilation
-  compilations_[uri] = std::make_shared<slang::ast::Compilation>();
+  // Create compilation options with lint mode enabled
+  slang::ast::CompilationOptions options;
+  options.flags |= slang::ast::CompilationFlags::LintMode;
+
+  // Create a new compilation with lint mode options
+  compilations_[uri] = std::make_shared<slang::ast::Compilation>(options);
   auto& compilation = *compilations_[uri];
 
   // Add the syntax tree to the compilation
