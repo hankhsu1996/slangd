@@ -5,12 +5,12 @@
 #include <unordered_set>
 #include <vector>
 
+#include <slang/ast/Compilation.h>
+#include <slang/ast/Scope.h>
+#include <slang/ast/Symbol.h>
+#include <slang/text/SourceManager.h>
+
 #include "lsp/document_symbol.hpp"
-#include "slang/ast/Compilation.h"
-#include "slang/ast/Scope.h"
-#include "slang/ast/Symbol.h"
-#include "slang/text/SourceLocation.h"
-#include "slang/text/SourceManager.h"
 
 namespace slangd {
 
@@ -64,13 +64,6 @@ void ProcessSymbolChildren(
  * @return The corresponding LSP symbol kind
  */
 lsp::SymbolKind MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol);
-
-/**
- * Converts a Slang source location to an LSP range
- */
-lsp::Range ConvertSlangLocationToLspRange(
-    const slang::SourceLocation& location,
-    const std::shared_ptr<slang::SourceManager>& source_manager);
 
 /**
  * Gets a range that covers just the symbol's name

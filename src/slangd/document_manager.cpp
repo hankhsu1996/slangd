@@ -14,7 +14,7 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
-#include "slangd/symbol_utils.hpp"
+#include "slangd/features/symbols.hpp"
 
 namespace slangd {
 

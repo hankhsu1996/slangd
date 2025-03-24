@@ -1,5 +1,3 @@
-#include "include/slangd/symbol_utils.hpp"
-
 #include <string>
 
 #include <asio.hpp>
@@ -10,6 +8,7 @@
 #include <spdlog/spdlog.h>
 
 #include "include/lsp/document_symbol.hpp"
+#include "include/slangd/features/symbols.hpp"
 
 int main(int argc, char* argv[]) {
   spdlog::set_level(spdlog::level::debug);

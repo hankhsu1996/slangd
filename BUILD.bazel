@@ -20,8 +20,8 @@ cc_library(
 # Slangd core library
 cc_library(
     name = "slangd_core",
-    srcs = glob(["src/slangd/*.cpp"]),
-    hdrs = glob(["include/slangd/*.hpp"]),
+    srcs = glob(["src/slangd/**/*.cpp"]),
+    hdrs = glob(["include/slangd/**/*.hpp"]),
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
