@@ -181,9 +181,9 @@ asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidOpen(
   asio::co_spawn(
       strand_,
       [this, uri, text, version]() -> asio::awaitable<void> {
-        // Parse with basic compilation for initial open
+        // Parse with compilation for initial open
         auto parse_result =
-            co_await document_manager_->ParseWithBasicCompilation(uri, text);
+            co_await document_manager_->ParseWithCompilation(uri, text);
 
         if (!parse_result) {
           spdlog::debug(
@@ -191,7 +191,7 @@ asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidOpen(
               static_cast<int>(parse_result.error()));
         }
 
-        // Get and publish diagnostics
+        // Get and publish diagnostics (even for empty files)
         auto diagnostics =
             co_await document_manager_->GetDocumentDiagnostics(uri);
         lsp::PublishDiagnosticsParams params{uri, version, diagnostics};
@@ -230,10 +230,17 @@ asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidChange(
       asio::co_spawn(
           strand_,
           [this, uri, text, version]() -> asio::awaitable<void> {
-            // Parse with syntax only for fast feedback during typing
-            co_await document_manager_->ParseSyntaxOnly(uri, text);
+            // Parse with compilation for interactive feedback
+            auto parse_result =
+                co_await document_manager_->ParseWithCompilation(uri, text);
 
-            // Get and publish new diagnostics, even if parse failed
+            if (!parse_result) {
+              spdlog::debug(
+                  "Parse error on document change: {} - {}", uri,
+                  static_cast<int>(parse_result.error()));
+            }
+
+            // Get and publish diagnostics
             auto diagnostics =
                 co_await document_manager_->GetDocumentDiagnostics(uri);
 
@@ -286,9 +293,9 @@ asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidSave(
   asio::co_spawn(
       strand_,
       [this, uri, text, version]() -> asio::awaitable<void> {
-        // Parse with basic compilation on save for more comprehensive analysis
+        // Parse with compilation on save
         auto parse_result =
-            co_await document_manager_->ParseWithBasicCompilation(uri, text);
+            co_await document_manager_->ParseWithCompilation(uri, text);
 
         if (!parse_result) {
           spdlog::debug(
@@ -296,11 +303,9 @@ asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidSave(
               static_cast<int>(parse_result.error()));
         }
 
-        // Get and publish diagnostics (even on error, to show available
-        // diagnostics)
+        // Get and publish diagnostics
         auto diagnostics =
             co_await document_manager_->GetDocumentDiagnostics(uri);
-
         lsp::PublishDiagnosticsParams params{uri, version, diagnostics};
         co_await PublishDiagnostics(params);
       },

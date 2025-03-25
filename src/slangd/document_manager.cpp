@@ -30,7 +30,7 @@ DocumentManager::DocumentManager(asio::io_context& io_context)
     : io_context_(io_context), strand_(asio::make_strand(io_context)) {}
 
 asio::awaitable<std::expected<void, ParseError>>
-DocumentManager::ParseSyntaxOnly(
+DocumentManager::ParseWithCompilation(
     const std::string& uri, const std::string& content) {
   // Ensure thread safety for data structures
   co_await asio::post(strand_, asio::use_awaitable);
@@ -44,7 +44,6 @@ DocumentManager::ParseSyntaxOnly(
   std::string_view content_view(content);
 
   // Parse the document to create a syntax tree
-  // Slang handles syntax errors internally via diagnostics
   auto syntax_tree =
       slang::syntax::SyntaxTree::fromText(content_view, source_manager, uri);
 
@@ -57,27 +56,6 @@ DocumentManager::ParseSyntaxOnly(
   // Store the syntax tree
   syntax_trees_[uri] = syntax_tree;
 
-  // Remove the old compilation if it exists
-  if (compilations_.find(uri) != compilations_.end()) {
-    compilations_.erase(uri);
-  }
-
-  spdlog::debug("Syntax tree created for document: {}", uri);
-  co_return std::expected<void, ParseError>{};
-}
-
-asio::awaitable<std::expected<void, ParseError>>
-DocumentManager::ParseWithBasicCompilation(
-    const std::string& uri, const std::string& content) {
-  // First perform syntax parsing
-  auto syntax_result = co_await ParseSyntaxOnly(uri, content);
-  if (!syntax_result) {
-    co_return syntax_result;  // Forward the error
-  }
-
-  // Ensure thread safety for compilation
-  co_await asio::post(strand_, asio::use_awaitable);
-
   // Create compilation options with lint mode enabled
   slang::ast::CompilationOptions options;
   options.flags |= slang::ast::CompilationFlags::LintMode;
@@ -89,15 +67,15 @@ DocumentManager::ParseWithBasicCompilation(
   // Add the syntax tree to the compilation
   compilation.addSyntaxTree(syntax_trees_[uri]);
 
-  spdlog::debug("Basic compilation completed for document: {}", uri);
+  spdlog::debug("Compilation completed for document: {}", uri);
   co_return std::expected<void, ParseError>{};
 }
 
 asio::awaitable<std::expected<void, ParseError>>
-DocumentManager::ParseWithFullElaboration(
+DocumentManager::ParseWithElaboration(
     const std::string& uri, const std::string& content) {
   // First perform basic compilation
-  auto compilation_result = co_await ParseWithBasicCompilation(uri, content);
+  auto compilation_result = co_await ParseWithCompilation(uri, content);
   if (!compilation_result) {
     co_return compilation_result;  // Forward the error
   }

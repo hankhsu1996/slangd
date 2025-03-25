@@ -45,31 +45,17 @@ class DocumentManager {
   DocumentManager(asio::io_context& io_context);
 
   /**
-   * @brief Parse a document's syntax only (fast)
+   * @brief Parse a document with compilation
    *
-   * This method creates or updates a syntax tree for the document
-   * but does not perform any semantic analysis.
-   *
-   * @param uri The document URI
-   * @param content The document content
-   * @return asio::awaitable<std::expected<void, ParseError>> Result of the
-   * parsing operation
-   */
-  asio::awaitable<std::expected<void, ParseError>> ParseSyntaxOnly(
-      const std::string& uri, const std::string& content);
-
-  /**
-   * @brief Parse a document with basic compilation (medium speed)
-   *
-   * This method creates or updates a syntax tree and performs basic
-   * compilation to find semantic errors, but does not perform full elaboration.
+   * This method creates or updates a syntax tree and performs compilation
+   * to find both syntax and semantic errors. Fast enough for interactive use.
    *
    * @param uri The document URI
    * @param content The document content
    * @return asio::awaitable<std::expected<void, ParseError>> Result of the
    * parsing operation
    */
-  asio::awaitable<std::expected<void, ParseError>> ParseWithBasicCompilation(
+  asio::awaitable<std::expected<void, ParseError>> ParseWithCompilation(
       const std::string& uri, const std::string& content);
 
   /**
@@ -83,7 +69,7 @@ class DocumentManager {
    * @return asio::awaitable<std::expected<void, ParseError>> Result of the
    * parsing operation
    */
-  asio::awaitable<std::expected<void, ParseError>> ParseWithFullElaboration(
+  asio::awaitable<std::expected<void, ParseError>> ParseWithElaboration(
       const std::string& uri, const std::string& content);
 
   /**
