@@ -13,6 +13,8 @@ using jsonrpc::transport::FramedPipeTransport;
 using slangd::SlangdLspServer;
 
 int main(int argc, char* argv[]) {
+  spdlog::set_level(spdlog::level::debug);
+
   // Parse command-line arguments
   const std::vector<std::string> args(argv, argv + argc);
 

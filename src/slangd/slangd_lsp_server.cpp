@@ -170,13 +170,11 @@ asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidOpen(
   std::string language_id = textDoc.value("languageId", "");
   int version = textDoc.value("version", 0);
 
-  // Validate required fields
-  if (uri.empty() || text.empty()) {
-    spdlog::error("Missing required fields in textDocument");
+  if (uri.empty()) {
+    spdlog::error("Missing required URI in textDocument");
     co_return;
   }
 
-  // Store the document
   AddOpenFile(uri, text, language_id, version);
 
   // Post to strand to ensure thread safety
@@ -193,8 +191,7 @@ asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidOpen(
               static_cast<int>(parse_result.error()));
         }
 
-        // Get and publish diagnostics (even on error, to show available
-        // diagnostics)
+        // Get and publish diagnostics
         auto diagnostics =
             co_await document_manager_->GetDocumentDiagnostics(uri);
         lsp::PublishDiagnosticsParams params{uri, version, diagnostics};
@@ -214,6 +211,7 @@ asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidChange(
   const auto& param_val = params.value();
   const auto& uri = param_val["textDocument"]["uri"].get<std::string>();
   const auto& changes = param_val["contentChanges"];
+
   int version = param_val["textDocument"].contains("version")
                     ? param_val["textDocument"]["version"].get<int>()
                     : 0;
@@ -222,34 +220,25 @@ asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidChange(
   if (!changes.empty()) {
     const auto& text = changes[0]["text"].get<std::string>();
 
-    // Update the document
     auto file_opt = GetOpenFile(uri);
     if (file_opt) {
       lsp::OpenFile& file = file_opt->get();
       file.content = text;
-      file.version++;
+      file.version = version;
 
       // Re-parse the file using syntax-only parsing (fast)
       asio::co_spawn(
           strand_,
           [this, uri, text, version]() -> asio::awaitable<void> {
             // Parse with syntax only for fast feedback during typing
-            auto parse_result =
-                co_await document_manager_->ParseSyntaxOnly(uri, text);
+            co_await document_manager_->ParseSyntaxOnly(uri, text);
 
-            if (!parse_result) {
-              spdlog::debug(
-                  "Parse error on document change: {} - {}", uri,
-                  static_cast<int>(parse_result.error()));
-            }
-
-            // Get and publish diagnostics (even on error, to show available
-            // diagnostics)
+            // Get and publish new diagnostics, even if parse failed
             auto diagnostics =
                 co_await document_manager_->GetDocumentDiagnostics(uri);
 
-            lsp::PublishDiagnosticsParams params{uri, version, diagnostics};
-            co_await PublishDiagnostics(params);
+            co_await PublishDiagnostics(
+                lsp::PublishDiagnosticsParams{uri, version, diagnostics});
           },
           asio::detached);
     }

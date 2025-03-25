@@ -27,9 +27,7 @@ void CollectSymbolsRecursively(
     const std::shared_ptr<slang::ast::Compilation>& compilation);
 
 DocumentManager::DocumentManager(asio::io_context& io_context)
-    : io_context_(io_context), strand_(asio::make_strand(io_context)) {
-  spdlog::info("DocumentManager initialized");
-}
+    : io_context_(io_context), strand_(asio::make_strand(io_context)) {}
 
 asio::awaitable<std::expected<void, ParseError>>
 DocumentManager::ParseSyntaxOnly(
@@ -58,6 +56,11 @@ DocumentManager::ParseSyntaxOnly(
 
   // Store the syntax tree
   syntax_trees_[uri] = syntax_tree;
+
+  // Remove the old compilation if it exists
+  if (compilations_.find(uri) != compilations_.end()) {
+    compilations_.erase(uri);
+  }
 
   spdlog::debug("Syntax tree created for document: {}", uri);
   co_return std::expected<void, ParseError>{};
@@ -180,7 +183,7 @@ DocumentManager::GetSymbols(const std::string& uri) {
   symbols.push_back(root_ptr);
 
   // Output the number of symbols found for debugging
-  spdlog::info("Found {} symbols in document: {}", symbols.size(), uri);
+  spdlog::debug("Found {} symbols in document: {}", symbols.size(), uri);
 
   co_return symbols;
 }
@@ -241,7 +244,8 @@ DocumentManager::GetDocumentDiagnostics(const std::string& uri) {
   diagnostics = slangd::GetDocumentDiagnostics(
       syntax_tree, compilation, source_manager, diagnostic_engine, uri);
 
-  spdlog::info("Found {} diagnostics in document: {}", diagnostics.size(), uri);
+  spdlog::debug(
+      "Found {} diagnostics in document: {}", diagnostics.size(), uri);
 
   co_return diagnostics;
 }

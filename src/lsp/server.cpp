@@ -50,12 +50,14 @@ std::optional<std::reference_wrapper<OpenFile>> Server::GetOpenFile(
 void Server::AddOpenFile(
     const std::string& uri, const std::string& content,
     const std::string& language_id, int version) {
+  spdlog::debug("Adding open file: {}", uri);
   OpenFile file{uri, content, language_id, version};
   open_files_[uri] = std::move(file);
 }
 
 void Server::UpdateOpenFile(
     const std::string& uri, const std::vector<std::string>& /*changes*/) {
+  spdlog::debug("Updating open file: {}", uri);
   auto file_opt = GetOpenFile(uri);
   if (file_opt) {
     // Simplified update - in a real implementation, we would apply the changes
@@ -66,10 +68,14 @@ void Server::UpdateOpenFile(
   }
 }
 
-void Server::RemoveOpenFile(const std::string& uri) { open_files_.erase(uri); }
+void Server::RemoveOpenFile(const std::string& uri) {
+  spdlog::debug("Removing open file: {}", uri);
+  open_files_.erase(uri);
+}
 
 auto Server::PublishDiagnostics(const PublishDiagnosticsParams& params)
     -> asio::awaitable<void> {
+  spdlog::debug("Publishing diagnostics for file: {}", params.uri);
   co_await endpoint_->SendNotification(
       "textDocument/publishDiagnostics", nlohmann::json(params));
 }
