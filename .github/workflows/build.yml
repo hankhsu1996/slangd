@@ -21,10 +21,10 @@ jobs:
           disk-cache: ${{ github.workflow }}
           repository-cache: true
 
-      - name: Install Clang 19
+      - name: Install Clang 19 and GCC 14
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-19
+          sudo apt-get install -y clang-19 g++-14
 
       - name: Build
         env:
