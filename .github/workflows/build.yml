@@ -25,13 +25,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang-19
-          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-19 100
-          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-19 100
 
       - name: Build
+        env:
+          CC: clang-19
+          CXX: clang++-19
         run: |
           bazel build //...
 
       - name: Test
+        env:
+          CC: clang-19
+          CXX: clang++-19
         run: |
           bazel test //... --test_output=all --test_timeout=5
