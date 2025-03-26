@@ -21,6 +21,13 @@ jobs:
           disk-cache: ${{ github.workflow }}
           repository-cache: true
 
+      - name: Install Clang 19
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-19
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-19 100
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-19 100
+
       - name: Build
         run: |
           bazel build //...
