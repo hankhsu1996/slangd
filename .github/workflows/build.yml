@@ -26,6 +26,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang-19 g++-14
 
+      - name: Verify Clang 19 and GCC 14
+        run: |
+          clang-19 --version
+          g++-14 --version
+
       - name: Build
         env:
           CC: clang-19
