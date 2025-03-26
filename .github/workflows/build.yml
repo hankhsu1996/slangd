@@ -3,8 +3,26 @@ name: Build and Test
 on:
   push:
     branches: [main]
+    paths:
+      - '**.cpp'
+      - '**.hpp'
+      - '**/BUILD.bazel'
+      - 'MODULE.bazel'
+      - '.bazelrc'
+      - '.bazelignore'
+      - '.bazelversion'
+      - '.github/workflows/build.yml'
   pull_request:
     branches: [main]
+    paths:
+      - '**.cpp'
+      - '**.hpp'
+      - '**/BUILD.bazel'
+      - 'MODULE.bazel'
+      - '.bazelrc'
+      - '.bazelignore'
+      - '.bazelversion'
+      - '.github/workflows/build.yml'
 
 jobs:
   build:

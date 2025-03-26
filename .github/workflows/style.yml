@@ -3,8 +3,18 @@ name: Code Style Check
 on:
   push:
     branches: [main]
+    paths:
+      - '**.cpp'
+      - '**.hpp'
+      - '.clang-format'
+      - '.github/workflows/style.yml'
   pull_request:
     branches: [main]
+    paths:
+      - '**.cpp'
+      - '**.hpp'
+      - '.clang-format'
+      - '.github/workflows/style.yml'
 
 jobs:
   clang-format-check:
