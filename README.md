@@ -1,5 +1,8 @@
 # Slangd - SystemVerilog Language Server
 
+[![Build and Test](https://github.com/hankhsu1996/slangd/actions/workflows/build.yml/badge.svg)](https://github.com/hankhsu1996/slangd/actions/workflows/build.yml)
+[![Code Style Check](https://github.com/hankhsu1996/slangd/actions/workflows/style.yml/badge.svg)](https://github.com/hankhsu1996/slangd/actions/workflows/style.yml)
+
 Slangd is a high-performance SystemVerilog language server that implements the [Language Server Protocol (LSP)](https://microsoft.github.io/language-server-protocol/) to bring modern IDE features to hardware description language development. Built on the [Slang](https://github.com/MikePopoloski/slang) frontend, Slangd leverages Slang's impressive speed and extensive SystemVerilog compliance, providing robust language support for large codebases. The project is implemented using modern C++ practices and design patterns for maintainability, safety, and performance.
 
 > ⚠️ **Development Status**: This project is under active development. Features are incomplete, APIs are unstable, and rapid changes should be expected.
