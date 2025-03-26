@@ -1,71 +1,43 @@
 # .bazelrc
 
-# General Bazel settings for C++ development
-# ---------------------------------------------------------
-
 # Use clang as the compiler
 build --action_env=CC=clang
 build --action_env=CXX=clang++
 
-# Common C++ settings for all builds
+# C++ settings
 build --cxxopt='-std=c++23'
-build --host_cxxopt='-std=c++23'
-
-# Warning configuration
 build --cxxopt='-Wall'
 build --cxxopt='-Wextra'
 build --cxxopt='-Wno-unused-parameter'
-# Silence the deprecation warnings we saw
 build --cxxopt='-Wno-deprecated-declarations'
 
-# Performance improvements for Bazel
+# Build settings
 build --incompatible_strict_action_env
-build --disk_cache=~/.cache/bazel-disk-cache
-build --nobuild_runfile_links
-# Use at most 70% of CPU cores for build parallelism
+build --disk_cache=~/.cache/bazel-disk
 build --local_resources=cpu=HOST_CPUS*0.7
+build --verbose_failures
 
-# Debug configuration
-# ---------------------------------------------------------
-# Best for development: full debug info, no optimization, assertions enabled
+# Debug config
 build:debug --compilation_mode=dbg
-build:debug --cxxopt='-g3'  # Maximum debug info
-build:debug --cxxopt='-O0'  # No optimization
+build:debug --cxxopt='-g3'
+build:debug --cxxopt='-O0'
 build:debug --strip=never
 
-# Release configuration
-# ---------------------------------------------------------
-# Best for production: maximum optimization, no debug info, assertions disabled
+# Release config
 build:release --compilation_mode=opt
-build:release --cxxopt='-O3'  # Maximum optimization
-build:release --cxxopt='-DNDEBUG'  # Disable assertions
+build:release --cxxopt='-O3'
+build:release --cxxopt='-DNDEBUG'
 build:release --strip=always
-build:release --copt='-march=native'  # Optimize for the current CPU architecture
+build:release --copt='-march=native'
 
-# Fastbuild configuration
-# ---------------------------------------------------------
-# Middle ground: some optimization, some debug info, faster compile times
+# Fastbuild config
 build:fastbuild --compilation_mode=fastbuild
-build:fastbuild --cxxopt='-O1'  # Light optimization
+build:fastbuild --cxxopt='-O1'
 build:fastbuild --strip=never
 
 # Test settings
-# ---------------------------------------------------------
 test --test_output=errors
-test --test_timeout=5  # 5 seconds timeout for tests
+test --test_timeout=5
 
-# Set debug as the default for development
-# ---------------------------------------------------------
-# This is best for catching issues early, provides good debug experience
-# Comment this line out and uncomment the next one if you prefer release by default
+# Default to debug for development
 build --config=debug
-# build --config=release
-
-# Development convenience tools
-# ---------------------------------------------------------
-# Add compilation database generation for IDE integration
-build:compdb --aspects @bazel_tools//tools/cpp:cc_configure.bzl%cc_configure_info_aspect
-build:compdb --output_groups=compilation_database_files
-
-# Print information messages
-build --verbose_failures
