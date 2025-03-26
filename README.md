@@ -9,11 +9,10 @@ Slangd is a high-performance SystemVerilog language server that implements the [
 
 ## Project Goals
 
-- Provide a complete LSP protocol implementation for SystemVerilog
-- Support all major SystemVerilog language features
-- Deliver robust error handling and diagnostics
-- Optimize performance for large hardware design projects
-- Integrate seamlessly with modern IDEs like VS Code
+- Provide a Language Server Protocol (LSP) implementation for SystemVerilog using Slang
+- Demonstrate modern C++ practices and design patterns
+- Implement a complete LSP feature set for SystemVerilog development
+- Create a robust and maintainable codebase using C++23 features
 
 ## Requirements
 
@@ -42,31 +41,16 @@ bazel run @hedron_compile_commands//:refresh_all
 
 ## Features
 
-Current implementation status:
+Currently focusing on single-file language features powered by the Slang library:
 
-### Language Server Features
-
-Slangd implements the Language Server Protocol for SystemVerilog:
-
-- [x] Document synchronization (open, change, close)
-- [ ] Diagnostics reporting
-- [ ] Document symbols (in progress)
-- [ ] Workspace symbols
+- [x] Document symbols
+- [x] Basic diagnostics
 - [ ] Hover information
 - [ ] Go to definition
 - [ ] Find references
 - [ ] Code completion
-- [ ] Formatting
-- [ ] Semantic highlighting
 
-### Implementation Details
-
-- [x] Built on Slang parser and compiler
-- [x] Slang library integrated with Bazel build system
-- [x] Complete JSON-RPC library implementation
-- [x] Transport layer implementation (pipe, socket, stdio)
-- [x] Asynchronous operation with ASIO coroutines
-- [x] Extensive test suite
+Workspace-wide features will be implemented in future iterations.
 
 ## License
 
