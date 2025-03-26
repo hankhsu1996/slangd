@@ -26,18 +26,26 @@ cc_test(
 )
 
 cc_test(
-    name = "symbol_utils_test",
+    name = "symbols_test",
     timeout = "short",
     srcs = [
-        "fixture_utils.hpp",
-        "symbol_utils_test.cpp",
-    ],
-    data = [
-        ":fixtures",
+        "features/symbols_test.cpp",
     ],
     deps = [
         "//:slangd_core",
-        "@bazel_tools//tools/cpp/runfiles",
+        "@catch2",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "diagnostics_test",
+    timeout = "short",
+    srcs = [
+        "features/diagnostics_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
         "@catch2",
         "@slang",
     ],
