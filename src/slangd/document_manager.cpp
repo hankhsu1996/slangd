@@ -26,8 +26,8 @@ void CollectSymbolsRecursively(
     std::vector<std::shared_ptr<const slang::ast::Symbol>>& symbols,
     const std::shared_ptr<slang::ast::Compilation>& compilation);
 
-DocumentManager::DocumentManager(asio::io_context& io_context)
-    : io_context_(io_context), strand_(asio::make_strand(io_context)) {}
+DocumentManager::DocumentManager(asio::any_io_executor executor)
+    : executor_(executor), strand_(asio::make_strand(executor)) {}
 
 asio::awaitable<std::expected<void, ParseError>>
 DocumentManager::ParseWithCompilation(

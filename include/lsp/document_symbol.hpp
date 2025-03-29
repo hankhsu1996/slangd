@@ -11,6 +11,13 @@
 namespace lsp {
 
 /**
+ * Document Symbol Params
+ */
+struct DocumentSymbolParams : WorkDoneProgressParams, PartialResultParams {
+  TextDocumentIdentifier textDocument;
+};
+
+/**
  * Symbol kinds as defined by the LSP specification
  */
 enum class SymbolKind {

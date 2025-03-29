@@ -22,7 +22,7 @@ class SlangdLspServer : public lsp::Server {
  public:
   /** Constructor that accepts a pre-configured RPC endpoint. */
   SlangdLspServer(
-      asio::io_context& io_context,
+      asio::any_io_executor executor,
       std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint);
 
   /** Register all LSP message handlers with the JSON-RPC endpoint. */
@@ -72,7 +72,7 @@ class SlangdLspServer : public lsp::Server {
   bool shutdown_requested_ = false;
 
   // Thread safety
-  asio::strand<asio::io_context::executor_type> strand_;
+  asio::strand<asio::any_io_executor> strand_;
 
   // Document management
   std::unique_ptr<DocumentManager> document_manager_;

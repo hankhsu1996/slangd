@@ -1,5 +1,6 @@
 #include "slangd/slangd_lsp_server.hpp"
 
+#include <lsp/document_symbol.hpp>
 #include <slang/syntax/AllSyntax.h>
 #include <slang/syntax/SyntaxVisitor.h>
 #include <spdlog/spdlog.h>
@@ -7,12 +8,11 @@
 namespace slangd {
 
 SlangdLspServer::SlangdLspServer(
-    asio::io_context& io_context,
+    asio::any_io_executor executor,
     std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint)
-    : lsp::Server(io_context, std::move(endpoint)),
-      strand_(asio::make_strand(io_context)) {
-  // Initialize the document manager with a reference to io_context
-  document_manager_ = std::make_unique<DocumentManager>(io_context);
+    : lsp::Server(executor, std::move(endpoint)),
+      strand_(asio::make_strand(executor)) {
+  document_manager_ = std::make_unique<DocumentManager>(executor);
 }
 
 void SlangdLspServer::RegisterHandlers() {
@@ -142,10 +142,6 @@ asio::awaitable<void> SlangdLspServer::HandleExit(
 
   // Clean up resources using base class Shutdown
   co_await lsp::Server::Shutdown();
-
-  // Signal io_context to stop
-  io_context_.stop();
-
   co_return;
 }
 

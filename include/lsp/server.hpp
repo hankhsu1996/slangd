@@ -40,7 +40,7 @@ class Server {
    * @param endpoint Pre-configured JSON-RPC endpoint
    */
   Server(
-      asio::io_context& io_context,
+      asio::any_io_executor executor,
       std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint);
 
   ~Server() = default;
@@ -92,8 +92,8 @@ class Server {
 
  protected:
   std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint_;
-  asio::io_context& io_context_;
-  asio::executor_work_guard<asio::io_context::executor_type> work_guard_;
+  asio::any_io_executor executor_;
+  asio::executor_work_guard<asio::any_io_executor> work_guard_;
 
   // Map of open document URIs to their content
   std::unordered_map<std::string, OpenFile> open_files_;

@@ -9,11 +9,11 @@
 namespace lsp {
 
 Server::Server(
-    asio::io_context& io_context,
+    asio::any_io_executor executor,
     std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint)
     : endpoint_(std::move(endpoint)),
-      io_context_(io_context),
-      work_guard_(asio::make_work_guard(io_context)) {}
+      executor_(executor),
+      work_guard_(asio::make_work_guard(executor)) {}
 
 auto Server::Run() -> asio::awaitable<void> {
   // Register method handlers
@@ -34,7 +34,6 @@ auto Server::Shutdown() -> asio::awaitable<void> {
 
   // Release work guard to allow threads to finish
   work_guard_.reset();
-  io_context_.stop();
 }
 
 // File management helpers

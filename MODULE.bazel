@@ -15,7 +15,7 @@ bazel_dep(name = "slang", version = "8.0.0")
 git_override(
     module_name = "slang",
     remote = "https://github.com/hankhsu1996/slang-bazel.git",
-    commit = "3539e9033c1f99dba74492142f42c49307b3a963",
+    commit = "e3972dc085ef2ebb44a8937dd2fa5183ba2b3b94",
 )
 
 # JSON-RPC C++ Library
@@ -23,7 +23,7 @@ bazel_dep(name = "jsonrpc", version = "0.0.0")
 git_override(
     module_name = "jsonrpc",
     remote = "https://github.com/hankhsu1996/jsonrpc-cpp-lib.git",
-    tag = "v2.1.1",
+    commit = "ff97272cdae341644653bc5d459a209f0af6a267",
 )
 
 # SPDLOG Logging Library

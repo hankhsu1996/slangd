@@ -40,9 +40,9 @@ class DocumentManager {
   /**
    * @brief Construct a new Document Manager object
    *
-   * @param io_context ASIO io_context for async operations
+   * @param executor ASIO executor for async operations
    */
-  DocumentManager(asio::io_context& io_context);
+  DocumentManager(asio::any_io_executor executor);
 
   /**
    * @brief Parse a document with compilation
@@ -123,11 +123,11 @@ class DocumentManager {
       const std::string& uri);
 
  private:
-  // ASIO io_context reference
-  asio::io_context& io_context_;
+  // ASIO executor reference
+  asio::any_io_executor executor_;
 
   // Strand for synchronizing access to shared data
-  asio::strand<asio::io_context::executor_type> strand_;
+  asio::strand<asio::any_io_executor> strand_;
 
   // Maps document URIs to their syntax trees
   std::unordered_map<std::string, std::shared_ptr<slang::syntax::SyntaxTree>>

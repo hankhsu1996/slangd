@@ -11,6 +11,7 @@
 template <typename F>
 void RunTest(F&& test_fn) {
   asio::io_context io_context;
+  auto executor = io_context.get_executor();
 
   bool completed = false;
   std::exception_ptr exception;
@@ -18,9 +19,9 @@ void RunTest(F&& test_fn) {
   asio::co_spawn(
       io_context,
       [test_fn = std::move(test_fn), &completed, &exception,
-       &io_context]() -> asio::awaitable<void> {
+       executor]() -> asio::awaitable<void> {
         try {
-          co_await test_fn(io_context);
+          co_await test_fn(executor);
           completed = true;
         } catch (...) {
           exception = std::current_exception();
@@ -40,7 +41,8 @@ void RunTest(F&& test_fn) {
 
 TEST_CASE("DocumentManager initialization", "[basic]") {
   asio::io_context io_context;
-  REQUIRE_NOTHROW(slangd::DocumentManager(io_context));
+  auto executor = io_context.get_executor();
+  REQUIRE_NOTHROW(slangd::DocumentManager(executor));
   INFO("DocumentManager can be initialized");
 }
 
@@ -63,9 +65,9 @@ TEST_CASE("DocumentManager can read files", "[basic]") {
 
 // Test ParseDocument functionality
 TEST_CASE("DocumentManager can parse a document", "[parse]") {
-  RunTest([](asio::io_context& io_context) -> asio::awaitable<void> {
+  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Create document manager
-    slangd::DocumentManager doc_manager(io_context);
+    slangd::DocumentManager doc_manager(executor);
 
     // Load real SystemVerilog content from test file
     std::string file_path = GetTestFilePath("parse_test.sv");
@@ -84,9 +86,9 @@ TEST_CASE("DocumentManager can parse a document", "[parse]") {
 
 // Test GetSyntaxTree functionality with more detailed validation
 TEST_CASE("DocumentManager can retrieve a syntax tree", "[syntax]") {
-  RunTest([](asio::io_context& io_context) -> asio::awaitable<void> {
+  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Create document manager
-    slangd::DocumentManager doc_manager(io_context);
+    slangd::DocumentManager doc_manager(executor);
 
     // Load real SystemVerilog content from test file
     std::string file_path = GetTestFilePath("syntax_test.sv");
@@ -114,9 +116,9 @@ TEST_CASE("DocumentManager can retrieve a syntax tree", "[syntax]") {
 
 // Test GetCompilation functionality with more detailed validation
 TEST_CASE("DocumentManager can retrieve a compilation", "[compilation]") {
-  RunTest([](asio::io_context& io_context) -> asio::awaitable<void> {
+  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Create document manager
-    slangd::DocumentManager doc_manager(io_context);
+    slangd::DocumentManager doc_manager(executor);
 
     // Load real SystemVerilog content from test file
     std::string file_path = GetTestFilePath("compile_test.sv");
@@ -158,9 +160,9 @@ TEST_CASE("DocumentManager can retrieve a compilation", "[compilation]") {
 
 // Test GetSymbols functionality with more detailed validation
 TEST_CASE("DocumentManager can extract symbols from a document", "[symbols]") {
-  RunTest([](asio::io_context& io_context) -> asio::awaitable<void> {
+  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Create document manager
-    slangd::DocumentManager doc_manager(io_context);
+    slangd::DocumentManager doc_manager(executor);
 
     // Load real SystemVerilog content from test file
     std::string file_path = GetTestFilePath("symbol_test.sv");

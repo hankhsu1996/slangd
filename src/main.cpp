@@ -30,13 +30,13 @@ int main(int argc, char* argv[]) {
 
   // Create the IO context
   asio::io_context io_context;
+  auto executor = io_context.get_executor();
 
   // Create transport and endpoint
   auto transport =
-      std::make_unique<FramedPipeTransport>(io_context, pipe_name, false);
+      std::make_unique<FramedPipeTransport>(executor, pipe_name, false);
 
-  auto endpoint =
-      std::make_unique<RpcEndpoint>(io_context, std::move(transport));
+  auto endpoint = std::make_unique<RpcEndpoint>(executor, std::move(transport));
 
   // Set up error handling
   endpoint->SetErrorHandler([](auto code, const auto& message) {
@@ -46,7 +46,7 @@ int main(int argc, char* argv[]) {
 
   // Create the server
   auto server =
-      std::make_unique<SlangdLspServer>(io_context, std::move(endpoint));
+      std::make_unique<SlangdLspServer>(executor, std::move(endpoint));
 
   // Start the server asynchronously
   asio::co_spawn(
