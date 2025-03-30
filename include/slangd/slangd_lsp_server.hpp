@@ -7,7 +7,7 @@
 #include <asio/io_context.hpp>
 #include <asio/strand.hpp>
 
-#include "lsp/server.hpp"
+#include "lsp/lsp_server.hpp"
 #include "slangd/document_manager.hpp"
 
 namespace slangd {
@@ -18,7 +18,7 @@ class TestSlangdLspServer;
 /**
  * SystemVerilog Language Server implementing the LSP protocol
  */
-class SlangdLspServer : public lsp::Server {
+class SlangdLspServer : public lsp::LspServer {
  public:
   /** Constructor that accepts a pre-configured RPC endpoint. */
   SlangdLspServer(

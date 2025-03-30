@@ -1,4 +1,4 @@
-#include "lsp/server.hpp"
+#include "lsp/lsp_server.hpp"
 
 #include <asio.hpp>
 #include <jsonrpc/endpoint/endpoint.hpp>
@@ -8,14 +8,14 @@
 
 namespace lsp {
 
-Server::Server(
+LspServer::LspServer(
     asio::any_io_executor executor,
     std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint)
     : endpoint_(std::move(endpoint)),
       executor_(executor),
       work_guard_(asio::make_work_guard(executor)) {}
 
-auto Server::Run() -> asio::awaitable<void> {
+auto LspServer::Start() -> asio::awaitable<void> {
   // Register method handlers
   RegisterHandlers();
 
@@ -24,7 +24,7 @@ auto Server::Run() -> asio::awaitable<void> {
   co_await endpoint_->WaitForShutdown();
 }
 
-auto Server::Shutdown() -> asio::awaitable<void> {
+auto LspServer::Shutdown() -> asio::awaitable<void> {
   spdlog::info("Server shutting down");
 
   if (endpoint_) {
@@ -37,7 +37,7 @@ auto Server::Shutdown() -> asio::awaitable<void> {
 }
 
 // File management helpers
-std::optional<std::reference_wrapper<OpenFile>> Server::GetOpenFile(
+std::optional<std::reference_wrapper<OpenFile>> LspServer::GetOpenFile(
     const std::string& uri) {
   auto it = open_files_.find(uri);
   if (it != open_files_.end()) {
@@ -46,7 +46,7 @@ std::optional<std::reference_wrapper<OpenFile>> Server::GetOpenFile(
   return std::nullopt;
 }
 
-void Server::AddOpenFile(
+void LspServer::AddOpenFile(
     const std::string& uri, const std::string& content,
     const std::string& language_id, int version) {
   spdlog::debug("Adding open file: {}", uri);
@@ -54,7 +54,7 @@ void Server::AddOpenFile(
   open_files_[uri] = std::move(file);
 }
 
-void Server::UpdateOpenFile(
+void LspServer::UpdateOpenFile(
     const std::string& uri, const std::vector<std::string>& /*changes*/) {
   spdlog::debug("Updating open file: {}", uri);
   auto file_opt = GetOpenFile(uri);
@@ -67,12 +67,12 @@ void Server::UpdateOpenFile(
   }
 }
 
-void Server::RemoveOpenFile(const std::string& uri) {
+void LspServer::RemoveOpenFile(const std::string& uri) {
   spdlog::debug("Removing open file: {}", uri);
   open_files_.erase(uri);
 }
 
-auto Server::PublishDiagnostics(const PublishDiagnosticsParams& params)
+auto LspServer::PublishDiagnostics(const PublishDiagnosticsParams& params)
     -> asio::awaitable<void> {
   spdlog::debug("Publishing diagnostics for file: {}", params.uri);
   co_await endpoint_->SendNotification(

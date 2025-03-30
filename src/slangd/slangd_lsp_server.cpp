@@ -10,7 +10,7 @@ namespace slangd {
 SlangdLspServer::SlangdLspServer(
     asio::any_io_executor executor,
     std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint)
-    : lsp::Server(executor, std::move(endpoint)),
+    : lsp::LspServer(executor, std::move(endpoint)),
       strand_(asio::make_strand(executor)) {
   document_manager_ = std::make_unique<DocumentManager>(executor);
 }
@@ -141,7 +141,7 @@ asio::awaitable<void> SlangdLspServer::HandleExit(
       exit_code);
 
   // Clean up resources using base class Shutdown
-  co_await lsp::Server::Shutdown();
+  co_await lsp::LspServer::Shutdown();
   co_return;
 }
 

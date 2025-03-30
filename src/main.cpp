@@ -54,7 +54,7 @@ int main(int argc, char* argv[]) {
       [&server]() -> asio::awaitable<void> {
         try {
           // Run the server
-          co_await server->Run();
+          co_await server->Start();
           spdlog::info("Server run completed");
         } catch (const std::exception& ex) {
           // Log the error

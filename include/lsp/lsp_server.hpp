@@ -31,7 +31,7 @@ struct OpenFile {
  * Protocol communication using JSON-RPC. It provides infrastructure and
  * delegates specific LSP message handling to derived classes.
  */
-class Server {
+class LspServer {
  public:
   /**
    * @brief Constructor that accepts a pre-configured RPC endpoint
@@ -39,11 +39,11 @@ class Server {
    * @param io_context ASIO io_context for async operations
    * @param endpoint Pre-configured JSON-RPC endpoint
    */
-  Server(
+  LspServer(
       asio::any_io_executor executor,
       std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint);
 
-  ~Server() = default;
+  ~LspServer() = default;
 
   /**
    * @brief Initialize and start the LSP server
@@ -51,7 +51,7 @@ class Server {
    * This method starts the server and handles messages until shutdown
    * @return asio::awaitable<void> Awaitable that completes when server stops
    */
-  virtual auto Run() -> asio::awaitable<void>;
+  virtual auto Start() -> asio::awaitable<void>;
 
   /**
    * @brief Shut down the server
