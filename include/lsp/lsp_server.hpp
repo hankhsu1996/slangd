@@ -51,7 +51,7 @@ class LspServer {
    * This method starts the server and handles messages until shutdown
    * @return asio::awaitable<void> Awaitable that completes when server stops
    */
-  virtual auto Start() -> asio::awaitable<void>;
+  auto Start() -> asio::awaitable<void>;
 
   /**
    * @brief Shut down the server
@@ -59,7 +59,7 @@ class LspServer {
    * @return asio::awaitable<void> Awaitable that completes when shutdown is
    * done
    */
-  virtual auto Shutdown() -> asio::awaitable<void>;
+  auto Shutdown() -> asio::awaitable<void>;
 
  protected:
   /**
