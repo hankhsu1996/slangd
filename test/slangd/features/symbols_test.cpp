@@ -9,7 +9,8 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
-#include "include/lsp/document_symbol.hpp"
+#include "include/lsp/basic.hpp"
+#include "include/lsp/document_features.hpp"
 
 int main(int argc, char* argv[]) {
   spdlog::set_level(spdlog::level::debug);

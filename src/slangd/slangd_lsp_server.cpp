@@ -1,9 +1,10 @@
 #include "slangd/slangd_lsp_server.hpp"
 
-#include <lsp/document_symbol.hpp>
 #include <slang/syntax/AllSyntax.h>
 #include <slang/syntax/SyntaxVisitor.h>
 #include <spdlog/spdlog.h>
+
+#include "lsp/document_features.hpp"
 
 namespace slangd {
 
@@ -11,167 +12,58 @@ SlangdLspServer::SlangdLspServer(
     asio::any_io_executor executor,
     std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint)
     : lsp::LspServer(executor, std::move(endpoint)),
-      strand_(asio::make_strand(executor)) {
-  document_manager_ = std::make_unique<DocumentManager>(executor);
+      strand_(asio::make_strand(executor)),
+      document_manager_(std::make_unique<DocumentManager>(executor)) {}
+
+auto SlangdLspServer::OnInitialize(const lsp::InitializeParams& params)
+    -> asio::awaitable<lsp::InitializeResult> {
+  spdlog::info("SlangdLspServer OnInitialize");
+  lsp::TextDocumentSyncOptions syncOptions{
+      .openClose = true,
+      .change = lsp::TextDocumentSyncKind::Full,
+  };
+
+  lsp::ServerCapabilities capabilities{
+      .textDocumentSync = syncOptions,
+      .documentSymbolProvider = true,
+  };
+
+  co_return lsp::InitializeResult{
+      .capabilities = capabilities,
+      .serverInfo = lsp::InitializeResult::ServerInfo{"slangd", "0.1.0"}};
 }
 
-void SlangdLspServer::RegisterHandlers() {
-  // Register standard LSP methods with proper handler implementation
-  endpoint_->RegisterMethodCall(
-      "initialize",
-      [this](const std::optional<nlohmann::json>& params)
-          -> asio::awaitable<nlohmann::json> {
-        // Delegate to the handler method
-        return HandleInitialize(params);
-      });
-
-  // Add shutdown handler
-  endpoint_->RegisterMethodCall(
-      "shutdown",
-      [this](const std::optional<nlohmann::json>& params)
-          -> asio::awaitable<nlohmann::json> {
-        // Delegate to the handler method
-        return HandleShutdown(params);
-      });
-
-  // Add exit notification handler
-  endpoint_->RegisterNotification(
-      "exit",
-      [this](const std::optional<nlohmann::json>& params)
-          -> asio::awaitable<void> {
-        // Delegate to the handler method
-        return HandleExit(params);
-      });
-
-  // Add initialized notification handler
-  endpoint_->RegisterNotification(
-      "initialized",
-      [this](const std::optional<nlohmann::json>& params)
-          -> asio::awaitable<void> {
-        // Delegate to the handler method
-        return HandleInitialized(params);
-      });
-
-  // Register notifications for document synchronization
-  endpoint_->RegisterNotification(
-      "textDocument/didOpen",
-      [this](const std::optional<nlohmann::json>& params)
-          -> asio::awaitable<void> {
-        return HandleTextDocumentDidOpen(params);
-      });
-
-  endpoint_->RegisterNotification(
-      "textDocument/didChange",
-      [this](const std::optional<nlohmann::json>& params)
-          -> asio::awaitable<void> {
-        return HandleTextDocumentDidChange(params);
-      });
-
-  endpoint_->RegisterNotification(
-      "textDocument/didClose",
-      [this](const std::optional<nlohmann::json>& params)
-          -> asio::awaitable<void> {
-        return HandleTextDocumentDidClose(params);
-      });
-
-  endpoint_->RegisterNotification(
-      "textDocument/didSave",
-      [this](const std::optional<nlohmann::json>& params)
-          -> asio::awaitable<void> {
-        return HandleTextDocumentDidSave(params);
-      });
-
-  // Register document symbol handler
-  endpoint_->RegisterMethodCall(
-      "textDocument/documentSymbol",
-      [this](const std::optional<nlohmann::json>& params)
-          -> asio::awaitable<nlohmann::json> {
-        return HandleTextDocumentDocumentSymbol(params);
-      });
-}
-
-asio::awaitable<nlohmann::json> SlangdLspServer::HandleInitialize(
-    const std::optional<nlohmann::json>& params) {
-  // Return initialize result with updated capabilities
-  nlohmann::json capabilities = {
-      {"textDocumentSync",
-       {{"openClose", true}, {"change", 1}, {"save", true}}},
-      {"documentSymbolProvider", true},
-      {"publishDiagnostics", {}}};
-
-  nlohmann::json result = {
-      {"capabilities", capabilities},
-      {"serverInfo", {{"name", "slangd"}, {"version", "0.1.0"}}}};
-
-  co_return result;
-}
-
-asio::awaitable<nlohmann::json> SlangdLspServer::HandleShutdown(
-    const std::optional<nlohmann::json>& params) {
-  // Set shutdown flag to indicate server is shutting down
-  shutdown_requested_ = true;
-
-  spdlog::info("SlangdLspServer shutdown request received");
-
-  // Return empty/null result as per LSP spec
-  co_return nullptr;
-}
-
-asio::awaitable<void> SlangdLspServer::HandleInitialized(
-    const std::optional<nlohmann::json>& params) {
-  // Mark server as initialized
+auto SlangdLspServer::OnInitialized(const lsp::InitializedParams& params)
+    -> asio::awaitable<void> {
+  spdlog::info("SlangdLspServer OnInitialized");
   initialized_ = true;
-
-  spdlog::info("SlangdLspServer initialized notification received");
-
-  // This would be a good place to send server-initiated requests
-  // such as workspace configuration requests or client registrations
-
   co_return;
 }
 
-asio::awaitable<void> SlangdLspServer::HandleExit(
-    const std::optional<nlohmann::json>& params) {
-  // If shutdown was called before, exit with code 0
-  // Otherwise, exit with error code 1 as per LSP spec
-  int exit_code = shutdown_requested_ ? 0 : 1;
+auto SlangdLspServer::OnShutdown(const lsp::ShutdownParams& params)
+    -> asio::awaitable<lsp::ShutdownResult> {
+  shutdown_requested_ = true;
+  spdlog::info("SlangdLspServer OnShutdown");
+  co_return lsp::ShutdownResult{};
+}
 
-  spdlog::info(
-      "SlangdLspServer exit notification received, will exit with code: {}",
-      exit_code);
-
-  // Clean up resources using base class Shutdown
+auto SlangdLspServer::OnExit(const lsp::ExitParams& params)
+    -> asio::awaitable<void> {
+  spdlog::info("SlangdLspServer OnExit");
   co_await lsp::LspServer::Shutdown();
   co_return;
 }
 
-asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidOpen(
-    const std::optional<nlohmann::json>& params) {
-  if (!params) {
-    co_return;
-  }
+asio::awaitable<void> SlangdLspServer::OnDidOpenTextDocument(
+    const lsp::DidOpenTextDocumentParams& params) {
+  spdlog::info("SlangdLspServer OnDidOpenTextDocument");
+  const auto& textDoc = params.textDocument;
+  const auto& uri = textDoc.uri;
+  const auto& text = textDoc.text;
+  const auto& languageId = textDoc.languageId;
+  const auto& version = textDoc.version;
 
-  // Manually extract fields to avoid exceptions
-  const auto& json = params.value();
-  if (!json.contains("textDocument") || !json["textDocument"].is_object()) {
-    spdlog::error("Missing or invalid textDocument field");
-    co_return;
-  }
-
-  const auto& textDoc = json["textDocument"];
-
-  // Extract fields with fallbacks
-  std::string uri = textDoc.value("uri", "");
-  std::string text = textDoc.value("text", "");
-  std::string language_id = textDoc.value("languageId", "");
-  int version = textDoc.value("version", 0);
-
-  if (uri.empty()) {
-    spdlog::error("Missing required URI in textDocument");
-    co_return;
-  }
-
-  AddOpenFile(uri, text, language_id, version);
+  AddOpenFile(uri, text, languageId, version);
 
   // Post to strand to ensure thread safety
   asio::co_spawn(
@@ -198,23 +90,21 @@ asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidOpen(
   co_return;
 }
 
-asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidChange(
-    const std::optional<nlohmann::json>& params) {
-  if (!params) {
-    co_return;
-  }
+asio::awaitable<void> SlangdLspServer::OnDidChangeTextDocument(
+    const lsp::DidChangeTextDocumentParams& params) {
+  spdlog::info("SlangdLspServer OnDidChangeTextDocument");
 
-  const auto& param_val = params.value();
-  const auto& uri = param_val["textDocument"]["uri"].get<std::string>();
-  const auto& changes = param_val["contentChanges"];
+  const auto& textDoc = params.textDocument;
+  const auto& uri = textDoc.uri;
+  const auto& changes = params.contentChanges;
 
-  int version = param_val["textDocument"].contains("version")
-                    ? param_val["textDocument"]["version"].get<int>()
-                    : 0;
+  int version = textDoc.version;
 
   // For full sync, we get the full content in the first change
   if (!changes.empty()) {
-    const auto& text = changes[0]["text"].get<std::string>();
+    const auto& full_change =
+        std::get<lsp::TextDocumentContentFullChangeEvent>(changes[0]);
+    const auto& text = full_change.text;
 
     auto file_opt = GetOpenFile(uri);
     if (file_opt) {
@@ -250,81 +140,23 @@ asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidChange(
   co_return;
 }
 
-asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidClose(
-    const std::optional<nlohmann::json>& params) {
-  if (!params) {
-    co_return;
-  }
+asio::awaitable<void> SlangdLspServer::OnDidCloseTextDocument(
+    const lsp::DidCloseTextDocumentParams& params) {
+  spdlog::info("SlangdLspServer OnDidCloseTextDocument");
 
-  const auto& param_val = params.value();
-  const auto& uri = param_val["textDocument"]["uri"].get<std::string>();
+  const auto& uri = params.textDocument.uri;
 
-  // Remove from open files
   RemoveOpenFile(uri);
 
   co_return;
 }
 
-asio::awaitable<void> SlangdLspServer::HandleTextDocumentDidSave(
-    const std::optional<nlohmann::json>& params) {
-  if (!params) {
-    co_return;
-  }
+asio::awaitable<lsp::DocumentSymbolResult> SlangdLspServer::OnDocumentSymbols(
+    const lsp::DocumentSymbolParams& params) {
+  spdlog::info("SlangdLspServer OnDocumentSymbols");
+  std::vector<lsp::DocumentSymbol> result;
 
-  const auto& param_val = params.value();
-  const auto& uri = param_val["textDocument"]["uri"].get<std::string>();
-  int version = param_val["textDocument"].contains("version")
-                    ? param_val["textDocument"]["version"].get<int>()
-                    : 0;
-
-  // Get the current content from open files
-  auto file_opt = GetOpenFile(uri);
-  if (!file_opt) {
-    co_return;
-  }
-
-  const std::string& text = file_opt->get().content;
-
-  // Post to strand to ensure thread safety
-  asio::co_spawn(
-      strand_,
-      [this, uri, text, version]() -> asio::awaitable<void> {
-        // Parse with compilation on save
-        auto parse_result =
-            co_await document_manager_->ParseWithCompilation(uri, text);
-
-        if (!parse_result) {
-          spdlog::debug(
-              "Parse error on document save: {} - {}", uri,
-              static_cast<int>(parse_result.error()));
-        }
-
-        // Get and publish diagnostics
-        auto diagnostics =
-            co_await document_manager_->GetDocumentDiagnostics(uri);
-        lsp::PublishDiagnosticsParams params{uri, version, diagnostics};
-        co_await PublishDiagnostics(params);
-      },
-      asio::detached);
-
-  co_return;
-}
-
-asio::awaitable<nlohmann::json>
-SlangdLspServer::HandleTextDocumentDocumentSymbol(
-    const std::optional<nlohmann::json>& params) {
-  // Default empty result
-  nlohmann::json result = nlohmann::json::array();
-
-  if (!params) {
-    co_return result;
-  }
-
-  // Extract the URI from the parameters
-  const auto& param_val = params.value();
-  const auto& uri = param_val["textDocument"]["uri"].get<std::string>();
-
-  spdlog::info("Document symbol request for {}", uri);
+  const auto& uri = params.textDocument.uri;
 
   // Get document symbols from document manager
   // Use the strand to ensure thread safety when accessing document symbols
@@ -340,6 +172,8 @@ SlangdLspServer::HandleTextDocumentDocumentSymbol(
   for (const auto& symbol : document_symbols) {
     result.push_back(symbol);
   }
+
+  spdlog::info("SlangdLspServer OnDocumentSymbols result: {}", result.size());
 
   co_return result;
 }

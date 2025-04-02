@@ -1,12 +1,12 @@
 #pragma once
 
 #include <memory>
-#include <optional>
 
 #include <asio/awaitable.hpp>
 #include <asio/io_context.hpp>
 #include <asio/strand.hpp>
 
+#include "lsp/lifecycle.hpp"
 #include "lsp/lsp_server.hpp"
 #include "slangd/document_manager.hpp"
 
@@ -26,46 +26,11 @@ class SlangdLspServer : public lsp::LspServer {
       std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint);
 
   /** Register all LSP message handlers with the JSON-RPC endpoint. */
-  void RegisterHandlers() override;
+  //   void RegisterHandlers() override;
 
  private:
   /** TestSlangdLspServer is given access to private members for testing. */
   friend class TestSlangdLspServer;
-
-  /** Handle "initialize" request from client. */
-  asio::awaitable<nlohmann::json> HandleInitialize(
-      const std::optional<nlohmann::json>& params);
-
-  /** Handle "shutdown" request from client. */
-  asio::awaitable<nlohmann::json> HandleShutdown(
-      const std::optional<nlohmann::json>& params);
-
-  /** Handle "initialized" notification from client. */
-  asio::awaitable<void> HandleInitialized(
-      const std::optional<nlohmann::json>& params);
-
-  /** Handle "exit" notification from client. */
-  asio::awaitable<void> HandleExit(const std::optional<nlohmann::json>& params);
-
-  /** Handle "textDocument/didOpen" notification. */
-  asio::awaitable<void> HandleTextDocumentDidOpen(
-      const std::optional<nlohmann::json>& params);
-
-  /** Handle "textDocument/didChange" notification. */
-  asio::awaitable<void> HandleTextDocumentDidChange(
-      const std::optional<nlohmann::json>& params);
-
-  /** Handle "textDocument/didClose" notification. */
-  asio::awaitable<void> HandleTextDocumentDidClose(
-      const std::optional<nlohmann::json>& params);
-
-  /** Handle "textDocument/didSave" notification. */
-  asio::awaitable<void> HandleTextDocumentDidSave(
-      const std::optional<nlohmann::json>& params);
-
-  /** Handle "textDocument/documentSymbol" request. */
-  asio::awaitable<nlohmann::json> HandleTextDocumentDocumentSymbol(
-      const std::optional<nlohmann::json>& params);
 
   // Server state
   bool initialized_ = false;
@@ -76,6 +41,38 @@ class SlangdLspServer : public lsp::LspServer {
 
   // Document management
   std::unique_ptr<DocumentManager> document_manager_;
+
+ protected:
+  // Initialize Request
+  auto OnInitialize(const lsp::InitializeParams&)
+      -> asio::awaitable<lsp::InitializeResult> override;
+
+  // Initialized Notification
+  auto OnInitialized(const lsp::InitializedParams&)
+      -> asio::awaitable<void> override;
+
+  // Shutdown Request
+  auto OnShutdown(const lsp::ShutdownParams&)
+      -> asio::awaitable<lsp::ShutdownResult> override;
+
+  // Exit Notification
+  auto OnExit(const lsp::ExitParams&) -> asio::awaitable<void> override;
+
+  // Did Open Text Document Notification
+  auto OnDidOpenTextDocument(const lsp::DidOpenTextDocumentParams&)
+      -> asio::awaitable<void> override;
+
+  // Did Change Text Document Notification
+  auto OnDidChangeTextDocument(const lsp::DidChangeTextDocumentParams&)
+      -> asio::awaitable<void> override;
+
+  // Did Close Text Document Notification
+  auto OnDidCloseTextDocument(const lsp::DidCloseTextDocumentParams&)
+      -> asio::awaitable<void> override;
+
+  // Document Symbols Request
+  auto OnDocumentSymbols(const lsp::DocumentSymbolParams&)
+      -> asio::awaitable<lsp::DocumentSymbolResult> override;
 };
 
 }  // namespace slangd

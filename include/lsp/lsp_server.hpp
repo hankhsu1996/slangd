@@ -11,6 +11,9 @@
 #include <jsonrpc/endpoint/endpoint.hpp>
 
 #include "lsp/diagnostic.hpp"
+#include "lsp/document_features.hpp"
+#include "lsp/document_sync.hpp"
+#include "lsp/lifecycle.hpp"
 
 namespace lsp {
 
@@ -68,17 +71,7 @@ class LspServer {
    * This method should be overridden by derived classes to register
    * method handlers for specific LSP messages using the endpoint_.
    */
-  virtual void RegisterHandlers() = 0;
-
-  /**
-   * @brief Publish diagnostics to the client
-   *
-   * @param uri Document URI
-   * @param diagnostics List of diagnostics to publish
-   * @param version Optional document version
-   */
-  auto PublishDiagnostics(const PublishDiagnosticsParams& params)
-      -> asio::awaitable<void>;
+  void RegisterHandlers();
 
   // File management helpers
   std::optional<std::reference_wrapper<OpenFile>> GetOpenFile(
@@ -97,6 +90,156 @@ class LspServer {
 
   // Map of open document URIs to their content
   std::unordered_map<std::string, OpenFile> open_files_;
+
+ private:
+  void RegisterLifecycleHandlers();
+  void RegisterDocumentSyncHandlers();
+  void RegisterLanguageFeatureHandlers();
+  void RegisterWorkspaceFeatureHandlers();
+  void RegisterWindowFeatureHandlers();
+
+ protected:
+  // Initialize Request
+  virtual auto OnInitialize(const InitializeParams&)
+      -> asio::awaitable<InitializeResult> {
+    throw std::runtime_error("Not implemented");
+  }
+
+  // Initialized Notification
+  virtual auto OnInitialized(const InitializedParams&)
+      -> asio::awaitable<void> {
+    throw std::runtime_error("Not implemented");
+  }
+
+  // Register Capability
+  virtual auto OnRegisterCapability(const RegistrationParams&)
+      -> asio::awaitable<RegistrationParams> {
+    throw std::runtime_error("Not implemented");
+  }
+
+  // Unregister Capability
+  virtual auto OnUnregisterCapability(const UnregistrationParams&)
+      -> asio::awaitable<UnregistrationParams> {
+    throw std::runtime_error("Not implemented");
+  }
+
+  // SetTrace Notification
+  virtual auto OnSetTrace(const SetTraceParams&) -> asio::awaitable<void> {
+    throw std::runtime_error("Not implemented");
+  }
+
+  // LogTrace Notification
+  virtual auto OnLogTrace(const LogTraceParams&) -> asio::awaitable<void> {
+    throw std::runtime_error("Not implemented");
+  }
+
+  // Shutdown Request
+  virtual auto OnShutdown(const ShutdownParams&)
+      -> asio::awaitable<ShutdownResult> {
+    throw std::runtime_error("Not implemented");
+  }
+
+  // Exit Notification
+  virtual auto OnExit(const ExitParams&) -> asio::awaitable<void> {
+    throw std::runtime_error("Not implemented");
+  }
+
+  // Document Synchronization Handlers
+  virtual auto OnDidOpenTextDocument(const DidOpenTextDocumentParams&)
+      -> asio::awaitable<void> {
+    throw std::runtime_error("Not implemented");
+  }
+
+  // DidChangeTextDocument Notification
+  virtual auto OnDidChangeTextDocument(const DidChangeTextDocumentParams&)
+      -> asio::awaitable<void> {
+    throw std::runtime_error("Not implemented");
+  }
+
+  // WillSaveTextDocument Notification
+  virtual auto OnWillSaveTextDocument(const WillSaveTextDocumentParams&)
+      -> asio::awaitable<void> {
+    throw std::runtime_error("Not implemented");
+  }
+
+  // WillSaveWaitUntilTextDocument Request
+  virtual auto OnWillSaveWaitUntilTextDocument(
+      const WillSaveTextDocumentParams&)
+      -> asio::awaitable<WillSaveTextDocumentResult> {
+    throw std::runtime_error("Not implemented");
+  }
+
+  // DidSaveTextDocument Notification
+  virtual auto OnDidSaveTextDocument(const DidSaveTextDocumentParams&)
+      -> asio::awaitable<void> {
+    throw std::runtime_error("Not implemented");
+  }
+
+  // DidCloseTextDocument Notification
+  virtual auto OnDidCloseTextDocument(const DidCloseTextDocumentParams&)
+      -> asio::awaitable<void> {
+    throw std::runtime_error("Not implemented");
+  }
+
+  // TODO: Did Open Notebook Document
+  // TODO: Did Change Notebook Document
+  // TODO: Did Save Notebook Document
+  // TODO: Did Close Notebook Document
+  // TODO: Go to Declaration
+  // TODO: Go to Definition
+  // TODO: Go to Type Definition
+  // TODO: Go to Implementation
+  // TODO: Find References
+  // TODO: Prepare Call Hierarchy
+  // TODO: Call Hierarchy Incoming Calls
+  // TODO: Call Hierarchy Outgoing Calls
+  // TODO: Prepare Type Hierarchy
+  // TODO: Type Hierarchy Super Types
+  // TODO: Type Hierarchy Sub Types
+  // TODO: Document Highlight
+  // TODO: Document Link
+  // TODO: Document Link Resolve
+  // TODO: Hover
+  // TODO: Code Lens
+  // TODO: Code Lens Refresh
+  // TODO: Folding Range
+  // TODO: Selection Range
+
+  // Document Symbols Request
+  virtual auto OnDocumentSymbols(const DocumentSymbolParams&)
+      -> asio::awaitable<DocumentSymbolResult> {
+    throw std::runtime_error("Not implemented");
+  }
+
+  // TODO: Semantic Tokens
+  // TODO: Inline Value
+  // TODO: Inline Value Refresh
+  // TODO: Inlay Hint
+  // TODO: Inlay Hint Resolve
+  // TODO: Inlay Hint Refresh
+  // TODO: Moniker
+  // TODO: Completion Proposals
+  // TODO: Completion Item Resolve
+
+  // PublishDiagnostics Notification
+  auto PublishDiagnostics(const PublishDiagnosticsParams& params)
+      -> asio::awaitable<void> {
+    co_await endpoint_->SendNotification(
+        "textDocument/publishDiagnostics", nlohmann::json(params));
+  }
+
+  // TODO: Pull Diagnostics
+  // TODO: Signature Help
+  // TODO: Code Action
+  // TODO: Code Action Resolve
+  // TODO: Document Color
+  // TODO: Color Presentation
+  // TODO: Formatting
+  // TODO: Range Formatting
+  // TODO: On type Formatting
+  // TODO: Rename
+  // TODO: Prepare Rename
+  // TODO: Linked Editing Range
 };
 
 }  // namespace lsp

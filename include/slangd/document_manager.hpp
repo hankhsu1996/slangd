@@ -11,8 +11,8 @@
 #include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/syntax/SyntaxTree.h>
 
-#include "lsp/diagnostic.hpp"
-#include "lsp/document_symbol.hpp"
+#include "lsp/basic.hpp"
+#include "lsp/document_features.hpp"
 
 namespace slangd {
 

@@ -10,7 +10,8 @@
 #include <slang/ast/Symbol.h>
 #include <slang/text/SourceManager.h>
 
-#include "lsp/document_symbol.hpp"
+#include "lsp/basic.hpp"
+#include "lsp/document_features.hpp"
 
 namespace slangd {
 

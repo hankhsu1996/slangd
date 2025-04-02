@@ -36,6 +36,162 @@ auto LspServer::Shutdown() -> asio::awaitable<void> {
   work_guard_.reset();
 }
 
+void LspServer::RegisterHandlers() {
+  RegisterLifecycleHandlers();
+  RegisterDocumentSyncHandlers();
+  RegisterLanguageFeatureHandlers();
+  RegisterWorkspaceFeatureHandlers();
+  RegisterWindowFeatureHandlers();
+}
+
+void LspServer::RegisterLifecycleHandlers() {
+  // Initialize Request
+  endpoint_->RegisterMethodCall<InitializeParams, InitializeResult>(
+      "initialize",
+      [this](const InitializeParams& params) { return OnInitialize(params); });
+
+  // Initialized Notification
+  endpoint_->RegisterNotification<InitializedParams>(
+      "initialized", [this](const InitializedParams& params) {
+        return OnInitialized(params);
+      });
+
+  // Register Capability
+  endpoint_->RegisterMethodCall<RegistrationParams, RegistrationParams>(
+      "client/registerCapability", [this](const RegistrationParams& params) {
+        return OnRegisterCapability(params);
+      });
+
+  // Unregister Capability
+  endpoint_->RegisterMethodCall<UnregistrationParams, UnregistrationParams>(
+      "client/unregisterCapability",
+      [this](const UnregistrationParams& params) {
+        return OnUnregisterCapability(params);
+      });
+
+  // SetTrace Notification
+  endpoint_->RegisterNotification<SetTraceParams>(
+      "$/setTrace",
+      [this](const SetTraceParams& params) { return OnSetTrace(params); });
+
+  // LogTrace Notification
+  endpoint_->RegisterNotification<LogTraceParams>(
+      "$/logTrace",
+      [this](const LogTraceParams& params) { return OnLogTrace(params); });
+
+  // Shutdown Request
+  endpoint_->RegisterMethodCall<ShutdownParams, ShutdownResult>(
+      "shutdown",
+      [this](const ShutdownParams& params) { return OnShutdown(params); });
+
+  // Exit Notification
+  endpoint_->RegisterNotification<ExitParams>(
+      "exit", [this](const ExitParams& params) { return OnExit(params); });
+}
+
+void LspServer::RegisterDocumentSyncHandlers() {
+  // DidOpenTextDocument Notification
+  endpoint_->RegisterNotification<DidOpenTextDocumentParams>(
+      "textDocument/didOpen", [this](const DidOpenTextDocumentParams& params) {
+        return OnDidOpenTextDocument(params);
+      });
+
+  // DidChangeTextDocument Notification
+  endpoint_->RegisterNotification<DidChangeTextDocumentParams>(
+      "textDocument/didChange",
+      [this](const DidChangeTextDocumentParams& params) {
+        return OnDidChangeTextDocument(params);
+      });
+
+  // WillSaveTextDocument Notification
+  endpoint_->RegisterNotification<WillSaveTextDocumentParams>(
+      "textDocument/willSave",
+      [this](const WillSaveTextDocumentParams& params) {
+        return OnWillSaveTextDocument(params);
+      });
+
+  // WillSaveWaitUntilTextDocument Request
+  endpoint_->RegisterMethodCall<
+      WillSaveTextDocumentParams, WillSaveTextDocumentResult>(
+      "textDocument/willSaveWaitUntil",
+      [this](const WillSaveTextDocumentParams& params) {
+        return OnWillSaveWaitUntilTextDocument(params);
+      });
+
+  // DidSaveTextDocument Notification
+  endpoint_->RegisterNotification<DidSaveTextDocumentParams>(
+      "textDocument/didSave", [this](const DidSaveTextDocumentParams& params) {
+        return OnDidSaveTextDocument(params);
+      });
+
+  // DidCloseTextDocument Notification
+  endpoint_->RegisterNotification<DidCloseTextDocumentParams>(
+      "textDocument/didClose",
+      [this](const DidCloseTextDocumentParams& params) {
+        return OnDidCloseTextDocument(params);
+      });
+
+  // TODO: Did Open Notebook Document
+  // TODO: Did Change Notebook Document
+  // TODO: Did Save Notebook Document
+  // TODO: Did Close Notebook Document
+}
+
+void LspServer::RegisterLanguageFeatureHandlers() {
+  // TODO: Go to Declaration
+  // TODO: Go to Definition
+  // TODO: Go to Type Definition
+  // TODO: Go to Implementation
+  // TODO: Find References
+  // TODO: Prepare Call Hierarchy
+  // TODO: Call Hierarchy Incoming Calls
+  // TODO: Call Hierarchy Outgoing Calls
+  // TODO: Prepare Type Hierarchy
+  // TODO: Type Hierarchy Super Types
+  // TODO: Type Hierarchy Sub Types
+  // TODO: Document Highlight
+  // TODO: Document Link
+  // TODO: Document Link Resolve
+  // TODO: Hover
+  // TODO: Code Lens
+  // TODO: Code Lens Refresh
+  // TODO: Folding Range
+  // TODO: Selection Range
+
+  // Document Symbols Request
+  endpoint_->RegisterMethodCall<DocumentSymbolParams, DocumentSymbolResult>(
+      "textDocument/documentSymbol",
+      [this](const DocumentSymbolParams& params) {
+        return OnDocumentSymbols(params);
+      });
+
+  // TODO: Semantic Tokens
+  // TODO: Inline Value
+  // TODO: Inline Value Refresh
+  // TODO: Inlay Hint
+  // TODO: Inlay Hint Resolve
+  // TODO: Inlay Hint Refresh
+  // TODO: Moniker
+  // TODO: Completion Proposals
+  // TODO: Completion Item Resolve
+  // TODO: Pull Diagnostics
+  // TODO: Signature Help
+  // TODO: Code Action
+  // TODO: Code Action Resolve
+  // TODO: Document Color
+  // TODO: Color Presentation
+  // TODO: Formatting
+  // TODO: Range Formatting
+  // TODO: On type Formatting
+  // TODO: Rename
+  // TODO: Prepare Rename
+  // TODO: Linked Editing Range
+}
+
+void LspServer::RegisterWorkspaceFeatureHandlers() {}
+
+void LspServer::RegisterWindowFeatureHandlers() {}
+
 // File management helpers
 std::optional<std::reference_wrapper<OpenFile>> LspServer::GetOpenFile(
     const std::string& uri) {
@@ -70,13 +226,6 @@ void LspServer::UpdateOpenFile(
 void LspServer::RemoveOpenFile(const std::string& uri) {
   spdlog::debug("Removing open file: {}", uri);
   open_files_.erase(uri);
-}
-
-auto LspServer::PublishDiagnostics(const PublishDiagnosticsParams& params)
-    -> asio::awaitable<void> {
-  spdlog::debug("Publishing diagnostics for file: {}", params.uri);
-  co_await endpoint_->SendNotification(
-      "textDocument/publishDiagnostics", nlohmann::json(params));
 }
 
 }  // namespace lsp

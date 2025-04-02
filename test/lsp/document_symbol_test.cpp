@@ -1,10 +1,10 @@
-#include "lsp/document_symbol.hpp"
-
 #include <string>
-#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
+
+#include "lsp/basic.hpp"
+#include "lsp/document_features.hpp"
 
 TEST_CASE("Position serialization", "[lsp]") {
   // Create a Position
