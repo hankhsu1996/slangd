@@ -83,19 +83,6 @@ void LspServer::RegisterLifecycleHandlers() {
         return OnInitialized(params);
       });
 
-  // Register Capability
-  endpoint_->RegisterMethodCall<RegistrationParams, RegistrationParams>(
-      "client/registerCapability", [this](const RegistrationParams& params) {
-        return OnRegisterCapability(params);
-      });
-
-  // Unregister Capability
-  endpoint_->RegisterMethodCall<UnregistrationParams, UnregistrationParams>(
-      "client/unregisterCapability",
-      [this](const UnregistrationParams& params) {
-        return OnUnregisterCapability(params);
-      });
-
   // SetTrace Notification
   endpoint_->RegisterNotification<SetTraceParams>(
       "$/setTrace",

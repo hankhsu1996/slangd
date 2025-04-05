@@ -85,6 +85,10 @@ void from_json(const nlohmann::json& j, RegistrationParams& p) {
   j.at("registrations").get_to(p.registrations);
 }
 
+void to_json(nlohmann::json&, const RegistrationResult&) {}
+
+void from_json(const nlohmann::json&, RegistrationResult&) {}
+
 void to_json(nlohmann::json& j, const StaticRegistrationOptions& p) {
   to_json_optional(j, "id", p.id);
 }
@@ -110,6 +114,10 @@ void to_json(nlohmann::json& j, const UnregistrationParams& p) {
 void from_json(const nlohmann::json& j, UnregistrationParams& p) {
   j.at("unregistrations").get_to(p.unregistrations);
 }
+
+void to_json(nlohmann::json&, const UnregistrationResult&) {}
+
+void from_json(const nlohmann::json&, UnregistrationResult&) {}
 
 // SetTrace Notification
 void to_json(nlohmann::json& j, const SetTraceParams& p) {

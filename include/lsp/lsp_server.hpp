@@ -115,15 +115,31 @@ class LspServer {
   }
 
   // Register Capability
-  virtual auto OnRegisterCapability(const RegistrationParams&)
-      -> asio::awaitable<RegistrationParams> {
-    throw std::runtime_error("Not implemented");
+  auto RegisterCapability(const RegistrationParams& params)
+      -> asio::awaitable<RegistrationResult> {
+    auto result = co_await endpoint_
+                      ->SendMethodCall<RegistrationParams, RegistrationResult>(
+                          "client/registerCapability", params);
+    if (!result) {
+      spdlog::error(
+          "LspServer failed to register capability: {}",
+          result.error().message);
+    }
+    co_return result.value();
   }
 
   // Unregister Capability
-  virtual auto OnUnregisterCapability(const UnregistrationParams&)
-      -> asio::awaitable<UnregistrationParams> {
-    throw std::runtime_error("Not implemented");
+  auto UnregisterCapability(const UnregistrationParams& params)
+      -> asio::awaitable<void> {
+    auto result =
+        co_await endpoint_
+            ->SendMethodCall<UnregistrationParams, UnregistrationResult>(
+                "client/unregisterCapability", params);
+    if (!result) {
+      throw std::runtime_error(
+          "Failed to unregister capability: " + result.error().message);
+    }
+    co_return;
   }
 
   // SetTrace Notification

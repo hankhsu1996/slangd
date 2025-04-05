@@ -73,6 +73,11 @@ struct RegistrationParams {
 void to_json(nlohmann::json& j, const RegistrationParams& p);
 void from_json(const nlohmann::json& j, RegistrationParams& p);
 
+struct RegistrationResult {};
+
+void to_json(nlohmann::json&, const RegistrationResult&);
+void from_json(const nlohmann::json&, RegistrationResult&);
+
 struct StaticRegistrationOptions {
   std::optional<std::string> id;
 };
@@ -95,6 +100,11 @@ struct UnregistrationParams {
 
 void to_json(nlohmann::json& j, const UnregistrationParams& p);
 void from_json(const nlohmann::json& j, UnregistrationParams& p);
+
+struct UnregistrationResult {};
+
+void to_json(nlohmann::json&, const UnregistrationResult&);
+void from_json(const nlohmann::json&, UnregistrationResult&);
 
 // SetTrace Notification
 struct SetTraceParams {
