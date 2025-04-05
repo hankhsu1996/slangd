@@ -2,6 +2,7 @@
 
 #include <filesystem>
 
+#include <slang/parsing/Lexer.h>
 #include <slang/util/Bag.h>
 #include <spdlog/spdlog.h>
 
@@ -49,9 +50,21 @@ asio::awaitable<void> WorkspaceManager::ScanWorkspace() {
   spdlog::info(
       "WorkspaceManager starting workspace scan for SystemVerilog files");
 
+  // First, set up all include paths based on workspace folders
+  spdlog::info("WorkspaceManager setting up include paths");
+  std::filesystem::path include_path = "hw/ip/prim/rtl";
+
+  if (auto ec = source_manager_->addUserDirectories(include_path.string())) {
+    spdlog::error(
+        "WorkspaceManager failed to add include path: {}", ec.message());
+  } else {
+    spdlog::info(
+        "WorkspaceManager added include path: {}", include_path.string());
+  }
+
   std::vector<std::string> all_files;
 
-  // Process each workspace folder
+  // Now, scan for files in each workspace folder
   for (const auto& folder : workspace_folders_) {
     spdlog::info("WorkspaceManager scanning workspace folder: {}", folder);
     auto files = co_await FindSystemVerilogFiles(folder);
@@ -110,7 +123,7 @@ WorkspaceManager::ProcessFiles(const std::vector<std::string>& file_paths) {
     source_loader_->addFiles(path);
   }
 
-  // Create a bag without specific options
+  // Create a bag with default options
   slang::Bag options;
 
   // Load and parse all sources
@@ -155,8 +168,7 @@ WorkspaceManager::ProcessFiles(const std::vector<std::string>& file_paths) {
     }
   }
 
-  spdlog::info(
-      "WorkspaceManager successfully processed {} files", syntax_trees_.size());
+  spdlog::info("Successfully processed {} files", syntax_trees_.size());
   co_return std::expected<void, SlangdError>{};
 }
 

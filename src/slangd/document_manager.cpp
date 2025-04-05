@@ -1,5 +1,6 @@
 #include "slangd/document_manager.hpp"
 
+#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -38,6 +39,12 @@ DocumentManager::ParseWithCompilation(
   // Create a new source manager for this document if it doesn't exist
   if (source_managers_.find(uri) == source_managers_.end()) {
     source_managers_[uri] = std::make_shared<slang::SourceManager>();
+    std::filesystem::path include_path = "hw/ip/prim/rtl";
+    auto ec = source_managers_[uri]->addUserDirectories(include_path.string());
+    if (ec) {
+      spdlog::error("Failed to add include path: {}", ec.message());
+      co_return std::unexpected(ParseError::SlangInternalError);
+    }
   }
 
   auto& source_manager = *source_managers_[uri];
