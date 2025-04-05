@@ -18,7 +18,10 @@ void to_json(
 void from_json(
     const nlohmann::json& j, DidChangeConfigurationClientCapabilities& c);
 
-struct DidChangeWatchedFilesClientCapabilities {};
+struct DidChangeWatchedFilesClientCapabilities {
+  std::optional<bool> dynamicRegistration;
+  std::optional<bool> relativePatternSupport;
+};
 
 void to_json(
     nlohmann::json& j, const DidChangeWatchedFilesClientCapabilities& c);

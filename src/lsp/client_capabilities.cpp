@@ -12,10 +12,17 @@ void from_json(
     const nlohmann::json& j, DidChangeConfigurationClientCapabilities& c) {}
 
 void to_json(
-    nlohmann::json& j, const DidChangeWatchedFilesClientCapabilities& c) {}
+    nlohmann::json& j, const DidChangeWatchedFilesClientCapabilities& c) {
+  j = nlohmann::json{};
+  to_json_optional(j, "dynamicRegistration", c.dynamicRegistration);
+  to_json_optional(j, "relativePatternSupport", c.relativePatternSupport);
+}
 
 void from_json(
-    const nlohmann::json& j, DidChangeWatchedFilesClientCapabilities& c) {}
+    const nlohmann::json& j, DidChangeWatchedFilesClientCapabilities& c) {
+  from_json_optional(j, "dynamicRegistration", c.dynamicRegistration);
+  from_json_optional(j, "relativePatternSupport", c.relativePatternSupport);
+}
 
 void to_json(nlohmann::json& j, const WorkspaceSymbolClientCapabilities& c) {}
 
