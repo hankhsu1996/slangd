@@ -2,6 +2,7 @@
 
 #include <filesystem>
 
+#include <slang/util/Bag.h>
 #include <spdlog/spdlog.h>
 
 #include "slangd/utils/uri.hpp"
@@ -9,7 +10,13 @@
 namespace slangd {
 
 WorkspaceManager::WorkspaceManager(asio::any_io_executor executor)
-    : executor_(executor), strand_(asio::make_strand(executor)) {}
+    : source_manager_(std::make_shared<slang::SourceManager>()),
+      executor_(executor),
+      strand_(asio::make_strand(executor)) {
+  // Create the source loader
+  source_loader_ =
+      std::make_unique<slang::driver::SourceLoader>(*source_manager_);
+}
 
 void WorkspaceManager::AddWorkspaceFolder(
     const std::string& uri, const std::string& name) {
@@ -41,6 +48,8 @@ asio::awaitable<void> WorkspaceManager::ScanWorkspace() {
   spdlog::info(
       "WorkspaceManager starting workspace scan for SystemVerilog files");
 
+  std::vector<std::string> all_files;
+
   // Process each workspace folder
   for (const auto& folder : workspace_folders_) {
     spdlog::info("WorkspaceManager scanning workspace folder: {}", folder);
@@ -49,15 +58,22 @@ asio::awaitable<void> WorkspaceManager::ScanWorkspace() {
         "WorkspaceManager found {} SystemVerilog files in {}", files.size(),
         folder);
 
-    // Process files (placeholder - will add batching later)
-    for (const auto& file : files) {
-      co_await AddFile(file);
-    }
+    // Collect all files
+    all_files.insert(all_files.end(), files.begin(), files.end());
   }
 
-  spdlog::info(
-      "WorkspaceManager workspace scan completed. Total indexed files: {}",
-      GetIndexedFileCount());
+  // Process all collected files together
+  auto result = co_await ProcessFiles(all_files);
+  if (!result) {
+    spdlog::error(
+        "Failed to process files: {} ({})",
+        static_cast<int>(result.error().code()), result.error().message());
+  } else {
+    spdlog::info(
+        "WorkspaceManager workspace scan completed. Total indexed files: {}",
+        GetIndexedFileCount());
+  }
+
   co_return;
 }
 
@@ -65,10 +81,7 @@ asio::awaitable<std::vector<std::string>>
 WorkspaceManager::FindSystemVerilogFiles(const std::string& directory) {
   std::vector<std::string> sv_files;
 
-  // TODO: Implement actual file scanning
-  // This is a placeholder that will be replaced with actual implementation
-  spdlog::debug(
-      "WorkspaceManager placeholder: Scanning directory {}", directory);
+  spdlog::debug("WorkspaceManager scanning directory: {}", directory);
 
   try {
     for (const auto& entry :
@@ -87,18 +100,55 @@ WorkspaceManager::FindSystemVerilogFiles(const std::string& directory) {
   co_return sv_files;
 }
 
-asio::awaitable<void> WorkspaceManager::AddFile(const std::string& path) {
-  // TODO: Implement actual file processing
-  // This is a placeholder that will be replaced with actual implementation
-  spdlog::debug(
-      "WorkspaceManager placeholder: Adding file to workspace index: {}", path);
+asio::awaitable<std::expected<void, SlangdError>>
+WorkspaceManager::ProcessFiles(const std::vector<std::string>& file_paths) {
+  spdlog::info("WorkspaceManager processing {} files", file_paths.size());
 
-  // In the actual implementation, we would:
-  // 1. Read the file content
-  // 2. Create a syntax tree
-  // 3. Add it to the global compilation
+  // Add all files to source loader
+  for (const auto& path : file_paths) {
+    source_loader_->addFiles(path);
+  }
 
-  co_return;
+  // Create a bag without specific options
+  slang::Bag options;
+
+  // Load and parse all sources
+  std::vector<std::shared_ptr<slang::syntax::SyntaxTree>> syntax_trees =
+      source_loader_->loadAndParseSources(options);
+
+  // Store the syntax trees in our map
+  syntax_trees_.clear();
+
+  // Create a mapping from file paths to their corresponding syntax trees
+  // For simplicity, we'll use the file paths passed to the source loader as
+  // keys and match them with syntax trees by their index
+  for (size_t i = 0; i < file_paths.size() && i < syntax_trees.size(); i++) {
+    if (syntax_trees[i]) {
+      syntax_trees_[file_paths[i]] = syntax_trees[i];
+    }
+  }
+
+  // Create a new compilation with default options
+  compilation_ = std::make_shared<slang::ast::Compilation>();
+
+  // Add all syntax trees to the compilation
+  for (auto& tree : syntax_trees) {
+    if (tree) {
+      compilation_->addSyntaxTree(tree);
+    }
+  }
+
+  // Check for source loader errors
+  auto errors = source_loader_->getErrors();
+  if (!errors.empty()) {
+    spdlog::warn("Source loader encountered {} errors", errors.size());
+    for (const auto& error : errors) {
+      spdlog::warn("Source loader error: {}", error);
+    }
+  }
+
+  spdlog::info("Successfully processed {} files", syntax_trees_.size());
+  co_return std::expected<void, SlangdError>{};
 }
 
 size_t WorkspaceManager::GetIndexedFileCount() const {
