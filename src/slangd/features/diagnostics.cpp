@@ -125,12 +125,17 @@ std::vector<lsp::Diagnostic> ConvertDiagnostics(
     // Format message using the diagnostic engine
     lsp_diag.message = diag_engine.formatMessage(diag);
 
-    // Convert location to range
     if (diag.ranges.size() > 0) {
       lsp_diag.range =
           ConvertSlangRangesToLspRange(diag.ranges, source_manager);
-    } else {
-      // Fallback to an empty range at the start of the file
+    }
+    // Convert location to range
+    else if (diag.location) {
+      lsp_diag.range =
+          ConvertSlangLocationToLspRange(diag.location, source_manager);
+    }
+    // Fallback to an empty range at the start of the file
+    else {
       lsp_diag.range = lsp::Range{lsp::Position{0, 0}, lsp::Position{0, 0}};
     }
 
