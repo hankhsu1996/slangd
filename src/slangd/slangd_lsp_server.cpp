@@ -53,6 +53,18 @@ auto SlangdLspServer::OnInitialized(const lsp::InitializedParams& params)
     -> asio::awaitable<void> {
   spdlog::debug("SlangdLspServer OnInitialized");
   initialized_ = true;
+
+  // Start workspace scanning in the background
+  asio::co_spawn(
+      strand_,
+      [this]() -> asio::awaitable<void> {
+        spdlog::debug(
+            "SlangdLspServer starting workspace scan for SystemVerilog files");
+        co_await workspace_manager_->ScanWorkspace();
+        spdlog::debug("SlangdLspServer workspace scan completed");
+      },
+      asio::detached);
+
   co_return;
 }
 
