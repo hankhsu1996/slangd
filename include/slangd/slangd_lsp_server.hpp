@@ -9,6 +9,7 @@
 #include "lsp/lifecycle.hpp"
 #include "lsp/lsp_server.hpp"
 #include "slangd/document_manager.hpp"
+#include "slangd/workspace_manager.hpp"
 
 namespace slangd {
 
@@ -41,6 +42,9 @@ class SlangdLspServer : public lsp::LspServer {
 
   // Document management
   std::unique_ptr<DocumentManager> document_manager_;
+
+  // Workspace manager
+  std::unique_ptr<WorkspaceManager> workspace_manager_;
 
  protected:
   // Initialize Request

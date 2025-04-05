@@ -242,9 +242,31 @@ void to_json(nlohmann::json& j, const WorkspaceSymbolOptions& o) {};
 
 void from_json(const nlohmann::json& j, WorkspaceSymbolOptions& o) {};
 
-void to_json(nlohmann::json& j, const WorkspaceFoldersServerCapabilities& o) {};
+void to_json(
+    nlohmann::json& j,
+    const WorkspaceFoldersServerCapabilities::ChangeNotifications& o) {
+  std::visit([&j](auto&& arg) { j = arg; }, o);
+};
+
+void from_json(
+    const nlohmann::json& j,
+    WorkspaceFoldersServerCapabilities::ChangeNotifications& o) {
+  if (j.is_string()) {
+    o = j.get<std::string>();
+  } else if (j.is_boolean()) {
+    o = j.get<bool>();
+  }
+};
+
+void to_json(nlohmann::json& j, const WorkspaceFoldersServerCapabilities& o) {
+  j = nlohmann::json{};
+  to_json_optional(j, "supported", o.supported);
+  to_json_optional(j, "changeNotifications", o.changeNotifications);
+};
 
 void from_json(const nlohmann::json& j, WorkspaceFoldersServerCapabilities& o) {
+  from_json_optional(j, "supported", o.supported);
+  from_json_optional(j, "changeNotifications", o.changeNotifications);
 };
 
 void to_json(nlohmann::json& j, const FileOperationRegistrationOptions& o) {};

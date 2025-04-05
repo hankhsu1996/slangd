@@ -13,19 +13,35 @@ SlangdLspServer::SlangdLspServer(
     std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint)
     : lsp::LspServer(executor, std::move(endpoint)),
       strand_(asio::make_strand(executor)),
-      document_manager_(std::make_unique<DocumentManager>(executor)) {}
+      document_manager_(std::make_unique<DocumentManager>(executor)),
+      workspace_manager_(std::make_unique<WorkspaceManager>(executor)) {}
 
 auto SlangdLspServer::OnInitialize(const lsp::InitializeParams& params)
     -> asio::awaitable<lsp::InitializeResult> {
   spdlog::debug("SlangdLspServer OnInitialize");
+
+  if (auto workspaceFolders_opt = params.workspaceFolders) {
+    for (const auto& folder : *workspaceFolders_opt) {
+      workspace_manager_->AddWorkspaceFolder(folder.uri, folder.name);
+    }
+  }
+
   lsp::TextDocumentSyncOptions syncOptions{
       .openClose = true,
       .change = lsp::TextDocumentSyncKind::Full,
   };
 
+  lsp::ServerCapabilities::Workspace workspace{
+      .workspaceFolders =
+          lsp::WorkspaceFoldersServerCapabilities{
+              .supported = true,
+          },
+  };
+
   lsp::ServerCapabilities capabilities{
       .textDocumentSync = syncOptions,
       .documentSymbolProvider = true,
+      .workspace = workspace,
   };
 
   co_return lsp::InitializeResult{

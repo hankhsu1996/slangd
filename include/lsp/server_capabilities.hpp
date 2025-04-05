@@ -273,7 +273,18 @@ struct WorkspaceSymbolOptions {};
 void to_json(nlohmann::json& j, const WorkspaceSymbolOptions& o);
 void from_json(const nlohmann::json& j, WorkspaceSymbolOptions& o);
 
-struct WorkspaceFoldersServerCapabilities {};
+struct WorkspaceFoldersServerCapabilities {
+  std::optional<bool> supported = std::nullopt;
+  using ChangeNotifications = std::variant<std::string, bool>;
+  std::optional<ChangeNotifications> changeNotifications = std::nullopt;
+};
+
+void to_json(
+    nlohmann::json& j,
+    const WorkspaceFoldersServerCapabilities::ChangeNotifications& o);
+void from_json(
+    const nlohmann::json& j,
+    WorkspaceFoldersServerCapabilities::ChangeNotifications& o);
 
 void to_json(nlohmann::json& j, const WorkspaceFoldersServerCapabilities& o);
 void from_json(const nlohmann::json& j, WorkspaceFoldersServerCapabilities& o);
@@ -411,9 +422,9 @@ struct ServerCapabilities {
   };
 
   struct Workspace {
-    std::optional<WorkspaceFoldersServerCapabilities> workspaceFolders;
-
-    std::optional<FileOperations> fileOperations;
+    std::optional<WorkspaceFoldersServerCapabilities> workspaceFolders =
+        std::nullopt;
+    std::optional<FileOperations> fileOperations = std::nullopt;
   };
 
   std::optional<Workspace> workspace = std::nullopt;

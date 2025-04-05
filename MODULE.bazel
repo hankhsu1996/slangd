@@ -26,6 +26,9 @@ git_override(
     commit = "066835e9c5d0e79452f1394d020d9a87490ab671",
 )
 
+# LLVM
+bazel_dep(name = "llvm-project", version = "17.0.3.bcr.2")
+
 # SPDLOG Logging Library
 bazel_dep(name = "spdlog", version = "1.15.1")
 
