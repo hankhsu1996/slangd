@@ -15,25 +15,52 @@ LspServer::LspServer(
       executor_(executor),
       work_guard_(asio::make_work_guard(executor)) {}
 
-auto LspServer::Start() -> asio::awaitable<void> {
+auto LspServer::Start() -> asio::awaitable<std::expected<void, RpcError>> {
   // Register method handlers
   RegisterHandlers();
 
   // Start the endpoint and wait for shutdown
-  co_await endpoint_->Start();
-  co_await endpoint_->WaitForShutdown();
+  auto result = co_await endpoint_->Start();
+  if (result.has_value()) {
+    spdlog::debug("LspServer endpoint started");
+  } else {
+    spdlog::error("LspServer endpoint error: {}", result.error().message);
+    co_return std::unexpected(result.error());
+  }
+
+  // Wait for shutdown
+  auto shutdown_result = co_await endpoint_->WaitForShutdown();
+  if (shutdown_result.has_value()) {
+    spdlog::debug("LspServer endpoint wait for shutdown completed");
+  } else {
+    spdlog::error(
+        "LspServer endpoint wait for shutdown error: {}",
+        shutdown_result.error().message);
+    co_return std::unexpected(shutdown_result.error());
+  }
+
+  co_return std::expected<void, RpcError>{};
 }
 
-auto LspServer::Shutdown() -> asio::awaitable<void> {
-  spdlog::info("Server shutting down");
+auto LspServer::Shutdown() -> asio::awaitable<std::expected<void, RpcError>> {
+  spdlog::debug("Server shutting down");
 
   if (endpoint_) {
     // Directly await the endpoint shutdown
-    co_await endpoint_->Shutdown();
+    auto result = co_await endpoint_->Shutdown();
+    if (result.has_value()) {
+      spdlog::debug("LspServer endpoint shutdown");
+    } else {
+      spdlog::error(
+          "LspServer endpoint shutdown error: {}", result.error().message);
+      co_return std::unexpected(result.error());
+    }
   }
 
   // Release work guard to allow threads to finish
   work_guard_.reset();
+
+  co_return std::expected<void, RpcError>{};
 }
 
 void LspServer::RegisterHandlers() {
@@ -205,26 +232,26 @@ std::optional<std::reference_wrapper<OpenFile>> LspServer::GetOpenFile(
 void LspServer::AddOpenFile(
     const std::string& uri, const std::string& content,
     const std::string& language_id, int version) {
-  spdlog::debug("Adding open file: {}", uri);
+  spdlog::debug("LspServer adding open file: {}", uri);
   OpenFile file{uri, content, language_id, version};
   open_files_[uri] = std::move(file);
 }
 
 void LspServer::UpdateOpenFile(
     const std::string& uri, const std::vector<std::string>& /*changes*/) {
-  spdlog::debug("Updating open file: {}", uri);
+  spdlog::debug("LspServer updating open file: {}", uri);
   auto file_opt = GetOpenFile(uri);
   if (file_opt) {
     // Simplified update - in a real implementation, we would apply the changes
     // Here we just increment the version
     OpenFile& file = file_opt->get();
     file.version++;
-    spdlog::info("Updated file {} to version {}", uri, file.version);
+    spdlog::debug("LspServer updated file {} to version {}", uri, file.version);
   }
 }
 
 void LspServer::RemoveOpenFile(const std::string& uri) {
-  spdlog::debug("Removing open file: {}", uri);
+  spdlog::debug("LspServer removing open file: {}", uri);
   open_files_.erase(uri);
 }
 

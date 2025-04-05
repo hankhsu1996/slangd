@@ -14,6 +14,7 @@ using slangd::SlangdLspServer;
 
 int main(int argc, char* argv[]) {
   spdlog::set_level(spdlog::level::debug);
+  spdlog::flush_on(spdlog::level::debug);
 
   // Parse command-line arguments
   const std::vector<std::string> args(argv, argv + argc);
@@ -26,7 +27,7 @@ int main(int argc, char* argv[]) {
   }
 
   const std::string pipe_name = args[1].substr(pipe_prefix.length());
-  spdlog::info("Using pipe: {}", pipe_name);
+  spdlog::debug("Using pipe: {}", pipe_name);
 
   // Create the IO context
   asio::io_context io_context;
@@ -38,13 +39,7 @@ int main(int argc, char* argv[]) {
 
   auto endpoint = std::make_unique<RpcEndpoint>(executor, std::move(transport));
 
-  // Set up error handling
-  endpoint->SetErrorHandler([](auto code, const auto& message) {
-    spdlog::error(
-        "JSON-RPC error: {} (code: {})", message, static_cast<int>(code));
-  });
-
-  // Create the server
+  // Create the LSP server
   auto server =
       std::make_unique<SlangdLspServer>(executor, std::move(endpoint));
 
@@ -52,23 +47,11 @@ int main(int argc, char* argv[]) {
   asio::co_spawn(
       io_context,
       [&server]() -> asio::awaitable<void> {
-        try {
-          // Run the server
-          co_await server->Start();
-          spdlog::info("Server run completed");
-        } catch (const std::exception& ex) {
-          // Log the error
-          spdlog::error("Server error: {}", ex.what());
-        }
-
-        // Regardless of how we exit Run(), try to shut down gracefully
-        // This is outside the try/catch block
-        if (server) {
-          try {
-            co_await server->Shutdown();
-          } catch (const std::exception& shutdown_ex) {
-            spdlog::error("Shutdown error: {}", shutdown_ex.what());
-          }
+        auto result = co_await server->Start();
+        if (result.has_value()) {
+          spdlog::debug("Server run completed");
+        } else {
+          spdlog::error("Server error: {}", result.error().message);
         }
       },
       asio::detached);
@@ -76,5 +59,6 @@ int main(int argc, char* argv[]) {
   // Run io_context
   io_context.run();
 
+  spdlog::debug("Main thread completed");
   return 0;
 }

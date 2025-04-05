@@ -9,6 +9,7 @@
 
 #include <asio.hpp>
 #include <jsonrpc/endpoint/endpoint.hpp>
+#include <jsonrpc/error/error.hpp>
 
 #include "lsp/diagnostic.hpp"
 #include "lsp/document_features.hpp"
@@ -16,6 +17,8 @@
 #include "lsp/lifecycle.hpp"
 
 namespace lsp {
+
+using jsonrpc::error::RpcError;
 
 /**
  * @brief Document content and metadata
@@ -54,7 +57,7 @@ class LspServer {
    * This method starts the server and handles messages until shutdown
    * @return asio::awaitable<void> Awaitable that completes when server stops
    */
-  auto Start() -> asio::awaitable<void>;
+  auto Start() -> asio::awaitable<std::expected<void, RpcError>>;
 
   /**
    * @brief Shut down the server
@@ -62,7 +65,7 @@ class LspServer {
    * @return asio::awaitable<void> Awaitable that completes when shutdown is
    * done
    */
-  auto Shutdown() -> asio::awaitable<void>;
+  auto Shutdown() -> asio::awaitable<std::expected<void, RpcError>>;
 
  protected:
   /**
@@ -224,8 +227,13 @@ class LspServer {
   // PublishDiagnostics Notification
   auto PublishDiagnostics(const PublishDiagnosticsParams& params)
       -> asio::awaitable<void> {
-    co_await endpoint_->SendNotification(
-        "textDocument/publishDiagnostics", nlohmann::json(params));
+    spdlog::debug(
+        "LspServer publishing {} diagnostics for {}", params.diagnostics.size(),
+        params.uri);
+    co_await endpoint_->SendNotification<PublishDiagnosticsParams>(
+        "textDocument/publishDiagnostics", params);
+    spdlog::debug(
+        "LspServer completed publishing diagnostics for {}", params.uri);
   }
 
   // TODO: Pull Diagnostics

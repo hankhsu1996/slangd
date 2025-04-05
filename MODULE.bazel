@@ -23,7 +23,7 @@ bazel_dep(name = "jsonrpc", version = "0.0.0")
 git_override(
     module_name = "jsonrpc",
     remote = "https://github.com/hankhsu1996/jsonrpc-cpp-lib.git",
-    commit = "ff97272cdae341644653bc5d459a209f0af6a267",
+    commit = "066835e9c5d0e79452f1394d020d9a87490ab671",
 )
 
 # SPDLOG Logging Library

@@ -10,7 +10,6 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
-#include "lsp/diagnostic.hpp"
 #include "slangd/utils/conversion.hpp"
 #include "slangd/utils/source_utils.hpp"
 
@@ -94,7 +93,9 @@ std::vector<lsp::Diagnostic> GetDocumentDiagnostics(
         diagnostics.end(), semantic_diags.begin(), semantic_diags.end());
   }
 
-  spdlog::debug("Extracted {} diagnostics for {}", diagnostics.size(), uri);
+  spdlog::debug(
+      "GetDocumentDiagnostics extracted {} diagnostics for {}",
+      diagnostics.size(), uri);
 
   return diagnostics;
 }

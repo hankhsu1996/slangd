@@ -15,7 +15,6 @@
 
 #include "slangd/utils/conversion.hpp"
 #include "slangd/utils/source_utils.hpp"
-#include "spdlog/spdlog.h"
 
 namespace slangd {
 
@@ -38,11 +37,6 @@ bool ShouldIncludeSymbol(
     const std::shared_ptr<slang::SourceManager>& source_manager,
     const std::string& uri) {
   using SK = slang::ast::SymbolKind;
-
-  // add kind of symbol
-  spdlog::debug(
-      "Checking if symbol {} of kind {} should be included", symbol.name,
-      slang::ast::toString(symbol.kind));
 
   // Skip symbols without a valid location
   if (!symbol.location) {
@@ -236,7 +230,7 @@ void ProcessScopeMembers(
         unwrapped_member, child_symbols, source_manager, uri, scope_seen_names,
         compilation);
     for (auto& child : child_symbols) {
-      parent_symbol.children.push_back(std::move(child));
+      parent_symbol.children->push_back(std::move(child));
     }
   }
 }
@@ -320,16 +314,6 @@ void BuildDocumentSymbolHierarchy(
     const std::shared_ptr<slang::SourceManager>& source_manager,
     const std::string& uri, std::unordered_set<std::string>& seen_names,
     slang::ast::Compilation& compilation) {
-  // Now symbol is expected to be already unwrapped at the entry point
-
-  // spdlog the symbol name, kind, location (file:line:col)
-  spdlog::debug(
-      "Symbol: name={} kind={} location={}:{}:{} is_scope={}", symbol.name,
-      slang::ast::toString(symbol.kind),
-      source_manager->getFileName(symbol.location),
-      source_manager->getLineNumber(symbol.location),
-      source_manager->getColumnNumber(symbol.location), symbol.isScope());
-
   // Only include symbols from the current document and with relevant kinds
   if (!ShouldIncludeSymbol(symbol, source_manager, uri)) return;
 
@@ -357,10 +341,11 @@ void BuildDocumentSymbolHierarchy(
   seen_names.insert(doc_symbol.name);
 
   // Process children with type-specific traversal logic
+  doc_symbol.children = std::vector<lsp::DocumentSymbol>();
   ProcessSymbolChildren(symbol, doc_symbol, source_manager, uri, compilation);
 
   // Only add this symbol if it has a valid range or has children
-  if (symbol.location || !doc_symbol.children.empty()) {
+  if (symbol.location || doc_symbol.children->empty()) {
     document_symbols.push_back(std::move(doc_symbol));
   }
 }

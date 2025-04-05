@@ -136,7 +136,7 @@ struct DocumentSymbol {
   std::optional<bool> deprecated;
   Range range;
   Range selectionRange;
-  std::vector<DocumentSymbol> children;
+  std::optional<std::vector<DocumentSymbol>> children;
 };
 
 inline void to_json(nlohmann::json& j, const DocumentSymbol& s) {
@@ -147,7 +147,7 @@ inline void to_json(nlohmann::json& j, const DocumentSymbol& s) {
   to_json_optional(j, "deprecated", s.deprecated);
   to_json_required(j, "range", s.range);
   to_json_required(j, "selectionRange", s.selectionRange);
-  to_json_required(j, "children", s.children);
+  to_json_optional(j, "children", s.children);
 }
 
 inline void from_json(const nlohmann::json& j, DocumentSymbol& s) {
@@ -158,7 +158,7 @@ inline void from_json(const nlohmann::json& j, DocumentSymbol& s) {
   from_json_optional(j, "deprecated", s.deprecated);
   from_json_required(j, "range", s.range);
   from_json_required(j, "selectionRange", s.selectionRange);
-  from_json_required(j, "children", s.children);
+  from_json_optional(j, "children", s.children);
 }
 
 struct SymbolInformation {

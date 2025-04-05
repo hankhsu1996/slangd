@@ -67,7 +67,7 @@ DocumentManager::ParseWithCompilation(
   // Add the syntax tree to the compilation
   compilation.addSyntaxTree(syntax_trees_[uri]);
 
-  spdlog::debug("Compilation completed for document: {}", uri);
+  spdlog::debug("DocumentManager compilation completed for document: {}", uri);
   co_return std::expected<void, ParseError>{};
 }
 
@@ -96,7 +96,8 @@ DocumentManager::ParseWithElaboration(
   // Handle elaboration failures via diagnostics, not exceptions
   compilation.getRoot();
 
-  spdlog::debug("Full elaboration completed for document: {}", uri);
+  spdlog::debug(
+      "DocumentManager full elaboration completed for document: {}", uri);
   co_return std::expected<void, ParseError>{};
 }
 
@@ -161,7 +162,8 @@ DocumentManager::GetSymbols(const std::string& uri) {
   symbols.push_back(root_ptr);
 
   // Output the number of symbols found for debugging
-  spdlog::debug("Found {} symbols in document: {}", symbols.size(), uri);
+  spdlog::debug(
+      "DocumentManager found {} symbols in document: {}", symbols.size(), uri);
 
   co_return symbols;
 }
@@ -223,7 +225,8 @@ DocumentManager::GetDocumentDiagnostics(const std::string& uri) {
       syntax_tree, compilation, source_manager, diagnostic_engine, uri);
 
   spdlog::debug(
-      "Found {} diagnostics in document: {}", diagnostics.size(), uri);
+      "DocumentManager found {} diagnostics in document: {}",
+      diagnostics.size(), uri);
 
   co_return diagnostics;
 }

@@ -99,7 +99,6 @@ TEST_CASE("DocumentSymbol serialization", "[lsp]") {
   REQUIRE(j.contains("kind"));
   REQUIRE(j.contains("range"));
   REQUIRE(j.contains("selectionRange"));
-  REQUIRE(j.contains("children"));
   REQUIRE(j["name"] == "test_symbol");
   REQUIRE(j["kind"] == 12);  // Function is 12 in LSP spec
 
@@ -112,7 +111,7 @@ TEST_CASE("DocumentSymbol serialization", "[lsp]") {
   REQUIRE(symbol2.kind == lsp::SymbolKind::Function);
   REQUIRE(symbol2.range.start.line == 10);
   REQUIRE(symbol2.range.end.line == 15);
-  REQUIRE(symbol2.children.empty());
+  REQUIRE(!symbol2.children.has_value());
 }
 
 TEST_CASE("DocumentSymbol with optional fields", "[lsp]") {
@@ -205,9 +204,8 @@ TEST_CASE("DocumentSymbol hierarchical structure", "[lsp]") {
       .end = {.line = 15, .character = 25}};
 
   // Build the hierarchy
-  child1.children.push_back(grandchild);
-  parent.children.push_back(child1);
-  parent.children.push_back(child2);
+  child1.children = std::vector<lsp::DocumentSymbol>{grandchild};
+  parent.children = std::vector<lsp::DocumentSymbol>{child1, child2};
 
   // Serialize to JSON
   nlohmann::json j;
@@ -225,11 +223,11 @@ TEST_CASE("DocumentSymbol hierarchical structure", "[lsp]") {
   from_json(j, parent2);
 
   // Verify deserialized hierarchy
-  REQUIRE(parent2.children.size() == 2);
-  REQUIRE(parent2.children[0].name == "child_function");
-  REQUIRE(parent2.children[1].name == "child_variable");
-  REQUIRE(parent2.children[0].children.size() == 1);
-  REQUIRE(parent2.children[0].children[0].name == "grandchild_struct");
+  REQUIRE(parent2.children->size() == 2);
+  REQUIRE(parent2.children->at(0).name == "child_function");
+  REQUIRE(parent2.children->at(1).name == "child_variable");
+  REQUIRE(parent2.children->at(0).children->size() == 1);
+  REQUIRE(parent2.children->at(0).children->at(0).name == "grandchild_struct");
 }
 
 TEST_CASE("DocumentSymbol parsing from raw JSON", "[lsp]") {
@@ -273,8 +271,9 @@ TEST_CASE("DocumentSymbol parsing from raw JSON", "[lsp]") {
   REQUIRE(symbol.kind == lsp::SymbolKind::Class);  // 5 is Class
   REQUIRE(symbol.range.start.line == 5);
   REQUIRE(symbol.range.end.line == 10);
-  REQUIRE(symbol.children.size() == 1);
-  REQUIRE(symbol.children[0].name == "json_child");
+  REQUIRE(symbol.children->size() == 1);
+  REQUIRE(symbol.children->at(0).name == "json_child");
   REQUIRE(
-      symbol.children[0].kind == lsp::SymbolKind::Variable);  // 13 is Variable
+      symbol.children->at(0).kind ==
+      lsp::SymbolKind::Variable);  // 13 is Variable
 }

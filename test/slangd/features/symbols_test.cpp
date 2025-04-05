@@ -88,11 +88,12 @@ TEST_CASE(
   REQUIRE(symbols[0].name == "mod_with_param_and_var");
   REQUIRE(symbols[0].kind == lsp::SymbolKind::Class);
 
-  REQUIRE(symbols[0].children.size() == 2);
-  REQUIRE(symbols[0].children[0].name == "WIDTH");
-  REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::Constant);
-  REQUIRE(symbols[0].children[1].name == "data");
-  REQUIRE(symbols[0].children[1].kind == lsp::SymbolKind::Variable);
+  REQUIRE(symbols[0].children.has_value());
+  REQUIRE(symbols[0].children->size() == 2);
+  REQUIRE(symbols[0].children->at(0).name == "WIDTH");
+  REQUIRE(symbols[0].children->at(0).kind == lsp::SymbolKind::Constant);
+  REQUIRE(symbols[0].children->at(1).name == "data");
+  REQUIRE(symbols[0].children->at(1).kind == lsp::SymbolKind::Variable);
 }
 
 TEST_CASE("GetDocumentSymbols extracts module ports", "[symbol_utils]") {
@@ -113,13 +114,13 @@ TEST_CASE("GetDocumentSymbols extracts module ports", "[symbol_utils]") {
   REQUIRE(symbols[0].name == "mod_with_ports");
   REQUIRE(symbols[0].kind == lsp::SymbolKind::Class);
 
-  REQUIRE(symbols[0].children.size() == 3);
-  REQUIRE(symbols[0].children[0].name == "WIDTH");
-  REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::Constant);
-  REQUIRE(symbols[0].children[1].name == "clk");
-  REQUIRE(symbols[0].children[1].kind == lsp::SymbolKind::Variable);
-  REQUIRE(symbols[0].children[2].name == "data");
-  REQUIRE(symbols[0].children[2].kind == lsp::SymbolKind::Variable);
+  REQUIRE(symbols[0].children->size() == 3);
+  REQUIRE(symbols[0].children->at(0).name == "WIDTH");
+  REQUIRE(symbols[0].children->at(0).kind == lsp::SymbolKind::Constant);
+  REQUIRE(symbols[0].children->at(1).name == "clk");
+  REQUIRE(symbols[0].children->at(1).kind == lsp::SymbolKind::Variable);
+  REQUIRE(symbols[0].children->at(2).name == "data");
+  REQUIRE(symbols[0].children->at(2).kind == lsp::SymbolKind::Variable);
 }
 
 TEST_CASE("GetDocumentSymbols extracts enum type", "[symbol_utils]") {
@@ -138,15 +139,15 @@ TEST_CASE("GetDocumentSymbols extracts enum type", "[symbol_utils]") {
   REQUIRE(symbols[0].name == "pkg_with_enum");
   REQUIRE(symbols[0].kind == lsp::SymbolKind::Package);
 
-  REQUIRE(symbols[0].children.size() == 4);
-  REQUIRE(symbols[0].children[0].name == "RED");
-  REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::Constant);
-  REQUIRE(symbols[0].children[1].name == "GREEN");
-  REQUIRE(symbols[0].children[1].kind == lsp::SymbolKind::Constant);
-  REQUIRE(symbols[0].children[2].name == "BLUE");
-  REQUIRE(symbols[0].children[2].kind == lsp::SymbolKind::Constant);
-  REQUIRE(symbols[0].children[3].name == "color_t");
-  REQUIRE(symbols[0].children[3].kind == lsp::SymbolKind::Enum);
+  REQUIRE(symbols[0].children->size() == 4);
+  REQUIRE(symbols[0].children->at(0).name == "RED");
+  REQUIRE(symbols[0].children->at(0).kind == lsp::SymbolKind::Constant);
+  REQUIRE(symbols[0].children->at(1).name == "GREEN");
+  REQUIRE(symbols[0].children->at(1).kind == lsp::SymbolKind::Constant);
+  REQUIRE(symbols[0].children->at(2).name == "BLUE");
+  REQUIRE(symbols[0].children->at(2).kind == lsp::SymbolKind::Constant);
+  REQUIRE(symbols[0].children->at(3).name == "color_t");
+  REQUIRE(symbols[0].children->at(3).kind == lsp::SymbolKind::Enum);
 }
 
 TEST_CASE("GetDocumentSymbols extracts struct type", "[symbol_utils]") {
@@ -166,15 +167,19 @@ TEST_CASE("GetDocumentSymbols extracts struct type", "[symbol_utils]") {
   REQUIRE(symbols[0].name == "pkg_with_struct");
   REQUIRE(symbols[0].kind == lsp::SymbolKind::Package);
 
-  REQUIRE(symbols[0].children.size() == 1);
-  REQUIRE(symbols[0].children[0].name == "my_struct_t");
-  REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::Struct);
+  REQUIRE(symbols[0].children->size() == 1);
+  REQUIRE(symbols[0].children->at(0).name == "my_struct_t");
+  REQUIRE(symbols[0].children->at(0).kind == lsp::SymbolKind::Struct);
 
-  REQUIRE(symbols[0].children[0].children.size() == 2);
-  REQUIRE(symbols[0].children[0].children[0].name == "a");
-  REQUIRE(symbols[0].children[0].children[0].kind == lsp::SymbolKind::Field);
-  REQUIRE(symbols[0].children[0].children[1].name == "b");
-  REQUIRE(symbols[0].children[0].children[1].kind == lsp::SymbolKind::Field);
+  REQUIRE(symbols[0].children->at(0).children->size() == 2);
+  REQUIRE(symbols[0].children->at(0).children->at(0).name == "a");
+  REQUIRE(
+      symbols[0].children->at(0).children->at(0).kind ==
+      lsp::SymbolKind::Field);
+  REQUIRE(symbols[0].children->at(0).children->at(1).name == "b");
+  REQUIRE(
+      symbols[0].children->at(0).children->at(1).kind ==
+      lsp::SymbolKind::Field);
 }
 
 TEST_CASE("GetDocumentSymbols extracts functions", "[symbol_utils]") {
@@ -193,9 +198,9 @@ TEST_CASE("GetDocumentSymbols extracts functions", "[symbol_utils]") {
   REQUIRE(symbols[0].name == "pkg_with_function");
   REQUIRE(symbols[0].kind == lsp::SymbolKind::Package);
 
-  REQUIRE(symbols[0].children.size() == 1);
-  REQUIRE(symbols[0].children[0].name == "add");
-  REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::Function);
+  REQUIRE(symbols[0].children->size() == 1);
+  REQUIRE(symbols[0].children->at(0).name == "add");
+  REQUIRE(symbols[0].children->at(0).kind == lsp::SymbolKind::Function);
 }
 
 TEST_CASE(
@@ -237,18 +242,21 @@ TEST_CASE("GetDocumentSymbols extracts nested struct", "[symbol_utils]") {
   REQUIRE(symbols[0].name == "pkg_with_nested_struct");
   REQUIRE(symbols[0].kind == lsp::SymbolKind::Package);
 
-  REQUIRE(symbols[0].children.size() == 1);
-  REQUIRE(symbols[0].children[0].name == "my_struct_t");
-  REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::Struct);
+  REQUIRE(symbols[0].children->size() == 1);
+  REQUIRE(symbols[0].children->at(0).name == "my_struct_t");
+  REQUIRE(symbols[0].children->at(0).kind == lsp::SymbolKind::Struct);
 
-  REQUIRE(symbols[0].children[0].children.size() == 1);
-  REQUIRE(symbols[0].children[0].children[0].name == "inner");
-  REQUIRE(symbols[0].children[0].children[0].kind == lsp::SymbolKind::Field);
-
-  REQUIRE(symbols[0].children[0].children[0].children.size() == 1);
-  REQUIRE(symbols[0].children[0].children[0].children[0].name == "a");
+  REQUIRE(symbols[0].children->at(0).children->size() == 1);
+  REQUIRE(symbols[0].children->at(0).children->at(0).name == "inner");
   REQUIRE(
-      symbols[0].children[0].children[0].children[0].kind ==
+      symbols[0].children->at(0).children->at(0).kind ==
+      lsp::SymbolKind::Field);
+
+  REQUIRE(symbols[0].children->at(0).children->at(0).children->size() == 1);
+  REQUIRE(
+      symbols[0].children->at(0).children->at(0).children->at(0).name == "a");
+  REQUIRE(
+      symbols[0].children->at(0).children->at(0).children->at(0).kind ==
       lsp::SymbolKind::Field);
 }
 
@@ -269,13 +277,13 @@ TEST_CASE("GetDocumentSymbols extracts type parameters", "[symbol_utils]") {
   REQUIRE(symbols[0].name == "mod_with_type_param");
   REQUIRE(symbols[0].kind == lsp::SymbolKind::Class);
 
-  REQUIRE(symbols[0].children.size() == 3);
-  REQUIRE(symbols[0].children[0].name == "T");
-  REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::TypeParameter);
-  REQUIRE(symbols[0].children[1].name == "data");
-  REQUIRE(symbols[0].children[1].kind == lsp::SymbolKind::Variable);
-  REQUIRE(symbols[0].children[2].name == "data_out");
-  REQUIRE(symbols[0].children[2].kind == lsp::SymbolKind::Variable);
+  REQUIRE(symbols[0].children->size() == 3);
+  REQUIRE(symbols[0].children->at(0).name == "T");
+  REQUIRE(symbols[0].children->at(0).kind == lsp::SymbolKind::TypeParameter);
+  REQUIRE(symbols[0].children->at(1).name == "data");
+  REQUIRE(symbols[0].children->at(1).kind == lsp::SymbolKind::Variable);
+  REQUIRE(symbols[0].children->at(2).name == "data_out");
+  REQUIRE(symbols[0].children->at(2).kind == lsp::SymbolKind::Variable);
 }
 
 TEST_CASE(
@@ -298,13 +306,13 @@ TEST_CASE(
   REQUIRE(symbols[1].name == "submodule");
   REQUIRE(symbols[1].kind == lsp::SymbolKind::Class);
 
-  REQUIRE(symbols[0].children.size() == 1);
-  REQUIRE(symbols[0].children[0].name == "submod");
-  REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::Variable);
+  REQUIRE(symbols[0].children->size() == 1);
+  REQUIRE(symbols[0].children->at(0).name == "submod");
+  REQUIRE(symbols[0].children->at(0).kind == lsp::SymbolKind::Variable);
 
-  REQUIRE(symbols[1].children.size() == 1);
-  REQUIRE(symbols[1].children[0].name == "a");
-  REQUIRE(symbols[1].children[0].kind == lsp::SymbolKind::Variable);
+  REQUIRE(symbols[1].children->size() == 1);
+  REQUIRE(symbols[1].children->at(0).name == "a");
+  REQUIRE(symbols[1].children->at(0).kind == lsp::SymbolKind::Variable);
 }
 
 TEST_CASE(
@@ -322,7 +330,7 @@ TEST_CASE(
   REQUIRE(symbols[0].name == "mod_with_inst");
   REQUIRE(symbols[0].kind == lsp::SymbolKind::Class);
 
-  REQUIRE(symbols[0].children.size() == 1);
-  REQUIRE(symbols[0].children[0].name == "submod");
-  REQUIRE(symbols[0].children[0].kind == lsp::SymbolKind::Variable);
+  REQUIRE(symbols[0].children->size() == 1);
+  REQUIRE(symbols[0].children->at(0).name == "submod");
+  REQUIRE(symbols[0].children->at(0).kind == lsp::SymbolKind::Variable);
 }
