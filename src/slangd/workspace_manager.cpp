@@ -5,6 +5,7 @@
 #include <slang/util/Bag.h>
 #include <spdlog/spdlog.h>
 
+#include "slangd/utils/timer.hpp"
 #include "slangd/utils/uri.hpp"
 
 namespace slangd {
@@ -113,8 +114,11 @@ WorkspaceManager::ProcessFiles(const std::vector<std::string>& file_paths) {
   slang::Bag options;
 
   // Load and parse all sources
-  std::vector<std::shared_ptr<slang::syntax::SyntaxTree>> syntax_trees =
-      source_loader_->loadAndParseSources(options);
+  std::vector<std::shared_ptr<slang::syntax::SyntaxTree>> syntax_trees;
+  {
+    ScopedTimer timer("Loading and parsing sources");
+    syntax_trees = source_loader_->loadAndParseSources(options);
+  }
 
   // Store the syntax trees in our map
   syntax_trees_.clear();
@@ -128,13 +132,17 @@ WorkspaceManager::ProcessFiles(const std::vector<std::string>& file_paths) {
     }
   }
 
-  // Create a new compilation with default options
-  compilation_ = std::make_shared<slang::ast::Compilation>();
+  // Create and populate compilation
+  {
+    ScopedTimer timer("Creating compilation");
+    // Create a new compilation with default options
+    compilation_ = std::make_shared<slang::ast::Compilation>();
 
-  // Add all syntax trees to the compilation
-  for (auto& tree : syntax_trees) {
-    if (tree) {
-      compilation_->addSyntaxTree(tree);
+    // Add all syntax trees to the compilation
+    for (auto& tree : syntax_trees) {
+      if (tree) {
+        compilation_->addSyntaxTree(tree);
+      }
     }
   }
 
@@ -147,7 +155,8 @@ WorkspaceManager::ProcessFiles(const std::vector<std::string>& file_paths) {
     }
   }
 
-  spdlog::info("Successfully processed {} files", syntax_trees_.size());
+  spdlog::info(
+      "WorkspaceManager successfully processed {} files", syntax_trees_.size());
   co_return std::expected<void, SlangdError>{};
 }
 
