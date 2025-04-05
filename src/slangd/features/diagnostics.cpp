@@ -79,13 +79,8 @@ std::vector<lsp::Diagnostic> GetDocumentDiagnostics(
     const slang::DiagnosticEngine& diag_engine, const std::string& uri) {
   std::vector<lsp::Diagnostic> diagnostics;
 
-  // Extract syntax diagnostics
-  auto syntax_diags =
-      ExtractSyntaxDiagnostics(syntax_tree, source_manager, diag_engine, uri);
-  diagnostics.insert(
-      diagnostics.end(), syntax_diags.begin(), syntax_diags.end());
-
   // Extract semantic diagnostics if we have a compilation
+  // This already includes syntax diagnostics
   if (compilation) {
     auto semantic_diags = ExtractSemanticDiagnostics(
         compilation, source_manager, diag_engine, uri);
@@ -93,7 +88,15 @@ std::vector<lsp::Diagnostic> GetDocumentDiagnostics(
         diagnostics.end(), semantic_diags.begin(), semantic_diags.end());
   }
 
-  spdlog::debug(
+  // Extract syntax diagnostics if we have a syntax tree
+  else if (syntax_tree) {
+    auto syntax_diags =
+        ExtractSyntaxDiagnostics(syntax_tree, source_manager, diag_engine, uri);
+    diagnostics.insert(
+        diagnostics.end(), syntax_diags.begin(), syntax_diags.end());
+  }
+
+  spdlog::info(
       "GetDocumentDiagnostics extracted {} diagnostics for {}",
       diagnostics.size(), uri);
 
