@@ -52,7 +52,7 @@ int main(int argc, char* argv[]) {
         if (result.has_value()) {
           spdlog::debug("Server run completed");
         } else {
-          spdlog::error("Server error: {}", result.error().message);
+          spdlog::error("Server error: {}", result.error().Message());
         }
       },
       asio::detached);

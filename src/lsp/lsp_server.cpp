@@ -8,14 +8,19 @@
 
 namespace lsp {
 
+using lsp::error::LspError;
+using lsp::error::LspErrorCode;
+using lsp::error::Ok;
+
 LspServer::LspServer(
     asio::any_io_executor executor,
     std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint)
     : endpoint_(std::move(endpoint)),
       executor_(executor),
-      work_guard_(asio::make_work_guard(executor)) {}
+      work_guard_(asio::make_work_guard(executor)) {
+}
 
-auto LspServer::Start() -> asio::awaitable<std::expected<void, RpcError>> {
+auto LspServer::Start() -> asio::awaitable<std::expected<void, LspError>> {
   // Register method handlers
   RegisterHandlers();
 
@@ -24,8 +29,8 @@ auto LspServer::Start() -> asio::awaitable<std::expected<void, RpcError>> {
   if (result.has_value()) {
     spdlog::debug("LspServer endpoint started");
   } else {
-    spdlog::error("LspServer endpoint error: {}", result.error().message);
-    co_return std::unexpected(result.error());
+    spdlog::error("LspServer endpoint error: {}", result.error().Message());
+    co_return LspError::UnexpectedFromRpcError(result.error());
   }
 
   // Wait for shutdown
@@ -35,14 +40,14 @@ auto LspServer::Start() -> asio::awaitable<std::expected<void, RpcError>> {
   } else {
     spdlog::error(
         "LspServer endpoint wait for shutdown error: {}",
-        shutdown_result.error().message);
-    co_return std::unexpected(shutdown_result.error());
+        shutdown_result.error().Message());
+    co_return LspError::UnexpectedFromRpcError(shutdown_result.error());
   }
 
-  co_return std::expected<void, RpcError>{};
+  co_return Ok();
 }
 
-auto LspServer::Shutdown() -> asio::awaitable<std::expected<void, RpcError>> {
+auto LspServer::Shutdown() -> asio::awaitable<std::expected<void, LspError>> {
   spdlog::debug("Server shutting down");
 
   if (endpoint_) {
@@ -52,15 +57,15 @@ auto LspServer::Shutdown() -> asio::awaitable<std::expected<void, RpcError>> {
       spdlog::debug("LspServer endpoint shutdown");
     } else {
       spdlog::error(
-          "LspServer endpoint shutdown error: {}", result.error().message);
-      co_return std::unexpected(result.error());
+          "LspServer endpoint shutdown error: {}", result.error().Message());
+      co_return LspError::UnexpectedFromRpcError(result.error());
     }
   }
 
   // Release work guard to allow threads to finish
   work_guard_.reset();
 
-  co_return std::expected<void, RpcError>{};
+  co_return Ok();
 }
 
 void LspServer::RegisterHandlers() {
@@ -73,52 +78,52 @@ void LspServer::RegisterHandlers() {
 
 void LspServer::RegisterLifecycleHandlers() {
   // Initialize Request
-  endpoint_->RegisterMethodCall<InitializeParams, InitializeResult>(
+  endpoint_->RegisterMethodCall<InitializeParams, InitializeResult, LspError>(
       "initialize",
       [this](const InitializeParams& params) { return OnInitialize(params); });
 
   // Initialized Notification
-  endpoint_->RegisterNotification<InitializedParams>(
+  endpoint_->RegisterNotification<InitializedParams, LspError>(
       "initialized", [this](const InitializedParams& params) {
         return OnInitialized(params);
       });
 
   // SetTrace Notification
-  endpoint_->RegisterNotification<SetTraceParams>(
+  endpoint_->RegisterNotification<SetTraceParams, LspError>(
       "$/setTrace",
       [this](const SetTraceParams& params) { return OnSetTrace(params); });
 
   // LogTrace Notification
-  endpoint_->RegisterNotification<LogTraceParams>(
+  endpoint_->RegisterNotification<LogTraceParams, LspError>(
       "$/logTrace",
       [this](const LogTraceParams& params) { return OnLogTrace(params); });
 
   // Shutdown Request
-  endpoint_->RegisterMethodCall<ShutdownParams, ShutdownResult>(
+  endpoint_->RegisterMethodCall<ShutdownParams, ShutdownResult, LspError>(
       "shutdown",
       [this](const ShutdownParams& params) { return OnShutdown(params); });
 
   // Exit Notification
-  endpoint_->RegisterNotification<ExitParams>(
+  endpoint_->RegisterNotification<ExitParams, LspError>(
       "exit", [this](const ExitParams& params) { return OnExit(params); });
 }
 
 void LspServer::RegisterDocumentSyncHandlers() {
   // DidOpenTextDocument Notification
-  endpoint_->RegisterNotification<DidOpenTextDocumentParams>(
+  endpoint_->RegisterNotification<DidOpenTextDocumentParams, LspError>(
       "textDocument/didOpen", [this](const DidOpenTextDocumentParams& params) {
         return OnDidOpenTextDocument(params);
       });
 
   // DidChangeTextDocument Notification
-  endpoint_->RegisterNotification<DidChangeTextDocumentParams>(
+  endpoint_->RegisterNotification<DidChangeTextDocumentParams, LspError>(
       "textDocument/didChange",
       [this](const DidChangeTextDocumentParams& params) {
         return OnDidChangeTextDocument(params);
       });
 
   // WillSaveTextDocument Notification
-  endpoint_->RegisterNotification<WillSaveTextDocumentParams>(
+  endpoint_->RegisterNotification<WillSaveTextDocumentParams, LspError>(
       "textDocument/willSave",
       [this](const WillSaveTextDocumentParams& params) {
         return OnWillSaveTextDocument(params);
@@ -126,85 +131,88 @@ void LspServer::RegisterDocumentSyncHandlers() {
 
   // WillSaveWaitUntilTextDocument Request
   endpoint_->RegisterMethodCall<
-      WillSaveTextDocumentParams, WillSaveTextDocumentResult>(
+      WillSaveTextDocumentParams, WillSaveTextDocumentResult, LspError>(
       "textDocument/willSaveWaitUntil",
       [this](const WillSaveTextDocumentParams& params) {
         return OnWillSaveWaitUntilTextDocument(params);
       });
 
   // DidSaveTextDocument Notification
-  endpoint_->RegisterNotification<DidSaveTextDocumentParams>(
+  endpoint_->RegisterNotification<DidSaveTextDocumentParams, LspError>(
       "textDocument/didSave", [this](const DidSaveTextDocumentParams& params) {
         return OnDidSaveTextDocument(params);
       });
 
   // DidCloseTextDocument Notification
-  endpoint_->RegisterNotification<DidCloseTextDocumentParams>(
+  endpoint_->RegisterNotification<DidCloseTextDocumentParams, LspError>(
       "textDocument/didClose",
       [this](const DidCloseTextDocumentParams& params) {
         return OnDidCloseTextDocument(params);
       });
 
-  // TODO: Did Open Notebook Document
-  // TODO: Did Change Notebook Document
-  // TODO: Did Save Notebook Document
-  // TODO: Did Close Notebook Document
+  // TODO(hankhsu1996): Did Open Notebook Document
+  // TODO(hankhsu1996): Did Change Notebook Document
+  // TODO(hankhsu1996): Did Save Notebook Document
+  // TODO(hankhsu1996): Did Close Notebook Document
 }
 
 void LspServer::RegisterLanguageFeatureHandlers() {
-  // TODO: Go to Declaration
-  // TODO: Go to Definition
-  // TODO: Go to Type Definition
-  // TODO: Go to Implementation
-  // TODO: Find References
-  // TODO: Prepare Call Hierarchy
-  // TODO: Call Hierarchy Incoming Calls
-  // TODO: Call Hierarchy Outgoing Calls
-  // TODO: Prepare Type Hierarchy
-  // TODO: Type Hierarchy Super Types
-  // TODO: Type Hierarchy Sub Types
-  // TODO: Document Highlight
-  // TODO: Document Link
-  // TODO: Document Link Resolve
-  // TODO: Hover
-  // TODO: Code Lens
-  // TODO: Code Lens Refresh
-  // TODO: Folding Range
-  // TODO: Selection Range
+  // TODO(hankhsu1996): Go to Declaration
+  // TODO(hankhsu1996): Go to Definition
+  // TODO(hankhsu1996): Go to Type Definition
+  // TODO(hankhsu1996): Go to Implementation
+  // TODO(hankhsu1996): Find References
+  // TODO(hankhsu1996): Prepare Call Hierarchy
+  // TODO(hankhsu1996): Call Hierarchy Incoming Calls
+  // TODO(hankhsu1996): Call Hierarchy Outgoing Calls
+  // TODO(hankhsu1996): Prepare Type Hierarchy
+  // TODO(hankhsu1996): Type Hierarchy Super Types
+  // TODO(hankhsu1996): Type Hierarchy Sub Types
+  // TODO(hankhsu1996): Document Highlight
+  // TODO(hankhsu1996): Document Link
+  // TODO(hankhsu1996): Document Link Resolve
+  // TODO(hankhsu1996): Hover
+  // TODO(hankhsu1996): Code Lens
+  // TODO(hankhsu1996): Code Lens Refresh
+  // TODO(hankhsu1996): Folding Range
+  // TODO(hankhsu1996): Selection Range
 
   // Document Symbols Request
-  endpoint_->RegisterMethodCall<DocumentSymbolParams, DocumentSymbolResult>(
+  endpoint_->RegisterMethodCall<
+      DocumentSymbolParams, DocumentSymbolResult, LspError>(
       "textDocument/documentSymbol",
       [this](const DocumentSymbolParams& params) {
         return OnDocumentSymbols(params);
       });
 
-  // TODO: Semantic Tokens
-  // TODO: Inline Value
-  // TODO: Inline Value Refresh
-  // TODO: Inlay Hint
-  // TODO: Inlay Hint Resolve
-  // TODO: Inlay Hint Refresh
-  // TODO: Moniker
-  // TODO: Completion Proposals
-  // TODO: Completion Item Resolve
-  // TODO: Pull Diagnostics
-  // TODO: Signature Help
-  // TODO: Code Action
-  // TODO: Code Action Resolve
-  // TODO: Document Color
-  // TODO: Color Presentation
-  // TODO: Formatting
-  // TODO: Range Formatting
-  // TODO: On type Formatting
-  // TODO: Rename
-  // TODO: Prepare Rename
-  // TODO: Linked Editing Range
+  // TODO(hankhsu1996): Semantic Tokens
+  // TODO(hankhsu1996): Inline Value
+  // TODO(hankhsu1996): Inline Value Refresh
+  // TODO(hankhsu1996): Inlay Hint
+  // TODO(hankhsu1996): Inlay Hint Resolve
+  // TODO(hankhsu1996): Inlay Hint Refresh
+  // TODO(hankhsu1996): Moniker
+  // TODO(hankhsu1996): Completion Proposals
+  // TODO(hankhsu1996): Completion Item Resolve
+  // TODO(hankhsu1996): Pull Diagnostics
+  // TODO(hankhsu1996): Signature Help
+  // TODO(hankhsu1996): Code Action
+  // TODO(hankhsu1996): Code Action Resolve
+  // TODO(hankhsu1996): Document Color
+  // TODO(hankhsu1996): Color Presentation
+  // TODO(hankhsu1996): Formatting
+  // TODO(hankhsu1996): Range Formatting
+  // TODO(hankhsu1996): On type Formatting
+  // TODO(hankhsu1996): Rename
+  // TODO(hankhsu1996): Prepare Rename
+  // TODO(hankhsu1996): Linked Editing Range
 }
 
-void LspServer::RegisterWorkspaceFeatureHandlers() {}
+void LspServer::RegisterWorkspaceFeatureHandlers() {
+}
 
-void LspServer::RegisterWindowFeatureHandlers() {}
+void LspServer::RegisterWindowFeatureHandlers() {
+}
 
 // File management helpers
 std::optional<std::reference_wrapper<OpenFile>> LspServer::GetOpenFile(

@@ -8,25 +8,30 @@
 
 namespace slangd {
 
+using lsp::LspError;
+using lsp::LspErrorCode;
+using lsp::Ok;
+
 SlangdLspServer::SlangdLspServer(
     asio::any_io_executor executor,
     std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint)
     : lsp::LspServer(executor, std::move(endpoint)),
       strand_(asio::make_strand(executor)),
       document_manager_(std::make_unique<DocumentManager>(executor)),
-      workspace_manager_(std::make_unique<WorkspaceManager>(executor)) {}
+      workspace_manager_(std::make_unique<WorkspaceManager>(executor)) {
+}
 
-auto SlangdLspServer::OnInitialize(const lsp::InitializeParams& params)
-    -> asio::awaitable<lsp::InitializeResult> {
+auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
+    -> asio::awaitable<std::expected<lsp::InitializeResult, lsp::LspError>> {
   spdlog::debug("SlangdLspServer OnInitialize");
 
-  if (auto workspaceFolders_opt = params.workspaceFolders) {
-    for (const auto& folder : *workspaceFolders_opt) {
+  if (auto workspace_folders_opt = params.workspaceFolders) {
+    for (const auto& folder : *workspace_folders_opt) {
       workspace_manager_->AddWorkspaceFolder(folder.uri, folder.name);
     }
   }
 
-  lsp::TextDocumentSyncOptions syncOptions{
+  lsp::TextDocumentSyncOptions sync_options{
       .openClose = true,
       .change = lsp::TextDocumentSyncKind::Full,
   };
@@ -39,59 +44,60 @@ auto SlangdLspServer::OnInitialize(const lsp::InitializeParams& params)
   };
 
   lsp::ServerCapabilities capabilities{
-      .textDocumentSync = syncOptions,
+      .textDocumentSync = sync_options,
       .documentSymbolProvider = true,
       .workspace = workspace,
   };
 
   co_return lsp::InitializeResult{
       .capabilities = capabilities,
-      .serverInfo = lsp::InitializeResult::ServerInfo{"slangd", "0.1.0"}};
+      .serverInfo = lsp::InitializeResult::ServerInfo{
+          .name = "slangd", .version = "0.1.0"}};
 }
 
-auto SlangdLspServer::OnInitialized(const lsp::InitializedParams& params)
-    -> asio::awaitable<void> {
+auto SlangdLspServer::OnInitialized(lsp::InitializedParams /*unused*/)
+    -> asio::awaitable<std::expected<void, lsp::LspError>> {
   spdlog::debug("SlangdLspServer OnInitialized");
   initialized_ = true;
 
-  // Start workspace scanning in the background
-  asio::co_spawn(
-      strand_,
-      [this]() -> asio::awaitable<void> {
-        spdlog::debug(
-            "SlangdLspServer starting workspace scan for SystemVerilog files");
-        co_await workspace_manager_->ScanWorkspace();
-        spdlog::debug("SlangdLspServer workspace scan completed");
-      },
-      asio::detached);
+  auto scan_workspace = [this]() -> asio::awaitable<void> {
+    spdlog::debug(
+        "SlangdLspServer starting workspace scan for SystemVerilog files");
+    co_await workspace_manager_->ScanWorkspace();
+    spdlog::debug("SlangdLspServer workspace scan completed");
+  };
 
-  co_return;
+  // Start workspace scanning in the background
+  asio::co_spawn(strand_, scan_workspace, asio::detached);
+
+  co_return Ok();
 }
 
-auto SlangdLspServer::OnShutdown(const lsp::ShutdownParams& params)
-    -> asio::awaitable<lsp::ShutdownResult> {
+auto SlangdLspServer::OnShutdown(lsp::ShutdownParams /*unused*/)
+    -> asio::awaitable<std::expected<lsp::ShutdownResult, lsp::LspError>> {
   shutdown_requested_ = true;
   spdlog::debug("SlangdLspServer OnShutdown");
   co_return lsp::ShutdownResult{};
 }
 
-auto SlangdLspServer::OnExit(const lsp::ExitParams& params)
-    -> asio::awaitable<void> {
+auto SlangdLspServer::OnExit(lsp::ExitParams /*unused*/)
+    -> asio::awaitable<std::expected<void, lsp::LspError>> {
   spdlog::debug("SlangdLspServer OnExit");
   co_await lsp::LspServer::Shutdown();
-  co_return;
+  co_return Ok();
 }
 
-asio::awaitable<void> SlangdLspServer::OnDidOpenTextDocument(
-    const lsp::DidOpenTextDocumentParams& params) {
+auto SlangdLspServer::OnDidOpenTextDocument(
+    lsp::DidOpenTextDocumentParams params)
+    -> asio::awaitable<std::expected<void, lsp::LspError>> {
   spdlog::debug("SlangdLspServer OnDidOpenTextDocument");
-  const auto& textDoc = params.textDocument;
-  const auto& uri = textDoc.uri;
-  const auto& text = textDoc.text;
-  const auto& languageId = textDoc.languageId;
-  const auto& version = textDoc.version;
+  const auto& text_doc = params.textDocument;
+  const auto& uri = text_doc.uri;
+  const auto& text = text_doc.text;
+  const auto& language_id = text_doc.languageId;
+  const auto& version = text_doc.version;
 
-  AddOpenFile(uri, text, languageId, version);
+  AddOpenFile(uri, text, language_id, version);
 
   // Post to strand to ensure thread safety and sequencing
   asio::co_spawn(
@@ -118,7 +124,8 @@ asio::awaitable<void> SlangdLspServer::OnDidOpenTextDocument(
             diagnostics.size(), uri);
 
         // Publish diagnostics only once with all collected diagnostics
-        lsp::PublishDiagnosticsParams diag_params{uri, version, diagnostics};
+        lsp::PublishDiagnosticsParams diag_params{
+            .uri = uri, .version = version, .diagnostics = diagnostics};
         co_await PublishDiagnostics(diag_params);
 
         spdlog::debug(
@@ -126,18 +133,19 @@ asio::awaitable<void> SlangdLspServer::OnDidOpenTextDocument(
       },
       asio::detached);
 
-  co_return;
+  co_return Ok();
 }
 
-asio::awaitable<void> SlangdLspServer::OnDidChangeTextDocument(
-    const lsp::DidChangeTextDocumentParams& params) {
+auto SlangdLspServer::OnDidChangeTextDocument(
+    lsp::DidChangeTextDocumentParams params)
+    -> asio::awaitable<std::expected<void, lsp::LspError>> {
   spdlog::debug("SlangdLspServer OnDidChangeTextDocument");
 
-  const auto& textDoc = params.textDocument;
-  const auto& uri = textDoc.uri;
+  const auto& text_doc = params.textDocument;
+  const auto& uri = text_doc.uri;
   const auto& changes = params.contentChanges;
 
-  int version = textDoc.version;
+  int version = text_doc.version;
 
   // For full sync, we get the full content in the first change
   if (!changes.empty()) {
@@ -177,7 +185,7 @@ asio::awaitable<void> SlangdLspServer::OnDidChangeTextDocument(
 
             // Publish diagnostics as a single batch
             lsp::PublishDiagnosticsParams diag_params{
-                uri, version, diagnostics};
+                .uri = uri, .version = version, .diagnostics = diagnostics};
             co_await PublishDiagnostics(diag_params);
 
             spdlog::debug(
@@ -187,22 +195,24 @@ asio::awaitable<void> SlangdLspServer::OnDidChangeTextDocument(
     }
   }
 
-  co_return;
+  co_return Ok();
 }
 
-asio::awaitable<void> SlangdLspServer::OnDidCloseTextDocument(
-    const lsp::DidCloseTextDocumentParams& params) {
+auto SlangdLspServer::OnDidCloseTextDocument(
+    lsp::DidCloseTextDocumentParams params)
+    -> asio::awaitable<std::expected<void, lsp::LspError>> {
   spdlog::debug("SlangdLspServer OnDidCloseTextDocument");
 
   const auto& uri = params.textDocument.uri;
 
   RemoveOpenFile(uri);
 
-  co_return;
+  co_return Ok();
 }
 
-asio::awaitable<lsp::DocumentSymbolResult> SlangdLspServer::OnDocumentSymbols(
-    const lsp::DocumentSymbolParams& params) {
+auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
+    -> asio::awaitable<
+        std::expected<lsp::DocumentSymbolResult, lsp::LspError>> {
   spdlog::debug("SlangdLspServer OnDocumentSymbols");
   std::vector<lsp::DocumentSymbol> result;
 

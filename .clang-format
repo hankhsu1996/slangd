@@ -13,3 +13,4 @@ IncludeCategories:
     Priority: 1
 
 AlignAfterOpenBracket: AlwaysBreak
+AllowShortFunctionsOnASingleLine: false

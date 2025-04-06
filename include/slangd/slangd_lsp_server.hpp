@@ -48,35 +48,37 @@ class SlangdLspServer : public lsp::LspServer {
 
  protected:
   // Initialize Request
-  auto OnInitialize(const lsp::InitializeParams&)
-      -> asio::awaitable<lsp::InitializeResult> override;
+  auto OnInitialize(lsp::InitializeParams /*unused*/) -> asio::awaitable<
+      std::expected<lsp::InitializeResult, lsp::LspError>> override;
 
   // Initialized Notification
-  auto OnInitialized(const lsp::InitializedParams&)
-      -> asio::awaitable<void> override;
+  auto OnInitialized(lsp::InitializedParams /*unused*/)
+      -> asio::awaitable<std::expected<void, lsp::LspError>> override;
 
   // Shutdown Request
-  auto OnShutdown(const lsp::ShutdownParams&)
-      -> asio::awaitable<lsp::ShutdownResult> override;
+  auto OnShutdown(lsp::ShutdownParams /*unused*/) -> asio::awaitable<
+      std::expected<lsp::ShutdownResult, lsp::LspError>> override;
 
   // Exit Notification
-  auto OnExit(const lsp::ExitParams&) -> asio::awaitable<void> override;
+  auto OnExit(lsp::ExitParams /*unused*/)
+      -> asio::awaitable<std::expected<void, lsp::LspError>> override;
 
   // Did Open Text Document Notification
-  auto OnDidOpenTextDocument(const lsp::DidOpenTextDocumentParams&)
-      -> asio::awaitable<void> override;
+  auto OnDidOpenTextDocument(lsp::DidOpenTextDocumentParams /*unused*/)
+      -> asio::awaitable<std::expected<void, lsp::LspError>> override;
 
   // Did Change Text Document Notification
-  auto OnDidChangeTextDocument(const lsp::DidChangeTextDocumentParams&)
-      -> asio::awaitable<void> override;
+  auto OnDidChangeTextDocument(lsp::DidChangeTextDocumentParams /*unused*/)
+      -> asio::awaitable<std::expected<void, lsp::LspError>> override;
 
   // Did Close Text Document Notification
-  auto OnDidCloseTextDocument(const lsp::DidCloseTextDocumentParams&)
-      -> asio::awaitable<void> override;
+  auto OnDidCloseTextDocument(lsp::DidCloseTextDocumentParams /*unused*/)
+      -> asio::awaitable<std::expected<void, lsp::LspError>> override;
 
   // Document Symbols Request
-  auto OnDocumentSymbols(const lsp::DocumentSymbolParams&)
-      -> asio::awaitable<lsp::DocumentSymbolResult> override;
+  auto OnDocumentSymbols(lsp::DocumentSymbolParams /*unused*/)
+      -> asio::awaitable<
+          std::expected<lsp::DocumentSymbolResult, lsp::LspError>> override;
 };
 
 }  // namespace slangd

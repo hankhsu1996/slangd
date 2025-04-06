@@ -14,15 +14,15 @@
 #include "lsp/diagnostic.hpp"
 #include "lsp/document_features.hpp"
 #include "lsp/document_sync.hpp"
+#include "lsp/error.hpp"
 #include "lsp/lifecycle.hpp"
 
 namespace lsp {
 
-using jsonrpc::error::RpcError;
+using lsp::error::LspError;
+using lsp::error::LspErrorCode;
+using lsp::error::Ok;
 
-/**
- * @brief Document content and metadata
- */
 struct OpenFile {
   std::string uri;
   std::string content;
@@ -30,55 +30,28 @@ struct OpenFile {
   int version;
 };
 
-/**
- * @brief Base class for LSP servers
- *
- * This class provides the core functionality for handling Language Server
- * Protocol communication using JSON-RPC. It provides infrastructure and
- * delegates specific LSP message handling to derived classes.
- */
 class LspServer {
  public:
-  /**
-   * @brief Constructor that accepts a pre-configured RPC endpoint
-   *
-   * @param io_context ASIO io_context for async operations
-   * @param endpoint Pre-configured JSON-RPC endpoint
-   */
   LspServer(
       asio::any_io_executor executor,
       std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint);
 
-  ~LspServer() = default;
+  LspServer(const LspServer&) = delete;
+  LspServer(LspServer&&) = delete;
+  auto operator=(const LspServer&) -> LspServer& = delete;
+  auto operator=(LspServer&&) -> LspServer& = delete;
 
-  /**
-   * @brief Initialize and start the LSP server
-   *
-   * This method starts the server and handles messages until shutdown
-   * @return asio::awaitable<void> Awaitable that completes when server stops
-   */
-  auto Start() -> asio::awaitable<std::expected<void, RpcError>>;
+  virtual ~LspServer() = default;
 
-  /**
-   * @brief Shut down the server
-   *
-   * @return asio::awaitable<void> Awaitable that completes when shutdown is
-   * done
-   */
-  auto Shutdown() -> asio::awaitable<std::expected<void, RpcError>>;
+  auto Start() -> asio::awaitable<std::expected<void, LspError>>;
+  auto Shutdown() -> asio::awaitable<std::expected<void, LspError>>;
 
  protected:
-  /**
-   * @brief Register LSP method handlers
-   *
-   * This method should be overridden by derived classes to register
-   * method handlers for specific LSP messages using the endpoint_.
-   */
   void RegisterHandlers();
 
   // File management helpers
-  std::optional<std::reference_wrapper<OpenFile>> GetOpenFile(
-      const std::string& uri);
+  auto GetOpenFile(const std::string& uri)
+      -> std::optional<std::reference_wrapper<OpenFile>>;
   void AddOpenFile(
       const std::string& uri, const std::string& content,
       const std::string& language_id, int version);
@@ -86,7 +59,7 @@ class LspServer {
       const std::string& uri, const std::vector<std::string>& changes);
   void RemoveOpenFile(const std::string& uri);
 
- protected:
+ private:
   std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint_;
   asio::any_io_executor executor_;
   asio::executor_work_guard<asio::any_io_executor> work_guard_;
@@ -94,7 +67,6 @@ class LspServer {
   // Map of open document URIs to their content
   std::unordered_map<std::string, OpenFile> open_files_;
 
- private:
   void RegisterLifecycleHandlers();
   void RegisterDocumentSyncHandlers();
   void RegisterLanguageFeatureHandlers();
@@ -103,167 +75,179 @@ class LspServer {
 
  protected:
   // Initialize Request
-  virtual auto OnInitialize(const InitializeParams&)
-      -> asio::awaitable<InitializeResult> {
-    throw std::runtime_error("Not implemented");
+  virtual auto OnInitialize(InitializeParams /*unused*/)
+      -> asio::awaitable<std::expected<InitializeResult, LspError>> {
+    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
   }
 
   // Initialized Notification
-  virtual auto OnInitialized(const InitializedParams&)
-      -> asio::awaitable<void> {
-    throw std::runtime_error("Not implemented");
+  virtual auto OnInitialized(InitializedParams /*unused*/)
+      -> asio::awaitable<std::expected<void, LspError>> {
+    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
   }
 
   // Register Capability
-  auto RegisterCapability(const RegistrationParams& params)
-      -> asio::awaitable<RegistrationResult> {
+  auto RegisterCapability(RegistrationParams params)
+      -> asio::awaitable<std::expected<RegistrationResult, LspError>> {
     auto result = co_await endpoint_
                       ->SendMethodCall<RegistrationParams, RegistrationResult>(
                           "client/registerCapability", params);
     if (!result) {
       spdlog::error(
           "LspServer failed to register capability: {}",
-          result.error().message);
+          result.error().Message());
+      co_return LspError::UnexpectedFromRpcError(result.error());
     }
     co_return result.value();
   }
 
   // Unregister Capability
-  auto UnregisterCapability(const UnregistrationParams& params)
-      -> asio::awaitable<void> {
+  auto UnregisterCapability(UnregistrationParams params)
+      -> asio::awaitable<std::expected<UnregistrationResult, LspError>> {
     auto result =
         co_await endpoint_
             ->SendMethodCall<UnregistrationParams, UnregistrationResult>(
                 "client/unregisterCapability", params);
     if (!result) {
-      throw std::runtime_error(
-          "Failed to unregister capability: " + result.error().message);
+      spdlog::error(
+          "LspServer failed to unregister capability: {}",
+          result.error().Message());
+      co_return LspError::UnexpectedFromRpcError(result.error());
     }
-    co_return;
+    co_return result.value();
   }
 
   // SetTrace Notification
-  virtual auto OnSetTrace(const SetTraceParams&) -> asio::awaitable<void> {
-    throw std::runtime_error("Not implemented");
+  virtual auto OnSetTrace(SetTraceParams /*unused*/)
+      -> asio::awaitable<std::expected<void, LspError>> {
+    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
   }
 
   // LogTrace Notification
-  virtual auto OnLogTrace(const LogTraceParams&) -> asio::awaitable<void> {
-    throw std::runtime_error("Not implemented");
+  virtual auto OnLogTrace(LogTraceParams /*unused*/)
+      -> asio::awaitable<std::expected<void, LspError>> {
+    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
   }
 
   // Shutdown Request
-  virtual auto OnShutdown(const ShutdownParams&)
-      -> asio::awaitable<ShutdownResult> {
-    throw std::runtime_error("Not implemented");
+  virtual auto OnShutdown(ShutdownParams /*unused*/)
+      -> asio::awaitable<std::expected<ShutdownResult, LspError>> {
+    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
   }
 
   // Exit Notification
-  virtual auto OnExit(const ExitParams&) -> asio::awaitable<void> {
-    throw std::runtime_error("Not implemented");
+  virtual auto OnExit(ExitParams /*unused*/)
+      -> asio::awaitable<std::expected<void, LspError>> {
+    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
   }
 
   // Document Synchronization Handlers
-  virtual auto OnDidOpenTextDocument(const DidOpenTextDocumentParams&)
-      -> asio::awaitable<void> {
-    throw std::runtime_error("Not implemented");
+  virtual auto OnDidOpenTextDocument(DidOpenTextDocumentParams /*unused*/)
+      -> asio::awaitable<std::expected<void, LspError>> {
+    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
   }
 
   // DidChangeTextDocument Notification
-  virtual auto OnDidChangeTextDocument(const DidChangeTextDocumentParams&)
-      -> asio::awaitable<void> {
-    throw std::runtime_error("Not implemented");
+  virtual auto OnDidChangeTextDocument(DidChangeTextDocumentParams /*unused*/)
+      -> asio::awaitable<std::expected<void, LspError>> {
+    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
   }
 
   // WillSaveTextDocument Notification
-  virtual auto OnWillSaveTextDocument(const WillSaveTextDocumentParams&)
-      -> asio::awaitable<void> {
-    throw std::runtime_error("Not implemented");
+  virtual auto OnWillSaveTextDocument(WillSaveTextDocumentParams /*unused*/)
+      -> asio::awaitable<std::expected<void, LspError>> {
+    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
   }
 
   // WillSaveWaitUntilTextDocument Request
   virtual auto OnWillSaveWaitUntilTextDocument(
-      const WillSaveTextDocumentParams&)
-      -> asio::awaitable<WillSaveTextDocumentResult> {
-    throw std::runtime_error("Not implemented");
+      WillSaveTextDocumentParams /*unused*/)
+      -> asio::awaitable<std::expected<WillSaveTextDocumentResult, LspError>> {
+    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
   }
 
   // DidSaveTextDocument Notification
-  virtual auto OnDidSaveTextDocument(const DidSaveTextDocumentParams&)
-      -> asio::awaitable<void> {
-    throw std::runtime_error("Not implemented");
+  virtual auto OnDidSaveTextDocument(DidSaveTextDocumentParams /*unused*/)
+      -> asio::awaitable<std::expected<void, LspError>> {
+    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
   }
 
   // DidCloseTextDocument Notification
-  virtual auto OnDidCloseTextDocument(const DidCloseTextDocumentParams&)
-      -> asio::awaitable<void> {
-    throw std::runtime_error("Not implemented");
+  virtual auto OnDidCloseTextDocument(DidCloseTextDocumentParams /*unused*/)
+      -> asio::awaitable<std::expected<void, LspError>> {
+    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
   }
 
-  // TODO: Did Open Notebook Document
-  // TODO: Did Change Notebook Document
-  // TODO: Did Save Notebook Document
-  // TODO: Did Close Notebook Document
-  // TODO: Go to Declaration
-  // TODO: Go to Definition
-  // TODO: Go to Type Definition
-  // TODO: Go to Implementation
-  // TODO: Find References
-  // TODO: Prepare Call Hierarchy
-  // TODO: Call Hierarchy Incoming Calls
-  // TODO: Call Hierarchy Outgoing Calls
-  // TODO: Prepare Type Hierarchy
-  // TODO: Type Hierarchy Super Types
-  // TODO: Type Hierarchy Sub Types
-  // TODO: Document Highlight
-  // TODO: Document Link
-  // TODO: Document Link Resolve
-  // TODO: Hover
-  // TODO: Code Lens
-  // TODO: Code Lens Refresh
-  // TODO: Folding Range
-  // TODO: Selection Range
+  // TODO(hankhsu1996): Did Open Notebook Document
+  // TODO(hankhsu1996): Did Change Notebook Document
+  // TODO(hankhsu1996): Did Save Notebook Document
+  // TODO(hankhsu1996): Did Close Notebook Document
+  // TODO(hankhsu1996): Go to Declaration
+  // TODO(hankhsu1996): Go to Definition
+  // TODO(hankhsu1996): Go to Type Definition
+  // TODO(hankhsu1996): Go to Implementation
+  // TODO(hankhsu1996): Find References
+  // TODO(hankhsu1996): Prepare Call Hierarchy
+  // TODO(hankhsu1996): Call Hierarchy Incoming Calls
+  // TODO(hankhsu1996): Call Hierarchy Outgoing Calls
+  // TODO(hankhsu1996): Prepare Type Hierarchy
+  // TODO(hankhsu1996): Type Hierarchy Super Types
+  // TODO(hankhsu1996): Type Hierarchy Sub Types
+  // TODO(hankhsu1996): Document Highlight
+  // TODO(hankhsu1996): Document Link
+  // TODO(hankhsu1996): Document Link Resolve
+  // TODO(hankhsu1996): Hover
+  // TODO(hankhsu1996): Code Lens
+  // TODO(hankhsu1996): Code Lens Refresh
+  // TODO(hankhsu1996): Folding Range
+  // TODO(hankhsu1996): Selection Range
 
   // Document Symbols Request
-  virtual auto OnDocumentSymbols(const DocumentSymbolParams&)
-      -> asio::awaitable<DocumentSymbolResult> {
-    throw std::runtime_error("Not implemented");
+  virtual auto OnDocumentSymbols(DocumentSymbolParams /*unused*/)
+      -> asio::awaitable<std::expected<DocumentSymbolResult, LspError>> {
+    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
   }
 
-  // TODO: Semantic Tokens
-  // TODO: Inline Value
-  // TODO: Inline Value Refresh
-  // TODO: Inlay Hint
-  // TODO: Inlay Hint Resolve
-  // TODO: Inlay Hint Refresh
-  // TODO: Moniker
-  // TODO: Completion Proposals
-  // TODO: Completion Item Resolve
+  // TODO(hankhsu1996): Semantic Tokens
+  // TODO(hankhsu1996): Inline Value
+  // TODO(hankhsu1996): Inline Value Refresh
+  // TODO(hankhsu1996): Inlay Hint
+  // TODO(hankhsu1996): Inlay Hint Resolve
+  // TODO(hankhsu1996): Inlay Hint Refresh
+  // TODO(hankhsu1996): Moniker
+  // TODO(hankhsu1996): Completion Proposals
+  // TODO(hankhsu1996): Completion Item Resolve
 
   // PublishDiagnostics Notification
-  auto PublishDiagnostics(const PublishDiagnosticsParams& params)
-      -> asio::awaitable<void> {
+  auto PublishDiagnostics(PublishDiagnosticsParams params)
+      -> asio::awaitable<std::expected<void, LspError>> {
     spdlog::debug(
         "LspServer publishing {} diagnostics for {}", params.diagnostics.size(),
         params.uri);
-    co_await endpoint_->SendNotification<PublishDiagnosticsParams>(
-        "textDocument/publishDiagnostics", params);
-    spdlog::debug(
-        "LspServer completed publishing diagnostics for {}", params.uri);
+    auto result =
+        co_await endpoint_->SendNotification<PublishDiagnosticsParams>(
+            "textDocument/publishDiagnostics", params);
+    if (!result) {
+      spdlog::error(
+          "LspServer failed to publish diagnostics: {}",
+          result.error().Message());
+      co_return LspError::UnexpectedFromRpcError(result.error());
+    }
+    co_return Ok();
   }
 
-  // TODO: Pull Diagnostics
-  // TODO: Signature Help
-  // TODO: Code Action
-  // TODO: Code Action Resolve
-  // TODO: Document Color
-  // TODO: Color Presentation
-  // TODO: Formatting
-  // TODO: Range Formatting
-  // TODO: On type Formatting
-  // TODO: Rename
-  // TODO: Prepare Rename
-  // TODO: Linked Editing Range
+  // TODO(hankhsu1996): Pull Diagnostics
+  // TODO(hankhsu1996): Signature Help
+  // TODO(hankhsu1996): Code Action
+  // TODO(hankhsu1996): Code Action Resolve
+  // TODO(hankhsu1996): Document Color
+  // TODO(hankhsu1996): Color Presentation
+  // TODO(hankhsu1996): Formatting
+  // TODO(hankhsu1996): Range Formatting
+  // TODO(hankhsu1996): On type Formatting
+  // TODO(hankhsu1996): Rename
+  // TODO(hankhsu1996): Prepare Rename
+  // TODO(hankhsu1996): Linked Editing Range
 };
 
 }  // namespace lsp
