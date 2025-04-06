@@ -210,6 +210,28 @@ void LspServer::RegisterLanguageFeatureHandlers() {
 }
 
 void LspServer::RegisterWorkspaceFeatureHandlers() {
+  // TODO(hankhsu1996): Workspace Symbols
+  // TODO(hankhsu1996): Workspace Symbol Resolve
+  // TODO(hankhsu1996): Get Configuration
+  // TODO(hankhsu1996): Did Change Configuration
+  // TODO(hankhsu1996): Workspace Folders
+  // TODO(hankhsu1996): Did Change Workspace Folders
+  // TODO(hankhsu1996): Will Create Files
+  // TODO(hankhsu1996): Did Create Files
+  // TODO(hankhsu1996): Will Rename Files
+  // TODO(hankhsu1996): Did Rename Files
+  // TODO(hankhsu1996): Will Delete Files
+  // TODO(hankhsu1996): Did Delete Files
+
+  // DidChangeWatchedFiles Notification
+  endpoint_->RegisterNotification<DidChangeWatchedFilesParams, LspError>(
+      "workspace/didChangeWatchedFiles",
+      [this](const DidChangeWatchedFilesParams& params) {
+        return OnDidChangeWatchedFiles(params);
+      });
+
+  // TODO(hankhsu1996): Execute Command
+  // TODO(hankhsu1996): Apply Edit
 }
 
 void LspServer::RegisterWindowFeatureHandlers() {

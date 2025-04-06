@@ -262,8 +262,7 @@ auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
     result.push_back(symbol);
   }
 
-  Logger()->debug(
-      "SlangdLspServer OnDocumentSymbols result: {}", result.size());
+  Logger()->debug("SlangdLspServer OnDocumentSymbols returning results");
 
   co_return result;
 }
@@ -271,7 +270,7 @@ auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
 auto SlangdLspServer::OnDidChangeWatchedFiles(
     lsp::DidChangeWatchedFilesParams params)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
-  Logger()->debug("SlangdLspServer OnDidChangeWatchedFiles");
+  Logger()->info("SlangdLspServer OnDidChangeWatchedFiles");
 
   co_return Ok();
 }

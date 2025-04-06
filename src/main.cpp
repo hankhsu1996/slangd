@@ -33,7 +33,7 @@ auto SetupLoggers()
            std::pair{"jsonrpc", jsonrpc_logger},
            std::pair{"slangd", slangd_logger},
        }) {
-    logger->set_pattern("[%7n][%l] %v");
+    logger->set_pattern("[%7n][%5l] %v");
     logger->flush_on(spdlog::level::debug);
   }
 
