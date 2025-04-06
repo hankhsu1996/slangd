@@ -33,10 +33,10 @@ void from_json(const nlohmann::json& j, DocumentDiagnosticParams& p) {
 void to_json(nlohmann::json& j, const DocumentDiagnosticReportKind& k) {
   // 'full', 'unchanged'
   switch (k) {
-    case DocumentDiagnosticReportKind::Full:
+    case DocumentDiagnosticReportKind::kFull:
       j = "full";
       break;
-    case DocumentDiagnosticReportKind::Unchanged:
+    case DocumentDiagnosticReportKind::kUnchanged:
       j = "unchanged";
       break;
     default:
@@ -46,9 +46,9 @@ void to_json(nlohmann::json& j, const DocumentDiagnosticReportKind& k) {
 
 void from_json(const nlohmann::json& j, DocumentDiagnosticReportKind& k) {
   if (j == "full") {
-    k = DocumentDiagnosticReportKind::Full;
+    k = DocumentDiagnosticReportKind::kFull;
   } else if (j == "unchanged") {
-    k = DocumentDiagnosticReportKind::Unchanged;
+    k = DocumentDiagnosticReportKind::kUnchanged;
   } else {
     throw std::runtime_error("Invalid document diagnostic report kind");
   }

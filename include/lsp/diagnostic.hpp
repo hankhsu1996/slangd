@@ -31,15 +31,15 @@ void to_json(nlohmann::json& j, const DocumentDiagnosticParams& p);
 void from_json(const nlohmann::json& j, DocumentDiagnosticParams& p);
 
 enum class DocumentDiagnosticReportKind {
-  Full,
-  Unchanged,
+  kFull,
+  kUnchanged,
 };
 
 void to_json(nlohmann::json& j, const DocumentDiagnosticReportKind& k);
 void from_json(const nlohmann::json& j, DocumentDiagnosticReportKind& k);
 
 struct FullDocumentDiagnosticReport {
-  DocumentDiagnosticReportKind kind = DocumentDiagnosticReportKind::Full;
+  DocumentDiagnosticReportKind kind = DocumentDiagnosticReportKind::kFull;
   std::optional<std::string> resultId;
   std::vector<Diagnostic> items;
 };
@@ -48,7 +48,7 @@ void to_json(nlohmann::json& j, const FullDocumentDiagnosticReport& r);
 void from_json(const nlohmann::json& j, FullDocumentDiagnosticReport& r);
 
 struct UnchangedDocumentDiagnosticReport {
-  DocumentDiagnosticReportKind kind = DocumentDiagnosticReportKind::Unchanged;
+  DocumentDiagnosticReportKind kind = DocumentDiagnosticReportKind::kUnchanged;
   std::string resultId;
 };
 

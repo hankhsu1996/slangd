@@ -143,7 +143,7 @@ void to_json(nlohmann::json& j, const DeleteFilesParams& p);
 void from_json(const nlohmann::json& j, DeleteFilesParams& p);
 
 // DidChangeWatchedFiles Notification
-enum class FileChangeType { Created = 1, Changed = 2, Deleted = 3 };
+enum class FileChangeType { kCreated = 1, kChanged = 2, kDeleted = 3 };
 
 void to_json(nlohmann::json& j, const FileChangeType& p);
 void from_json(const nlohmann::json& j, FileChangeType& p);
@@ -181,7 +181,7 @@ void to_json(nlohmann::json& j, const ApplyWorkspaceEditParams& p);
 void from_json(const nlohmann::json& j, ApplyWorkspaceEditParams& p);
 
 struct ApplyWorkspaceEditResult {
-  bool applied;
+  bool applied{};
   std::optional<std::string> failureReason;
   std::optional<int> failedChange;
 };

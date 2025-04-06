@@ -124,9 +124,6 @@ void from_json(const nlohmann::json& j, TypeHierarchySupertypesParams& p);
 using TypeHierarchySupertypesResult =
     std::optional<std::vector<TypeHierarchyItem>>;
 
-void to_json(nlohmann::json& j, const TypeHierarchySupertypesResult& r);
-void from_json(const nlohmann::json& j, TypeHierarchySupertypesResult& r);
-
 // Type Hierarchy Subtypes
 struct TypeHierarchySubtypesParams : WorkDoneProgressParams,
                                      PartialResultParams {
@@ -138,8 +135,5 @@ void from_json(const nlohmann::json& j, TypeHierarchySubtypesParams& p);
 
 using TypeHierarchySubtypesResult =
     std::optional<std::vector<TypeHierarchyItem>>;
-
-void to_json(nlohmann::json& j, const TypeHierarchySubtypesResult& r);
-void from_json(const nlohmann::json& j, TypeHierarchySubtypesResult& r);
 
 }  // namespace lsp

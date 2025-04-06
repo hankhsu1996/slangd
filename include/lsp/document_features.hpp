@@ -16,10 +16,10 @@ struct DocumentHighlightParams : TextDocumentPositionParams,
                                  WorkDoneProgressParams,
                                  PartialResultParams {};
 
-enum class DocumentHighlightKind { Text = 1, Read = 2, Write = 3 };
+enum class DocumentHighlightKind { kText = 1, kRead = 2, kWrite = 3 };
 
 struct DocumentHighlight {
-  Range range;
+  Range range{};
   std::optional<DocumentHighlightKind> kind;
 };
 
@@ -31,7 +31,7 @@ struct DocumentLinkParams : WorkDoneProgressParams, PartialResultParams {
 };
 
 struct DocumentLink {
-  Range range;
+  Range range{};
   std::optional<DocumentUri> target;
   std::optional<std::string> tooltip;
   std::optional<nlohmann::json> data;
@@ -67,7 +67,7 @@ struct CodeLensParams : WorkDoneProgressParams, PartialResultParams {
 };
 
 struct CodeLens {
-  Range range;
+  Range range{};
   std::optional<Command> command;
   std::optional<nlohmann::json> data;
 };
@@ -89,12 +89,12 @@ struct FoldingRangeParams : WorkDoneProgressParams, PartialResultParams {
   TextDocumentIdentifier textDocument;
 };
 
-enum class FoldingRangeKind { Comment, Imports, Region };
+enum class FoldingRangeKind { kComment, kImports, kRegion };
 
 struct FoldingRange {
-  int startLine;
+  int startLine{};
   std::optional<int> startCharacter;
-  int endLine;
+  int endLine{};
   std::optional<int> endCharacter;
   std::optional<FoldingRangeKind> kind;
   std::optional<std::string> collapsedText;
@@ -200,7 +200,7 @@ inline void to_json(nlohmann::json& j, const DocumentSymbolResult& r) {
 }
 
 inline void from_json(const nlohmann::json& j, DocumentSymbolResult& r) {
-  // TODO
+  // TODO(hankhsu1996): Implement this
   if (j.is_null()) {
     r = std::nullopt;
   } else {
@@ -216,49 +216,49 @@ inline void from_json(const nlohmann::json& j, DocumentSymbolResult& r) {
 
 // Semantic Tokens
 enum class SemanticTokenTypes {
-  Namespace,
-  Type,
-  Class,
-  Enum,
-  Interface,
-  Struct,
-  TypeParameter,
-  Parameter,
-  Variable,
-  Property,
-  EnumMember,
-  Event,
-  Function,
-  Method,
-  Macro,
-  Keyword,
-  Modifier,
-  Comment,
-  String,
-  Number,
-  Regexp,
-  Operator,
-  Decorator
+  kNamespace,
+  kType,
+  kClass,
+  kEnum,
+  kInterface,
+  kStruct,
+  kTypeParameter,
+  kParameter,
+  kVariable,
+  kProperty,
+  kEnumMember,
+  kEvent,
+  kFunction,
+  kMethod,
+  kMacro,
+  kKeyword,
+  kModifier,
+  kComment,
+  kString,
+  kNumber,
+  kRegexp,
+  kOperator,
+  kDecorator
 };
 
 void to_json(nlohmann::json& j, const SemanticTokenTypes& t);
 void from_json(const nlohmann::json& j, SemanticTokenTypes& t);
 
 enum class SemanticTokenModifiers {
-  Declaration,
-  Definition,
-  Readonly,
-  Static,
-  Deprecated,
-  Abstract,
-  Async,
-  Modification,
-  Documentation,
-  DefaultLibrary
+  kDeclaration,
+  kDefinition,
+  kReadonly,
+  kStatic,
+  kDeprecated,
+  kAbstract,
+  kAsync,
+  kModification,
+  kDocumentation,
+  kDefaultLibrary
 };
 
 enum class TokenFormat {
-  Relative,
+  kRelative,
 };
 
 struct SemanticTokensLegend {
@@ -281,8 +281,8 @@ struct SemanticTokensDeltaParams : WorkDoneProgressParams, PartialResultParams {
 };
 
 struct SemanticTokensEdit {
-  int start;
-  int deleteCount;
+  int start{};
+  int deleteCount{};
   std::optional<std::vector<int>> data;
 };
 
@@ -296,7 +296,7 @@ using SemanticTokensResult =
 
 struct SemanticTokensRangeParams : WorkDoneProgressParams, PartialResultParams {
   TextDocumentIdentifier textDocument;
-  Range range;
+  Range range{};
 };
 
 using SemanticTokensRangeResult = std::optional<SemanticTokens>;
@@ -308,10 +308,10 @@ struct SemanticTokensRefreshResult {};
 // Inlay Hint Request
 struct InlayHintParams : WorkDoneProgressParams {
   TextDocumentIdentifier textDocument;
-  Range range;
+  Range range{};
 };
 
-enum class InlayHintKind { Type = 1, Parameter = 2 };
+enum class InlayHintKind { kType = 1, kParameter = 2 };
 
 struct InlayHintLabelPart {
   std::string value;
@@ -351,8 +351,8 @@ struct InlineValueContext {
 
 struct InlineValueParams : WorkDoneProgressParams {
   TextDocumentIdentifier textDocument;
-  Range range;
-  InlineValueContext context;
+  Range range{};
+  InlineValueContext context{};
 };
 
 struct InlineValueText {
@@ -361,13 +361,13 @@ struct InlineValueText {
 };
 
 struct InlineValueVariableLookup {
-  Range range;
+  Range range{};
   std::optional<std::string> variableName;
-  bool caseSensitiveLookup;
+  bool caseSensitiveLookup{};
 };
 
 struct InlineValueEvaluatableExpression {
-  Range range;
+  Range range{};
   std::optional<std::string> expression;
 };
 
@@ -385,9 +385,9 @@ struct MonikerParams : TextDocumentPositionParams,
                        WorkDoneProgressParams,
                        PartialResultParams {};
 
-enum class UniquenessLevel { Document, Project, Group, Scheme, Global };
+enum class UniquenessLevel { kDocument, kProject, kGroup, kScheme, kGlobal };
 
-enum class MonikerKind { Import, Export, Local };
+enum class MonikerKind { kImport, kExport, kLocal };
 
 struct Moniker {
   std::string scheme;
@@ -399,9 +399,9 @@ struct Moniker {
 // Completion Request
 
 enum class CompletionTriggerKind {
-  Invoked,
-  TriggerCharacter,
-  TriggerForIncompleteCompletions
+  kInvoked,
+  kTriggerCharacter,
+  kTriggerForIncompleteCompletions
 };
 
 struct CompletionContext {
@@ -418,9 +418,9 @@ struct CompletionParams : TextDocumentPositionParams,
   std::optional<CompletionContext> context;
 };
 
-enum class InsertTextFormat { PlainText, Snippet };
+enum class InsertTextFormat { kPlainText, kSnippet };
 
-enum class CompletionItemTag { Deprecated };
+enum class CompletionItemTag { kDeprecated };
 
 struct InsertReplaceEdit {
   std::string newText;
@@ -428,7 +428,7 @@ struct InsertReplaceEdit {
   Range replace;
 };
 
-enum class InsertTextMode { AsIs, AdjustIndentation };
+enum class InsertTextMode { kAsIs, kAdjustIndentation };
 
 struct CompletionItemLabelDetails {
   std::optional<std::string> detail;
@@ -436,31 +436,31 @@ struct CompletionItemLabelDetails {
 };
 
 enum class CompletionItemKind {
-  Text,
-  Method,
-  Function,
-  Constructor,
-  Field,
-  Variable,
-  Class,
-  Interface,
-  Module,
-  Property,
-  Unit,
-  Value,
-  Enum,
-  Keyword,
-  Snippet,
-  Color,
-  File,
-  Reference,
-  Folder,
-  EnumMember,
-  Constant,
-  Struct,
-  Event,
-  Operator,
-  TypeParameter,
+  kText,
+  kMethod,
+  kFunction,
+  kConstructor,
+  kField,
+  kVariable,
+  kClass,
+  kInterface,
+  kModule,
+  kProperty,
+  kUnit,
+  kValue,
+  kEnum,
+  kKeyword,
+  kSnippet,
+  kColor,
+  kFile,
+  kReference,
+  kFolder,
+  kEnumMember,
+  kConstant,
+  kStruct,
+  kEvent,
+  kOperator,
+  kTypeParameter,
 };
 
 struct CompletionItem {

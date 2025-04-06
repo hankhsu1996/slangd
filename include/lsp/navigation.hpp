@@ -35,9 +35,6 @@ void from_json(const nlohmann::json& j, DefinitionParams& p);
 using DefinitionResult = std::optional<
     std::variant<Location, std::vector<Location>, std::vector<LocationLink>>>;
 
-void to_json(nlohmann::json& j, const DefinitionResult& r);
-void from_json(const nlohmann::json& j, DefinitionResult& r);
-
 // Goto Type Definition Request
 struct TypeDefinitionParams : TextDocumentPositionParams,
                               WorkDoneProgressParams,
@@ -48,9 +45,6 @@ void from_json(const nlohmann::json& j, TypeDefinitionParams& p);
 
 using TypeDefinitionResult = std::optional<
     std::variant<Location, std::vector<Location>, std::vector<LocationLink>>>;
-
-void to_json(nlohmann::json& j, const TypeDefinitionResult& r);
-void from_json(const nlohmann::json& j, TypeDefinitionResult& r);
 
 // Goto Implementation Request
 struct ImplementationParams : TextDocumentPositionParams,
@@ -63,9 +57,6 @@ void from_json(const nlohmann::json& j, ImplementationParams& p);
 using ImplementationResult = std::optional<
     std::variant<Location, std::vector<Location>, std::vector<LocationLink>>>;
 
-void to_json(nlohmann::json& j, const ImplementationResult& r);
-void from_json(const nlohmann::json& j, ImplementationResult& r);
-
 // Find References Request
 struct ReferenceContext {
   bool includeDeclaration;
@@ -77,7 +68,7 @@ void from_json(const nlohmann::json& j, ReferenceContext& c);
 struct ReferenceParams : TextDocumentPositionParams,
                          WorkDoneProgressParams,
                          PartialResultParams {
-  ReferenceContext context;
+  ReferenceContext context{};
 };
 
 void to_json(nlohmann::json& j, const ReferenceParams& p);

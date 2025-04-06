@@ -52,9 +52,9 @@ void from_json(const nlohmann::json& j, DidChangeTextDocumentParams& p);
 
 // WillSaveTextDocument Notification
 enum class TextDocumentSaveReason {
-  Manual = 1,
-  AfterDelay = 2,
-  FocusOut = 3,
+  kManual = 1,
+  kAfterDelay = 2,
+  kFocusOut = 3,
 };
 
 void to_json(nlohmann::json& j, const TextDocumentSaveReason& r);
@@ -62,7 +62,7 @@ void from_json(const nlohmann::json& j, TextDocumentSaveReason& r);
 
 struct WillSaveTextDocumentParams {
   TextDocumentIdentifier textDocument;
-  TextDocumentSaveReason reason;
+  TextDocumentSaveReason reason{};
 };
 
 void to_json(nlohmann::json& j, const WillSaveTextDocumentParams& p);

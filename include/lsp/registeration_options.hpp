@@ -27,9 +27,9 @@ void to_json(nlohmann::json& j, const GlobPattern& p);
 void from_json(const nlohmann::json& j, GlobPattern& p);
 
 enum class WatchKind {
-  Create = 1,
-  Change = 2,
-  Delete = 4,
+  kCreate = 1,
+  kChange = 2,
+  kDelete = 4,
 };
 
 void to_json(nlohmann::json& j, const WatchKind& k);

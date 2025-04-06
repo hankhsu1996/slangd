@@ -12,9 +12,9 @@ namespace lsp {
 
 // Signature Help Request
 enum class SignatureHelpTriggerKind {
-  Invoked,
-  TriggerCharacter,
-  ContentChange,
+  kInvoked,
+  kTriggerCharacter,
+  kContentChange,
 };
 
 struct ParameterInformation {
