@@ -10,6 +10,7 @@ Checks: >
   -readability-identifier-length,
   -readability-magic-numbers,
   -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-avoid-capturing-lambda-coroutines,
 
 CheckOptions:
   # Google's naming conventions.
