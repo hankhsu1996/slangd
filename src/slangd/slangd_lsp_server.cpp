@@ -9,7 +9,6 @@
 namespace slangd {
 
 using lsp::LspError;
-using lsp::LspErrorCode;
 using lsp::Ok;
 
 SlangdLspServer::SlangdLspServer(

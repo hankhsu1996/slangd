@@ -9,7 +9,6 @@
 namespace lsp {
 
 using lsp::error::LspError;
-using lsp::error::LspErrorCode;
 using lsp::error::Ok;
 
 LspServer::LspServer(
