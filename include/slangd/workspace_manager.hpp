@@ -11,12 +11,19 @@
 #include <slang/driver/SourceLoader.h>
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/text/SourceManager.h>
+#include <spdlog/spdlog.h>
 
 namespace slangd {
 
 class WorkspaceManager {
  public:
-  explicit WorkspaceManager(asio::any_io_executor executor);
+  explicit WorkspaceManager(
+      asio::any_io_executor executor,
+      std::shared_ptr<spdlog::logger> logger = nullptr);
+
+  auto Logger() -> std::shared_ptr<spdlog::logger> {
+    return logger_;
+  }
 
   // Add a workspace folder URI
   void AddWorkspaceFolder(const std::string& uri, const std::string& name);
@@ -42,11 +49,14 @@ class WorkspaceManager {
   }
 
  private:
+  // Logger
+  std::shared_ptr<spdlog::logger> logger_;
+
   // Store workspace folder local paths
   std::vector<std::string> workspace_folders_;
 
   // Find all SystemVerilog files in a directory recursively
-  auto static FindSystemVerilogFiles(std::string directory)
+  auto FindSystemVerilogFiles(std::string directory)
       -> asio::awaitable<std::vector<std::string>>;
 
   // Process collected files and build compilation

@@ -13,8 +13,10 @@ using lsp::error::Ok;
 
 LspServer::LspServer(
     asio::any_io_executor executor,
-    std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint)
-    : endpoint_(std::move(endpoint)),
+    std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint,
+    std::shared_ptr<spdlog::logger> logger)
+    : logger_(logger ? logger : spdlog::default_logger()),
+      endpoint_(std::move(endpoint)),
       executor_(executor),
       work_guard_(asio::make_work_guard(executor)) {
 }
@@ -26,18 +28,18 @@ auto LspServer::Start() -> asio::awaitable<std::expected<void, LspError>> {
   // Start the endpoint and wait for shutdown
   auto result = co_await endpoint_->Start();
   if (result.has_value()) {
-    spdlog::debug("LspServer endpoint started");
+    Logger()->debug("LspServer endpoint started");
   } else {
-    spdlog::error("LspServer endpoint error: {}", result.error().Message());
+    Logger()->error("LspServer endpoint error: {}", result.error().Message());
     co_return LspError::UnexpectedFromRpcError(result.error());
   }
 
   // Wait for shutdown
   auto shutdown_result = co_await endpoint_->WaitForShutdown();
   if (shutdown_result.has_value()) {
-    spdlog::debug("LspServer endpoint wait for shutdown completed");
+    Logger()->debug("LspServer endpoint wait for shutdown completed");
   } else {
-    spdlog::error(
+    Logger()->error(
         "LspServer endpoint wait for shutdown error: {}",
         shutdown_result.error().Message());
     co_return LspError::UnexpectedFromRpcError(shutdown_result.error());
@@ -47,15 +49,15 @@ auto LspServer::Start() -> asio::awaitable<std::expected<void, LspError>> {
 }
 
 auto LspServer::Shutdown() -> asio::awaitable<std::expected<void, LspError>> {
-  spdlog::debug("Server shutting down");
+  Logger()->debug("Server shutting down");
 
   if (endpoint_) {
     // Directly await the endpoint shutdown
     auto result = co_await endpoint_->Shutdown();
     if (result.has_value()) {
-      spdlog::debug("LspServer endpoint shutdown");
+      Logger()->debug("LspServer endpoint shutdown");
     } else {
-      spdlog::error(
+      Logger()->error(
           "LspServer endpoint shutdown error: {}", result.error().Message());
       co_return LspError::UnexpectedFromRpcError(result.error());
     }
@@ -226,26 +228,27 @@ std::optional<std::reference_wrapper<OpenFile>> LspServer::GetOpenFile(
 void LspServer::AddOpenFile(
     const std::string& uri, const std::string& content,
     const std::string& language_id, int version) {
-  spdlog::debug("LspServer adding open file: {}", uri);
+  Logger()->debug("LspServer adding open file: {}", uri);
   OpenFile file{uri, content, language_id, version};
   open_files_[uri] = std::move(file);
 }
 
 void LspServer::UpdateOpenFile(
     const std::string& uri, const std::vector<std::string>& /*changes*/) {
-  spdlog::debug("LspServer updating open file: {}", uri);
+  Logger()->debug("LspServer updating open file: {}", uri);
   auto file_opt = GetOpenFile(uri);
   if (file_opt) {
     // Simplified update - in a real implementation, we would apply the changes
     // Here we just increment the version
     OpenFile& file = file_opt->get();
     file.version++;
-    spdlog::debug("LspServer updated file {} to version {}", uri, file.version);
+    Logger()->debug(
+        "LspServer updated file {} to version {}", uri, file.version);
   }
 }
 
 void LspServer::RemoveOpenFile(const std::string& uri) {
-  spdlog::debug("LspServer removing open file: {}", uri);
+  Logger()->debug("LspServer removing open file: {}", uri);
   open_files_.erase(uri);
 }
 

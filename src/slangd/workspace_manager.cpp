@@ -11,19 +11,20 @@
 
 namespace slangd {
 
-WorkspaceManager::WorkspaceManager(asio::any_io_executor executor)
-    : source_manager_(std::make_shared<slang::SourceManager>()),
+WorkspaceManager::WorkspaceManager(
+    asio::any_io_executor executor, std::shared_ptr<spdlog::logger> logger)
+    : logger_(logger ? logger : spdlog::default_logger()),
+      source_manager_(std::make_shared<slang::SourceManager>()),
+      source_loader_(
+          std::make_unique<slang::driver::SourceLoader>(*source_manager_)),
       executor_(executor),
       strand_(asio::make_strand(executor)) {
-  // Create the source loader
-  source_loader_ =
-      std::make_unique<slang::driver::SourceLoader>(*source_manager_);
 }
 
 void WorkspaceManager::AddWorkspaceFolder(
     const std::string& uri, const std::string& name) {
   if (!IsFileUri(uri)) {
-    spdlog::warn(
+    Logger()->warn(
         "WorkspaceManager skipping non-file URI workspace folder: {}", uri);
     return;
   }
@@ -31,13 +32,13 @@ void WorkspaceManager::AddWorkspaceFolder(
   std::string local_path = UriToPath(uri);
 
   if (!std::filesystem::exists(local_path)) {
-    spdlog::warn(
+    Logger()->warn(
         "WorkspaceManager skipping non-existent workspace folder: {}",
         local_path);
     return;
   }
 
-  spdlog::debug(
+  Logger()->debug(
       "WorkspaceManager adding workspace folder: {} ({})", name, local_path);
   workspace_folders_.push_back(local_path);
 }
@@ -47,15 +48,15 @@ const std::vector<std::string>& WorkspaceManager::GetWorkspaceFolders() const {
 }
 
 auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
-  spdlog::debug(
+  Logger()->debug(
       "WorkspaceManager starting workspace scan for SystemVerilog files");
 
   std::vector<std::string> all_files;
 
   for (const auto& folder : workspace_folders_) {
-    spdlog::debug("WorkspaceManager scanning workspace folder: {}", folder);
+    Logger()->debug("WorkspaceManager scanning workspace folder: {}", folder);
     auto files = co_await FindSystemVerilogFiles(folder);
-    spdlog::debug(
+    Logger()->debug(
         "WorkspaceManager found {} SystemVerilog files in {}", files.size(),
         folder);
 
@@ -66,7 +67,7 @@ auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
   // Process all collected files together
   co_await ProcessFiles(all_files);
 
-  spdlog::debug(
+  Logger()->debug(
       "WorkspaceManager workspace scan completed. Total indexed files: {}",
       GetIndexedFileCount());
 
@@ -77,7 +78,7 @@ auto WorkspaceManager::FindSystemVerilogFiles(std::string directory)
     -> asio::awaitable<std::vector<std::string>> {
   std::vector<std::string> sv_files;
 
-  spdlog::debug("WorkspaceManager scanning directory: {}", directory);
+  Logger()->debug("WorkspaceManager scanning directory: {}", directory);
 
   try {
     for (const auto& entry :
@@ -90,7 +91,7 @@ auto WorkspaceManager::FindSystemVerilogFiles(std::string directory)
       }
     }
   } catch (const std::exception& e) {
-    spdlog::error("Error scanning directory {}: {}", directory, e.what());
+    Logger()->error("Error scanning directory {}: {}", directory, e.what());
   }
 
   co_return sv_files;
@@ -98,7 +99,7 @@ auto WorkspaceManager::FindSystemVerilogFiles(std::string directory)
 
 auto WorkspaceManager::ProcessFiles(std::vector<std::string> file_paths)
     -> asio::awaitable<void> {
-  spdlog::debug("WorkspaceManager processing {} files", file_paths.size());
+  Logger()->debug("WorkspaceManager processing {} files", file_paths.size());
 
   // Add all files to source loader
   for (const auto& path : file_paths) {
@@ -111,7 +112,7 @@ auto WorkspaceManager::ProcessFiles(std::vector<std::string> file_paths)
   // Load and parse all sources
   std::vector<std::shared_ptr<slang::syntax::SyntaxTree>> syntax_trees;
   {
-    ScopedTimer timer("Loading and parsing sources");
+    ScopedTimer timer("Loading and parsing sources", Logger());
     syntax_trees = source_loader_->loadAndParseSources(options);
   }
 
@@ -129,7 +130,7 @@ auto WorkspaceManager::ProcessFiles(std::vector<std::string> file_paths)
 
   // Create and populate compilation
   {
-    ScopedTimer timer("Creating compilation");
+    ScopedTimer timer("Creating compilation", Logger());
     // Create a new compilation with default options
     compilation_ = std::make_shared<slang::ast::Compilation>();
 
@@ -144,13 +145,13 @@ auto WorkspaceManager::ProcessFiles(std::vector<std::string> file_paths)
   // Check for source loader errors
   auto errors = source_loader_->getErrors();
   if (!errors.empty()) {
-    spdlog::warn("Source loader encountered {} errors", errors.size());
+    Logger()->warn("Source loader encountered {} errors", errors.size());
     for (const auto& error : errors) {
-      spdlog::warn("Source loader error: {}", error);
+      Logger()->warn("Source loader error: {}", error);
     }
   }
 
-  spdlog::debug("Successfully processed {} files", syntax_trees_.size());
+  Logger()->debug("Successfully processed {} files", syntax_trees_.size());
   co_return;
 }
 

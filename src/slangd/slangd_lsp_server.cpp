@@ -14,16 +14,17 @@ using lsp::Ok;
 
 SlangdLspServer::SlangdLspServer(
     asio::any_io_executor executor,
-    std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint)
-    : lsp::LspServer(executor, std::move(endpoint)),
+    std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint,
+    std::shared_ptr<spdlog::logger> logger)
+    : lsp::LspServer(executor, std::move(endpoint), logger),
       strand_(asio::make_strand(executor)),
-      document_manager_(std::make_unique<DocumentManager>(executor)),
-      workspace_manager_(std::make_unique<WorkspaceManager>(executor)) {
+      document_manager_(std::make_unique<DocumentManager>(executor, logger)),
+      workspace_manager_(std::make_unique<WorkspaceManager>(executor, logger)) {
 }
 
 auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
     -> asio::awaitable<std::expected<lsp::InitializeResult, lsp::LspError>> {
-  spdlog::debug("SlangdLspServer OnInitialize");
+  Logger()->debug("SlangdLspServer OnInitialize");
 
   if (auto workspace_folders_opt = params.workspaceFolders) {
     for (const auto& folder : *workspace_folders_opt) {
@@ -57,20 +58,20 @@ auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
 
 auto SlangdLspServer::OnInitialized(lsp::InitializedParams /*unused*/)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
-  spdlog::debug("SlangdLspServer OnInitialized");
+  Logger()->debug("SlangdLspServer OnInitialized");
   initialized_ = true;
 
   // Scan workspace for SystemVerilog files to build the initial index
   auto scan_workspace = [this]() -> asio::awaitable<void> {
-    spdlog::debug(
+    Logger()->debug(
         "SlangdLspServer starting workspace scan for SystemVerilog files");
     co_await workspace_manager_->ScanWorkspace();
-    spdlog::debug("SlangdLspServer workspace scan completed");
+    Logger()->debug("SlangdLspServer workspace scan completed");
   };
 
   // Register the file system watcher for workspace changes
   auto register_watcher = [this]() -> asio::awaitable<void> {
-    spdlog::debug("SlangdLspServer registering file system watcher");
+    Logger()->debug("SlangdLspServer registering file system watcher");
     auto watcher = lsp::FileSystemWatcher{.globPattern = "**/*.{sv,svh,v,vh}"};
     auto options = lsp::DidChangeWatchedFilesRegistrationOptions{
         .watchers = {watcher},
@@ -85,12 +86,12 @@ auto SlangdLspServer::OnInitialized(lsp::InitializedParams /*unused*/)
     };
     auto result = co_await RegisterCapability(params);
     if (!result) {
-      spdlog::error(
+      Logger()->error(
           "SlangdLspServer failed to register file system watcher: {}",
           result.error().Message());
       co_return;
     }
-    spdlog::debug("SlangdLspServer file system watcher registered");
+    Logger()->debug("SlangdLspServer file system watcher registered");
     co_return;
   };
 
@@ -104,13 +105,13 @@ auto SlangdLspServer::OnInitialized(lsp::InitializedParams /*unused*/)
 auto SlangdLspServer::OnShutdown(lsp::ShutdownParams /*unused*/)
     -> asio::awaitable<std::expected<lsp::ShutdownResult, lsp::LspError>> {
   shutdown_requested_ = true;
-  spdlog::debug("SlangdLspServer OnShutdown");
+  Logger()->debug("SlangdLspServer OnShutdown");
   co_return lsp::ShutdownResult{};
 }
 
 auto SlangdLspServer::OnExit(lsp::ExitParams /*unused*/)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
-  spdlog::debug("SlangdLspServer OnExit");
+  Logger()->debug("SlangdLspServer OnExit");
   co_await lsp::LspServer::Shutdown();
   co_return Ok();
 }
@@ -118,7 +119,7 @@ auto SlangdLspServer::OnExit(lsp::ExitParams /*unused*/)
 auto SlangdLspServer::OnDidOpenTextDocument(
     lsp::DidOpenTextDocumentParams params)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
-  spdlog::debug("SlangdLspServer OnDidOpenTextDocument");
+  Logger()->debug("SlangdLspServer OnDidOpenTextDocument");
   const auto& text_doc = params.textDocument;
   const auto& uri = text_doc.uri;
   const auto& text = text_doc.text;
@@ -131,14 +132,14 @@ auto SlangdLspServer::OnDidOpenTextDocument(
   asio::co_spawn(
       strand_,
       [this, uri, text, version]() -> asio::awaitable<void> {
-        spdlog::debug("SlangdLspServer starting document parse for: {}", uri);
+        Logger()->debug("SlangdLspServer starting document parse for: {}", uri);
 
         // Parse with compilation for initial open
         auto parse_result =
             co_await document_manager_->ParseWithCompilation(uri, text);
 
         if (!parse_result) {
-          spdlog::debug(
+          Logger()->debug(
               "SlangdLspServer parse error on document open: {} - {}", uri,
               static_cast<int>(parse_result.error()));
         }
@@ -147,7 +148,7 @@ auto SlangdLspServer::OnDidOpenTextDocument(
         auto diagnostics =
             co_await document_manager_->GetDocumentDiagnostics(uri);
 
-        spdlog::debug(
+        Logger()->debug(
             "SlangdLspServer publishing {} diagnostics for document: {}",
             diagnostics.size(), uri);
 
@@ -156,7 +157,7 @@ auto SlangdLspServer::OnDidOpenTextDocument(
             .uri = uri, .version = version, .diagnostics = diagnostics};
         co_await PublishDiagnostics(diag_params);
 
-        spdlog::debug(
+        Logger()->debug(
             "SlangdLspServer completed publishing diagnostics for: {}", uri);
       },
       asio::detached);
@@ -167,7 +168,7 @@ auto SlangdLspServer::OnDidOpenTextDocument(
 auto SlangdLspServer::OnDidChangeTextDocument(
     lsp::DidChangeTextDocumentParams params)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
-  spdlog::debug("SlangdLspServer OnDidChangeTextDocument");
+  Logger()->debug("SlangdLspServer OnDidChangeTextDocument");
 
   const auto& text_doc = params.textDocument;
   const auto& uri = text_doc.uri;
@@ -191,14 +192,14 @@ auto SlangdLspServer::OnDidChangeTextDocument(
       asio::co_spawn(
           strand_,
           [this, uri, text, version]() -> asio::awaitable<void> {
-            spdlog::debug("Starting document change parse for: {}", uri);
+            Logger()->debug("Starting document change parse for: {}", uri);
 
             // Parse with compilation for interactive feedback
             auto parse_result =
                 co_await document_manager_->ParseWithCompilation(uri, text);
 
             if (!parse_result) {
-              spdlog::debug(
+              Logger()->debug(
                   "Parse error on document change: {} - {}", uri,
                   static_cast<int>(parse_result.error()));
             }
@@ -207,7 +208,7 @@ auto SlangdLspServer::OnDidChangeTextDocument(
             auto diagnostics =
                 co_await document_manager_->GetDocumentDiagnostics(uri);
 
-            spdlog::debug(
+            Logger()->debug(
                 "Publishing {} diagnostics for document change: {}",
                 diagnostics.size(), uri);
 
@@ -216,7 +217,7 @@ auto SlangdLspServer::OnDidChangeTextDocument(
                 .uri = uri, .version = version, .diagnostics = diagnostics};
             co_await PublishDiagnostics(diag_params);
 
-            spdlog::debug(
+            Logger()->debug(
                 "Completed publishing diagnostics for change: {}", uri);
           },
           asio::detached);
@@ -229,7 +230,7 @@ auto SlangdLspServer::OnDidChangeTextDocument(
 auto SlangdLspServer::OnDidCloseTextDocument(
     lsp::DidCloseTextDocumentParams params)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
-  spdlog::debug("SlangdLspServer OnDidCloseTextDocument");
+  Logger()->debug("SlangdLspServer OnDidCloseTextDocument");
 
   const auto& uri = params.textDocument.uri;
 
@@ -241,7 +242,7 @@ auto SlangdLspServer::OnDidCloseTextDocument(
 auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
     -> asio::awaitable<
         std::expected<lsp::DocumentSymbolResult, lsp::LspError>> {
-  spdlog::debug("SlangdLspServer OnDocumentSymbols");
+  Logger()->debug("SlangdLspServer OnDocumentSymbols");
   std::vector<lsp::DocumentSymbol> result;
 
   const auto& uri = params.textDocument.uri;
@@ -261,7 +262,8 @@ auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
     result.push_back(symbol);
   }
 
-  spdlog::debug("SlangdLspServer OnDocumentSymbols result: {}", result.size());
+  Logger()->debug(
+      "SlangdLspServer OnDocumentSymbols result: {}", result.size());
 
   co_return result;
 }
@@ -269,7 +271,7 @@ auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
 auto SlangdLspServer::OnDidChangeWatchedFiles(
     lsp::DidChangeWatchedFilesParams params)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
-  spdlog::debug("SlangdLspServer OnDidChangeWatchedFiles");
+  Logger()->debug("SlangdLspServer OnDidChangeWatchedFiles");
 
   co_return Ok();
 }

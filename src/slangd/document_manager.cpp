@@ -26,8 +26,11 @@ void CollectSymbolsRecursively(
     std::vector<std::shared_ptr<const slang::ast::Symbol>>& symbols,
     const std::shared_ptr<slang::ast::Compilation>& compilation);
 
-DocumentManager::DocumentManager(asio::any_io_executor executor)
-    : executor_(executor), strand_(asio::make_strand(executor)) {
+DocumentManager::DocumentManager(
+    asio::any_io_executor executor, std::shared_ptr<spdlog::logger> logger)
+    : logger_(logger ? logger : spdlog::default_logger()),
+      executor_(executor),
+      strand_(asio::make_strand(executor)) {
 }
 
 auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
@@ -49,7 +52,8 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
 
   // This should be extremely rare - handle only critical failures
   if (!syntax_tree) {
-    spdlog::error("Critical failure creating syntax tree for document {}", uri);
+    Logger()->error(
+        "Critical failure creating syntax tree for document {}", uri);
     co_return std::unexpected(ParseError::kSlangInternalError);
   }
 
@@ -67,7 +71,8 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
   // Add the syntax tree to the compilation
   compilation.addSyntaxTree(syntax_trees_[uri]);
 
-  spdlog::debug("DocumentManager compilation completed for document: {}", uri);
+  Logger()->debug(
+      "DocumentManager compilation completed for document: {}", uri);
   co_return std::expected<void, ParseError>{};
 }
 
@@ -85,7 +90,7 @@ auto DocumentManager::ParseWithElaboration(std::string uri, std::string content)
   // Ensure we have a compilation
   auto comp_it = compilations_.find(uri);
   if (comp_it == compilations_.end()) {
-    spdlog::error("No compilation found for document: {}", uri);
+    Logger()->error("No compilation found for document: {}", uri);
     co_return std::unexpected(ParseError::kCompilationError);
   }
 
@@ -95,7 +100,7 @@ auto DocumentManager::ParseWithElaboration(std::string uri, std::string content)
   // Handle elaboration failures via diagnostics, not exceptions
   compilation.getRoot();
 
-  spdlog::debug(
+  Logger()->debug(
       "DocumentManager full elaboration completed for document: {}", uri);
   co_return std::expected<void, ParseError>{};
 }
@@ -161,7 +166,7 @@ auto DocumentManager::GetSymbols(std::string uri)
   symbols.push_back(root_ptr);
 
   // Output the number of symbols found for debugging
-  spdlog::debug(
+  Logger()->debug(
       "DocumentManager found {} symbols in document: {}", symbols.size(), uri);
 
   co_return symbols;
@@ -223,7 +228,7 @@ auto DocumentManager::GetDocumentDiagnostics(std::string uri)
   diagnostics = slangd::GetDocumentDiagnostics(
       syntax_tree, compilation, source_manager, diagnostic_engine, uri);
 
-  spdlog::debug(
+  Logger()->debug(
       "DocumentManager found {} diagnostics in document: {}",
       diagnostics.size(), uri);
 

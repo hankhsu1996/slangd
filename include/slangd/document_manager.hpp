@@ -10,6 +10,7 @@
 #include <slang/ast/Symbol.h>
 #include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/syntax/SyntaxTree.h>
+#include <spdlog/spdlog.h>
 
 #include "lsp/basic.hpp"
 #include "lsp/document_features.hpp"
@@ -42,7 +43,13 @@ class DocumentManager {
    *
    * @param executor ASIO executor for async operations
    */
-  explicit DocumentManager(asio::any_io_executor executor);
+  explicit DocumentManager(
+      asio::any_io_executor executor,
+      std::shared_ptr<spdlog::logger> logger = nullptr);
+
+  auto Logger() -> std::shared_ptr<spdlog::logger> {
+    return logger_;
+  }
 
   /**
    * @brief Parse a document with compilation
@@ -123,6 +130,9 @@ class DocumentManager {
       -> asio::awaitable<std::vector<lsp::Diagnostic>>;
 
  private:
+  // Logger
+  std::shared_ptr<spdlog::logger> logger_;
+
   // ASIO executor reference
   asio::any_io_executor executor_;
 

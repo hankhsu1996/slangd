@@ -24,7 +24,8 @@ class SlangdLspServer : public lsp::LspServer {
   /** Constructor that accepts a pre-configured RPC endpoint. */
   SlangdLspServer(
       asio::any_io_executor executor,
-      std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint);
+      std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint,
+      std::shared_ptr<spdlog::logger> logger = nullptr);
 
   /** Register all LSP message handlers with the JSON-RPC endpoint. */
   //   void RegisterHandlers() override;

@@ -35,7 +35,8 @@ class LspServer {
  public:
   LspServer(
       asio::any_io_executor executor,
-      std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint);
+      std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint,
+      std::shared_ptr<spdlog::logger> logger = nullptr);
 
   LspServer(const LspServer&) = delete;
   LspServer(LspServer&&) = delete;
@@ -46,6 +47,9 @@ class LspServer {
 
   auto Start() -> asio::awaitable<std::expected<void, LspError>>;
   auto Shutdown() -> asio::awaitable<std::expected<void, LspError>>;
+  auto Logger() -> std::shared_ptr<spdlog::logger> {
+    return logger_;
+  }
 
  protected:
   void RegisterHandlers();
@@ -61,6 +65,7 @@ class LspServer {
   void RemoveOpenFile(const std::string& uri);
 
  private:
+  std::shared_ptr<spdlog::logger> logger_;
   std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint_;
   asio::any_io_executor executor_;
   asio::executor_work_guard<asio::any_io_executor> work_guard_;
@@ -97,7 +102,7 @@ class LspServer {
                       ->SendMethodCall<RegistrationParams, RegistrationResult>(
                           "client/registerCapability", params);
     if (!result) {
-      spdlog::error(
+      Logger()->error(
           "LspServer failed to register capability: {}",
           result.error().Message());
       co_return LspError::UnexpectedFromRpcError(result.error());
@@ -113,7 +118,7 @@ class LspServer {
             ->SendMethodCall<UnregistrationParams, UnregistrationResult>(
                 "client/unregisterCapability", params);
     if (!result) {
-      spdlog::error(
+      Logger()->error(
           "LspServer failed to unregister capability: {}",
           result.error().Message());
       co_return LspError::UnexpectedFromRpcError(result.error());
@@ -243,14 +248,14 @@ class LspServer {
   // PublishDiagnostics Notification
   auto PublishDiagnostics(PublishDiagnosticsParams params)
       -> asio::awaitable<std::expected<void, LspError>> {
-    spdlog::debug(
+    Logger()->debug(
         "LspServer publishing {} diagnostics for {}", params.diagnostics.size(),
         params.uri);
     auto result =
         co_await endpoint_->SendNotification<PublishDiagnosticsParams>(
             "textDocument/publishDiagnostics", params);
     if (!result) {
-      spdlog::error(
+      Logger()->error(
           "LspServer failed to publish diagnostics: {}",
           result.error().Message());
       co_return LspError::UnexpectedFromRpcError(result.error());

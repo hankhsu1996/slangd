@@ -10,8 +10,11 @@ namespace slangd {
 // Simple timer utility class for performance measurements
 class ScopedTimer {
  public:
-  ScopedTimer(const std::string& operation_name)
-      : operation_name_(operation_name),
+  ScopedTimer(
+      const std::string& operation_name,
+      std::shared_ptr<spdlog::logger> logger = nullptr)
+      : logger_(logger ? logger : spdlog::default_logger()),
+        operation_name_(operation_name),
         start_time_(std::chrono::high_resolution_clock::now()) {
   }
 
@@ -20,11 +23,12 @@ class ScopedTimer {
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
                         end_time - start_time_)
                         .count();
-    spdlog::debug(
+    logger_->debug(
         "ScopedTimer {} completed in {} ms", operation_name_, duration);
   }
 
  private:
+  std::shared_ptr<spdlog::logger> logger_;
   std::string operation_name_;
   std::chrono::time_point<std::chrono::high_resolution_clock> start_time_;
 };
