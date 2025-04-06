@@ -6,10 +6,12 @@ namespace lsp {
 
 // Workspace specific client capabilities
 void to_json(
-    nlohmann::json& j, const DidChangeConfigurationClientCapabilities& c) {}
+    nlohmann::json& j, const DidChangeConfigurationClientCapabilities& c) {
+}
 
 void from_json(
-    const nlohmann::json& j, DidChangeConfigurationClientCapabilities& c) {}
+    const nlohmann::json& j, DidChangeConfigurationClientCapabilities& c) {
+}
 
 void to_json(
     nlohmann::json& j, const DidChangeWatchedFilesClientCapabilities& c) {
@@ -24,42 +26,55 @@ void from_json(
   from_json_optional(j, "relativePatternSupport", c.relativePatternSupport);
 }
 
-void to_json(nlohmann::json& j, const WorkspaceSymbolClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const WorkspaceSymbolClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, WorkspaceSymbolClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, WorkspaceSymbolClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const ExecuteCommandClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const ExecuteCommandClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, ExecuteCommandClientCapabilities& c) {}
-
-void to_json(
-    nlohmann::json& j, const SemanticTokensWorkspaceClientCapabilities& c) {}
-
-void from_json(
-    const nlohmann::json& j, SemanticTokensWorkspaceClientCapabilities& c) {}
-
-void to_json(nlohmann::json& j, const CodeLensWorkspaceClientCapabilities& c) {}
-
-void from_json(
-    const nlohmann::json& j, CodeLensWorkspaceClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, ExecuteCommandClientCapabilities& c) {
+}
 
 void to_json(
-    nlohmann::json& j, const InlineValueWorkspaceClientCapabilities& c) {}
+    nlohmann::json& j, const SemanticTokensWorkspaceClientCapabilities& c) {
+}
 
 void from_json(
-    const nlohmann::json& j, InlineValueWorkspaceClientCapabilities& c) {}
+    const nlohmann::json& j, SemanticTokensWorkspaceClientCapabilities& c) {
+}
+
+void to_json(nlohmann::json& j, const CodeLensWorkspaceClientCapabilities& c) {
+}
+
+void from_json(
+    const nlohmann::json& j, CodeLensWorkspaceClientCapabilities& c) {
+}
+
+void to_json(
+    nlohmann::json& j, const InlineValueWorkspaceClientCapabilities& c) {
+}
+
+void from_json(
+    const nlohmann::json& j, InlineValueWorkspaceClientCapabilities& c) {
+}
 
 void to_json(nlohmann::json& j, const InlayHintWorkspaceClientCapabilities& c) {
 }
 
 void from_json(
-    const nlohmann::json& j, InlayHintWorkspaceClientCapabilities& c) {}
+    const nlohmann::json& j, InlayHintWorkspaceClientCapabilities& c) {
+}
 
 void to_json(
-    nlohmann::json& j, const DiagnosticWorkspaceClientCapabilities& c) {}
+    nlohmann::json& j, const DiagnosticWorkspaceClientCapabilities& c) {
+}
 
 void from_json(
-    const nlohmann::json& j, DiagnosticWorkspaceClientCapabilities& c) {}
+    const nlohmann::json& j, DiagnosticWorkspaceClientCapabilities& c) {
+}
 
 void to_json(
     nlohmann::json& j, const WorkspaceClientCapabilities::FileOperations& c) {
@@ -115,137 +130,193 @@ void from_json(const nlohmann::json& j, WorkspaceClientCapabilities& c) {
 }
 
 // Text document specific client capabilities
-void to_json(nlohmann::json& j, const TextDocumentSyncClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const TextDocumentSyncClientCapabilities& c) {
+}
 
 void from_json(const nlohmann::json& j, TextDocumentSyncClientCapabilities& c) {
 }
 
-void to_json(nlohmann::json& j, const CompletionClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const CompletionClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, CompletionClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, CompletionClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const HoverClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const HoverClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, HoverClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, HoverClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const SignatureHelpClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const SignatureHelpClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, SignatureHelpClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, SignatureHelpClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const DeclarationClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const DeclarationClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, DeclarationClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, DeclarationClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const DefinitionClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const DefinitionClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, DefinitionClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, DefinitionClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const TypeDefinitionClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const TypeDefinitionClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, TypeDefinitionClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, TypeDefinitionClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const ImplementationClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const ImplementationClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, ImplementationClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, ImplementationClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const ReferenceClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const ReferenceClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, ReferenceClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, ReferenceClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const DocumentHighlightClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const DocumentHighlightClientCapabilities& c) {
+}
 
 void from_json(
-    const nlohmann::json& j, DocumentHighlightClientCapabilities& c) {}
+    const nlohmann::json& j, DocumentHighlightClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const DocumentSymbolClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const DocumentSymbolClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, DocumentSymbolClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, DocumentSymbolClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const CodeActionClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const CodeActionClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, CodeActionClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, CodeActionClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const CodeLensClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const CodeLensClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, CodeLensClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, CodeLensClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const DocumentLinkClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const DocumentLinkClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, DocumentLinkClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, DocumentLinkClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const DocumentColorClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const DocumentColorClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, DocumentColorClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, DocumentColorClientCapabilities& c) {
+}
 
 void to_json(nlohmann::json& j, const DocumentFormattingClientCapabilities& c) {
 }
 
 void from_json(
-    const nlohmann::json& j, DocumentFormattingClientCapabilities& c) {}
+    const nlohmann::json& j, DocumentFormattingClientCapabilities& c) {
+}
 
 void to_json(
-    nlohmann::json& j, const DocumentRangeFormattingClientCapabilities& c) {}
+    nlohmann::json& j, const DocumentRangeFormattingClientCapabilities& c) {
+}
 
 void from_json(
-    const nlohmann::json& j, DocumentRangeFormattingClientCapabilities& c) {}
+    const nlohmann::json& j, DocumentRangeFormattingClientCapabilities& c) {
+}
 
 void to_json(
-    nlohmann::json& j, const DocumentOnTypeFormattingClientCapabilities& c) {}
+    nlohmann::json& j, const DocumentOnTypeFormattingClientCapabilities& c) {
+}
 
 void from_json(
-    const nlohmann::json& j, DocumentOnTypeFormattingClientCapabilities& c) {}
+    const nlohmann::json& j, DocumentOnTypeFormattingClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const RenameClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const RenameClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, RenameClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, RenameClientCapabilities& c) {
+}
 
 void to_json(nlohmann::json& j, const PublishDiagnosticsClientCapabilities& c) {
 }
 
 void from_json(
-    const nlohmann::json& j, PublishDiagnosticsClientCapabilities& c) {}
+    const nlohmann::json& j, PublishDiagnosticsClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const FoldingRangeClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const FoldingRangeClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, FoldingRangeClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, FoldingRangeClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const SelectionRangeClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const SelectionRangeClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, SelectionRangeClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, SelectionRangeClientCapabilities& c) {
+}
 
 void to_json(nlohmann::json& j, const LinkedEditingRangeClientCapabilities& c) {
 }
 
 void from_json(
-    const nlohmann::json& j, LinkedEditingRangeClientCapabilities& c) {}
+    const nlohmann::json& j, LinkedEditingRangeClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const CallHierarchyClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const CallHierarchyClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, CallHierarchyClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, CallHierarchyClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const SemanticTokensClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const SemanticTokensClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, SemanticTokensClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, SemanticTokensClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const MonikerClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const MonikerClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, MonikerClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, MonikerClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const TypeHierarchyClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const TypeHierarchyClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, TypeHierarchyClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, TypeHierarchyClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const InlineValueClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const InlineValueClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, InlineValueClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, InlineValueClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const InlayHintClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const InlayHintClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, InlayHintClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, InlayHintClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const DiagnosticClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const DiagnosticClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, DiagnosticClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, DiagnosticClientCapabilities& c) {
+}
 
 void to_json(nlohmann::json& j, const TextDocumentClientCapabilities& c) {
   j = nlohmann::json{};
@@ -316,10 +387,12 @@ void from_json(const nlohmann::json& j, TextDocumentClientCapabilities& c) {
 
 // Capabilities specific to the notebook document support
 void to_json(
-    nlohmann::json& j, const NotebookDocumentSyncClientCapabilities& c) {}
+    nlohmann::json& j, const NotebookDocumentSyncClientCapabilities& c) {
+}
 
 void from_json(
-    const nlohmann::json& j, NotebookDocumentSyncClientCapabilities& c) {}
+    const nlohmann::json& j, NotebookDocumentSyncClientCapabilities& c) {
+}
 
 void to_json(nlohmann::json& j, const NotebookDocumentClientCapabilities& c) {
   j = nlohmann::json{};
@@ -335,11 +408,14 @@ void to_json(nlohmann::json& j, const ShowMessageRequestClientCapabilities& c) {
 }
 
 void from_json(
-    const nlohmann::json& j, ShowMessageRequestClientCapabilities& c) {}
+    const nlohmann::json& j, ShowMessageRequestClientCapabilities& c) {
+}
 
-void to_json(nlohmann::json& j, const ShowDocumentClientCapabilities& c) {}
+void to_json(nlohmann::json& j, const ShowDocumentClientCapabilities& c) {
+}
 
-void from_json(const nlohmann::json& j, ShowDocumentClientCapabilities& c) {}
+void from_json(const nlohmann::json& j, ShowDocumentClientCapabilities& c) {
+}
 
 void to_json(nlohmann::json& j, const WindowClientCapabilities& c) {
   j = nlohmann::json{};

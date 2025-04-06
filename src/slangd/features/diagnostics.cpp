@@ -100,7 +100,7 @@ auto GetDocumentDiagnostics(
         diagnostics.end(), syntax_diags.begin(), syntax_diags.end());
   }
 
-  spdlog::info(
+  spdlog::debug(
       "GetDocumentDiagnostics extracted {} diagnostics for {}",
       diagnostics.size(), uri);
 

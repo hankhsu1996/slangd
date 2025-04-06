@@ -1,5 +1,6 @@
 #include "slangd/slangd_lsp_server.hpp"
 
+#include <lsp/registeration_options.hpp>
 #include <slang/syntax/AllSyntax.h>
 #include <slang/syntax/SyntaxVisitor.h>
 #include <spdlog/spdlog.h>
@@ -59,6 +60,7 @@ auto SlangdLspServer::OnInitialized(lsp::InitializedParams /*unused*/)
   spdlog::debug("SlangdLspServer OnInitialized");
   initialized_ = true;
 
+  // Scan workspace for SystemVerilog files to build the initial index
   auto scan_workspace = [this]() -> asio::awaitable<void> {
     spdlog::debug(
         "SlangdLspServer starting workspace scan for SystemVerilog files");
@@ -66,8 +68,35 @@ auto SlangdLspServer::OnInitialized(lsp::InitializedParams /*unused*/)
     spdlog::debug("SlangdLspServer workspace scan completed");
   };
 
+  // Register the file system watcher for workspace changes
+  auto register_watcher = [this]() -> asio::awaitable<void> {
+    spdlog::debug("SlangdLspServer registering file system watcher");
+    auto watcher = lsp::FileSystemWatcher{.globPattern = "**/*.{sv,svh,v,vh}"};
+    auto options = lsp::DidChangeWatchedFilesRegistrationOptions{
+        .watchers = {watcher},
+    };
+    auto registration = lsp::Registration{
+        .id = "slangd-file-system-watcher",
+        .method = "workspace/didChangeWatchedFiles",
+        .registerOptions = options,
+    };
+    auto params = lsp::RegistrationParams{
+        .registrations = {registration},
+    };
+    auto result = co_await RegisterCapability(params);
+    if (!result) {
+      spdlog::error(
+          "SlangdLspServer failed to register file system watcher: {}",
+          result.error().Message());
+      co_return;
+    }
+    spdlog::debug("SlangdLspServer file system watcher registered");
+    co_return;
+  };
+
   // Start workspace scanning in the background
   asio::co_spawn(strand_, scan_workspace, asio::detached);
+  asio::co_spawn(strand_, register_watcher, asio::detached);
 
   co_return Ok();
 }
@@ -235,6 +264,14 @@ auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
   spdlog::debug("SlangdLspServer OnDocumentSymbols result: {}", result.size());
 
   co_return result;
+}
+
+auto SlangdLspServer::OnDidChangeWatchedFiles(
+    lsp::DidChangeWatchedFilesParams params)
+    -> asio::awaitable<std::expected<void, lsp::LspError>> {
+  spdlog::debug("SlangdLspServer OnDidChangeWatchedFiles");
+
+  co_return Ok();
 }
 
 }  // namespace slangd

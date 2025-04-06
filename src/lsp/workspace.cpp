@@ -76,7 +76,9 @@ void from_json(const nlohmann::json& j, ConfigurationParams& p) {
   from_json_required(j, "items", p.items);
 }
 
-void to_json(nlohmann::json& j, const ConfigurationResult& p) { j = p; }
+void to_json(nlohmann::json& j, const ConfigurationResult& p) {
+  j = p;
+}
 
 void from_json(const nlohmann::json& j, ConfigurationResult& p) {
   p = j.get<std::vector<nlohmann::json>>();

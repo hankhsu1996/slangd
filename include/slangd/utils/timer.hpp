@@ -12,14 +12,15 @@ class ScopedTimer {
  public:
   ScopedTimer(const std::string& operation_name)
       : operation_name_(operation_name),
-        start_time_(std::chrono::high_resolution_clock::now()) {}
+        start_time_(std::chrono::high_resolution_clock::now()) {
+  }
 
   ~ScopedTimer() {
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
                         end_time - start_time_)
                         .count();
-    spdlog::info(
+    spdlog::debug(
         "ScopedTimer {} completed in {} ms", operation_name_, duration);
   }
 

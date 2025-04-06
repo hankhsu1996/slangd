@@ -47,28 +47,15 @@ const std::vector<std::string>& WorkspaceManager::GetWorkspaceFolders() const {
 }
 
 auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
-  spdlog::info(
+  spdlog::debug(
       "WorkspaceManager starting workspace scan for SystemVerilog files");
-
-  // First, set up all include paths based on workspace folders
-  spdlog::info("WorkspaceManager setting up include paths");
-  std::filesystem::path include_path = "hw/ip/prim/rtl";
-
-  if (auto ec = source_manager_->addUserDirectories(include_path.string())) {
-    spdlog::error(
-        "WorkspaceManager failed to add include path: {}", ec.message());
-  } else {
-    spdlog::info(
-        "WorkspaceManager added include path: {}", include_path.string());
-  }
 
   std::vector<std::string> all_files;
 
-  // Now, scan for files in each workspace folder
   for (const auto& folder : workspace_folders_) {
-    spdlog::info("WorkspaceManager scanning workspace folder: {}", folder);
+    spdlog::debug("WorkspaceManager scanning workspace folder: {}", folder);
     auto files = co_await FindSystemVerilogFiles(folder);
-    spdlog::info(
+    spdlog::debug(
         "WorkspaceManager found {} SystemVerilog files in {}", files.size(),
         folder);
 
@@ -83,7 +70,7 @@ auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
         "Failed to process files: {} ({})",
         static_cast<int>(result.error().code()), result.error().message());
   } else {
-    spdlog::info(
+    spdlog::debug(
         "WorkspaceManager workspace scan completed. Total indexed files: {}",
         GetIndexedFileCount());
   }
@@ -116,7 +103,7 @@ auto WorkspaceManager::FindSystemVerilogFiles(std::string directory)
 
 auto WorkspaceManager::ProcessFiles(std::vector<std::string> file_paths)
     -> asio::awaitable<std::expected<void, SlangdError>> {
-  spdlog::info("WorkspaceManager processing {} files", file_paths.size());
+  spdlog::debug("WorkspaceManager processing {} files", file_paths.size());
 
   // Add all files to source loader
   for (const auto& path : file_paths) {
@@ -168,7 +155,7 @@ auto WorkspaceManager::ProcessFiles(std::vector<std::string> file_paths)
     }
   }
 
-  spdlog::info("Successfully processed {} files", syntax_trees_.size());
+  spdlog::debug("Successfully processed {} files", syntax_trees_.size());
   co_return std::expected<void, SlangdError>{};
 }
 

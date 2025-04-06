@@ -79,6 +79,10 @@ class SlangdLspServer : public lsp::LspServer {
   auto OnDocumentSymbols(lsp::DocumentSymbolParams /*unused*/)
       -> asio::awaitable<
           std::expected<lsp::DocumentSymbolResult, lsp::LspError>> override;
+
+  // DidChangeWatchedFiles Notification
+  auto OnDidChangeWatchedFiles(lsp::DidChangeWatchedFilesParams /*unused*/)
+      -> asio::awaitable<std::expected<void, lsp::LspError>> override;
 };
 
 }  // namespace slangd

@@ -16,6 +16,7 @@
 #include "lsp/document_sync.hpp"
 #include "lsp/error.hpp"
 #include "lsp/lifecycle.hpp"
+#include "lsp/workspace.hpp"
 
 namespace lsp {
 
@@ -77,13 +78,16 @@ class LspServer {
   // Initialize Request
   virtual auto OnInitialize(InitializeParams /*unused*/)
       -> asio::awaitable<std::expected<InitializeResult, LspError>> {
-    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
+    co_return LspError::UnexpectedFromCode(
+        LspErrorCode::kMethodNotImplemented, "OnInitialize is not implemented");
   }
 
   // Initialized Notification
   virtual auto OnInitialized(InitializedParams /*unused*/)
       -> asio::awaitable<std::expected<void, LspError>> {
-    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
+    co_return LspError::UnexpectedFromCode(
+        LspErrorCode::kMethodNotImplemented,
+        "OnInitialized is not implemented");
   }
 
   // Register Capability
@@ -120,62 +124,78 @@ class LspServer {
   // SetTrace Notification
   virtual auto OnSetTrace(SetTraceParams /*unused*/)
       -> asio::awaitable<std::expected<void, LspError>> {
-    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
+    co_return LspError::UnexpectedFromCode(
+        LspErrorCode::kMethodNotImplemented, "OnSetTrace is not implemented");
   }
 
   // LogTrace Notification
   virtual auto OnLogTrace(LogTraceParams /*unused*/)
       -> asio::awaitable<std::expected<void, LspError>> {
-    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
+    co_return LspError::UnexpectedFromCode(
+        LspErrorCode::kMethodNotImplemented, "OnLogTrace is not implemented");
   }
 
   // Shutdown Request
   virtual auto OnShutdown(ShutdownParams /*unused*/)
       -> asio::awaitable<std::expected<ShutdownResult, LspError>> {
-    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
+    co_return LspError::UnexpectedFromCode(
+        LspErrorCode::kMethodNotImplemented, "OnShutdown is not implemented");
   }
 
   // Exit Notification
   virtual auto OnExit(ExitParams /*unused*/)
       -> asio::awaitable<std::expected<void, LspError>> {
-    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
+    co_return LspError::UnexpectedFromCode(
+        LspErrorCode::kMethodNotImplemented, "OnExit is not implemented");
   }
 
   // Document Synchronization Handlers
   virtual auto OnDidOpenTextDocument(DidOpenTextDocumentParams /*unused*/)
       -> asio::awaitable<std::expected<void, LspError>> {
-    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
+    co_return LspError::UnexpectedFromCode(
+        LspErrorCode::kMethodNotImplemented,
+        "OnDidOpenTextDocument is not implemented");
   }
 
   // DidChangeTextDocument Notification
   virtual auto OnDidChangeTextDocument(DidChangeTextDocumentParams /*unused*/)
       -> asio::awaitable<std::expected<void, LspError>> {
-    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
+    co_return LspError::UnexpectedFromCode(
+        LspErrorCode::kMethodNotImplemented,
+        "OnDidChangeTextDocument is not implemented");
   }
 
   // WillSaveTextDocument Notification
   virtual auto OnWillSaveTextDocument(WillSaveTextDocumentParams /*unused*/)
       -> asio::awaitable<std::expected<void, LspError>> {
-    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
+    co_return LspError::UnexpectedFromCode(
+        LspErrorCode::kMethodNotImplemented,
+        "OnWillSaveTextDocument is not implemented");
   }
 
   // WillSaveWaitUntilTextDocument Request
   virtual auto OnWillSaveWaitUntilTextDocument(
       WillSaveTextDocumentParams /*unused*/)
       -> asio::awaitable<std::expected<WillSaveTextDocumentResult, LspError>> {
-    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
+    co_return LspError::UnexpectedFromCode(
+        LspErrorCode::kMethodNotImplemented,
+        "OnWillSaveWaitUntilTextDocument is not implemented");
   }
 
   // DidSaveTextDocument Notification
   virtual auto OnDidSaveTextDocument(DidSaveTextDocumentParams /*unused*/)
       -> asio::awaitable<std::expected<void, LspError>> {
-    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
+    co_return LspError::UnexpectedFromCode(
+        LspErrorCode::kMethodNotImplemented,
+        "OnDidSaveTextDocument is not implemented");
   }
 
   // DidCloseTextDocument Notification
   virtual auto OnDidCloseTextDocument(DidCloseTextDocumentParams /*unused*/)
       -> asio::awaitable<std::expected<void, LspError>> {
-    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
+    co_return LspError::UnexpectedFromCode(
+        LspErrorCode::kMethodNotImplemented,
+        "OnDidCloseTextDocument is not implemented");
   }
 
   // TODO(hankhsu1996): Did Open Notebook Document
@@ -205,7 +225,9 @@ class LspServer {
   // Document Symbols Request
   virtual auto OnDocumentSymbols(DocumentSymbolParams /*unused*/)
       -> asio::awaitable<std::expected<DocumentSymbolResult, LspError>> {
-    co_return LspError::UnexpectedFromCode(LspErrorCode::kMethodNotImplemented);
+    co_return LspError::UnexpectedFromCode(
+        LspErrorCode::kMethodNotImplemented,
+        "OnDocumentSymbols is not implemented");
   }
 
   // TODO(hankhsu1996): Semantic Tokens
@@ -248,6 +270,30 @@ class LspServer {
   // TODO(hankhsu1996): Rename
   // TODO(hankhsu1996): Prepare Rename
   // TODO(hankhsu1996): Linked Editing Range
+
+  // TODO(hankhsu1996): Workspace Symbols
+  // TODO(hankhsu1996): Workspace Symbol Resolve
+  // TODO(hankhsu1996): Get Configuration
+  // TODO(hankhsu1996): Did Change Configuration
+  // TODO(hankhsu1996): Workspace Folders
+  // TODO(hankhsu1996): Did Change Workspace Folders
+  // TODO(hankhsu1996): Will Create Files
+  // TODO(hankhsu1996): Did Create Files
+  // TODO(hankhsu1996): Will Rename Files
+  // TODO(hankhsu1996): Did Rename Files
+  // TODO(hankhsu1996): Will Delete Files
+  // TODO(hankhsu1996): Did Delete Files
+
+  // DidChangeWatchedFiles Notification
+  virtual auto OnDidChangeWatchedFiles(DidChangeWatchedFilesParams /*unused*/)
+      -> asio::awaitable<std::expected<void, LspError>> {
+    co_return LspError::UnexpectedFromCode(
+        LspErrorCode::kMethodNotImplemented,
+        "OnDidChangeWatchedFiles is not implemented");
+  }
+
+  // TODO(hankhsu1996): Execute Command
+  // TODO(hankhsu1996): Apply Edit
 };
 
 }  // namespace lsp

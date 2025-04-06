@@ -29,7 +29,9 @@ void from_json(const nlohmann::json& j, GlobPattern& p) {
   }
 }
 
-void to_json(nlohmann::json& j, const WatchKind& k) { j = static_cast<int>(k); }
+void to_json(nlohmann::json& j, const WatchKind& k) {
+  j = static_cast<int>(k);
+}
 
 void from_json(const nlohmann::json& j, WatchKind& k) {
   k = static_cast<WatchKind>(j.get<int>());

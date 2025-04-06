@@ -62,8 +62,10 @@ void from_json(const nlohmann::json& j, InitializeResult& p) {
 }
 
 // Initialized Notification
-void to_json(nlohmann::json&, const InitializedParams&) {}
-void from_json(const nlohmann::json&, InitializedParams&) {}
+void to_json(nlohmann::json&, const InitializedParams&) {
+}
+void from_json(const nlohmann::json&, InitializedParams&) {
+}
 
 // Register Capability
 void to_json(nlohmann::json& j, const Registration& p) {
@@ -85,9 +87,11 @@ void from_json(const nlohmann::json& j, RegistrationParams& p) {
   j.at("registrations").get_to(p.registrations);
 }
 
-void to_json(nlohmann::json&, const RegistrationResult&) {}
+void to_json(nlohmann::json&, const RegistrationResult&) {
+}
 
-void from_json(const nlohmann::json&, RegistrationResult&) {}
+void from_json(const nlohmann::json&, RegistrationResult&) {
+}
 
 void to_json(nlohmann::json& j, const StaticRegistrationOptions& p) {
   to_json_optional(j, "id", p.id);
@@ -115,9 +119,11 @@ void from_json(const nlohmann::json& j, UnregistrationParams& p) {
   j.at("unregistrations").get_to(p.unregistrations);
 }
 
-void to_json(nlohmann::json&, const UnregistrationResult&) {}
+void to_json(nlohmann::json&, const UnregistrationResult&) {
+}
 
-void from_json(const nlohmann::json&, UnregistrationResult&) {}
+void from_json(const nlohmann::json&, UnregistrationResult&) {
+}
 
 // SetTrace Notification
 void to_json(nlohmann::json& j, const SetTraceParams& p) {
@@ -140,14 +146,20 @@ void from_json(const nlohmann::json& j, LogTraceParams& p) {
 }
 
 // Shutdown Request
-void to_json(nlohmann::json&, const ShutdownParams&) {}
-void from_json(const nlohmann::json&, ShutdownParams&) {}
+void to_json(nlohmann::json&, const ShutdownParams&) {
+}
+void from_json(const nlohmann::json&, ShutdownParams&) {
+}
 
-void to_json(nlohmann::json&, const ShutdownResult&) {}
-void from_json(const nlohmann::json&, ShutdownResult&) {}
+void to_json(nlohmann::json&, const ShutdownResult&) {
+}
+void from_json(const nlohmann::json&, ShutdownResult&) {
+}
 
 // Exit Notification
-void to_json(nlohmann::json&, const ExitParams&) {}
-void from_json(const nlohmann::json&, ExitParams&) {}
+void to_json(nlohmann::json&, const ExitParams&) {
+}
+void from_json(const nlohmann::json&, ExitParams&) {
+}
 
 }  // namespace lsp

@@ -37,7 +37,7 @@ void from_json(const nlohmann::json& j, WatchKind& k);
 
 struct FileSystemWatcher {
   GlobPattern globPattern;
-  std::optional<WatchKind> kind;
+  std::optional<WatchKind> kind = std::nullopt;
 };
 
 void to_json(nlohmann::json& j, const FileSystemWatcher& w);
