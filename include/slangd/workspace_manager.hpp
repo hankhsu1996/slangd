@@ -12,8 +12,6 @@
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/text/SourceManager.h>
 
-#include "slangd/error/error.hpp"
-
 namespace slangd {
 
 class WorkspaceManager {
@@ -53,7 +51,7 @@ class WorkspaceManager {
 
   // Process collected files and build compilation
   auto ProcessFiles(std::vector<std::string> file_paths)
-      -> asio::awaitable<std::expected<void, SlangdError>>;
+      -> asio::awaitable<void>;
 
   // Map of file path to syntax tree
   std::unordered_map<std::string, std::shared_ptr<slang::syntax::SyntaxTree>>
