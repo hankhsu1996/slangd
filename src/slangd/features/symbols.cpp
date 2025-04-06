@@ -19,7 +19,8 @@
 namespace slangd {
 
 // Helper function to unwrap TransparentMember symbols
-const slang::ast::Symbol& GetUnwrappedSymbol(const slang::ast::Symbol& symbol) {
+auto GetUnwrappedSymbol(const slang::ast::Symbol& symbol)
+    -> const slang::ast::Symbol& {
   using SK = slang::ast::SymbolKind;
 
   // If not a TransparentMember, return directly
@@ -32,10 +33,10 @@ const slang::ast::Symbol& GetUnwrappedSymbol(const slang::ast::Symbol& symbol) {
       symbol.as<slang::ast::TransparentMemberSymbol>().wrapped);
 }
 
-bool ShouldIncludeSymbol(
+auto ShouldIncludeSymbol(
     const slang::ast::Symbol& symbol,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    const std::string& uri) {
+    const std::string& uri) -> bool {
   using SK = slang::ast::SymbolKind;
 
   // Skip symbols without a valid location
@@ -111,7 +112,8 @@ bool ShouldIncludeSymbol(
 }
 
 // Maps a Slang symbol to an LSP symbol kind
-lsp::SymbolKind MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol) {
+auto MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol)
+    -> lsp::SymbolKind {
   using SK = slang::ast::SymbolKind;
   using LK = lsp::SymbolKind;
   using DK = slang::ast::DefinitionKind;
@@ -119,33 +121,34 @@ lsp::SymbolKind MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol) {
   // if is type alias, need to get the canonical type and use that to determine
   // the symbol kind
   if (symbol.kind == SK::TypeAlias) {
-    auto& type_alias = symbol.as<slang::ast::TypeAliasType>();
-    auto& canonical_type = type_alias.getCanonicalType();
+    const auto& type_alias = symbol.as<slang::ast::TypeAliasType>();
+    const auto& canonical_type = type_alias.getCanonicalType();
 
     switch (canonical_type.kind) {
       case SK::EnumType:
-        return LK::Enum;
+        return LK::kEnum;
       case SK::PackedStructType:
       case SK::UnpackedStructType:
       case SK::PackedUnionType:
       case SK::UnpackedUnionType:
-        return LK::Struct;
+        return LK::kStruct;
       default:
-        return LK::TypeParameter;
+        return LK::kTypeParameter;
     }
   }
 
   if (symbol.kind == SK::Definition) {
-    auto& definition = symbol.as<slang::ast::DefinitionSymbol>();
+    const auto& definition = symbol.as<slang::ast::DefinitionSymbol>();
     if (definition.definitionKind == DK::Module) {
       // In SystemVerilog, a 'module' defines encapsulated hardware with ports
       // and internal logic. However, in software terms, it behaves more like a
       // 'class': it has state, methods (processes), and can be instantiated
       // multiple times. It's not just a namespace or file like software
       // modules.
-      return LK::Class;
-    } else if (definition.definitionKind == DK::Interface) {
-      return LK::Interface;
+      return LK::kClass;
+    }
+    if (definition.definitionKind == DK::Interface) {
+      return LK::kInterface;
     }
   }
 
@@ -153,7 +156,7 @@ lsp::SymbolKind MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol) {
   switch (symbol.kind) {
     // Package
     case SK::Package:
-      return LK::Package;
+      return LK::kPackage;
 
     // Variables and data
     case SK::Variable:
@@ -161,55 +164,55 @@ lsp::SymbolKind MapSymbolToLspSymbolKind(const slang::ast::Symbol& symbol) {
     case SK::Port:
     case SK::Instance:
     case SK::UninstantiatedDef:
-      return LK::Variable;
+      return LK::kVariable;
 
     case SK::Field:
     case SK::ClassProperty:
-      return LK::Field;
+      return LK::kField;
 
     case SK::Parameter:
     case SK::EnumValue:
-      return LK::Constant;
+      return LK::kConstant;
 
     case SK::TypeParameter:
-      return LK::TypeParameter;
+      return LK::kTypeParameter;
 
     // Type-related
     case SK::TypeAlias:
     case SK::ForwardingTypedef:
-      return LK::TypeParameter;
+      return LK::kTypeParameter;
 
     case SK::EnumType:
-      return LK::Enum;
+      return LK::kEnum;
 
     case SK::PackedStructType:
     case SK::UnpackedStructType:
-      return LK::Struct;
+      return LK::kStruct;
 
     case SK::PackedUnionType:
     case SK::UnpackedUnionType:
-      return LK::Class;
+      return LK::kClass;
 
     case SK::ClassType:
-      return LK::Class;
+      return LK::kClass;
 
     // Interface-related
     case SK::Modport:
-      return LK::Interface;
+      return LK::kInterface;
 
     // Function-related
     case SK::Subroutine:
-      return LK::Function;
+      return LK::kFunction;
 
     // Default for other symbol kinds
     default:
-      return LK::Object;
+      return LK::kObject;
   }
 }
 
-lsp::Range GetSymbolNameLocationRange(
+auto GetSymbolNameLocationRange(
     const slang::ast::Symbol& symbol,
-    const std::shared_ptr<slang::SourceManager>& source_manager) {
+    const std::shared_ptr<slang::SourceManager>& source_manager) -> lsp::Range {
   // Just use the symbol's declaration location
   return ConvertSlangLocationToLspRange(symbol.location, source_manager);
 }
@@ -249,7 +252,7 @@ void ProcessSymbolChildren(
     ProcessScopeMembers(
         package, parent_symbol, source_manager, uri, compilation);
   } else if (symbol.kind == SK::Definition) {
-    auto& definition_symbol = symbol.as<slang::ast::DefinitionSymbol>();
+    const auto& definition_symbol = symbol.as<slang::ast::DefinitionSymbol>();
     auto& inst_symbol = slang::ast::InstanceSymbol::createDefault(
         compilation, definition_symbol);
     const auto& body = inst_symbol.body;
@@ -260,49 +263,52 @@ void ProcessSymbolChildren(
     }
   } else if (symbol.kind == SK::TypeAlias) {
     // Type aliases need to be unwrapped to process their members
-    auto& typeAlias = symbol.as<slang::ast::TypeAliasType>();
-    auto& canonicalType = typeAlias.getCanonicalType();
+    const auto& type_alias = symbol.as<slang::ast::TypeAliasType>();
+    const auto& canonical_type = type_alias.getCanonicalType();
 
-    if (canonicalType.kind == SK::PackedStructType) {
-      auto& structType = canonicalType.as<slang::ast::PackedStructType>();
+    if (canonical_type.kind == SK::PackedStructType) {
+      const auto& struct_type =
+          canonical_type.as<slang::ast::PackedStructType>();
       // Make sure to process all members of the struct
       ProcessScopeMembers(
-          structType, parent_symbol, source_manager, uri, compilation);
-    } else if (canonicalType.kind == SK::UnpackedStructType) {
-      auto& structType = canonicalType.as<slang::ast::UnpackedStructType>();
+          struct_type, parent_symbol, source_manager, uri, compilation);
+    } else if (canonical_type.kind == SK::UnpackedStructType) {
+      const auto& struct_type =
+          canonical_type.as<slang::ast::UnpackedStructType>();
       ProcessScopeMembers(
-          structType, parent_symbol, source_manager, uri, compilation);
-    } else if (canonicalType.kind == SK::PackedUnionType) {
-      auto& unionType = canonicalType.as<slang::ast::PackedUnionType>();
+          struct_type, parent_symbol, source_manager, uri, compilation);
+    } else if (canonical_type.kind == SK::PackedUnionType) {
+      const auto& union_type = canonical_type.as<slang::ast::PackedUnionType>();
       ProcessScopeMembers(
-          unionType, parent_symbol, source_manager, uri, compilation);
-    } else if (canonicalType.kind == SK::UnpackedUnionType) {
-      auto& unionType = canonicalType.as<slang::ast::UnpackedUnionType>();
+          union_type, parent_symbol, source_manager, uri, compilation);
+    } else if (canonical_type.kind == SK::UnpackedUnionType) {
+      const auto& union_type =
+          canonical_type.as<slang::ast::UnpackedUnionType>();
       ProcessScopeMembers(
-          unionType, parent_symbol, source_manager, uri, compilation);
+          union_type, parent_symbol, source_manager, uri, compilation);
     }
   }
   // else if kind is "field" need to check the type. if is struct or union, we
   // n=might have nested fields!
   else if (symbol.kind == SK::Field) {
-    auto& field = symbol.as<slang::ast::FieldSymbol>();
-    auto& type = field.getType();
+    const auto& field = symbol.as<slang::ast::FieldSymbol>();
+    const auto& type = field.getType();
     if (type.kind == SK::PackedStructType) {
-      auto& structType = type.as<slang::ast::PackedStructType>();
+      const auto& struct_type = type.as<slang::ast::PackedStructType>();
       ProcessScopeMembers(
-          structType, parent_symbol, source_manager, uri, compilation);
+          struct_type, parent_symbol, source_manager, uri, compilation);
     } else if (type.kind == SK::UnpackedStructType) {
-      auto& structType = type.as<slang::ast::UnpackedStructType>();
+      const auto& struct_type = type.as<slang::ast::UnpackedStructType>();
       ProcessScopeMembers(
-          structType, parent_symbol, source_manager, uri, compilation);
+          struct_type, parent_symbol, source_manager, uri, compilation);
     } else if (type.kind == SK::PackedUnionType) {
-      auto& unionType = type.as<slang::ast::PackedUnionType>();
+      const auto& union_type = type.as<slang::ast::PackedUnionType>();
       ProcessScopeMembers(
-          unionType, parent_symbol, source_manager, uri, compilation);
+          union_type, parent_symbol, source_manager, uri, compilation);
     } else if (type.kind == SK::UnpackedUnionType) {
-      auto& unionType = type.as<slang::ast::UnpackedUnionType>();
+      const auto& union_type = type.as<slang::ast::UnpackedUnionType>();
       ProcessScopeMembers(
-          unionType, parent_symbol, source_manager, uri, compilation);
+          union_type, parent_symbol, source_manager, uri, compilation);
     }
   }
   // For all other symbol types, don't traverse
@@ -315,7 +321,9 @@ void BuildDocumentSymbolHierarchy(
     const std::string& uri, std::unordered_set<std::string>& seen_names,
     slang::ast::Compilation& compilation) {
   // Only include symbols from the current document and with relevant kinds
-  if (!ShouldIncludeSymbol(symbol, source_manager, uri)) return;
+  if (!ShouldIncludeSymbol(symbol, source_manager, uri)) {
+    return;
+  }
 
   // Skip if we've seen this name already in current scope
   if (seen_names.find(std::string(symbol.name)) != seen_names.end()) {
@@ -350,10 +358,10 @@ void BuildDocumentSymbolHierarchy(
   }
 }
 
-std::vector<lsp::DocumentSymbol> GetDocumentSymbols(
+auto GetDocumentSymbols(
     slang::ast::Compilation& compilation,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    const std::string& uri) {
+    const std::string& uri) -> std::vector<lsp::DocumentSymbol> {
   std::vector<lsp::DocumentSymbol> result;
   std::unordered_set<std::string> seen_names;
 

@@ -20,13 +20,13 @@ namespace slangd {
  * @brief Possible errors that can occur during parsing
  */
 enum class ParseError {
-  SyntaxError,
-  FileNotFound,
-  EncodingError,
-  CompilationError,
-  ElaborationError,
-  SlangInternalError,
-  UnknownError
+  kSyntaxError,
+  kFileNotFound,
+  kEncodingError,
+  kCompilationError,
+  kElaborationError,
+  kSlangInternalError,
+  kUnknownError
 };
 
 /**
@@ -42,7 +42,7 @@ class DocumentManager {
    *
    * @param executor ASIO executor for async operations
    */
-  DocumentManager(asio::any_io_executor executor);
+  explicit DocumentManager(asio::any_io_executor executor);
 
   /**
    * @brief Parse a document with compilation
@@ -55,8 +55,8 @@ class DocumentManager {
    * @return asio::awaitable<std::expected<void, ParseError>> Result of the
    * parsing operation
    */
-  asio::awaitable<std::expected<void, ParseError>> ParseWithCompilation(
-      const std::string& uri, const std::string& content);
+  auto ParseWithCompilation(std::string uri, std::string content)
+      -> asio::awaitable<std::expected<void, ParseError>>;
 
   /**
    * @brief Parse a document with full elaboration (slow)
@@ -69,8 +69,8 @@ class DocumentManager {
    * @return asio::awaitable<std::expected<void, ParseError>> Result of the
    * parsing operation
    */
-  asio::awaitable<std::expected<void, ParseError>> ParseWithElaboration(
-      const std::string& uri, const std::string& content);
+  auto ParseWithElaboration(std::string uri, std::string content)
+      -> asio::awaitable<std::expected<void, ParseError>>;
 
   /**
    * @brief Get the syntax tree for a document
@@ -79,8 +79,8 @@ class DocumentManager {
    * @return asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>> The
    * syntax tree or nullptr if not found
    */
-  asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>> GetSyntaxTree(
-      const std::string& uri);
+  auto GetSyntaxTree(std::string uri)
+      -> asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>>;
 
   /**
    * @brief Get the compilation for a document
@@ -89,8 +89,8 @@ class DocumentManager {
    * @return asio::awaitable<std::shared_ptr<slang::ast::Compilation>> The
    * compilation or nullptr if not found
    */
-  asio::awaitable<std::shared_ptr<slang::ast::Compilation>> GetCompilation(
-      const std::string& uri);
+  auto GetCompilation(std::string uri)
+      -> asio::awaitable<std::shared_ptr<slang::ast::Compilation>>;
 
   /**
    * @brief Get a list of symbols defined in a document
@@ -99,8 +99,8 @@ class DocumentManager {
    * @return asio::awaitable<std::vector<std::shared_ptr<const
    * slang::ast::Symbol>>> List of symbols or empty vector if not found
    */
-  asio::awaitable<std::vector<std::shared_ptr<const slang::ast::Symbol>>>
-  GetSymbols(const std::string& uri);
+  auto GetSymbols(std::string uri) -> asio::awaitable<
+      std::vector<std::shared_ptr<const slang::ast::Symbol>>>;
 
   /**
    * @brief Get hierarchical document symbols defined in a document
@@ -109,8 +109,8 @@ class DocumentManager {
    * @return asio::awaitable<std::vector<lsp::DocumentSymbol>> Hierarchical
    * document symbols or empty vector if not found
    */
-  asio::awaitable<std::vector<lsp::DocumentSymbol>> GetDocumentSymbols(
-      const std::string& uri);
+  auto GetDocumentSymbols(std::string uri)
+      -> asio::awaitable<std::vector<lsp::DocumentSymbol>>;
 
   /**
    * @brief Get diagnostics for a document
@@ -119,8 +119,8 @@ class DocumentManager {
    * @return asio::awaitable<std::vector<lsp::Diagnostic>> Diagnostics for the
    * document
    */
-  asio::awaitable<std::vector<lsp::Diagnostic>> GetDocumentDiagnostics(
-      const std::string& uri);
+  auto GetDocumentDiagnostics(std::string uri)
+      -> asio::awaitable<std::vector<lsp::Diagnostic>>;
 
  private:
   // ASIO executor reference

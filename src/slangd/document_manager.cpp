@@ -28,23 +28,24 @@ void CollectSymbolsRecursively(
     const std::shared_ptr<slang::ast::Compilation>& compilation);
 
 DocumentManager::DocumentManager(asio::any_io_executor executor)
-    : executor_(executor), strand_(asio::make_strand(executor)) {}
+    : executor_(executor), strand_(asio::make_strand(executor)) {
+}
 
-asio::awaitable<std::expected<void, ParseError>>
-DocumentManager::ParseWithCompilation(
-    const std::string& uri, const std::string& content) {
+auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
+    -> asio::awaitable<std::expected<void, ParseError>> {
   // Ensure thread safety for data structures
   co_await asio::post(strand_, asio::use_awaitable);
 
   // Create a new source manager for this document if it doesn't exist
   if (source_managers_.find(uri) == source_managers_.end()) {
     source_managers_[uri] = std::make_shared<slang::SourceManager>();
-    std::filesystem::path include_path = "hw/ip/prim/rtl";
-    auto ec = source_managers_[uri]->addUserDirectories(include_path.string());
-    if (ec) {
-      spdlog::error("Failed to add include path: {}", ec.message());
-      co_return std::unexpected(ParseError::SlangInternalError);
-    }
+    // std::filesystem::path include_path = "hw/ip/prim/rtl";
+    // auto ec =
+    // source_managers_[uri]->addUserDirectories(include_path.string()); if (ec)
+    // {
+    //   spdlog::error("Failed to add include path: {}", ec.message());
+    //   co_return std::unexpected(ParseError::kSlangInternalError);
+    // }
   }
 
   auto& source_manager = *source_managers_[uri];
@@ -57,7 +58,7 @@ DocumentManager::ParseWithCompilation(
   // This should be extremely rare - handle only critical failures
   if (!syntax_tree) {
     spdlog::error("Critical failure creating syntax tree for document {}", uri);
-    co_return std::unexpected(ParseError::SlangInternalError);
+    co_return std::unexpected(ParseError::kSlangInternalError);
   }
 
   // Store the syntax tree
@@ -78,9 +79,8 @@ DocumentManager::ParseWithCompilation(
   co_return std::expected<void, ParseError>{};
 }
 
-asio::awaitable<std::expected<void, ParseError>>
-DocumentManager::ParseWithElaboration(
-    const std::string& uri, const std::string& content) {
+auto DocumentManager::ParseWithElaboration(std::string uri, std::string content)
+    -> asio::awaitable<std::expected<void, ParseError>> {
   // First perform basic compilation
   auto compilation_result = co_await ParseWithCompilation(uri, content);
   if (!compilation_result) {
@@ -94,7 +94,7 @@ DocumentManager::ParseWithElaboration(
   auto comp_it = compilations_.find(uri);
   if (comp_it == compilations_.end()) {
     spdlog::error("No compilation found for document: {}", uri);
-    co_return std::unexpected(ParseError::CompilationError);
+    co_return std::unexpected(ParseError::kCompilationError);
   }
 
   // Get the root to force elaboration
@@ -108,8 +108,8 @@ DocumentManager::ParseWithElaboration(
   co_return std::expected<void, ParseError>{};
 }
 
-asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>>
-DocumentManager::GetSyntaxTree(const std::string& uri) {
+auto DocumentManager::GetSyntaxTree(std::string uri)
+    -> asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>> {
   // Ensure thread safety
   co_await asio::post(strand_, asio::use_awaitable);
 
@@ -120,8 +120,8 @@ DocumentManager::GetSyntaxTree(const std::string& uri) {
   co_return nullptr;
 }
 
-asio::awaitable<std::shared_ptr<slang::ast::Compilation>>
-DocumentManager::GetCompilation(const std::string& uri) {
+auto DocumentManager::GetCompilation(std::string uri)
+    -> asio::awaitable<std::shared_ptr<slang::ast::Compilation>> {
   // Ensure thread safety
   co_await asio::post(strand_, asio::use_awaitable);
 
@@ -132,8 +132,8 @@ DocumentManager::GetCompilation(const std::string& uri) {
   co_return nullptr;
 }
 
-asio::awaitable<std::vector<std::shared_ptr<const slang::ast::Symbol>>>
-DocumentManager::GetSymbols(const std::string& uri) {
+auto DocumentManager::GetSymbols(std::string uri)
+    -> asio::awaitable<std::vector<std::shared_ptr<const slang::ast::Symbol>>> {
   // Ensure thread safety
   co_await asio::post(strand_, asio::use_awaitable);
 
@@ -151,7 +151,7 @@ DocumentManager::GetSymbols(const std::string& uri) {
   // This uses a custom deleter that doesn't actually delete the symbol
   // since the symbol is owned by the compilation
   for (const auto* definition : compilation->getDefinitions()) {
-    if (definition) {
+    if (definition != nullptr) {
       auto symbol_ptr = std::shared_ptr<const slang::ast::Symbol>(
           definition, [compilation](const slang::ast::Symbol*) {
             // No deletion - the compilation owns the symbol
@@ -161,7 +161,7 @@ DocumentManager::GetSymbols(const std::string& uri) {
   }
 
   // Also include the root as a symbol
-  auto& root = compilation->getRoot();
+  const auto& root = compilation->getRoot();
   auto root_ptr = std::shared_ptr<const slang::ast::Symbol>(
       &root, [compilation](const slang::ast::Symbol*) {
         // No deletion - the compilation owns the symbol
@@ -175,8 +175,8 @@ DocumentManager::GetSymbols(const std::string& uri) {
   co_return symbols;
 }
 
-asio::awaitable<std::vector<lsp::DocumentSymbol>>
-DocumentManager::GetDocumentSymbols(const std::string& uri) {
+auto DocumentManager::GetDocumentSymbols(std::string uri)
+    -> asio::awaitable<std::vector<lsp::DocumentSymbol>> {
   // Ensure thread safety
   co_await asio::post(strand_, asio::use_awaitable);
 
@@ -201,8 +201,8 @@ DocumentManager::GetDocumentSymbols(const std::string& uri) {
   co_return document_symbols;
 }
 
-asio::awaitable<std::vector<lsp::Diagnostic>>
-DocumentManager::GetDocumentDiagnostics(const std::string& uri) {
+auto DocumentManager::GetDocumentDiagnostics(std::string uri)
+    -> asio::awaitable<std::vector<lsp::Diagnostic>> {
   // Ensure thread safety
   co_await asio::post(strand_, asio::use_awaitable);
 

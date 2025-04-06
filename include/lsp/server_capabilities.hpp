@@ -10,9 +10,9 @@
 namespace lsp {
 
 enum class TextDocumentSyncKind {
-  None = 0,
-  Full = 1,
-  Incremental = 2,
+  kNone = 0,
+  kFull = 1,
+  kIncremental = 2,
 };
 
 void to_json(nlohmann::json& j, const TextDocumentSyncKind& o);
@@ -27,7 +27,7 @@ void from_json(const nlohmann::json& j, SaveOptions& o);
 
 struct TextDocumentSyncOptions {
   std::optional<bool> openClose = true;
-  std::optional<TextDocumentSyncKind> change = TextDocumentSyncKind::Full;
+  std::optional<TextDocumentSyncKind> change = TextDocumentSyncKind::kFull;
   std::optional<bool> willSave = false;
   std::optional<bool> willSaveWaitUntil = false;
   using Save = std::variant<bool, SaveOptions>;
@@ -296,7 +296,7 @@ void from_json(const nlohmann::json& j, FileOperationRegistrationOptions& o);
 
 struct ServerCapabilities {
   std::optional<PositionEncodingKind> positionEncoding =
-      PositionEncodingKind::UTF16;
+      PositionEncodingKind::kUtf16;
 
   using TextDocumentSync =
       std::variant<TextDocumentSyncOptions, TextDocumentSyncKind>;

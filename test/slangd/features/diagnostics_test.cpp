@@ -60,7 +60,7 @@ TEST_CASE(
   auto diagnostics = ExtractDiagnosticsFromString(code);
 
   REQUIRE(!diagnostics.empty());
-  REQUIRE(diagnostics[0].severity == lsp::DiagnosticSeverity::Error);
+  REQUIRE(diagnostics[0].severity == lsp::DiagnosticSeverity::kError);
   REQUIRE(diagnostics[0].message == "expected ';'");
 }
 
@@ -78,7 +78,7 @@ TEST_CASE("ExtractSemanticDiagnostics finds type error", "[diagnostics]") {
   auto diagnostics = ExtractDiagnosticsFromString(code);
 
   REQUIRE(!diagnostics.empty());
-  REQUIRE(diagnostics[0].severity.value() == lsp::DiagnosticSeverity::Warning);
+  REQUIRE(diagnostics[0].severity.value() == lsp::DiagnosticSeverity::kWarning);
   REQUIRE(
       diagnostics[0].message.find("implicit conversion") != std::string::npos);
 }
@@ -95,7 +95,7 @@ TEST_CASE("Diagnostics finds undefined variable", "[diagnostics]") {
   auto diagnostics = ExtractDiagnosticsFromString(code);
 
   REQUIRE(!diagnostics.empty());
-  REQUIRE(diagnostics[0].severity == lsp::DiagnosticSeverity::Error);
+  REQUIRE(diagnostics[0].severity == lsp::DiagnosticSeverity::kError);
   REQUIRE(
       diagnostics[0].message.find("use of undeclared identifier") !=
       std::string::npos);
@@ -113,8 +113,8 @@ TEST_CASE("Diagnostics finds invalid module declaration", "[diagnostics]") {
   auto diagnostics = ExtractDiagnosticsFromString(code);
 
   REQUIRE(diagnostics.size() >= 2);  // should have at least 2 errors
-  REQUIRE(diagnostics[0].severity == lsp::DiagnosticSeverity::Error);
-  REQUIRE(diagnostics[1].severity == lsp::DiagnosticSeverity::Error);
+  REQUIRE(diagnostics[0].severity == lsp::DiagnosticSeverity::kError);
+  REQUIRE(diagnostics[1].severity == lsp::DiagnosticSeverity::kError);
   REQUIRE(
       diagnostics[0].message.find("expected identifier") != std::string::npos);
 }
@@ -181,7 +181,7 @@ TEST_CASE(
 
   // All should be errors
   for (const auto& diag : diagnostics) {
-    REQUIRE(diag.severity == lsp::DiagnosticSeverity::Error);
+    REQUIRE(diag.severity == lsp::DiagnosticSeverity::kError);
   }
 }
 

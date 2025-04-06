@@ -49,13 +49,13 @@ void from_json(const nlohmann::json& j, Position& p) {
 
 void to_json(nlohmann::json& j, const PositionEncodingKind& p) {
   switch (p) {
-    case PositionEncodingKind::UTF8:
+    case PositionEncodingKind::kUtf8:
       j = "utf-8";
       break;
-    case PositionEncodingKind::UTF16:
+    case PositionEncodingKind::kUtf16:
       j = "utf-16";
       break;
-    case PositionEncodingKind::UTF32:
+    case PositionEncodingKind::kUtf32:
       j = "utf-32";
       break;
     default:
@@ -66,11 +66,11 @@ void to_json(nlohmann::json& j, const PositionEncodingKind& p) {
 void from_json(const nlohmann::json& j, PositionEncodingKind& p) {
   std::string s = j.get<std::string>();
   if (s == "utf-8") {
-    p = PositionEncodingKind::UTF8;
+    p = PositionEncodingKind::kUtf8;
   } else if (s == "utf-16") {
-    p = PositionEncodingKind::UTF16;
+    p = PositionEncodingKind::kUtf16;
   } else if (s == "utf-32") {
-    p = PositionEncodingKind::UTF32;
+    p = PositionEncodingKind::kUtf32;
   } else {
     throw std::runtime_error("Invalid position encoding kind");
   }
@@ -332,10 +332,10 @@ void from_json(const nlohmann::json& j, Command& c) {
 // Markup Content
 void to_json(nlohmann::json& j, const MarkupKind& m) {
   switch (m) {
-    case MarkupKind::PlainText:
+    case MarkupKind::kPlainText:
       j = "plaintext";
       break;
-    case MarkupKind::Markdown:
+    case MarkupKind::kMarkdown:
       j = "markdown";
       break;
     default:
@@ -346,9 +346,9 @@ void to_json(nlohmann::json& j, const MarkupKind& m) {
 void from_json(const nlohmann::json& j, MarkupKind& m) {
   std::string s = j.get<std::string>();
   if (s == "plaintext") {
-    m = MarkupKind::PlainText;
+    m = MarkupKind::kPlainText;
   } else if (s == "markdown") {
-    m = MarkupKind::Markdown;
+    m = MarkupKind::kMarkdown;
   } else {
     throw std::runtime_error("Invalid markup kind");
   }
@@ -497,13 +497,13 @@ void from_json(const nlohmann::json& j, WorkspaceEdit& w) {
 // Workspace Edit Client Capabilities
 void to_json(nlohmann::json& j, const ResourceOperationKind& r) {
   switch (r) {
-    case ResourceOperationKind::Create:
+    case ResourceOperationKind::kCreate:
       j = "create";
       break;
-    case ResourceOperationKind::Rename:
+    case ResourceOperationKind::kRename:
       j = "rename";
       break;
-    case ResourceOperationKind::Delete:
+    case ResourceOperationKind::kDelete:
       j = "delete";
       break;
     default:
@@ -514,11 +514,11 @@ void to_json(nlohmann::json& j, const ResourceOperationKind& r) {
 void from_json(const nlohmann::json& j, ResourceOperationKind& r) {
   std::string s = j.get<std::string>();
   if (s == "create") {
-    r = ResourceOperationKind::Create;
+    r = ResourceOperationKind::kCreate;
   } else if (s == "rename") {
-    r = ResourceOperationKind::Rename;
+    r = ResourceOperationKind::kRename;
   } else if (s == "delete") {
-    r = ResourceOperationKind::Delete;
+    r = ResourceOperationKind::kDelete;
   } else {
     throw std::runtime_error("Invalid resource operation kind");
   }
@@ -526,16 +526,16 @@ void from_json(const nlohmann::json& j, ResourceOperationKind& r) {
 
 void to_json(nlohmann::json& j, const FailureHandlingKind& f) {
   switch (f) {
-    case FailureHandlingKind::Abort:
+    case FailureHandlingKind::kAbort:
       j = "abort";
       break;
-    case FailureHandlingKind::Transactional:
+    case FailureHandlingKind::kTransactional:
       j = "transactional";
       break;
-    case FailureHandlingKind::Undo:
+    case FailureHandlingKind::kUndo:
       j = "undo";
       break;
-    case FailureHandlingKind::TextOnlyTransactional:
+    case FailureHandlingKind::kTextOnlyTransactional:
       j = "textOnlyTransactional";
       break;
     default:
@@ -546,13 +546,13 @@ void to_json(nlohmann::json& j, const FailureHandlingKind& f) {
 void from_json(const nlohmann::json& j, FailureHandlingKind& f) {
   std::string s = j.get<std::string>();
   if (s == "abort") {
-    f = FailureHandlingKind::Abort;
+    f = FailureHandlingKind::kAbort;
   } else if (s == "transactional") {
-    f = FailureHandlingKind::Transactional;
+    f = FailureHandlingKind::kTransactional;
   } else if (s == "undo") {
-    f = FailureHandlingKind::Undo;
+    f = FailureHandlingKind::kUndo;
   } else if (s == "textOnlyTransactional") {
-    f = FailureHandlingKind::TextOnlyTransactional;
+    f = FailureHandlingKind::kTextOnlyTransactional;
   } else {
     throw std::runtime_error("Invalid failure handling kind");
   }
@@ -655,13 +655,13 @@ void from_json(const nlohmann::json& j, PartialResultParams& p) {
 // Trace Value
 void to_json(nlohmann::json& j, const TraceValue& t) {
   switch (t) {
-    case TraceValue::Off:
+    case TraceValue::kOff:
       j = "off";
       break;
-    case TraceValue::Messages:
+    case TraceValue::kMessages:
       j = "messages";
       break;
-    case TraceValue::Verbose:
+    case TraceValue::kVerbose:
       j = "verbose";
       break;
     default:
@@ -672,11 +672,11 @@ void to_json(nlohmann::json& j, const TraceValue& t) {
 void from_json(const nlohmann::json& j, TraceValue& t) {
   std::string s = j.get<std::string>();
   if (s == "off") {
-    t = TraceValue::Off;
+    t = TraceValue::kOff;
   } else if (s == "messages") {
-    t = TraceValue::Messages;
+    t = TraceValue::kMessages;
   } else if (s == "verbose") {
-    t = TraceValue::Verbose;
+    t = TraceValue::kVerbose;
   } else {
     throw std::runtime_error("Invalid trace value");
   }
@@ -702,7 +702,9 @@ void from_json(const nlohmann::json& j, SymbolKind& k) {
 }
 
 // Symbol Tag
-void to_json(nlohmann::json& j, const SymbolTag& t) { j = static_cast<int>(t); }
+void to_json(nlohmann::json& j, const SymbolTag& t) {
+  j = static_cast<int>(t);
+}
 
 void from_json(const nlohmann::json& j, SymbolTag& t) {
   t = static_cast<SymbolTag>(j.get<int>());

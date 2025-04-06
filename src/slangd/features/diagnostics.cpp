@@ -18,27 +18,28 @@ namespace slangd {
 namespace {
 
 // Map Slang diagnostic severity to LSP diagnostic severity
-lsp::DiagnosticSeverity ConvertSeverity(slang::DiagnosticSeverity severity) {
+auto ConvertSeverity(slang::DiagnosticSeverity severity)
+    -> lsp::DiagnosticSeverity {
   switch (severity) {
     case slang::DiagnosticSeverity::Ignored:
-      return lsp::DiagnosticSeverity::Hint;
+      return lsp::DiagnosticSeverity::kHint;
     case slang::DiagnosticSeverity::Note:
-      return lsp::DiagnosticSeverity::Information;
+      return lsp::DiagnosticSeverity::kInformation;
     case slang::DiagnosticSeverity::Warning:
-      return lsp::DiagnosticSeverity::Warning;
+      return lsp::DiagnosticSeverity::kWarning;
     case slang::DiagnosticSeverity::Error:
     case slang::DiagnosticSeverity::Fatal:
-      return lsp::DiagnosticSeverity::Error;
+      return lsp::DiagnosticSeverity::kError;
     default:
-      return lsp::DiagnosticSeverity::Information;
+      return lsp::DiagnosticSeverity::kInformation;
   }
 }
 
 // Checks if a diagnostic belongs to the specified document URI
-bool IsDiagnosticInDocument(
+auto IsDiagnosticInDocument(
     const slang::Diagnostic& diag,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    const std::string& uri) {
+    const std::string& uri) -> bool {
   if (!diag.location) {
     return false;
   }
@@ -48,10 +49,11 @@ bool IsDiagnosticInDocument(
 
 }  // namespace
 
-std::vector<lsp::Diagnostic> ExtractSyntaxDiagnostics(
+auto ExtractSyntaxDiagnostics(
     const std::shared_ptr<slang::syntax::SyntaxTree>& syntax_tree,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    const slang::DiagnosticEngine& diag_engine, const std::string& uri) {
+    const slang::DiagnosticEngine& diag_engine, const std::string& uri)
+    -> std::vector<lsp::Diagnostic> {
   if (!syntax_tree) {
     return {};
   }
@@ -60,10 +62,11 @@ std::vector<lsp::Diagnostic> ExtractSyntaxDiagnostics(
       syntax_tree->diagnostics(), source_manager, diag_engine, uri);
 }
 
-std::vector<lsp::Diagnostic> ExtractSemanticDiagnostics(
+auto ExtractSemanticDiagnostics(
     const std::shared_ptr<slang::ast::Compilation>& compilation,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    const slang::DiagnosticEngine& diag_engine, const std::string& uri) {
+    const slang::DiagnosticEngine& diag_engine, const std::string& uri)
+    -> std::vector<lsp::Diagnostic> {
   if (!compilation) {
     return {};
   }
@@ -72,11 +75,12 @@ std::vector<lsp::Diagnostic> ExtractSemanticDiagnostics(
       compilation->getAllDiagnostics(), source_manager, diag_engine, uri);
 }
 
-std::vector<lsp::Diagnostic> GetDocumentDiagnostics(
+auto GetDocumentDiagnostics(
     const std::shared_ptr<slang::syntax::SyntaxTree>& syntax_tree,
     const std::shared_ptr<slang::ast::Compilation>& compilation,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    const slang::DiagnosticEngine& diag_engine, const std::string& uri) {
+    const slang::DiagnosticEngine& diag_engine, const std::string& uri)
+    -> std::vector<lsp::Diagnostic> {
   std::vector<lsp::Diagnostic> diagnostics;
 
   // Extract semantic diagnostics if we have a compilation
@@ -103,10 +107,11 @@ std::vector<lsp::Diagnostic> GetDocumentDiagnostics(
   return diagnostics;
 }
 
-std::vector<lsp::Diagnostic> ConvertDiagnostics(
+auto ConvertDiagnostics(
     const slang::Diagnostics& slang_diagnostics,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    const slang::DiagnosticEngine& diag_engine, const std::string& uri) {
+    const slang::DiagnosticEngine& diag_engine, const std::string& uri)
+    -> std::vector<lsp::Diagnostic> {
   std::vector<lsp::Diagnostic> result;
 
   for (const auto& diag : slang_diagnostics) {
@@ -136,7 +141,9 @@ std::vector<lsp::Diagnostic> ConvertDiagnostics(
     }
     // Fallback to an empty range at the start of the file
     else {
-      lsp_diag.range = lsp::Range{lsp::Position{0, 0}, lsp::Position{0, 0}};
+      lsp_diag.range = lsp::Range{
+          .start = lsp::Position{.line = 0, .character = 0},
+          .end = lsp::Position{.line = 0, .character = 0}};
     }
 
     // Add optional code and source fields

@@ -4,7 +4,7 @@
 
 namespace slangd {
 
-std::string ExtractFilename(const std::string& path) {
+auto ExtractFilename(const std::string& path) -> std::string {
   std::string filename = path;
   size_t last_slash = path.find_last_of("/\\");
   if (last_slash != std::string::npos) {
@@ -13,10 +13,10 @@ std::string ExtractFilename(const std::string& path) {
   return filename;
 }
 
-bool IsLocationInDocument(
+auto IsLocationInDocument(
     const slang::SourceLocation& location,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    const std::string& uri) {
+    const std::string& uri) -> bool {
   // Check if we have a valid location
   if (!location) {
     return false;

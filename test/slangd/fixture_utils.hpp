@@ -6,16 +6,17 @@
 
 using bazel::tools::cpp::runfiles::Runfiles;
 
+extern std::string g_runfile_path;
+
 // Helper to get path to test files using Bazel runfiles
 inline std::string GetTestFilePath(const std::string& filename) {
-  std::string error;
-  std::unique_ptr<Runfiles> runfiles(Runfiles::CreateForTest(&error));
-  if (!runfiles) {
-    throw std::runtime_error("Failed to create runfiles object: " + error);
-  }
+  // std::string error;
+  // std::unique_ptr<Runfiles> runfiles(Runfiles::CreateForTest(&error));
+  // if (!runfiles) {
+  //   throw std::runtime_error("Failed to create runfiles object: " + error);
+  // }
 
-  std::string path =
-      runfiles->Rlocation("_main/test/slangd/fixtures/" + filename);
+  std::string path = g_runfile_path + "/" + filename;
 
   if (path.empty()) {
     throw std::runtime_error(

@@ -18,28 +18,28 @@ namespace slangd {
 
 class WorkspaceManager {
  public:
-  WorkspaceManager(asio::any_io_executor executor);
+  explicit WorkspaceManager(asio::any_io_executor executor);
 
   // Add a workspace folder URI
   void AddWorkspaceFolder(const std::string& uri, const std::string& name);
 
   // Get workspace folders
-  const std::vector<std::string>& GetWorkspaceFolders() const;
+  auto GetWorkspaceFolders() const -> const std::vector<std::string>&;
 
   // Scan all workspace folders for SystemVerilog files and build the
   // compilation
-  asio::awaitable<void> ScanWorkspace();
+  auto ScanWorkspace() -> asio::awaitable<void>;
 
   // Get the number of indexed files
-  size_t GetIndexedFileCount() const;
+  auto GetIndexedFileCount() const -> size_t;
 
   // Get the shared source manager
-  std::shared_ptr<slang::SourceManager> GetSourceManager() const {
+  auto GetSourceManager() const -> std::shared_ptr<slang::SourceManager> {
     return source_manager_;
   }
 
   // Get the compilation
-  std::shared_ptr<slang::ast::Compilation> GetCompilation() const {
+  auto GetCompilation() const -> std::shared_ptr<slang::ast::Compilation> {
     return compilation_;
   }
 
@@ -48,12 +48,12 @@ class WorkspaceManager {
   std::vector<std::string> workspace_folders_;
 
   // Find all SystemVerilog files in a directory recursively
-  asio::awaitable<std::vector<std::string>> FindSystemVerilogFiles(
-      const std::string& directory);
+  auto static FindSystemVerilogFiles(std::string directory)
+      -> asio::awaitable<std::vector<std::string>>;
 
   // Process collected files and build compilation
-  asio::awaitable<std::expected<void, SlangdError>> ProcessFiles(
-      const std::vector<std::string>& file_paths);
+  auto ProcessFiles(std::vector<std::string> file_paths)
+      -> asio::awaitable<std::expected<void, SlangdError>>;
 
   // Map of file path to syntax tree
   std::unordered_map<std::string, std::shared_ptr<slang::syntax::SyntaxTree>>

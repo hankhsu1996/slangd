@@ -54,9 +54,9 @@ void to_json(nlohmann::json& j, const Position& p);
 void from_json(const nlohmann::json& j, Position& p);
 
 enum class PositionEncodingKind {
-  UTF8,
-  UTF16,
-  UTF32,
+  kUtf8,
+  kUtf16,
+  kUtf32,
 };
 
 void to_json(nlohmann::json& j, const PositionEncodingKind& p);
@@ -110,7 +110,7 @@ void from_json(
 // Text Document Position Params
 struct TextDocumentPositionParams {
   TextDocumentIdentifier textDocument;
-  Position position;
+  Position position{};
 };
 
 void to_json(nlohmann::json& j, const TextDocumentPositionParams& t);
@@ -194,16 +194,16 @@ void from_json(const nlohmann::json& j, LocationLink& l);
 
 // Diagnostic
 enum class DiagnosticSeverity {
-  Error = 1,
-  Warning = 2,
-  Information = 3,
-  Hint = 4
+  kError = 1,
+  kWarning = 2,
+  kInformation = 3,
+  kHint = 4
 };
 
 void to_json(nlohmann::json& j, const DiagnosticSeverity& d);
 void from_json(const nlohmann::json& j, DiagnosticSeverity& d);
 
-enum class DiagnosticTag { Unnecessary = 1, Deprecated = 2 };
+enum class DiagnosticTag { kUnnecessary = 1, kDeprecated = 2 };
 
 void to_json(nlohmann::json& j, const DiagnosticTag& d);
 void from_json(const nlohmann::json& j, DiagnosticTag& d);
@@ -249,7 +249,7 @@ void to_json(nlohmann::json& j, const Command& c);
 void from_json(const nlohmann::json& j, Command& c);
 
 // Markup Content
-enum class MarkupKind { PlainText, Markdown };
+enum class MarkupKind { kPlainText, kMarkdown };
 
 void to_json(nlohmann::json& j, const MarkupKind& m);
 void from_json(const nlohmann::json& j, MarkupKind& m);
@@ -348,16 +348,16 @@ void to_json(nlohmann::json& j, const WorkspaceEdit& w);
 void from_json(const nlohmann::json& j, WorkspaceEdit& w);
 
 // Workspace Edit Client Capabilities
-enum class ResourceOperationKind { Create, Rename, Delete };
+enum class ResourceOperationKind { kCreate, kRename, kDelete };
 
 void to_json(nlohmann::json& j, const ResourceOperationKind& r);
 void from_json(const nlohmann::json& j, ResourceOperationKind& r);
 
 enum class FailureHandlingKind {
-  Abort,
-  Transactional,
-  Undo,
-  TextOnlyTransactional
+  kAbort,
+  kTransactional,
+  kUndo,
+  kTextOnlyTransactional
 };
 
 void to_json(nlohmann::json& j, const FailureHandlingKind& f);
@@ -434,7 +434,7 @@ void to_json(nlohmann::json& j, const PartialResultParams& p);
 void from_json(const nlohmann::json& j, PartialResultParams& p);
 
 // Trace Value
-enum class TraceValue { Off, Messages, Verbose };
+enum class TraceValue { kOff, kMessages, kVerbose };
 
 void to_json(nlohmann::json& j, const TraceValue& t);
 void from_json(const nlohmann::json& j, TraceValue& t);
@@ -450,38 +450,38 @@ void from_json(const nlohmann::json& j, WorkspaceFolder& w);
 
 // Symbol Kind
 enum class SymbolKind {
-  File = 1,
-  Module = 2,
-  Namespace = 3,
-  Package = 4,
-  Class = 5,
-  Method = 6,
-  Property = 7,
-  Field = 8,
-  Constructor = 9,
-  Enum = 10,
-  Interface = 11,
-  Function = 12,
-  Variable = 13,
-  Constant = 14,
-  String = 15,
-  Number = 16,
-  Boolean = 17,
-  Array = 18,
-  Object = 19,
-  Key = 20,
-  Null = 21,
-  EnumMember = 22,
-  Struct = 23,
-  Event = 24,
-  Operator = 25,
-  TypeParameter = 26
+  kFile = 1,
+  kModule = 2,
+  kNamespace = 3,
+  kPackage = 4,
+  kClass = 5,
+  kMethod = 6,
+  kProperty = 7,
+  kField = 8,
+  kConstructor = 9,
+  kEnum = 10,
+  kInterface = 11,
+  kFunction = 12,
+  kVariable = 13,
+  kConstant = 14,
+  kString = 15,
+  kNumber = 16,
+  kBoolean = 17,
+  kArray = 18,
+  kObject = 19,
+  kKey = 20,
+  kNull = 21,
+  kEnumMember = 22,
+  kStruct = 23,
+  kEvent = 24,
+  kOperator = 25,
+  kTypeParameter = 26
 };
 
 void to_json(nlohmann::json& j, const SymbolKind& k);
 void from_json(const nlohmann::json& j, SymbolKind& k);
 
-enum class SymbolTag { Deprecated = 1 };
+enum class SymbolTag { kDeprecated = 1 };
 
 void to_json(nlohmann::json& j, const SymbolTag& t);
 void from_json(const nlohmann::json& j, SymbolTag& t);

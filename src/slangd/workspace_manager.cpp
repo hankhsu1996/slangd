@@ -46,7 +46,7 @@ const std::vector<std::string>& WorkspaceManager::GetWorkspaceFolders() const {
   return workspace_folders_;
 }
 
-asio::awaitable<void> WorkspaceManager::ScanWorkspace() {
+auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
   spdlog::info(
       "WorkspaceManager starting workspace scan for SystemVerilog files");
 
@@ -91,8 +91,8 @@ asio::awaitable<void> WorkspaceManager::ScanWorkspace() {
   co_return;
 }
 
-asio::awaitable<std::vector<std::string>>
-WorkspaceManager::FindSystemVerilogFiles(const std::string& directory) {
+auto WorkspaceManager::FindSystemVerilogFiles(std::string directory)
+    -> asio::awaitable<std::vector<std::string>> {
   std::vector<std::string> sv_files;
 
   spdlog::debug("WorkspaceManager scanning directory: {}", directory);
@@ -114,8 +114,8 @@ WorkspaceManager::FindSystemVerilogFiles(const std::string& directory) {
   co_return sv_files;
 }
 
-asio::awaitable<std::expected<void, SlangdError>>
-WorkspaceManager::ProcessFiles(const std::vector<std::string>& file_paths) {
+auto WorkspaceManager::ProcessFiles(std::vector<std::string> file_paths)
+    -> asio::awaitable<std::expected<void, SlangdError>> {
   spdlog::info("WorkspaceManager processing {} files", file_paths.size());
 
   // Add all files to source loader
@@ -172,7 +172,7 @@ WorkspaceManager::ProcessFiles(const std::vector<std::string>& file_paths) {
   co_return std::expected<void, SlangdError>{};
 }
 
-size_t WorkspaceManager::GetIndexedFileCount() const {
+auto WorkspaceManager::GetIndexedFileCount() const -> size_t {
   return syntax_trees_.size();
 }
 

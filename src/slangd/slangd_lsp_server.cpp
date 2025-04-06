@@ -33,7 +33,7 @@ auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
 
   lsp::TextDocumentSyncOptions sync_options{
       .openClose = true,
-      .change = lsp::TextDocumentSyncKind::Full,
+      .change = lsp::TextDocumentSyncKind::kFull,
   };
 
   lsp::ServerCapabilities::Workspace workspace{

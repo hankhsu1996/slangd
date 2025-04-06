@@ -3,9 +3,27 @@
 #include <string>
 
 #include <asio.hpp>
-#include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_all.hpp>
+#include <spdlog/spdlog.h>
 
 #include "fixture_utils.hpp"
+
+using bazel::tools::cpp::runfiles::Runfiles;
+
+// Global variable to store the runfile path
+std::string g_runfile_path;
+
+auto main(int argc, char* argv[]) -> int {
+  std::string error;
+  std::unique_ptr<Runfiles> runfiles(Runfiles::Create(argv[0], &error));
+  if (!runfiles) {
+    spdlog::error("Failed to create runfiles object: {}", error);
+    return 1;
+  }
+  g_runfile_path = runfiles->Rlocation("_main/test/slangd/fixtures");
+  spdlog::info("Runfile path: {}", g_runfile_path);
+  return Catch::Session().run(argc, argv);
+}
 
 // Helper to run async test functions with coroutines
 template <typename F>
