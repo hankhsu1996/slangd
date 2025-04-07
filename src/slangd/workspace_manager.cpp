@@ -6,6 +6,7 @@
 #include <slang/util/Bag.h>
 #include <spdlog/spdlog.h>
 
+#include "slangd/utils/source_utils.hpp"
 #include "slangd/utils/timer.hpp"
 #include "slangd/utils/uri.hpp"
 
@@ -69,7 +70,46 @@ auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
 
   Logger()->debug(
       "WorkspaceManager workspace scan completed. Total indexed files: {}",
-      GetIndexedFileCount());
+      syntax_trees_.size());
+
+  co_return;
+}
+
+auto WorkspaceManager::HandleFileChanges(std::vector<lsp::FileEvent> changes)
+    -> asio::awaitable<void> {
+  Logger()->debug("WorkspaceManager handling {} file changes", changes.size());
+
+  // Process each file change event
+  for (const auto& change : changes) {
+    // Convert URI to local file path
+    if (!IsFileUri(change.uri)) {
+      Logger()->debug("WorkspaceManager skipping non-file URI: {}", change.uri);
+      continue;
+    }
+
+    std::string local_path = UriToPath(change.uri);
+
+    // Call the appropriate handler based on change type
+    switch (change.type) {
+      case lsp::FileChangeType::kCreated:
+        Logger()->debug("WorkspaceManager file created: {}", local_path);
+        co_await HandleFileCreated(local_path);
+        break;
+
+      case lsp::FileChangeType::kChanged:
+        Logger()->debug("WorkspaceManager file changed: {}", local_path);
+        co_await HandleFileChanged(local_path);
+        break;
+
+      case lsp::FileChangeType::kDeleted:
+        Logger()->debug("WorkspaceManager file deleted: {}", local_path);
+        co_await HandleFileDeleted(local_path);
+        break;
+    }
+  }
+
+  // Rebuild compilation after processing all changes
+  co_await RebuildCompilation();
 
   co_return;
 }
@@ -84,9 +124,9 @@ auto WorkspaceManager::FindSystemVerilogFiles(std::string directory)
     for (const auto& entry :
          std::filesystem::recursive_directory_iterator(directory)) {
       if (entry.is_regular_file()) {
-        std::string ext = entry.path().extension().string();
-        if (ext == ".sv" || ext == ".svh" || ext == ".v" || ext == ".vh") {
-          sv_files.push_back(entry.path().string());
+        std::string path = entry.path().string();
+        if (IsSystemVerilogFile(path)) {
+          sv_files.push_back(path);
         }
       }
     }
@@ -155,8 +195,147 @@ auto WorkspaceManager::ProcessFiles(std::vector<std::string> file_paths)
   co_return;
 }
 
-auto WorkspaceManager::GetIndexedFileCount() const -> size_t {
-  return syntax_trees_.size();
+// Parse a single file and return its syntax tree
+auto WorkspaceManager::ParseFile(std::string path)
+    -> asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>> {
+  std::shared_ptr<slang::syntax::SyntaxTree> tree;
+
+  // Create parsing options
+  slang::Bag options;
+
+  // Use fromFile which returns a TreeOrError type
+  auto result =
+      slang::syntax::SyntaxTree::fromFile(path, *source_manager_, options);
+
+  if (!result) {
+    // Handle error case - result contains error information
+    auto [error_code, message] = result.error();
+    Logger()->error(
+        "WorkspaceManager failed to parse file {}: {}", path, message);
+    co_return nullptr;
+  }
+
+  // Success case - extract the tree from the result
+  tree = result.value();
+
+  co_return tree;
+}
+
+// Handle a created file
+auto WorkspaceManager::HandleFileCreated(std::string path)
+    -> asio::awaitable<void> {
+  Logger()->debug("WorkspaceManager handling created file: {}", path);
+
+  // Check if the file is a SystemVerilog file
+  if (!IsSystemVerilogFile(path)) {
+    Logger()->debug(
+        "WorkspaceManager skipping non-SystemVerilog file: {}", path);
+    co_return;
+  }
+
+  // Check if the file exists and is readable
+  if (!std::filesystem::exists(path)) {
+    Logger()->warn("WorkspaceManager created file does not exist: {}", path);
+    co_return;
+  }
+
+  // Parse the file
+  auto tree = co_await ParseFile(path);
+  if (!tree) {
+    co_return;
+  }
+
+  // Add the syntax tree to our map
+  syntax_trees_[path] = tree;
+
+  Logger()->debug(
+      "WorkspaceManager successfully added created file to workspace: {}",
+      path);
+  co_return;
+}
+
+// Handle a changed file
+auto WorkspaceManager::HandleFileChanged(std::string path)
+    -> asio::awaitable<void> {
+  Logger()->debug("WorkspaceManager handling changed file: {}", path);
+
+  // Check if this file is being tracked (if not, it might not be a
+  // SystemVerilog file)
+  if (syntax_trees_.find(path) == syntax_trees_.end()) {
+    Logger()->debug(
+        "WorkspaceManager changed file is not tracked in workspace: {}", path);
+    co_return;
+  }
+
+  // Check if the file still exists
+  if (!std::filesystem::exists(path)) {
+    Logger()->warn("WorkspaceManager changed file no longer exists: {}", path);
+    co_return;
+  }
+
+  // Re-parse the file
+  auto tree = co_await ParseFile(path);
+  if (!tree) {
+    co_return;
+  }
+
+  // Update the syntax tree in our map
+  syntax_trees_[path] = tree;
+
+  Logger()->debug(
+      "WorkspaceManager successfully updated changed file in workspace: {}",
+      path);
+  co_return;
+}
+
+// Handle a deleted file
+auto WorkspaceManager::HandleFileDeleted(std::string path)
+    -> asio::awaitable<void> {
+  Logger()->debug("WorkspaceManager handling deleted file: {}", path);
+
+  // Check if this file is being tracked in our workspace
+  auto it = syntax_trees_.find(path);
+  if (it == syntax_trees_.end()) {
+    Logger()->debug(
+        "WorkspaceManager deleted file was not tracked in workspace: {}", path);
+    co_return;
+  }
+
+  // Remove the file from our syntax trees map
+  syntax_trees_.erase(it);
+
+  Logger()->debug(
+      "WorkspaceManager successfully removed deleted file from workspace: {}",
+      path);
+  co_return;
+}
+
+// Rebuild compilation after file changes
+auto WorkspaceManager::RebuildCompilation() -> asio::awaitable<void> {
+  Logger()->debug(
+      "WorkspaceManager rebuilding compilation with {} syntax trees",
+      syntax_trees_.size());
+
+  // Create a new compilation
+  auto new_compilation = std::make_shared<slang::ast::Compilation>();
+
+  // Use a timer to measure compilation time
+  {
+    ScopedTimer timer("Rebuilding compilation", Logger());
+
+    // Add all syntax trees to the new compilation
+    for (const auto& [path, tree] : syntax_trees_) {
+      if (tree) {
+        new_compilation->addSyntaxTree(tree);
+      }
+    }
+  }
+
+  // Replace the old compilation with the new one
+  compilation_ = new_compilation;
+
+  Logger()->debug("WorkspaceManager compilation rebuilt successfully");
+  co_return;
 }
 
 }  // namespace slangd

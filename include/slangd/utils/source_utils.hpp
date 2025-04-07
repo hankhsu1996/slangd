@@ -29,4 +29,12 @@ bool IsLocationInDocument(
  */
 std::string ExtractFilename(const std::string& path);
 
+/**
+ * Check if a file is a SystemVerilog file based on its extension
+ *
+ * @param path The file path to check
+ * @return True if the file has a SystemVerilog extension (.sv, .svh, .v, .vh)
+ */
+bool IsSystemVerilogFile(const std::string& path);
+
 }  // namespace slangd

@@ -13,6 +13,8 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
+#include "lsp/workspace.hpp"
+
 namespace slangd {
 
 class WorkspaceManager {
@@ -35,8 +37,9 @@ class WorkspaceManager {
   // compilation
   auto ScanWorkspace() -> asio::awaitable<void>;
 
-  // Get the number of indexed files
-  auto GetIndexedFileCount() const -> size_t;
+  // Handle file changes from workspace file watcher
+  auto HandleFileChanges(std::vector<lsp::FileEvent> changes)
+      -> asio::awaitable<void>;
 
   // Get the shared source manager
   auto GetSourceManager() const -> std::shared_ptr<slang::SourceManager> {
@@ -62,6 +65,22 @@ class WorkspaceManager {
   // Process collected files and build compilation
   auto ProcessFiles(std::vector<std::string> file_paths)
       -> asio::awaitable<void>;
+
+  // Parse a single file and return its syntax tree
+  auto ParseFile(std::string path)
+      -> asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>>;
+
+  // Handle a created file
+  auto HandleFileCreated(std::string path) -> asio::awaitable<void>;
+
+  // Handle a changed file
+  auto HandleFileChanged(std::string path) -> asio::awaitable<void>;
+
+  // Handle a deleted file
+  auto HandleFileDeleted(std::string path) -> asio::awaitable<void>;
+
+  // Rebuild compilation after file changes
+  auto RebuildCompilation() -> asio::awaitable<void>;
 
   // Map of file path to syntax tree
   std::unordered_map<std::string, std::shared_ptr<slang::syntax::SyntaxTree>>

@@ -272,6 +272,13 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
   Logger()->info("SlangdLspServer OnDidChangeWatchedFiles");
 
+  asio::co_spawn(
+      strand_,
+      [this, params]() -> asio::awaitable<void> {
+        co_await workspace_manager_->HandleFileChanges(params.changes);
+      },
+      asio::detached);
+
   co_return Ok();
 }
 

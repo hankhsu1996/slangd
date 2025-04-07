@@ -1,5 +1,6 @@
 #include "slangd/utils/source_utils.hpp"
 
+#include <filesystem>
 #include <string>
 
 namespace slangd {
@@ -34,6 +35,11 @@ auto IsLocationInDocument(
   // In a more robust implementation, you might want to normalize paths
   // and compare them fully, or have a more sophisticated URI matching logic.
   return source_filename == uri_filename;
+}
+
+auto IsSystemVerilogFile(const std::string& path) -> bool {
+  std::string ext = std::filesystem::path(path).extension().string();
+  return ext == ".sv" || ext == ".svh" || ext == ".v" || ext == ".vh";
 }
 
 }  // namespace slangd
