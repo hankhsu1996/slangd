@@ -16,6 +16,7 @@
 #include "lsp/document_sync.hpp"
 #include "lsp/error.hpp"
 #include "lsp/lifecycle.hpp"
+#include "lsp/navigation.hpp"
 #include "lsp/workspace.hpp"
 
 namespace lsp {
@@ -208,7 +209,15 @@ class LspServer {
   // TODO(hankhsu1996): Did Save Notebook Document
   // TODO(hankhsu1996): Did Close Notebook Document
   // TODO(hankhsu1996): Go to Declaration
-  // TODO(hankhsu1996): Go to Definition
+
+  // Goto Definition Request
+  virtual auto OnGotoDefinition(DefinitionParams /*unused*/)
+      -> asio::awaitable<std::expected<DefinitionResult, LspError>> {
+    co_return LspError::UnexpectedFromCode(
+        LspErrorCode::kMethodNotImplemented,
+        "OnGotoDefinition is not implemented");
+  }
+
   // TODO(hankhsu1996): Go to Type Definition
   // TODO(hankhsu1996): Go to Implementation
   // TODO(hankhsu1996): Find References

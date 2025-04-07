@@ -46,6 +46,7 @@ auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
 
   lsp::ServerCapabilities capabilities{
       .textDocumentSync = sync_options,
+      .definitionProvider = true,
       .documentSymbolProvider = true,
       .workspace = workspace,
   };
@@ -265,6 +266,17 @@ auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
   Logger()->debug("SlangdLspServer OnDocumentSymbols returning results");
 
   co_return result;
+}
+
+auto SlangdLspServer::OnGotoDefinition(lsp::DefinitionParams params)
+    -> asio::awaitable<std::expected<lsp::DefinitionResult, lsp::LspError>> {
+  Logger()->debug("SlangdLspServer OnGotoDefinition");
+
+  Logger()->info(
+      "GotoDefinition: {} - {} - {}", params.textDocument.uri,
+      params.position.line, params.position.character);
+
+  co_return std::vector<lsp::Location>{};
 }
 
 auto SlangdLspServer::OnDidChangeWatchedFiles(

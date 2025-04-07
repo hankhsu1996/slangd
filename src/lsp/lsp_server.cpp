@@ -159,7 +159,13 @@ void LspServer::RegisterDocumentSyncHandlers() {
 
 void LspServer::RegisterLanguageFeatureHandlers() {
   // TODO(hankhsu1996): Go to Declaration
-  // TODO(hankhsu1996): Go to Definition
+
+  // Goto Definition Request
+  endpoint_->RegisterMethodCall<DefinitionParams, DefinitionResult, LspError>(
+      "textDocument/definition", [this](const DefinitionParams& params) {
+        return OnGotoDefinition(params);
+      });
+
   // TODO(hankhsu1996): Go to Type Definition
   // TODO(hankhsu1996): Go to Implementation
   // TODO(hankhsu1996): Find References

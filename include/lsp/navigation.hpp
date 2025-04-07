@@ -76,7 +76,4 @@ void from_json(const nlohmann::json& j, ReferenceParams& p);
 
 using ReferenceResult = std::optional<std::vector<Location>>;
 
-void to_json(nlohmann::json& j, const ReferenceResult& r);
-void from_json(const nlohmann::json& j, ReferenceResult& r);
-
 }  // namespace lsp

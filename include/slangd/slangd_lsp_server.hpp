@@ -49,40 +49,43 @@ class SlangdLspServer : public lsp::LspServer {
 
  protected:
   // Initialize Request
-  auto OnInitialize(lsp::InitializeParams /*unused*/) -> asio::awaitable<
+  auto OnInitialize(lsp::InitializeParams) -> asio::awaitable<
       std::expected<lsp::InitializeResult, lsp::LspError>> override;
 
   // Initialized Notification
-  auto OnInitialized(lsp::InitializedParams /*unused*/)
+  auto OnInitialized(lsp::InitializedParams)
       -> asio::awaitable<std::expected<void, lsp::LspError>> override;
 
   // Shutdown Request
-  auto OnShutdown(lsp::ShutdownParams /*unused*/) -> asio::awaitable<
+  auto OnShutdown(lsp::ShutdownParams) -> asio::awaitable<
       std::expected<lsp::ShutdownResult, lsp::LspError>> override;
 
   // Exit Notification
-  auto OnExit(lsp::ExitParams /*unused*/)
+  auto OnExit(lsp::ExitParams)
       -> asio::awaitable<std::expected<void, lsp::LspError>> override;
 
   // Did Open Text Document Notification
-  auto OnDidOpenTextDocument(lsp::DidOpenTextDocumentParams /*unused*/)
+  auto OnDidOpenTextDocument(lsp::DidOpenTextDocumentParams)
       -> asio::awaitable<std::expected<void, lsp::LspError>> override;
 
   // Did Change Text Document Notification
-  auto OnDidChangeTextDocument(lsp::DidChangeTextDocumentParams /*unused*/)
+  auto OnDidChangeTextDocument(lsp::DidChangeTextDocumentParams)
       -> asio::awaitable<std::expected<void, lsp::LspError>> override;
 
   // Did Close Text Document Notification
-  auto OnDidCloseTextDocument(lsp::DidCloseTextDocumentParams /*unused*/)
+  auto OnDidCloseTextDocument(lsp::DidCloseTextDocumentParams)
       -> asio::awaitable<std::expected<void, lsp::LspError>> override;
 
   // Document Symbols Request
-  auto OnDocumentSymbols(lsp::DocumentSymbolParams /*unused*/)
-      -> asio::awaitable<
-          std::expected<lsp::DocumentSymbolResult, lsp::LspError>> override;
+  auto OnDocumentSymbols(lsp::DocumentSymbolParams) -> asio::awaitable<
+      std::expected<lsp::DocumentSymbolResult, lsp::LspError>> override;
+
+  // Goto Definition Request
+  auto OnGotoDefinition(lsp::DefinitionParams) -> asio::awaitable<
+      std::expected<lsp::DefinitionResult, lsp::LspError>> override;
 
   // DidChangeWatchedFiles Notification
-  auto OnDidChangeWatchedFiles(lsp::DidChangeWatchedFilesParams /*unused*/)
+  auto OnDidChangeWatchedFiles(lsp::DidChangeWatchedFilesParams)
       -> asio::awaitable<std::expected<void, lsp::LspError>> override;
 };
 
