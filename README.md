@@ -9,15 +9,15 @@ Slangd is a high-performance SystemVerilog language server that implements the [
 
 ## Project Goals
 
-- Provide a Language Server Protocol (LSP) implementation for SystemVerilog using Slang
-- Demonstrate modern C++ practices and design patterns
-- Implement a complete LSP feature set for SystemVerilog development
-- Create a robust and maintainable codebase using C++23 features
+- Build a SystemVerilog Language Server (`slangd`) using Slang and C++23
+- Provide a reusable, language-agnostic LSP core library (`lsp`)
+- Implement clean asynchronous LSP communication using `jsonrpc` and `asio`
+- Follow modern C++ design practices for robustness and maintainability
 
 ## Requirements
 
 - Bazel 7.0+ for bzlmod support
-- Clang 19+ for C++23 feature compatibility with libstdc++
+- Clang 19+ for C++23 features
 
 ## Building and Testing
 
@@ -39,18 +39,17 @@ Generate `compile_commands.json` for IDE integration (optional):
 bazel run @hedron_compile_commands//:refresh_all
 ```
 
-## Features
+## Feature Coverage
 
-Currently focusing on single-file language features powered by the Slang library:
+This project is under active development. While some LSP features are implemented, support is currently **limited in scope** and focused on SystemVerilog's **packages and modules** within **single files**.
 
-- [x] Document symbols
-- [x] Basic diagnostics
-- [ ] Hover information
-- [ ] Go to definition
-- [ ] Find references
-- [ ] Code completion
+Notes:
 
-Workspace-wide features will be implemented in future iterations.
+- ✅ **Diagnostics** are available for syntax and semantic errors, but only within a single file. Workspace-wide diagnostics are not yet implemented.
+- ✅ **Document symbols** are extracted for top-level constructs like modules and packages. Other constructs (e.g., classes, interfaces, parameters) may be missing.
+- 🔜 **Go to definition**, **hover**, and **find references** are planned, and will leverage the existing repository index.
+- ⚙️ A **repository-wide indexer** exists and will support upcoming features like cross-file navigation and workspace symbol search. Currently not exposed via LSP.
+
 
 ## License
 
