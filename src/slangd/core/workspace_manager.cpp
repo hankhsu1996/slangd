@@ -1,4 +1,4 @@
-#include "slangd/workspace_manager.hpp"
+#include "slangd/core/workspace_manager.hpp"
 
 #include <filesystem>
 

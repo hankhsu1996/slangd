@@ -1,4 +1,4 @@
-#include "slangd/slangd_lsp_server.hpp"
+#include "slangd/core/slangd_lsp_server.hpp"
 
 #include <lsp/registeration_options.hpp>
 #include <slang/syntax/AllSyntax.h>

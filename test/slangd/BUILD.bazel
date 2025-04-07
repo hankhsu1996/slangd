@@ -11,8 +11,8 @@ cc_test(
     name = "document_manager_test",
     timeout = "short",
     srcs = [
-        "document_manager_test.cpp",
-        "fixture_utils.hpp",
+        "core/document_manager_test.cpp",
+        "utils/fixture_utils.hpp",
     ],
     data = [
         ":fixtures",

@@ -8,8 +8,8 @@
 
 #include "lsp/lifecycle.hpp"
 #include "lsp/lsp_server.hpp"
-#include "slangd/document_manager.hpp"
-#include "slangd/workspace_manager.hpp"
+#include "slangd/core/document_manager.hpp"
+#include "slangd/core/workspace_manager.hpp"
 
 namespace slangd {
 

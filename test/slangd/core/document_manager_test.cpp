@@ -1,4 +1,4 @@
-#include "slangd/document_manager.hpp"
+#include "slangd/core/document_manager.hpp"
 
 #include <string>
 
@@ -6,7 +6,7 @@
 #include <catch2/catch_all.hpp>
 #include <spdlog/spdlog.h>
 
-#include "fixture_utils.hpp"
+#include "../utils/fixture_utils.hpp"
 
 using bazel::tools::cpp::runfiles::Runfiles;
 
