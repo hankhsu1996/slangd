@@ -92,12 +92,7 @@ TEST_CASE("DocumentManager can parse a document", "[parse]") {
     std::string content = ReadFile(file_path);
 
     // Parse the document
-    auto result =
-        co_await doc_manager.ParseWithCompilation("parse_test.sv", content);
-
-    // Assert success
-    REQUIRE(result.has_value());
-
+    co_await doc_manager.ParseWithCompilation("parse_test.sv", content);
     co_return;
   });
 }
@@ -113,9 +108,7 @@ TEST_CASE("DocumentManager can retrieve a syntax tree", "[syntax]") {
     std::string content = ReadFile(file_path);
 
     // Parse the document
-    auto result =
-        co_await doc_manager.ParseWithCompilation("syntax_test.sv", content);
-    REQUIRE(result.has_value());
+    co_await doc_manager.ParseWithCompilation("syntax_test.sv", content);
 
     // Get the syntax tree
     auto syntax_tree = co_await doc_manager.GetSyntaxTree("syntax_test.sv");
@@ -143,9 +136,7 @@ TEST_CASE("DocumentManager can retrieve a compilation", "[compilation]") {
     std::string content = ReadFile(file_path);
 
     // Parse the document
-    auto result =
-        co_await doc_manager.ParseWithCompilation("compile_test.sv", content);
-    REQUIRE(result.has_value());
+    co_await doc_manager.ParseWithCompilation("compile_test.sv", content);
 
     // Get the compilation
     auto compilation = co_await doc_manager.GetCompilation("compile_test.sv");
@@ -187,9 +178,7 @@ TEST_CASE("DocumentManager can extract symbols from a document", "[symbols]") {
     std::string content = ReadFile(file_path);
 
     // Parse the document
-    auto result =
-        co_await doc_manager.ParseWithCompilation("symbol_test.sv", content);
-    REQUIRE(result.has_value());
+    co_await doc_manager.ParseWithCompilation("symbol_test.sv", content);
 
     // Get symbols
     auto symbols = co_await doc_manager.GetSymbols("symbol_test.sv");

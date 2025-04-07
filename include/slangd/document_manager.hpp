@@ -17,32 +17,8 @@
 
 namespace slangd {
 
-/**
- * @brief Possible errors that can occur during parsing
- */
-enum class ParseError {
-  kSyntaxError,
-  kFileNotFound,
-  kEncodingError,
-  kCompilationError,
-  kElaborationError,
-  kSlangInternalError,
-  kUnknownError
-};
-
-/**
- * @brief Manages documents and their syntax trees
- *
- * This class is responsible for parsing SystemVerilog documents
- * and maintaining their syntax trees and compilation objects.
- */
 class DocumentManager {
  public:
-  /**
-   * @brief Construct a new Document Manager object
-   *
-   * @param executor ASIO executor for async operations
-   */
   explicit DocumentManager(
       asio::any_io_executor executor,
       std::shared_ptr<spdlog::logger> logger = nullptr);
@@ -51,83 +27,37 @@ class DocumentManager {
     return logger_;
   }
 
-  /**
-   * @brief Parse a document with compilation
-   *
-   * This method creates or updates a syntax tree and performs compilation
-   * to find both syntax and semantic errors. Fast enough for interactive use.
-   *
-   * @param uri The document URI
-   * @param content The document content
-   * @return asio::awaitable<std::expected<void, ParseError>> Result of the
-   * parsing operation
-   */
+  // Parse a document with compilation (fast)
   auto ParseWithCompilation(std::string uri, std::string content)
-      -> asio::awaitable<std::expected<void, ParseError>>;
+      -> asio::awaitable<void>;
 
-  /**
-   * @brief Parse a document with full elaboration (slow)
-   *
-   * This method creates or updates a syntax tree, performs compilation,
-   * and runs full elaboration for complete semantic analysis.
-   *
-   * @param uri The document URI
-   * @param content The document content
-   * @return asio::awaitable<std::expected<void, ParseError>> Result of the
-   * parsing operation
-   */
+  // Parse a document with full elaboration (slow)
   auto ParseWithElaboration(std::string uri, std::string content)
-      -> asio::awaitable<std::expected<void, ParseError>>;
+      -> asio::awaitable<void>;
 
-  /**
-   * @brief Get the syntax tree for a document
-   *
-   * @param uri The document URI
-   * @return asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>> The
-   * syntax tree or nullptr if not found
-   */
+  // Get the syntax tree for a document
   auto GetSyntaxTree(std::string uri)
       -> asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>>;
 
-  /**
-   * @brief Get the compilation for a document
-   *
-   * @param uri The document URI
-   * @return asio::awaitable<std::shared_ptr<slang::ast::Compilation>> The
-   * compilation or nullptr if not found
-   */
+  // Get the compilation for a document
   auto GetCompilation(std::string uri)
       -> asio::awaitable<std::shared_ptr<slang::ast::Compilation>>;
 
-  /**
-   * @brief Get a list of symbols defined in a document
-   *
-   * @param uri The document URI
-   * @return asio::awaitable<std::vector<std::shared_ptr<const
-   * slang::ast::Symbol>>> List of symbols or empty vector if not found
-   */
+  // Get the symbols for a document
   auto GetSymbols(std::string uri) -> asio::awaitable<
       std::vector<std::shared_ptr<const slang::ast::Symbol>>>;
 
-  /**
-   * @brief Get hierarchical document symbols defined in a document
-   *
-   * @param uri The document URI
-   * @return asio::awaitable<std::vector<lsp::DocumentSymbol>> Hierarchical
-   * document symbols or empty vector if not found
-   */
+  // Get hierarchical document symbols defined in a document
   auto GetDocumentSymbols(std::string uri)
       -> asio::awaitable<std::vector<lsp::DocumentSymbol>>;
 
-  /**
-   * @brief Get diagnostics for a document
-   *
-   * @param uri The document URI
-   * @return asio::awaitable<std::vector<lsp::Diagnostic>> Diagnostics for the
-   * document
-   */
+  // Get diagnostics for a document
   auto GetDocumentDiagnostics(std::string uri)
       -> asio::awaitable<std::vector<lsp::Diagnostic>>;
+
+  // Find a symbol at a given position
+  auto FindSymbolAtPosition(std::string uri, lsp::Position position)
+      -> asio::awaitable<std::shared_ptr<const slang::ast::Symbol>>;
 
  private:
   // Logger

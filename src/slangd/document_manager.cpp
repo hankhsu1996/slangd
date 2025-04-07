@@ -34,7 +34,7 @@ DocumentManager::DocumentManager(
 }
 
 auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
-    -> asio::awaitable<std::expected<void, ParseError>> {
+    -> asio::awaitable<void> {
   // Ensure thread safety for data structures
   co_await asio::post(strand_, asio::use_awaitable);
 
@@ -54,7 +54,7 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
   if (!syntax_tree) {
     Logger()->error(
         "Critical failure creating syntax tree for document {}", uri);
-    co_return std::unexpected(ParseError::kSlangInternalError);
+    co_return;
   }
 
   // Store the syntax tree
@@ -73,16 +73,13 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
 
   Logger()->debug(
       "DocumentManager compilation completed for document: {}", uri);
-  co_return std::expected<void, ParseError>{};
+  co_return;
 }
 
 auto DocumentManager::ParseWithElaboration(std::string uri, std::string content)
-    -> asio::awaitable<std::expected<void, ParseError>> {
+    -> asio::awaitable<void> {
   // First perform basic compilation
-  auto compilation_result = co_await ParseWithCompilation(uri, content);
-  if (!compilation_result) {
-    co_return compilation_result;  // Forward the error
-  }
+  co_await ParseWithCompilation(uri, content);
 
   // Ensure thread safety for elaboration
   co_await asio::post(strand_, asio::use_awaitable);
@@ -91,7 +88,7 @@ auto DocumentManager::ParseWithElaboration(std::string uri, std::string content)
   auto comp_it = compilations_.find(uri);
   if (comp_it == compilations_.end()) {
     Logger()->error("No compilation found for document: {}", uri);
-    co_return std::unexpected(ParseError::kCompilationError);
+    co_return;
   }
 
   // Get the root to force elaboration
@@ -102,7 +99,7 @@ auto DocumentManager::ParseWithElaboration(std::string uri, std::string content)
 
   Logger()->debug(
       "DocumentManager full elaboration completed for document: {}", uri);
-  co_return std::expected<void, ParseError>{};
+  co_return;
 }
 
 auto DocumentManager::GetSyntaxTree(std::string uri)

@@ -136,14 +136,7 @@ auto SlangdLspServer::OnDidOpenTextDocument(
         Logger()->debug("SlangdLspServer starting document parse for: {}", uri);
 
         // Parse with compilation for initial open
-        auto parse_result =
-            co_await document_manager_->ParseWithCompilation(uri, text);
-
-        if (!parse_result) {
-          Logger()->debug(
-              "SlangdLspServer parse error on document open: {} - {}", uri,
-              static_cast<int>(parse_result.error()));
-        }
+        co_await document_manager_->ParseWithCompilation(uri, text);
 
         // Get diagnostics (even for empty files)
         auto diagnostics =
@@ -196,14 +189,7 @@ auto SlangdLspServer::OnDidChangeTextDocument(
             Logger()->debug("Starting document change parse for: {}", uri);
 
             // Parse with compilation for interactive feedback
-            auto parse_result =
-                co_await document_manager_->ParseWithCompilation(uri, text);
-
-            if (!parse_result) {
-              Logger()->debug(
-                  "Parse error on document change: {} - {}", uri,
-                  static_cast<int>(parse_result.error()));
-            }
+            co_await document_manager_->ParseWithCompilation(uri, text);
 
             // Get diagnostics
             auto diagnostics =
