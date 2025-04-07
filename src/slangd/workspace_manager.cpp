@@ -2,6 +2,7 @@
 
 #include <filesystem>
 
+#include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/parsing/Lexer.h>
 #include <slang/util/Bag.h>
 #include <spdlog/spdlog.h>
@@ -85,21 +86,24 @@ auto WorkspaceManager::HandleFileChanges(std::vector<lsp::FileEvent> changes)
 
     std::string local_path = UriToPath(change.uri);
 
+    // Normalize path early to ensure consistent path handling
+    std::string normalized_path = NormalizePath(local_path);
+
     // Call the appropriate handler based on change type
     switch (change.type) {
       case lsp::FileChangeType::kCreated:
         Logger()->debug("WorkspaceManager file created: {}", local_path);
-        co_await HandleFileCreated(local_path);
+        co_await HandleFileCreated(normalized_path);
         break;
 
       case lsp::FileChangeType::kChanged:
         Logger()->debug("WorkspaceManager file changed: {}", local_path);
-        co_await HandleFileChanged(local_path);
+        co_await HandleFileChanged(normalized_path);
         break;
 
       case lsp::FileChangeType::kDeleted:
         Logger()->debug("WorkspaceManager file deleted: {}", local_path);
-        co_await HandleFileDeleted(local_path);
+        co_await HandleFileDeleted(normalized_path);
         break;
     }
   }
@@ -122,7 +126,8 @@ auto WorkspaceManager::FindSystemVerilogFilesInDirectory(std::string directory)
       if (entry.is_regular_file()) {
         std::string path = entry.path().string();
         if (IsSystemVerilogFile(path)) {
-          sv_files.push_back(path);
+          // Normalize path before adding to ensure consistency
+          sv_files.push_back(NormalizePath(path));
         }
       }
     }
@@ -137,8 +142,16 @@ auto WorkspaceManager::IndexFiles(std::vector<std::string> file_paths)
     -> asio::awaitable<void> {
   Logger()->debug("WorkspaceManager processing {} files", file_paths.size());
 
-  // Add all files to source loader
+  // First, normalize all paths for consistent handling
+  std::vector<std::string> normalized_paths;
+  normalized_paths.reserve(file_paths.size());
+
   for (const auto& path : file_paths) {
+    normalized_paths.push_back(NormalizePath(path));
+  }
+
+  // Add all files to source loader
+  for (const auto& path : normalized_paths) {
     source_loader_->addFiles(path);
   }
 
@@ -158,9 +171,10 @@ auto WorkspaceManager::IndexFiles(std::vector<std::string> file_paths)
   // Create a mapping from file paths to their corresponding syntax trees
   // For simplicity, we'll use the file paths passed to the source loader as
   // keys and match them with syntax trees by their index
-  for (size_t i = 0; i < file_paths.size() && i < syntax_trees.size(); i++) {
+  for (size_t i = 0; i < normalized_paths.size() && i < syntax_trees.size();
+       i++) {
     if (syntax_trees[i]) {
-      syntax_trees_[file_paths[i]] = syntax_trees[i];
+      syntax_trees_[normalized_paths[i]] = syntax_trees[i];
     }
   }
 
@@ -194,9 +208,7 @@ auto WorkspaceManager::IndexFiles(std::vector<std::string> file_paths)
 // Parse a single file and return its syntax tree
 auto WorkspaceManager::ParseFile(std::string path)
     -> asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>> {
-  std::shared_ptr<slang::syntax::SyntaxTree> tree;
-
-  // Create parsing options
+  // Create parsing options with default settings
   slang::Bag options;
 
   // Use fromFile which returns a TreeOrError type
@@ -204,17 +216,14 @@ auto WorkspaceManager::ParseFile(std::string path)
       slang::syntax::SyntaxTree::fromFile(path, *source_manager_, options);
 
   if (!result) {
-    // Handle error case - result contains error information
+    // Handle critical error case - result contains error information
     auto [error_code, message] = result.error();
     Logger()->error(
-        "WorkspaceManager failed to parse file {}: {}", path, message);
+        "WorkspaceManager failed to open file {}: {}", path, message);
     co_return nullptr;
   }
 
-  // Success case - extract the tree from the result
-  tree = result.value();
-
-  co_return tree;
+  co_return result.value();
 }
 
 // Handle a created file
@@ -342,32 +351,88 @@ void WorkspaceManager::DumpWorkspaceStats() {
   Logger()->info("  Compilation active: {}", compilation_ != nullptr);
 
   // Find files that failed to parse
-  size_t failed_files = 0;
-  std::vector<std::string> sample_failed;
+  std::vector<std::string> failed_files;
 
   for (const auto& folder : workspace_folders_) {
-    std::vector<std::string> sv_files;
-    // Find SV files in this folder
-    for (const auto& entry :
-         std::filesystem::recursive_directory_iterator(folder)) {
-      if (entry.is_regular_file() &&
-          IsSystemVerilogFile(entry.path().string())) {
-        std::string path = entry.path().string();
-        if (syntax_trees_.find(path) == syntax_trees_.end()) {
-          failed_files++;
-          if (sample_failed.size() < 5) {
-            sample_failed.push_back(path);
+    try {
+      // Find SV files in this folder
+      for (const auto& entry :
+           std::filesystem::recursive_directory_iterator(folder)) {
+        if (entry.is_regular_file() &&
+            IsSystemVerilogFile(entry.path().string())) {
+          std::string path = entry.path().string();
+          // Normalize the path to match how we store paths in syntax_trees_
+          std::string normalized_path = NormalizePath(path);
+
+          if (syntax_trees_.find(normalized_path) == syntax_trees_.end()) {
+            failed_files.push_back(path);  // Keep original path for display
           }
         }
       }
+    } catch (const std::exception& e) {
+      Logger()->warn("Error scanning directory {}: {}", folder, e.what());
     }
   }
 
-  Logger()->info("  Failed to parse: {}", failed_files);
-  if (!sample_failed.empty()) {
+  Logger()->info("  Failed to parse: {}", failed_files.size());
+
+  if (!failed_files.empty()) {
     Logger()->info("  Sample failed files:");
-    for (const auto& path : sample_failed) {
-      Logger()->info("    - {}", path);
+
+    // Take at most 5 samples to avoid too much output
+    size_t samples = std::min(failed_files.size(), size_t(5));
+    for (size_t i = 0; i < samples; i++) {
+      Logger()->info("    - {}", failed_files[i]);
+    }
+
+    // Try to parse one of the failed files with detailed diagnostics
+    if (!failed_files.empty()) {
+      std::string test_file = failed_files[0];
+      Logger()->info("  Diagnostic parse attempt for: {}", test_file);
+
+      // Create parsing options with diagnostic collection
+      slang::Bag options;
+
+      // Try parsing with detailed diagnostics
+      auto result = slang::syntax::SyntaxTree::fromFile(
+          test_file, *source_manager_, options);
+
+      if (!result) {
+        // Handle error case - result contains error information
+        auto [error_code, message] = result.error();
+        Logger()->info(
+            "  Parse error: {} (code: {})", message, error_code.value());
+      } else {
+        // We got a tree but it might have diagnostics
+        auto tree = result.value();
+        const auto& diagnostics = tree->diagnostics();
+
+        if (diagnostics.empty()) {
+          Logger()->info(
+              "  Surprisingly, diagnostic parse succeeded with no errors");
+
+          // Special check: see if the file is actually in our syntax tree map
+          // under a different path
+          std::string canonical_path = NormalizePath(test_file);
+          if (syntax_trees_.find(canonical_path) != syntax_trees_.end()) {
+            Logger()->info(
+                "  But file IS tracked under normalized path: {}",
+                canonical_path);
+          }
+        } else {
+          Logger()->info("  Parse diagnostics ({}): ", diagnostics.size());
+
+          // Create a diagnostic engine to format messages
+          slang::DiagnosticEngine diag_engine(*source_manager_);
+
+          for (size_t i = 0; i < std::min(diagnostics.size(), size_t(5)); i++) {
+            const auto& diag = diagnostics[i];
+            Logger()->info(
+                "    - {}: {}", slang::toString(diag.code),
+                diag_engine.formatMessage(diag));
+          }
+        }
+      }
     }
   }
 }

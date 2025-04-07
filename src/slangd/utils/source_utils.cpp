@@ -42,4 +42,13 @@ auto IsSystemVerilogFile(const std::string& path) -> bool {
   return ext == ".sv" || ext == ".svh" || ext == ".v" || ext == ".vh";
 }
 
+auto NormalizePath(const std::string& path) -> std::string {
+  try {
+    return std::filesystem::canonical(path).string();
+  } catch (const std::exception& e) {
+    // If canonical fails (e.g., file doesn't exist), return the original path
+    return path;
+  }
+}
+
 }  // namespace slangd

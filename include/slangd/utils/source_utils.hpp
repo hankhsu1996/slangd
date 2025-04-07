@@ -37,4 +37,14 @@ std::string ExtractFilename(const std::string& path);
  */
 bool IsSystemVerilogFile(const std::string& path);
 
+/**
+ * Normalize a file path by resolving symbolic links and returning the canonical
+ * path
+ *
+ * @param path The file path to normalize
+ * @return The canonical path with symbolic links resolved, or the original path
+ * if canonical cannot be determined
+ */
+std::string NormalizePath(const std::string& path);
+
 }  // namespace slangd
