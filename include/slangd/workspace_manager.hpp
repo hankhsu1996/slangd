@@ -30,9 +30,6 @@ class WorkspaceManager {
   // Add a workspace folder URI
   void AddWorkspaceFolder(const std::string& uri, const std::string& name);
 
-  // Get workspace folders
-  auto GetWorkspaceFolders() const -> const std::vector<std::string>&;
-
   // Scan all workspace folders for SystemVerilog files and build the
   // compilation
   auto ScanWorkspace() -> asio::awaitable<void>;
@@ -40,6 +37,11 @@ class WorkspaceManager {
   // Handle file changes from workspace file watcher
   auto HandleFileChanges(std::vector<lsp::FileEvent> changes)
       -> asio::awaitable<void>;
+
+  // Get workspace folders
+  auto GetWorkspaceFolders() const -> const std::vector<std::string>& {
+    return workspace_folders_;
+  }
 
   // Get the shared source manager
   auto GetSourceManager() const -> std::shared_ptr<slang::SourceManager> {
@@ -59,12 +61,11 @@ class WorkspaceManager {
   std::vector<std::string> workspace_folders_;
 
   // Find all SystemVerilog files in a directory recursively
-  auto FindSystemVerilogFiles(std::string directory)
+  auto FindSystemVerilogFilesInDirectory(std::string directory)
       -> asio::awaitable<std::vector<std::string>>;
 
-  // Process collected files and build compilation
-  auto ProcessFiles(std::vector<std::string> file_paths)
-      -> asio::awaitable<void>;
+  // Index files and build compilation
+  auto IndexFiles(std::vector<std::string> file_paths) -> asio::awaitable<void>;
 
   // Parse a single file and return its syntax tree
   auto ParseFile(std::string path)
@@ -80,7 +81,10 @@ class WorkspaceManager {
   auto HandleFileDeleted(std::string path) -> asio::awaitable<void>;
 
   // Rebuild compilation after file changes
-  auto RebuildCompilation() -> asio::awaitable<void>;
+  auto RebuildWorkspaceCompilation() -> asio::awaitable<void>;
+
+  // Dump workspace stats
+  auto DumpWorkspaceStats() -> void;
 
   // Map of file path to syntax tree
   std::unordered_map<std::string, std::shared_ptr<slang::syntax::SyntaxTree>>

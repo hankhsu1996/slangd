@@ -44,10 +44,6 @@ void WorkspaceManager::AddWorkspaceFolder(
   workspace_folders_.push_back(local_path);
 }
 
-const std::vector<std::string>& WorkspaceManager::GetWorkspaceFolders() const {
-  return workspace_folders_;
-}
-
 auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
   Logger()->debug(
       "WorkspaceManager starting workspace scan for SystemVerilog files");
@@ -56,7 +52,7 @@ auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
 
   for (const auto& folder : workspace_folders_) {
     Logger()->debug("WorkspaceManager scanning workspace folder: {}", folder);
-    auto files = co_await FindSystemVerilogFiles(folder);
+    auto files = co_await FindSystemVerilogFilesInDirectory(folder);
     Logger()->debug(
         "WorkspaceManager found {} SystemVerilog files in {}", files.size(),
         folder);
@@ -66,7 +62,7 @@ auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
   }
 
   // Process all collected files together
-  co_await ProcessFiles(all_files);
+  co_await IndexFiles(all_files);
 
   Logger()->debug(
       "WorkspaceManager workspace scan completed. Total indexed files: {}",
@@ -109,12 +105,12 @@ auto WorkspaceManager::HandleFileChanges(std::vector<lsp::FileEvent> changes)
   }
 
   // Rebuild compilation after processing all changes
-  co_await RebuildCompilation();
+  co_await RebuildWorkspaceCompilation();
 
   co_return;
 }
 
-auto WorkspaceManager::FindSystemVerilogFiles(std::string directory)
+auto WorkspaceManager::FindSystemVerilogFilesInDirectory(std::string directory)
     -> asio::awaitable<std::vector<std::string>> {
   std::vector<std::string> sv_files;
 
@@ -137,7 +133,7 @@ auto WorkspaceManager::FindSystemVerilogFiles(std::string directory)
   co_return sv_files;
 }
 
-auto WorkspaceManager::ProcessFiles(std::vector<std::string> file_paths)
+auto WorkspaceManager::IndexFiles(std::vector<std::string> file_paths)
     -> asio::awaitable<void> {
   Logger()->debug("WorkspaceManager processing {} files", file_paths.size());
 
@@ -311,7 +307,7 @@ auto WorkspaceManager::HandleFileDeleted(std::string path)
 }
 
 // Rebuild compilation after file changes
-auto WorkspaceManager::RebuildCompilation() -> asio::awaitable<void> {
+auto WorkspaceManager::RebuildWorkspaceCompilation() -> asio::awaitable<void> {
   Logger()->debug(
       "WorkspaceManager rebuilding compilation with {} syntax trees",
       syntax_trees_.size());
@@ -336,6 +332,44 @@ auto WorkspaceManager::RebuildCompilation() -> asio::awaitable<void> {
 
   Logger()->debug("WorkspaceManager compilation rebuilt successfully");
   co_return;
+}
+
+// Dump workspace stats
+void WorkspaceManager::DumpWorkspaceStats() {
+  Logger()->info("WorkspaceManager Statistics:");
+  Logger()->info("  Workspace folders: {}", workspace_folders_.size());
+  Logger()->info("  Syntax trees: {}", syntax_trees_.size());
+  Logger()->info("  Compilation active: {}", compilation_ != nullptr);
+
+  // Find files that failed to parse
+  size_t failed_files = 0;
+  std::vector<std::string> sample_failed;
+
+  for (const auto& folder : workspace_folders_) {
+    std::vector<std::string> sv_files;
+    // Find SV files in this folder
+    for (const auto& entry :
+         std::filesystem::recursive_directory_iterator(folder)) {
+      if (entry.is_regular_file() &&
+          IsSystemVerilogFile(entry.path().string())) {
+        std::string path = entry.path().string();
+        if (syntax_trees_.find(path) == syntax_trees_.end()) {
+          failed_files++;
+          if (sample_failed.size() < 5) {
+            sample_failed.push_back(path);
+          }
+        }
+      }
+    }
+  }
+
+  Logger()->info("  Failed to parse: {}", failed_files);
+  if (!sample_failed.empty()) {
+    Logger()->info("  Sample failed files:");
+    for (const auto& path : sample_failed) {
+      Logger()->info("    - {}", path);
+    }
+  }
 }
 
 }  // namespace slangd

@@ -24,19 +24,28 @@ auto ParsePipeName(const std::vector<std::string>& args)
 
 auto SetupLoggers()
     -> std::unordered_map<std::string, std::shared_ptr<spdlog::logger>> {
+  // Configure default logger - disable it to avoid unexpected output
+  spdlog::set_level(spdlog::level::off);
+
+  // Create named loggers
   auto transport_logger = spdlog::stdout_color_mt("transport");
   auto jsonrpc_logger = spdlog::stdout_color_mt("jsonrpc");
   auto slangd_logger = spdlog::stdout_color_mt("slangd");
 
-  for (auto& [name, logger] : {
-           std::pair{"transport", transport_logger},
-           std::pair{"jsonrpc", jsonrpc_logger},
-           std::pair{"slangd", slangd_logger},
-       }) {
+  // Configure pattern and flush behavior centrally for all loggers
+  const auto logger_pairs =
+      std::vector<std::pair<std::string, std::shared_ptr<spdlog::logger>>>{
+          {"transport", transport_logger},
+          {"jsonrpc", jsonrpc_logger},
+          {"slangd", slangd_logger},
+      };
+
+  for (const auto& [name, logger] : logger_pairs) {
     logger->set_pattern("[%7n][%5l] %v");
     logger->flush_on(spdlog::level::debug);
   }
 
+  // Configure individual logger levels
   transport_logger->set_level(spdlog::level::off);
   jsonrpc_logger->set_level(spdlog::level::debug);
   slangd_logger->set_level(spdlog::level::debug);
