@@ -15,16 +15,9 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
-#include "slangd/features/diagnostics.hpp"
 #include "slangd/features/symbols.hpp"
 
 namespace slangd {
-
-// Forward declaration of recursive helper
-void CollectSymbolsRecursively(
-    const slang::ast::Symbol& symbol,
-    std::vector<std::shared_ptr<const slang::ast::Symbol>>& symbols,
-    const std::shared_ptr<slang::ast::Compilation>& compilation);
 
 DocumentManager::DocumentManager(
     asio::any_io_executor executor, std::shared_ptr<spdlog::logger> logger)
@@ -103,40 +96,40 @@ auto DocumentManager::ParseWithElaboration(std::string uri, std::string content)
 }
 
 auto DocumentManager::GetSyntaxTree(std::string uri)
-    -> asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>> {
-  // Ensure thread safety
-  co_await asio::post(strand_, asio::use_awaitable);
-
+    -> std::shared_ptr<slang::syntax::SyntaxTree> {
   auto it = syntax_trees_.find(uri);
   if (it != syntax_trees_.end()) {
-    co_return it->second;
+    return it->second;
   }
-  co_return nullptr;
+  return nullptr;
 }
 
 auto DocumentManager::GetCompilation(std::string uri)
-    -> asio::awaitable<std::shared_ptr<slang::ast::Compilation>> {
-  // Ensure thread safety
-  co_await asio::post(strand_, asio::use_awaitable);
-
+    -> std::shared_ptr<slang::ast::Compilation> {
   auto it = compilations_.find(uri);
   if (it != compilations_.end()) {
-    co_return it->second;
+    return it->second;
   }
-  co_return nullptr;
+  return nullptr;
+}
+
+auto DocumentManager::GetSourceManager(std::string uri)
+    -> std::shared_ptr<slang::SourceManager> {
+  auto it = source_managers_.find(uri);
+  if (it != source_managers_.end()) {
+    return it->second;
+  }
+  return nullptr;
 }
 
 auto DocumentManager::GetSymbols(std::string uri)
-    -> asio::awaitable<std::vector<std::shared_ptr<const slang::ast::Symbol>>> {
-  // Ensure thread safety
-  co_await asio::post(strand_, asio::use_awaitable);
-
+    -> std::vector<std::shared_ptr<const slang::ast::Symbol>> {
   std::vector<std::shared_ptr<const slang::ast::Symbol>> symbols;
 
   // Get the compilation for this document
   auto it = compilations_.find(uri);
   if (it == compilations_.end()) {
-    co_return symbols;  // Empty vector if no compilation exists
+    return symbols;  // Empty vector if no compilation exists
   }
 
   auto& compilation = it->second;
@@ -166,14 +159,11 @@ auto DocumentManager::GetSymbols(std::string uri)
   Logger()->debug(
       "DocumentManager found {} symbols in document: {}", symbols.size(), uri);
 
-  co_return symbols;
+  return symbols;
 }
 
 auto DocumentManager::GetDocumentSymbols(std::string uri)
-    -> asio::awaitable<std::vector<lsp::DocumentSymbol>> {
-  // Ensure thread safety
-  co_await asio::post(strand_, asio::use_awaitable);
-
+    -> std::vector<lsp::DocumentSymbol> {
   std::vector<lsp::DocumentSymbol> document_symbols;
 
   // Get the compilation for this document
@@ -182,7 +172,7 @@ auto DocumentManager::GetDocumentSymbols(std::string uri)
 
   // If either compilation or source manager is missing, return empty vector
   if (comp_it == compilations_.end() || sm_it == source_managers_.end()) {
-    co_return document_symbols;
+    return document_symbols;
   }
 
   auto& compilation = comp_it->second;
@@ -192,44 +182,11 @@ auto DocumentManager::GetDocumentSymbols(std::string uri)
   document_symbols =
       slangd::GetDocumentSymbols(*compilation, source_manager, uri);
 
-  co_return document_symbols;
-}
-
-auto DocumentManager::GetDocumentDiagnostics(std::string uri)
-    -> asio::awaitable<std::vector<lsp::Diagnostic>> {
-  // Ensure thread safety
-  co_await asio::post(strand_, asio::use_awaitable);
-
-  std::vector<lsp::Diagnostic> diagnostics;
-
-  // Get the compilation and syntax tree for this document
-  auto comp_it = compilations_.find(uri);
-  auto tree_it = syntax_trees_.find(uri);
-  auto sm_it = source_managers_.find(uri);
-
-  // If any required component is missing, return empty vector
-  if (comp_it == compilations_.end() || tree_it == syntax_trees_.end() ||
-      sm_it == source_managers_.end()) {
-    co_return diagnostics;
-  }
-
-  auto& compilation = comp_it->second;
-  auto& syntax_tree = tree_it->second;
-  auto& source_manager = sm_it->second;
-
-  // Create a diagnostic engine using the document's source manager
-  // This ensures proper location information for diagnostics
-  slang::DiagnosticEngine diagnostic_engine(*source_manager);
-
-  // Use the diagnostic utility to extract diagnostics
-  diagnostics = slangd::GetDocumentDiagnostics(
-      syntax_tree, compilation, source_manager, diagnostic_engine, uri);
-
   Logger()->debug(
-      "DocumentManager found {} diagnostics in document: {}",
-      diagnostics.size(), uri);
+      "DocumentManager found {} document symbols in document: {}",
+      document_symbols.size(), uri);
 
-  co_return diagnostics;
+  return document_symbols;
 }
 
 }  // namespace slangd

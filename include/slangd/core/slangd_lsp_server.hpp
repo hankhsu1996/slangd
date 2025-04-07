@@ -10,30 +10,19 @@
 #include "lsp/lsp_server.hpp"
 #include "slangd/core/document_manager.hpp"
 #include "slangd/core/workspace_manager.hpp"
+#include "slangd/features/definition_provider.hpp"
+#include "slangd/features/diagnostics_provider.hpp"
 
 namespace slangd {
 
-// Forward declaration
-class TestSlangdLspServer;
-
-/**
- * SystemVerilog Language Server implementing the LSP protocol
- */
 class SlangdLspServer : public lsp::LspServer {
  public:
-  /** Constructor that accepts a pre-configured RPC endpoint. */
   SlangdLspServer(
       asio::any_io_executor executor,
       std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint,
       std::shared_ptr<spdlog::logger> logger = nullptr);
 
-  /** Register all LSP message handlers with the JSON-RPC endpoint. */
-  //   void RegisterHandlers() override;
-
  private:
-  /** TestSlangdLspServer is given access to private members for testing. */
-  friend class TestSlangdLspServer;
-
   // Server state
   bool initialized_ = false;
   bool shutdown_requested_ = false;
@@ -42,10 +31,16 @@ class SlangdLspServer : public lsp::LspServer {
   asio::strand<asio::any_io_executor> strand_;
 
   // Document management
-  std::unique_ptr<DocumentManager> document_manager_;
+  std::shared_ptr<DocumentManager> document_manager_;
 
   // Workspace manager
-  std::unique_ptr<WorkspaceManager> workspace_manager_;
+  std::shared_ptr<WorkspaceManager> workspace_manager_;
+
+  // Definition provider
+  std::unique_ptr<DefinitionProvider> definition_provider_;
+
+  // Diagnostics provider
+  std::unique_ptr<DiagnosticsProvider> diagnostics_provider_;
 
  protected:
   // Initialize Request

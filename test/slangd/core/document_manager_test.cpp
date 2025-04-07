@@ -111,7 +111,7 @@ TEST_CASE("DocumentManager can retrieve a syntax tree", "[syntax]") {
     co_await doc_manager.ParseWithCompilation("syntax_test.sv", content);
 
     // Get the syntax tree
-    auto syntax_tree = co_await doc_manager.GetSyntaxTree("syntax_test.sv");
+    auto syntax_tree = doc_manager.GetSyntaxTree("syntax_test.sv");
 
     // Verify we got a valid syntax tree
     REQUIRE(syntax_tree != nullptr);
@@ -139,7 +139,7 @@ TEST_CASE("DocumentManager can retrieve a compilation", "[compilation]") {
     co_await doc_manager.ParseWithCompilation("compile_test.sv", content);
 
     // Get the compilation
-    auto compilation = co_await doc_manager.GetCompilation("compile_test.sv");
+    auto compilation = doc_manager.GetCompilation("compile_test.sv");
 
     // Verify we got a valid compilation
     REQUIRE(compilation != nullptr);
@@ -181,7 +181,7 @@ TEST_CASE("DocumentManager can extract symbols from a document", "[symbols]") {
     co_await doc_manager.ParseWithCompilation("symbol_test.sv", content);
 
     // Get symbols
-    auto symbols = co_await doc_manager.GetSymbols("symbol_test.sv");
+    auto symbols = doc_manager.GetSymbols("symbol_test.sv");
 
     // Verify we got symbols
     REQUIRE(!symbols.empty());

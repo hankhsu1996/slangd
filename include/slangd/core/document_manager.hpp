@@ -12,7 +12,6 @@
 #include <slang/syntax/SyntaxTree.h>
 #include <spdlog/spdlog.h>
 
-#include "lsp/basic.hpp"
 #include "lsp/document_features.hpp"
 
 namespace slangd {
@@ -37,27 +36,22 @@ class DocumentManager {
 
   // Get the syntax tree for a document
   auto GetSyntaxTree(std::string uri)
-      -> asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>>;
+      -> std::shared_ptr<slang::syntax::SyntaxTree>;
 
   // Get the compilation for a document
   auto GetCompilation(std::string uri)
-      -> asio::awaitable<std::shared_ptr<slang::ast::Compilation>>;
+      -> std::shared_ptr<slang::ast::Compilation>;
+
+  // Get the source manager for a document
+  auto GetSourceManager(std::string uri)
+      -> std::shared_ptr<slang::SourceManager>;
 
   // Get the symbols for a document
-  auto GetSymbols(std::string uri) -> asio::awaitable<
-      std::vector<std::shared_ptr<const slang::ast::Symbol>>>;
+  auto GetSymbols(std::string uri)
+      -> std::vector<std::shared_ptr<const slang::ast::Symbol>>;
 
   // Get hierarchical document symbols defined in a document
-  auto GetDocumentSymbols(std::string uri)
-      -> asio::awaitable<std::vector<lsp::DocumentSymbol>>;
-
-  // Get diagnostics for a document
-  auto GetDocumentDiagnostics(std::string uri)
-      -> asio::awaitable<std::vector<lsp::Diagnostic>>;
-
-  // Find a symbol at a given position
-  auto FindSymbolAtPosition(std::string uri, lsp::Position position)
-      -> asio::awaitable<std::shared_ptr<const slang::ast::Symbol>>;
+  auto GetDocumentSymbols(std::string uri) -> std::vector<lsp::DocumentSymbol>;
 
  private:
   // Logger

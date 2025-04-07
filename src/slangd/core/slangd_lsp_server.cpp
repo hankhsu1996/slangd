@@ -18,8 +18,12 @@ SlangdLspServer::SlangdLspServer(
     std::shared_ptr<spdlog::logger> logger)
     : lsp::LspServer(executor, std::move(endpoint), logger),
       strand_(asio::make_strand(executor)),
-      document_manager_(std::make_unique<DocumentManager>(executor, logger)),
-      workspace_manager_(std::make_unique<WorkspaceManager>(executor, logger)) {
+      document_manager_(std::make_shared<DocumentManager>(executor, logger)),
+      workspace_manager_(std::make_shared<WorkspaceManager>(executor, logger)),
+      definition_provider_(std::make_unique<DefinitionProvider>(
+          document_manager_, workspace_manager_, logger)),
+      diagnostics_provider_(std::make_unique<DiagnosticsProvider>(
+          document_manager_, workspace_manager_, logger)) {
 }
 
 auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
@@ -139,8 +143,7 @@ auto SlangdLspServer::OnDidOpenTextDocument(
         co_await document_manager_->ParseWithCompilation(uri, text);
 
         // Get diagnostics (even for empty files)
-        auto diagnostics =
-            co_await document_manager_->GetDocumentDiagnostics(uri);
+        auto diagnostics = diagnostics_provider_->GetDocumentDiagnostics(uri);
 
         Logger()->debug(
             "SlangdLspServer publishing {} diagnostics for document: {}",
@@ -193,7 +196,7 @@ auto SlangdLspServer::OnDidChangeTextDocument(
 
             // Get diagnostics
             auto diagnostics =
-                co_await document_manager_->GetDocumentDiagnostics(uri);
+                diagnostics_provider_->GetDocumentDiagnostics(uri);
 
             Logger()->debug(
                 "Publishing {} diagnostics for document change: {}",
@@ -230,28 +233,9 @@ auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
     -> asio::awaitable<
         std::expected<lsp::DocumentSymbolResult, lsp::LspError>> {
   Logger()->debug("SlangdLspServer OnDocumentSymbols");
-  std::vector<lsp::DocumentSymbol> result;
 
-  const auto& uri = params.textDocument.uri;
-
-  // Get document symbols from document manager
-  // Use the strand to ensure thread safety when accessing document symbols
-  auto document_symbols = co_await asio::co_spawn(
-      strand_,
-      [this, uri]() -> asio::awaitable<std::vector<lsp::DocumentSymbol>> {
-        return document_manager_->GetDocumentSymbols(uri);
-      },
-      asio::use_awaitable);
-
-  // Convert to JSON (the document_symbol.hpp should provide conversion
-  // functions)
-  for (const auto& symbol : document_symbols) {
-    result.push_back(symbol);
-  }
-
-  Logger()->debug("SlangdLspServer OnDocumentSymbols returning results");
-
-  co_return result;
+  co_await asio::post(strand_, asio::use_awaitable);
+  co_return document_manager_->GetDocumentSymbols(params.textDocument.uri);
 }
 
 auto SlangdLspServer::OnGotoDefinition(lsp::DefinitionParams params)

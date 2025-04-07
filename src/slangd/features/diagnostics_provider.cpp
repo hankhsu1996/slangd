@@ -1,4 +1,4 @@
-#include "slangd/features/diagnostics.hpp"
+#include "slangd/features/diagnostics_provider.hpp"
 
 #include <string>
 #include <vector>
@@ -15,10 +15,7 @@
 
 namespace slangd {
 
-namespace {
-
-// Map Slang diagnostic severity to LSP diagnostic severity
-auto ConvertSeverity(slang::DiagnosticSeverity severity)
+auto DiagnosticsProvider::ConvertSeverity(slang::DiagnosticSeverity severity)
     -> lsp::DiagnosticSeverity {
   switch (severity) {
     case slang::DiagnosticSeverity::Ignored:
@@ -28,15 +25,13 @@ auto ConvertSeverity(slang::DiagnosticSeverity severity)
     case slang::DiagnosticSeverity::Warning:
       return lsp::DiagnosticSeverity::kWarning;
     case slang::DiagnosticSeverity::Error:
+      return lsp::DiagnosticSeverity::kError;
     case slang::DiagnosticSeverity::Fatal:
       return lsp::DiagnosticSeverity::kError;
-    default:
-      return lsp::DiagnosticSeverity::kInformation;
   }
 }
 
-// Checks if a diagnostic belongs to the specified document URI
-auto IsDiagnosticInDocument(
+auto DiagnosticsProvider::IsDiagnosticInDocument(
     const slang::Diagnostic& diag,
     const std::shared_ptr<slang::SourceManager>& source_manager,
     const std::string& uri) -> bool {
@@ -47,9 +42,7 @@ auto IsDiagnosticInDocument(
   return IsLocationInDocument(diag.location, source_manager, uri);
 }
 
-}  // namespace
-
-auto ExtractSyntaxDiagnostics(
+auto DiagnosticsProvider::ExtractSyntaxDiagnostics(
     const std::shared_ptr<slang::syntax::SyntaxTree>& syntax_tree,
     const std::shared_ptr<slang::SourceManager>& source_manager,
     const slang::DiagnosticEngine& diag_engine, const std::string& uri)
@@ -62,7 +55,7 @@ auto ExtractSyntaxDiagnostics(
       syntax_tree->diagnostics(), source_manager, diag_engine, uri);
 }
 
-auto ExtractSemanticDiagnostics(
+auto DiagnosticsProvider::ExtractSemanticDiagnostics(
     const std::shared_ptr<slang::ast::Compilation>& compilation,
     const std::shared_ptr<slang::SourceManager>& source_manager,
     const slang::DiagnosticEngine& diag_engine, const std::string& uri)
@@ -75,39 +68,7 @@ auto ExtractSemanticDiagnostics(
       compilation->getAllDiagnostics(), source_manager, diag_engine, uri);
 }
 
-auto GetDocumentDiagnostics(
-    const std::shared_ptr<slang::syntax::SyntaxTree>& syntax_tree,
-    const std::shared_ptr<slang::ast::Compilation>& compilation,
-    const std::shared_ptr<slang::SourceManager>& source_manager,
-    const slang::DiagnosticEngine& diag_engine, const std::string& uri)
-    -> std::vector<lsp::Diagnostic> {
-  std::vector<lsp::Diagnostic> diagnostics;
-
-  // Extract semantic diagnostics if we have a compilation
-  // This already includes syntax diagnostics
-  if (compilation) {
-    auto semantic_diags = ExtractSemanticDiagnostics(
-        compilation, source_manager, diag_engine, uri);
-    diagnostics.insert(
-        diagnostics.end(), semantic_diags.begin(), semantic_diags.end());
-  }
-
-  // Extract syntax diagnostics if we have a syntax tree
-  else if (syntax_tree) {
-    auto syntax_diags =
-        ExtractSyntaxDiagnostics(syntax_tree, source_manager, diag_engine, uri);
-    diagnostics.insert(
-        diagnostics.end(), syntax_diags.begin(), syntax_diags.end());
-  }
-
-  spdlog::debug(
-      "GetDocumentDiagnostics extracted {} diagnostics for {}",
-      diagnostics.size(), uri);
-
-  return diagnostics;
-}
-
-auto ConvertDiagnostics(
+auto DiagnosticsProvider::ConvertDiagnostics(
     const slang::Diagnostics& slang_diagnostics,
     const std::shared_ptr<slang::SourceManager>& source_manager,
     const slang::DiagnosticEngine& diag_engine, const std::string& uri)
@@ -154,6 +115,64 @@ auto ConvertDiagnostics(
   }
 
   return result;
+}
+
+auto DiagnosticsProvider::GetDocumentDiagnostics(std::string uri)
+    -> std::vector<lsp::Diagnostic> {
+  // Get the compilation and syntax tree for this document
+  auto compilation = document_manager_->GetCompilation(uri);
+  auto syntax_tree = document_manager_->GetSyntaxTree(uri);
+  auto source_manager = document_manager_->GetSourceManager(uri);
+
+  // If any required component is missing, return empty vector
+  if (!compilation || !syntax_tree || !source_manager) {
+    return {};
+  }
+
+  auto diagnostics =
+      CollectDiagnostics(compilation, syntax_tree, source_manager, uri);
+
+  logger_->debug(
+      "DiagnosticsProvider found {} diagnostics in {}", diagnostics.size(),
+      uri);
+
+  return diagnostics;
+}
+
+auto DiagnosticsProvider::CollectDiagnostics(
+    const std::shared_ptr<slang::ast::Compilation>& compilation,
+    const std::shared_ptr<slang::syntax::SyntaxTree>& syntax_tree,
+    const std::shared_ptr<slang::SourceManager>& source_manager,
+    const std::string& uri) -> std::vector<lsp::Diagnostic> {
+  std::vector<lsp::Diagnostic> diagnostics;
+
+  // If any required component is missing, return empty vector
+  if (!compilation || !syntax_tree || !source_manager) {
+    return diagnostics;
+  }
+
+  // Create a diagnostic engine using the document's source manager
+  // This ensures proper location information for diagnostics
+  slang::DiagnosticEngine diagnostic_engine(*source_manager);
+
+  // Extract semantic diagnostics if we have a compilation
+  // This already includes syntax diagnostics
+  if (compilation) {
+    auto semantic_diags = ExtractSemanticDiagnostics(
+        compilation, source_manager, diagnostic_engine, uri);
+    diagnostics.insert(
+        diagnostics.end(), semantic_diags.begin(), semantic_diags.end());
+  }
+
+  // Extract syntax diagnostics if we have a syntax tree
+  else if (syntax_tree) {
+    auto syntax_diags = ExtractSyntaxDiagnostics(
+        syntax_tree, source_manager, diagnostic_engine, uri);
+    diagnostics.insert(
+        diagnostics.end(), syntax_diags.begin(), syntax_diags.end());
+  }
+
+  return diagnostics;
 }
 
 }  // namespace slangd

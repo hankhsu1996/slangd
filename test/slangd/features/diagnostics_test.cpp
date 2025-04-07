@@ -1,5 +1,3 @@
-#include "slangd/features/diagnostics.hpp"
-
 #include <string>
 
 #include <asio.hpp>
@@ -8,6 +6,8 @@
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
+
+#include "slangd/features/diagnostics_provider.hpp"
 
 int main(int argc, char* argv[]) {
   spdlog::set_level(spdlog::level::debug);
@@ -19,6 +19,7 @@ int main(int argc, char* argv[]) {
 std::vector<lsp::Diagnostic> ExtractDiagnosticsFromString(
     const std::string& source) {
   const std::string filename = "test.sv";
+
   auto source_manager = std::make_shared<slang::SourceManager>();
   auto syntax_tree =
       slang::syntax::SyntaxTree::fromText(source, *source_manager, filename);
@@ -29,8 +30,8 @@ std::vector<lsp::Diagnostic> ExtractDiagnosticsFromString(
 
   std::string uri = "file://" + filename;
   slang::DiagnosticEngine diag_engine(*source_manager);
-  return slangd::GetDocumentDiagnostics(
-      syntax_tree, compilation, source_manager, diag_engine, uri);
+  return slangd::DiagnosticsProvider::CollectDiagnostics(
+      compilation, syntax_tree, source_manager, uri);
 }
 
 // Helper function that allows specifying a custom URI
@@ -44,8 +45,8 @@ std::vector<lsp::Diagnostic> ExtractDiagnosticsFromStringWithURI(
   compilation->addSyntaxTree(syntax_tree);
 
   slang::DiagnosticEngine diag_engine(*source_manager);
-  return slangd::GetDocumentDiagnostics(
-      syntax_tree, compilation, source_manager, diag_engine, uri);
+  return slangd::DiagnosticsProvider::CollectDiagnostics(
+      compilation, syntax_tree, source_manager, uri);
 }
 
 TEST_CASE(
@@ -204,13 +205,13 @@ TEST_CASE("Diagnostics filters by correct URI", "[diagnostics]") {
 
   // Test with matching URI
   std::string correct_uri = "file://" + filename;
-  auto correct_diagnostics = slangd::GetDocumentDiagnostics(
-      syntax_tree, compilation, source_manager, diag_engine, correct_uri);
+  auto correct_diagnostics = slangd::DiagnosticsProvider::CollectDiagnostics(
+      compilation, syntax_tree, source_manager, correct_uri);
   REQUIRE(!correct_diagnostics.empty());
 
   // Test with non-matching URI - should filter out diagnostics
   std::string wrong_uri = "file://other.sv";
-  auto wrong_diagnostics = slangd::GetDocumentDiagnostics(
-      syntax_tree, compilation, source_manager, diag_engine, wrong_uri);
+  auto wrong_diagnostics = slangd::DiagnosticsProvider::CollectDiagnostics(
+      compilation, syntax_tree, source_manager, wrong_uri);
   REQUIRE(wrong_diagnostics.empty());
 }
