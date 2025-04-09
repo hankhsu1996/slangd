@@ -47,8 +47,8 @@ auto SetupLoggers()
 
   // Configure individual logger levels
   transport_logger->set_level(spdlog::level::off);
-  jsonrpc_logger->set_level(spdlog::level::debug);
-  slangd_logger->set_level(spdlog::level::debug);
+  jsonrpc_logger->set_level(spdlog::level::off);
+  slangd_logger->set_level(spdlog::level::info);
 
   return {
       {"transport", transport_logger},

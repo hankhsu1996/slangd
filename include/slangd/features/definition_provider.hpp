@@ -17,7 +17,15 @@ class DefinitionProvider : public LanguageFeatureProvider {
       : LanguageFeatureProvider(document_manager, workspace_manager, logger) {
   }
 
-  auto GetDefinitionAtPosition(std::string uri, lsp::Position position)
+  // Public API
+  auto GetDefinitionForUri(std::string uri, lsp::Position position)
+      -> asio::awaitable<std::vector<lsp::Location>>;
+
+  // Core resolver
+  auto ResolveDefinitionFromCompilation(
+      slang::ast::Compilation& compilation,
+      const std::shared_ptr<slang::SourceManager>& source_manager,
+      const slang::ast::Symbol& symbol)
       -> asio::awaitable<std::vector<lsp::Location>>;
 };
 

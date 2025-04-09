@@ -243,11 +243,10 @@ auto SlangdLspServer::OnGotoDefinition(lsp::DefinitionParams params)
     -> asio::awaitable<std::expected<lsp::DefinitionResult, lsp::LspError>> {
   Logger()->debug("SlangdLspServer OnGotoDefinition");
 
-  Logger()->info(
-      "GotoDefinition: {} - {} - {}", params.textDocument.uri,
-      params.position.line, params.position.character);
+  auto locations = co_await definition_provider_->GetDefinitionForUri(
+      std::string(params.textDocument.uri), params.position);
 
-  co_return std::vector<lsp::Location>{};
+  co_return locations;
 }
 
 auto SlangdLspServer::OnDidChangeWatchedFiles(
