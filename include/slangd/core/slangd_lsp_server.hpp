@@ -12,6 +12,7 @@
 #include "slangd/core/workspace_manager.hpp"
 #include "slangd/features/definition_provider.hpp"
 #include "slangd/features/diagnostics_provider.hpp"
+#include "slangd/features/symbols_provider.hpp"
 
 namespace slangd {
 
@@ -41,6 +42,9 @@ class SlangdLspServer : public lsp::LspServer {
 
   // Diagnostics provider
   std::unique_ptr<DiagnosticsProvider> diagnostics_provider_;
+
+  // Symbols provider
+  std::unique_ptr<SymbolsProvider> symbols_provider_;
 
  protected:
   // Initialize Request

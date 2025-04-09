@@ -1,6 +1,5 @@
 #pragma once
 
-#include <expected>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -8,7 +7,6 @@
 #include <asio.hpp>
 #include <slang/ast/Compilation.h>
 #include <slang/ast/Symbol.h>
-#include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/syntax/SyntaxTree.h>
 #include <spdlog/spdlog.h>
 
@@ -54,14 +52,11 @@ class DocumentManager {
   auto GetDocumentSymbols(std::string uri) -> std::vector<lsp::DocumentSymbol>;
 
  private:
-  // Logger
-  std::shared_ptr<spdlog::logger> logger_;
-
-  // ASIO executor reference
+  // Executor
   asio::any_io_executor executor_;
 
-  // Strand for synchronizing access to shared data
-  asio::strand<asio::any_io_executor> strand_;
+  // Logger
+  std::shared_ptr<spdlog::logger> logger_;
 
   // Maps document URIs to their syntax trees
   std::unordered_map<std::string, std::shared_ptr<slang::syntax::SyntaxTree>>

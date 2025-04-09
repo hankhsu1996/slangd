@@ -26,10 +26,10 @@ cc_test(
 )
 
 cc_test(
-    name = "symbols_test",
+    name = "symbols_provider_test",
     timeout = "short",
     srcs = [
-        "features/symbols_test.cpp",
+        "features/symbols_provider_test.cpp",
     ],
     deps = [
         "//:slangd_core",
@@ -39,10 +39,10 @@ cc_test(
 )
 
 cc_test(
-    name = "diagnostics_test",
+    name = "diagnostics_provider_test",
     timeout = "short",
     srcs = [
-        "features/diagnostics_test.cpp",
+        "features/diagnostics_provider_test.cpp",
     ],
     deps = [
         "//:slangd_core",

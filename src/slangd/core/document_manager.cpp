@@ -15,22 +15,15 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
-#include "slangd/features/symbols.hpp"
-
 namespace slangd {
 
 DocumentManager::DocumentManager(
     asio::any_io_executor executor, std::shared_ptr<spdlog::logger> logger)
-    : logger_(logger ? logger : spdlog::default_logger()),
-      executor_(executor),
-      strand_(asio::make_strand(executor)) {
+    : executor_(executor), logger_(logger ? logger : spdlog::default_logger()) {
 }
 
 auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
     -> asio::awaitable<void> {
-  // Ensure thread safety for data structures
-  co_await asio::post(strand_, asio::use_awaitable);
-
   // Create a new source manager for this document if it doesn't exist
   if (source_managers_.find(uri) == source_managers_.end()) {
     source_managers_[uri] = std::make_shared<slang::SourceManager>();
@@ -73,9 +66,6 @@ auto DocumentManager::ParseWithElaboration(std::string uri, std::string content)
     -> asio::awaitable<void> {
   // First perform basic compilation
   co_await ParseWithCompilation(uri, content);
-
-  // Ensure thread safety for elaboration
-  co_await asio::post(strand_, asio::use_awaitable);
 
   // Ensure we have a compilation
   auto comp_it = compilations_.find(uri);
@@ -160,33 +150,6 @@ auto DocumentManager::GetSymbols(std::string uri)
       "DocumentManager found {} symbols in document: {}", symbols.size(), uri);
 
   return symbols;
-}
-
-auto DocumentManager::GetDocumentSymbols(std::string uri)
-    -> std::vector<lsp::DocumentSymbol> {
-  std::vector<lsp::DocumentSymbol> document_symbols;
-
-  // Get the compilation for this document
-  auto comp_it = compilations_.find(uri);
-  auto sm_it = source_managers_.find(uri);
-
-  // If either compilation or source manager is missing, return empty vector
-  if (comp_it == compilations_.end() || sm_it == source_managers_.end()) {
-    return document_symbols;
-  }
-
-  auto& compilation = comp_it->second;
-  auto& source_manager = sm_it->second;
-
-  // Use the symbol utility to extract document symbols
-  document_symbols =
-      slangd::GetDocumentSymbols(*compilation, source_manager, uri);
-
-  Logger()->debug(
-      "DocumentManager found {} document symbols in document: {}",
-      document_symbols.size(), uri);
-
-  return document_symbols;
 }
 
 }  // namespace slangd

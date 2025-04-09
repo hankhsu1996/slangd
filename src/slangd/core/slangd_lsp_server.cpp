@@ -23,6 +23,8 @@ SlangdLspServer::SlangdLspServer(
       definition_provider_(std::make_unique<DefinitionProvider>(
           document_manager_, workspace_manager_, logger)),
       diagnostics_provider_(std::make_unique<DiagnosticsProvider>(
+          document_manager_, workspace_manager_, logger)),
+      symbols_provider_(std::make_unique<SymbolsProvider>(
           document_manager_, workspace_manager_, logger)) {
 }
 
@@ -143,7 +145,7 @@ auto SlangdLspServer::OnDidOpenTextDocument(
         co_await document_manager_->ParseWithCompilation(uri, text);
 
         // Get diagnostics (even for empty files)
-        auto diagnostics = diagnostics_provider_->GetDocumentDiagnostics(uri);
+        auto diagnostics = diagnostics_provider_->GetDiagnosticsForUri(uri);
 
         Logger()->debug(
             "SlangdLspServer publishing {} diagnostics for document: {}",
@@ -195,8 +197,7 @@ auto SlangdLspServer::OnDidChangeTextDocument(
             co_await document_manager_->ParseWithCompilation(uri, text);
 
             // Get diagnostics
-            auto diagnostics =
-                diagnostics_provider_->GetDocumentDiagnostics(uri);
+            auto diagnostics = diagnostics_provider_->GetDiagnosticsForUri(uri);
 
             Logger()->debug(
                 "Publishing {} diagnostics for document change: {}",
@@ -235,7 +236,7 @@ auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
   Logger()->debug("SlangdLspServer OnDocumentSymbols");
 
   co_await asio::post(strand_, asio::use_awaitable);
-  co_return document_manager_->GetDocumentSymbols(params.textDocument.uri);
+  co_return symbols_provider_->GetSymbolsForUri(params.textDocument.uri);
 }
 
 auto SlangdLspServer::OnGotoDefinition(lsp::DefinitionParams params)
