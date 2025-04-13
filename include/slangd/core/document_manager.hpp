@@ -11,6 +11,7 @@
 #include <spdlog/spdlog.h>
 
 #include "lsp/document_features.hpp"
+#include "slangd/semantic/symbol_index.hpp"
 
 namespace slangd {
 
@@ -44,6 +45,10 @@ class DocumentManager {
   auto GetSourceManager(std::string uri)
       -> std::shared_ptr<slang::SourceManager>;
 
+  // Get the symbol index for a document
+  auto GetSymbolIndex(std::string uri)
+      -> std::shared_ptr<semantic::SymbolIndex>;
+
   // Get the symbols for a document
   auto GetSymbols(std::string uri)
       -> std::vector<std::shared_ptr<const slang::ast::Symbol>>;
@@ -69,6 +74,10 @@ class DocumentManager {
   // Maps document URIs to their source managers
   std::unordered_map<std::string, std::shared_ptr<slang::SourceManager>>
       source_managers_;
+
+  // Maps document URIs to their symbol indices
+  std::unordered_map<std::string, std::shared_ptr<semantic::SymbolIndex>>
+      symbol_indices_;
 };
 
 }  // namespace slangd

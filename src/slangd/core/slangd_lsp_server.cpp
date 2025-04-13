@@ -218,6 +218,30 @@ auto SlangdLspServer::OnDidChangeTextDocument(
   co_return Ok();
 }
 
+auto SlangdLspServer::OnDidSaveTextDocument(
+    lsp::DidSaveTextDocumentParams params)
+    -> asio::awaitable<std::expected<void, lsp::LspError>> {
+  Logger()->debug("SlangdLspServer OnDidSaveTextDocument");
+
+  const auto& text_doc = params.textDocument;
+  const auto& uri = text_doc.uri;
+
+  // We reparse with full elaboration
+  // Need the sync to ensure the file is parsed before we get the diagnostics
+  asio::co_spawn(
+      strand_,
+      [this, uri]() -> asio::awaitable<void> {
+        auto file_opt = GetOpenFile(uri);
+        if (file_opt) {
+          lsp::OpenFile& file = file_opt->get();
+          co_await document_manager_->ParseWithElaboration(uri, file.content);
+        }
+      },
+      asio::detached);
+
+  co_return Ok();
+}
+
 auto SlangdLspServer::OnDidCloseTextDocument(
     lsp::DidCloseTextDocumentParams params)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
@@ -243,10 +267,8 @@ auto SlangdLspServer::OnGotoDefinition(lsp::DefinitionParams params)
     -> asio::awaitable<std::expected<lsp::DefinitionResult, lsp::LspError>> {
   Logger()->debug("SlangdLspServer OnGotoDefinition");
 
-  auto locations = co_await definition_provider_->GetDefinitionForUri(
+  co_return definition_provider_->GetDefinitionForUri(
       std::string(params.textDocument.uri), params.position);
-
-  co_return locations;
 }
 
 auto SlangdLspServer::OnDidChangeWatchedFiles(

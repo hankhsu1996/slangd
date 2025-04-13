@@ -39,11 +39,11 @@ class SymbolIndex {
   auto LookupSymbolAt(slang::SourceLocation loc) const
       -> std::optional<SymbolKey>;
 
-  auto GetDefinitionLocation(const SymbolKey& key) const
-      -> std::optional<slang::SourceLocation>;
+  auto GetDefinitionRange(const SymbolKey& key) const
+      -> std::optional<slang::SourceRange>;
 
-  [[nodiscard]] auto GetDefinitionLocations() const
-      -> const std::unordered_map<SymbolKey, slang::SourceLocation>& {
+  [[nodiscard]] auto GetDefinitionRanges() const
+      -> const std::unordered_map<SymbolKey, slang::SourceRange>& {
     return definition_locations_;
   }
 
@@ -53,10 +53,10 @@ class SymbolIndex {
   }
 
  private:
-  // Maps a symbol key to its declaration location
-  std::unordered_map<SymbolKey, slang::SourceLocation> definition_locations_;
+  // Maps a symbol key to its declaration range
+  std::unordered_map<SymbolKey, slang::SourceRange> definition_locations_;
 
-  // Maps a source location to a referenced symbol key
+  // Maps a source range to a referenced symbol key
   std::unordered_map<slang::SourceRange, SymbolKey> reference_map_;
 };
 

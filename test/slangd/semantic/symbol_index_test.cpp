@@ -72,8 +72,8 @@ TEST_CASE("SymbolIndex definition tracking", "[symbol_index]") {
     )";
 
     auto index = fixture.BuildIndexFromSource(source);
-    REQUIRE(!index.GetDefinitionLocations().empty());
-    REQUIRE(index.GetDefinitionLocations().contains(
+    REQUIRE(!index.GetDefinitionRanges().empty());
+    REQUIRE(index.GetDefinitionRanges().contains(
         fixture.MakeKey(source, "test_signal")));
   }
 
@@ -87,8 +87,8 @@ TEST_CASE("SymbolIndex definition tracking", "[symbol_index]") {
     )";
 
     auto index = fixture.BuildIndexFromSource(source);
-    REQUIRE(!index.GetDefinitionLocations().empty());
-    REQUIRE(index.GetDefinitionLocations().contains(
+    REQUIRE(!index.GetDefinitionRanges().empty());
+    REQUIRE(index.GetDefinitionRanges().contains(
         fixture.MakeKey(source, "nested_signal")));
   }
 
@@ -100,12 +100,12 @@ TEST_CASE("SymbolIndex definition tracking", "[symbol_index]") {
     )";
 
     auto index = fixture.BuildIndexFromSource(source);
-    REQUIRE(!index.GetDefinitionLocations().empty());
+    REQUIRE(!index.GetDefinitionRanges().empty());
 
     for (const std::string& name :
          {"test_signal_1", "test_signal_2", "test_signal_3"}) {
-      REQUIRE(index.GetDefinitionLocations().contains(
-          fixture.MakeKey(source, name)));
+      REQUIRE(
+          index.GetDefinitionRanges().contains(fixture.MakeKey(source, name)));
     }
   }
 }

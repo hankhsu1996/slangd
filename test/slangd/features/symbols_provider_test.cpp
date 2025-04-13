@@ -12,7 +12,7 @@
 #include "include/lsp/basic.hpp"
 #include "include/lsp/document_features.hpp"
 
-int main(int argc, char* argv[]) {
+auto main(int argc, char* argv[]) -> int {
   spdlog::set_level(spdlog::level::debug);
   spdlog::set_pattern("[%l] %v");
   return Catch::Session().run(argc, argv);
@@ -29,10 +29,10 @@ void RunTest(F&& test_fn) {
 
   asio::co_spawn(
       io_context,
-      [test_fn = std::move(test_fn), &completed, &exception,
+      [fn = std::forward<F>(test_fn), &completed, &exception,
        executor]() -> asio::awaitable<void> {
         try {
-          co_await test_fn(executor);
+          co_await fn(executor);
           completed = true;
         } catch (...) {
           exception = std::current_exception();
@@ -52,7 +52,7 @@ void RunTest(F&& test_fn) {
 
 // Helper function that combines compilation and symbol extraction
 auto ExtractSymbolsFromString(
-    asio::any_io_executor executor, const std::string& source)
+    asio::any_io_executor executor, std::string source)
     -> asio::awaitable<std::vector<lsp::DocumentSymbol>> {
   const std::string uri = "file://test.sv";
   auto doc_manager = std::make_shared<slangd::DocumentManager>(executor);

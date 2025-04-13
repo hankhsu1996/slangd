@@ -19,14 +19,13 @@ class DefinitionProvider : public LanguageFeatureProvider {
 
   // Public API
   auto GetDefinitionForUri(std::string uri, lsp::Position position)
-      -> asio::awaitable<std::vector<lsp::Location>>;
+      -> std::vector<lsp::Location>;
 
-  // Core resolver
-  auto ResolveDefinitionFromCompilation(
-      slang::ast::Compilation& compilation,
+  // Core resolvers
+  static auto ResolveDefinitionFromSymbolIndex(
+      const semantic::SymbolIndex& index,
       const std::shared_ptr<slang::SourceManager>& source_manager,
-      const slang::ast::Symbol& symbol)
-      -> asio::awaitable<std::vector<lsp::Location>>;
+      slang::SourceLocation location) -> std::vector<lsp::Location>;
 };
 
 }  // namespace slangd

@@ -123,8 +123,9 @@ auto DiagnosticsProvider::ConvertDiagnosticsToLsp(
     lsp_diag.message = diag_engine.formatMessage(diag);
 
     if (diag.ranges.size() > 0) {
+      // Explicitly select the first range
       lsp_diag.range =
-          ConvertSlangRangesToLspRange(diag.ranges, source_manager);
+          ConvertSlangRangeToLspRange(diag.ranges[0], source_manager);
     }
     // Convert location to range
     else if (diag.location) {

@@ -1,148 +1,99 @@
 #include "slangd/features/definition_provider.hpp"
 
 #include <slang/ast/ASTVisitor.h>
+#include <slang/syntax/AllSyntax.h>
 #include <slang/syntax/SyntaxVisitor.h>
 #include <spdlog/spdlog.h>
 
+#include "slangd/utils/conversion.hpp"
+
 namespace slangd {
 
-class GenericAstLocatorVisitor
-    : public slang::ast::ASTVisitor<GenericAstLocatorVisitor, true, true> {
- public:
-  GenericAstLocatorVisitor(slang::SourceLocation target)
-      : bestNode(nullptr),
-        target(target),
-        smallestRangeSize(std::numeric_limits<size_t>::max()) {
-  }
-
-  template <typename T>
-  void handle(const T& node) {
-    if constexpr (std::is_base_of_v<slang::ast::Symbol, T>) {
-      slang::SourceRange range = getNodeRange(node);
-
-      if (rangeValid(range) && range.contains(target)) {
-        size_t size = rangeSize(range);
-        if (size < smallestRangeSize) {
-          smallestRangeSize = size;
-          bestNode = &node;
-        }
-      }
-    }
-
-    visitDefault(node);
-  }
-
-  const slang::ast::Symbol* bestNode = nullptr;
-
- private:
-  slang::SourceLocation target;
-  size_t smallestRangeSize;
-
-  bool rangeValid(const slang::SourceRange& range) const {
-    return range.start().valid() && range.end().valid() &&
-           range.start().buffer() == range.end().buffer();
-  }
-
-  size_t rangeSize(const slang::SourceRange& range) const {
-    return range.end().offset() - range.start().offset();
-  }
-
-  template <typename T>
-  slang::SourceRange getNodeRange(const T& node) const {
-    if constexpr (requires { node.sourceRange; }) {
-      return node.sourceRange;
-    } else if constexpr (requires { node.location; }) {
-      return slang::SourceRange(node.location, node.location);
-    } else {
-      return slang::SourceRange::NoLocation;
-    }
-  }
-};
-
-const slang::syntax::SyntaxNode* FindSmallestEnclosingNode(
-    const slang::syntax::SyntaxNode* node, slang::SourceLocation location) {
-  if (!node || !node->sourceRange().contains(location)) return nullptr;
-
-  const slang::syntax::SyntaxNode* result = node;
-  size_t count = node->getChildCount();
-
-  for (size_t i = 0; i < count; ++i) {
-    const slang::syntax::SyntaxNode* child = node->childNode(i);
-    if (!child) continue;
-
-    const slang::syntax::SyntaxNode* match =
-        FindSmallestEnclosingNode(child, location);
-    if (match) result = match;
-  }
-
-  return result;
-}
-
 auto DefinitionProvider::GetDefinitionForUri(
-    std::string uri, lsp::Position position)
-    -> asio::awaitable<std::vector<lsp::Location>> {
+    std::string uri, lsp::Position position) -> std::vector<lsp::Location> {
   auto compilation = document_manager_->GetCompilation(uri);
   auto syntax_tree = document_manager_->GetSyntaxTree(uri);
   auto source_manager = document_manager_->GetSourceManager(uri);
+  auto symbol_index = document_manager_->GetSymbolIndex(uri);
+
   logger_->info("DefinitionProvider get definition for uri: {}", uri);
 
   if (!compilation || !syntax_tree || !source_manager) {
     logger_->error("Failed to get compilation, syntax tree, or source manager");
-    co_return std::vector<lsp::Location>{};
+    return std::vector<lsp::Location>{};
   }
 
+  // Get the first buffer
   auto buffers = source_manager->getAllBuffers();
   if (buffers.empty()) {
-    logger_->error("No buffers found for URI: {}", uri);
-    co_return std::vector<lsp::Location>{};
+    logger_->error("DefinitionProvider cannot find buffers for URI: {}", uri);
+    return std::vector<lsp::Location>{};
   }
   auto buffer = buffers[0];
-  auto source_text = source_manager->getSourceText(buffer);
 
-  size_t offset = std::string::npos;
-  int current_line = 0;
-  int current_column = 0;
+  // Convert LSP position to Slang source location using our utility
+  auto location =
+      ConvertLspPositionToSlangLocation(position, buffer, source_manager);
 
-  for (size_t i = 0; i < source_text.size(); ++i) {
-    if (current_line == position.line && current_column == position.character) {
-      offset = i;
-      break;
-    }
+  spdlog::info("DefinitionProvider location: {}", location.offset());
 
-    if (source_text[i] == '\n') {
-      current_line++;
-      current_column = 0;
-    } else {
-      current_column++;
+  // If we have a symbol index, try using it
+  if (symbol_index) {
+    auto locations = ResolveDefinitionFromSymbolIndex(
+        *symbol_index, source_manager, location);
+    if (!locations.empty()) {
+      return locations;
     }
   }
 
-  auto location = slang::SourceLocation(buffer, offset);
-  logger_->info(
-      "Translated line: {} col: {} => offset: {}", position.line,
-      position.character, offset);
-
-  GenericAstLocatorVisitor visitor(location);
-  for (auto& unit : compilation->getCompilationUnits()) {
-    logger_->info("Visiting compilation unit");
-    unit->visit(visitor);
-  }
-
-  if (visitor.bestNode) {
-    logger_->info("Found node: {}", visitor.bestNode->name);
-  } else {
-    logger_->info("No node found");
-  }
-
-  co_return std::vector<lsp::Location>{};
+  // No definition found
+  logger_->debug(
+      "DefinitionProvider cannot find definition for position {}:{}",
+      position.line, position.character);
+  return {};
 }
 
-auto DefinitionProvider::ResolveDefinitionFromCompilation(
-    slang::ast::Compilation& compilation,
+auto DefinitionProvider::ResolveDefinitionFromSymbolIndex(
+    const semantic::SymbolIndex& index,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    const slang::ast::Symbol& symbol)
-    -> asio::awaitable<std::vector<lsp::Location>> {
-  co_return std::vector<lsp::Location>{};
+    slang::SourceLocation location) -> std::vector<lsp::Location> {
+  // Look up the definition using the symbol index
+  auto symbol_key = index.LookupSymbolAt(location);
+  if (!symbol_key) {
+    // No symbol found at the given location
+    return {};
+  }
+
+  // Get the definition location as a range
+  auto def_range_opt = index.GetDefinitionRange(*symbol_key);
+  if (!def_range_opt) {
+    // Definition location not found for symbol
+    return {};
+  }
+
+  // Access the definition range
+  auto& def_range = *def_range_opt;
+
+  // Create a location with a proper range for the symbol
+  lsp::Location result_location;
+  result_location.uri =
+      lsp::DocumentUri(source_manager->getFileName(def_range.start()));
+
+  // Convert start position
+  auto start_line = source_manager->getLineNumber(def_range.start());
+  auto start_column = source_manager->getColumnNumber(def_range.start());
+  result_location.range.start = lsp::Position{
+      .line = static_cast<int>(start_line - 1),
+      .character = static_cast<int>(start_column - 1)};
+
+  // Convert end position
+  auto end_line = source_manager->getLineNumber(def_range.end());
+  auto end_column = source_manager->getColumnNumber(def_range.end());
+  result_location.range.end = lsp::Position{
+      .line = static_cast<int>(end_line - 1),
+      .character = static_cast<int>(end_column - 1)};
+
+  return {result_location};
 }
 
 }  // namespace slangd

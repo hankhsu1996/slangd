@@ -29,7 +29,7 @@ class DiagnosticsProvider : public LanguageFeatureProvider {
   auto GetDiagnosticsForUri(std::string uri) -> std::vector<lsp::Diagnostic>;
 
   // Core orchestration: gather all relevant diagnostics
-  auto ResolveDiagnosticsFromCompilation(
+  static auto ResolveDiagnosticsFromCompilation(
       const std::shared_ptr<slang::ast::Compilation>& compilation,
       const std::shared_ptr<slang::syntax::SyntaxTree>& syntax_tree,
       const std::shared_ptr<slang::SourceManager>& source_manager,

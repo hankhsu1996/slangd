@@ -380,7 +380,7 @@ void WorkspaceManager::DumpWorkspaceStats() {
     Logger()->info("  Sample failed files:");
 
     // Take at most 5 samples to avoid too much output
-    size_t samples = std::min(failed_files.size(), size_t(5));
+    size_t samples = std::min(failed_files.size(), static_cast<size_t>(5));
     for (size_t i = 0; i < samples; i++) {
       Logger()->info("    - {}", failed_files[i]);
     }
@@ -425,7 +425,8 @@ void WorkspaceManager::DumpWorkspaceStats() {
           // Create a diagnostic engine to format messages
           slang::DiagnosticEngine diag_engine(*source_manager_);
 
-          for (size_t i = 0; i < std::min(diagnostics.size(), size_t(5)); i++) {
+          for (size_t i = 0;
+               i < std::min(diagnostics.size(), static_cast<size_t>(5)); i++) {
             const auto& diag = diagnostics[i];
             Logger()->info(
                 "    - {}: {}", slang::toString(diag.code),

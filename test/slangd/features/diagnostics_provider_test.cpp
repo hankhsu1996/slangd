@@ -25,10 +25,10 @@ void RunTest(F&& test_fn) {
 
   asio::co_spawn(
       io_context,
-      [test_fn = std::move(test_fn), &completed, &exception,
+      [fn = std::forward<F>(test_fn), &completed, &exception,
        executor]() -> asio::awaitable<void> {
         try {
-          co_await test_fn(executor);
+          co_await fn(executor);
           completed = true;
         } catch (...) {
           exception = std::current_exception();
@@ -48,7 +48,7 @@ void RunTest(F&& test_fn) {
 
 // Helper function to setup source manager and extract diagnostics
 auto ExtractDiagnosticsFromString(
-    asio::any_io_executor executor, const std::string& source)
+    asio::any_io_executor executor, std::string source)
     -> asio::awaitable<std::vector<lsp::Diagnostic>> {
   const std::string uri = "file://test.sv";
 
@@ -172,7 +172,7 @@ TEST_CASE("Diagnostics reports correct error location", "[diagnostics]") {
 TEST_CASE("Diagnostics handles empty source", "[diagnostics]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Test with empty string
-    std::string empty_code = "";
+    std::string empty_code;
     auto empty_diagnostics =
         co_await ExtractDiagnosticsFromString(executor, empty_code);
     REQUIRE(empty_diagnostics.empty());  // Should have no errors

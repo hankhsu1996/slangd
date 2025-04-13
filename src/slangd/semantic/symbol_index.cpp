@@ -32,7 +32,17 @@ auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
 
         const auto& loc = symbol.location;
         SymbolKey key{.bufferId = loc.buffer().getId(), .offset = loc.offset()};
-        index.definition_locations_[key] = loc;
+
+        // Create a range using the symbol name length
+        size_t name_length = symbol.name.length();
+        // Create end location by creating a new SourceLocation with increased
+        // offset
+        auto end_loc =
+            slang::SourceLocation(loc.buffer(), loc.offset() + name_length);
+        slang::SourceRange symbol_range(loc, end_loc);
+
+        // Store the full range instead of just the location
+        index.definition_locations_[key] = symbol_range;
 
         self.visitDefault(symbol);
       },
@@ -65,8 +75,8 @@ auto SymbolIndex::LookupSymbolAt(slang::SourceLocation loc) const
   return std::nullopt;
 }
 
-auto SymbolIndex::GetDefinitionLocation(const SymbolKey& key) const
-    -> std::optional<slang::SourceLocation> {
+auto SymbolIndex::GetDefinitionRange(const SymbolKey& key) const
+    -> std::optional<slang::SourceRange> {
   auto it = definition_locations_.find(key);
   if (it != definition_locations_.end()) {
     return it->second;

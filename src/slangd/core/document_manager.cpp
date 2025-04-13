@@ -19,7 +19,8 @@ namespace slangd {
 
 DocumentManager::DocumentManager(
     asio::any_io_executor executor, std::shared_ptr<spdlog::logger> logger)
-    : executor_(executor), logger_(logger ? logger : spdlog::default_logger()) {
+    : executor_(std::move(executor)),
+      logger_(logger ? logger : spdlog::default_logger()) {
 }
 
 auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
@@ -57,6 +58,10 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
   // Add the syntax tree to the compilation
   compilation.addSyntaxTree(syntax_trees_[uri]);
 
+  // Build a basic symbol index (definitions only) for quick navigation
+  symbol_indices_[uri] = std::make_shared<semantic::SymbolIndex>(
+      semantic::SymbolIndex::FromCompilation(compilation));
+
   Logger()->debug(
       "DocumentManager compilation completed for document: {}", uri);
   co_return;
@@ -79,6 +84,10 @@ auto DocumentManager::ParseWithElaboration(std::string uri, std::string content)
 
   // Handle elaboration failures via diagnostics, not exceptions
   compilation.getRoot();
+
+  // Build a comprehensive symbol index with references after full elaboration
+  symbol_indices_[uri] = std::make_shared<semantic::SymbolIndex>(
+      semantic::SymbolIndex::FromCompilation(compilation));
 
   Logger()->debug(
       "DocumentManager full elaboration completed for document: {}", uri);
@@ -107,6 +116,15 @@ auto DocumentManager::GetSourceManager(std::string uri)
     -> std::shared_ptr<slang::SourceManager> {
   auto it = source_managers_.find(uri);
   if (it != source_managers_.end()) {
+    return it->second;
+  }
+  return nullptr;
+}
+
+auto DocumentManager::GetSymbolIndex(std::string uri)
+    -> std::shared_ptr<semantic::SymbolIndex> {
+  auto it = symbol_indices_.find(uri);
+  if (it != symbol_indices_.end()) {
     return it->second;
   }
   return nullptr;
