@@ -17,16 +17,39 @@ auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
     -> SymbolIndex {
   SymbolIndex index;
   auto visitor = slang::ast::makeVisitor(
-      // For correct instance body visitation
+      // Special handling for instance body
       [&](auto& self, const slang::ast::InstanceBodySymbol& symbol) {
         self.visitDefault(symbol);
       },
-      // For instance definition collection
+
+      // Module/instance definition visitor
       [&](auto& self, const slang::ast::InstanceSymbol& symbol) {
         spdlog::debug("SymbolIndex visiting instance symbol {}", symbol.name);
+
+        const auto& loc = symbol.location;
+        if (!loc) {
+          self.visitDefault(symbol);
+          return;
+        }
+
+        SymbolKey key{.bufferId = loc.buffer().getId(), .offset = loc.offset()};
+
+        // Create a range using the symbol name length
+        size_t name_length = symbol.name.length();
+        auto end_loc =
+            slang::SourceLocation(loc.buffer(), loc.offset() + name_length);
+        slang::SourceRange symbol_range(loc, end_loc);
+
+        // Store the definition location
+        index.definition_locations_[key] = symbol_range;
+
+        // Add definition itself as a reference (for self-reference cases)
+        index.reference_map_[symbol_range] = key;
+
         self.visitDefault(symbol);
       },
-      // For variable definition collection
+
+      // Variable definition visitor
       [&](auto& self, const slang::ast::VariableSymbol& symbol) {
         spdlog::debug("SymbolIndex visiting variable symbol {}", symbol.name);
 
@@ -35,18 +58,20 @@ auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
 
         // Create a range using the symbol name length
         size_t name_length = symbol.name.length();
-        // Create end location by creating a new SourceLocation with increased
-        // offset
         auto end_loc =
             slang::SourceLocation(loc.buffer(), loc.offset() + name_length);
         slang::SourceRange symbol_range(loc, end_loc);
 
-        // Store the full range instead of just the location
+        // Store the definition location
         index.definition_locations_[key] = symbol_range;
+
+        // Add definition itself as a reference (for self-reference cases)
+        index.reference_map_[symbol_range] = key;
 
         self.visitDefault(symbol);
       },
-      // For variable reference collection
+
+      // Named value reference visitor
       [&](auto& self, const slang::ast::NamedValueExpression& expr) {
         spdlog::debug(
             "SymbolIndex visiting named value expression {}", expr.symbol.name);

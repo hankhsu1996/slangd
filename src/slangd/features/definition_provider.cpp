@@ -16,8 +16,6 @@ auto DefinitionProvider::GetDefinitionForUri(
   auto source_manager = document_manager_->GetSourceManager(uri);
   auto symbol_index = document_manager_->GetSymbolIndex(uri);
 
-  logger_->info("DefinitionProvider get definition for uri: {}", uri);
-
   if (!compilation || !syntax_tree || !source_manager) {
     logger_->error("Failed to get compilation, syntax tree, or source manager");
     return std::vector<lsp::Location>{};
@@ -34,8 +32,6 @@ auto DefinitionProvider::GetDefinitionForUri(
   // Convert LSP position to Slang source location using our utility
   auto location =
       ConvertLspPositionToSlangLocation(position, buffer, source_manager);
-
-  spdlog::info("DefinitionProvider location: {}", location.offset());
 
   // If we have a symbol index, try using it
   if (symbol_index) {
