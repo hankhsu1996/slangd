@@ -68,25 +68,69 @@ auto ExtractDefinitionFromString(
   co_return definition_provider.GetDefinitionForUri(uri, position);
 }
 
+// Simple helper to find position of text in source code
+auto FindPosition(
+    const std::string& source, const std::string& text, int occurrence = 1)
+    -> lsp::Position {
+  size_t pos = 0;
+  for (int i = 0; i < occurrence; i++) {
+    pos = source.find(text, pos + (i > 0 ? 1 : 0));
+    if (pos == std::string::npos) {
+      break;
+    }
+  }
+
+  lsp::Position position{.line = 0, .character = 0};
+  if (pos != std::string::npos) {
+    int line = 0;
+    size_t last_newline = 0;
+
+    for (size_t i = 0; i < pos; i++) {
+      if (source[i] == '\n') {
+        line++;
+        last_newline = i;
+      }
+    }
+
+    position.line = line;
+    position.character = static_cast<int>(pos - last_newline - 1);
+  }
+
+  return position;
+}
+
+// Create a range from position and symbol length
+auto CreateRange(const lsp::Position& position, int symbol_length)
+    -> lsp::Range {
+  lsp::Range range{};
+  range.start = position;
+  range.end.line = position.line;
+  range.end.character = position.character + symbol_length;
+  return range;
+}
+
 TEST_CASE(
     "GetDefinitionForUri extracts basic module", "[definition_provider]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     std::string module_code = R"(
-    module test_module;  // line 1
-      logic my_var;      // line 2 my_var starts at col 12, ends at col 18
-      assign my_var = 0; // line 3, my_var starts at col 13
-    endmodule
-  )";
+      module test_module;
+        logic my_var;
+        assign my_var = 0;
+      endmodule
+    )";
 
-    auto position = lsp::Position{.line = 3, .character = 13};
-    auto locations =
-        co_await ExtractDefinitionFromString(executor, module_code, position);
+    std::string symbol_name = "my_var";
+    auto ref_position = FindPosition(module_code, symbol_name, 2);
+
+    auto locations = co_await ExtractDefinitionFromString(
+        executor, module_code, ref_position);
+
+    auto expected_position = FindPosition(module_code, symbol_name, 1);
+    auto expected_range =
+        CreateRange(expected_position, static_cast<int>(symbol_name.length()));
 
     REQUIRE(locations.size() == 1);
     REQUIRE(locations[0].uri == "file://test.sv");
-    REQUIRE(locations[0].range.start.line == 2);
-    REQUIRE(locations[0].range.start.character == 12);
-    REQUIRE(locations[0].range.end.line == 2);
-    REQUIRE(locations[0].range.end.character == 18);
+    REQUIRE(locations[0].range == expected_range);
   });
 }

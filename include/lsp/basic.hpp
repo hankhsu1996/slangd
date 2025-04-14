@@ -48,6 +48,10 @@ void from_json(
 struct Position {
   int line;
   int character;
+
+  auto operator==(const Position& other) const -> bool {
+    return line == other.line && character == other.character;
+  }
 };
 
 void to_json(nlohmann::json& j, const Position& p);
@@ -66,6 +70,10 @@ void from_json(const nlohmann::json& j, PositionEncodingKind& p);
 struct Range {
   Position start;
   Position end;
+
+  auto operator==(const Range& other) const -> bool {
+    return start == other.start && end == other.end;
+  }
 };
 
 void to_json(nlohmann::json& j, const Range& r);
