@@ -11,7 +11,7 @@
 #include "include/lsp/basic.hpp"
 
 auto main(int argc, char* argv[]) -> int {
-  spdlog::set_level(spdlog::level::info);
+  spdlog::set_level(spdlog::level::debug);
   spdlog::set_pattern("[%l] %v");
   return Catch::Session().run(argc, argv);
 }
@@ -60,10 +60,6 @@ auto ExtractDefinitionFromString(
       slangd::DefinitionProvider(doc_manager, workspace_manager);
 
   auto symbol_index = doc_manager->GetSymbolIndex(uri);
-  for (const auto& [key, value] : symbol_index->GetReferenceMap()) {
-    spdlog::info(
-        "Ref map key: {}-{}", key.start().offset(), key.end().offset());
-  }
 
   co_return definition_provider.GetDefinitionForUri(uri, position);
 }
@@ -100,12 +96,12 @@ auto FindPosition(
 }
 
 // Create a range from position and symbol length
-auto CreateRange(const lsp::Position& position, int symbol_length)
+auto CreateRange(const lsp::Position& position, size_t symbol_length)
     -> lsp::Range {
   lsp::Range range{};
   range.start = position;
   range.end.line = position.line;
-  range.end.character = position.character + symbol_length;
+  range.end.character = position.character + static_cast<int>(symbol_length);
   return range;
 }
 
@@ -119,18 +115,53 @@ TEST_CASE(
       endmodule
     )";
 
-    std::string symbol_name = "my_var";
-    auto ref_position = FindPosition(module_code, symbol_name, 2);
+    SECTION("Variable reference resolves to definition") {
+      std::string symbol_name = "my_var";
+      auto ref_position = FindPosition(module_code, symbol_name, 2);
 
-    auto locations = co_await ExtractDefinitionFromString(
-        executor, module_code, ref_position);
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, ref_position);
 
-    auto expected_position = FindPosition(module_code, symbol_name, 1);
-    auto expected_range =
-        CreateRange(expected_position, static_cast<int>(symbol_name.length()));
+      auto expected_position = FindPosition(module_code, symbol_name, 1);
+      auto expected_range =
+          CreateRange(expected_position, symbol_name.length());
 
-    REQUIRE(locations.size() == 1);
-    REQUIRE(locations[0].uri == "file://test.sv");
-    REQUIRE(locations[0].range == expected_range);
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
+  });
+}
+
+TEST_CASE(
+    "GetDefinitionForUri handles parameterized module",
+    "[definition_provider]") {
+  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    std::string module_code = R"(
+      module TestModule #(parameter bit TEST_PARAM) (
+        input logic test_in,
+        output logic test_out
+      );
+        logic test_logic;
+        assign test_logic = test_in;
+        assign test_out = TEST_PARAM;
+      endmodule : TestModule
+    )";
+
+    SECTION("Module name reference (at the end) resolves to definition") {
+      std::string symbol_name = "TestModule";
+      // Find the reference at the end (after 'endmodule :')
+      auto ref_position = FindPosition(module_code, symbol_name, 2);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, ref_position);
+
+      auto def_position = FindPosition(module_code, symbol_name, 1);
+      auto expected_range = CreateRange(def_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
   });
 }

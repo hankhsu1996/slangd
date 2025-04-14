@@ -52,6 +52,10 @@ class SymbolIndex {
     return reference_map_;
   }
 
+  void AddDefinition(const SymbolKey& key, const slang::SourceRange& range);
+
+  void AddReference(const slang::SourceRange& range, const SymbolKey& key);
+
  private:
   // Maps a symbol key to its declaration range
   std::unordered_map<SymbolKey, slang::SourceRange> definition_locations_;
