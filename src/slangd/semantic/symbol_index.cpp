@@ -118,6 +118,24 @@ auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
         self.visitDefault(symbol);
       },
 
+      // Parameter definition visitor
+      [&](auto& self, const slang::ast::ParameterSymbol& symbol) {
+        spdlog::debug("SymbolIndex visiting parameter symbol {}", symbol.name);
+
+        const auto& loc = symbol.location;
+        SymbolKey key{.bufferId = loc.buffer().getId(), .offset = loc.offset()};
+
+        // Create a range using the symbol name length
+        size_t name_length = symbol.name.length();
+        auto end_loc =
+            slang::SourceLocation(loc.buffer(), loc.offset() + name_length);
+        slang::SourceRange symbol_range(loc, end_loc);
+
+        index.AddDefinition(key, symbol_range);
+        index.AddReference(symbol_range, key);
+        self.visitDefault(symbol);
+      },
+
       // Named value reference visitor
       [&](auto& self, const slang::ast::NamedValueExpression& expr) {
         spdlog::debug(

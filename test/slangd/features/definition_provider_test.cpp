@@ -163,5 +163,136 @@ TEST_CASE(
       REQUIRE(locations[0].uri == "file://test.sv");
       REQUIRE(locations[0].range == expected_range);
     }
+
+    SECTION("Parameter reference resolves to definition") {
+      std::string symbol_name = "TEST_PARAM";
+      // Find the reference in the assign statement
+      auto ref_position = FindPosition(module_code, symbol_name, 2);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, ref_position);
+
+      // Should point to the parameter declaration
+      auto def_position = FindPosition(module_code, symbol_name, 1);
+      auto expected_range = CreateRange(def_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
+
+    SECTION("Input port reference resolves to definition") {
+      std::string symbol_name = "test_in";
+      // Find the reference in the assign statement
+      auto ref_position = FindPosition(module_code, symbol_name, 2);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, ref_position);
+
+      // Should point to the input port declaration
+      auto def_position = FindPosition(module_code, symbol_name, 1);
+      auto expected_range = CreateRange(def_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
+
+    SECTION("Output port reference resolves to definition") {
+      std::string symbol_name = "test_out";
+      // Find the reference in the assign statement
+      auto ref_position = FindPosition(module_code, symbol_name, 2);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, ref_position);
+
+      // Should point to the output port declaration
+      auto def_position = FindPosition(module_code, symbol_name, 1);
+      auto expected_range = CreateRange(def_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
+
+    SECTION("Internal logic definition resolves to itself") {
+      std::string symbol_name = "test_logic";
+      // Click on the definition itself
+      auto def_position = FindPosition(module_code, symbol_name, 1);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, def_position);
+
+      // Should point to itself
+      auto expected_range = CreateRange(def_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
+
+    SECTION("Module name definition resolves to itself") {
+      std::string symbol_name = "TestModule";
+      // Click on the module name definition
+      auto def_position = FindPosition(module_code, symbol_name, 1);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, def_position);
+
+      // Should point to itself
+      auto expected_range = CreateRange(def_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
+
+    SECTION("Parameter definition resolves to itself") {
+      std::string symbol_name = "TEST_PARAM";
+      // Click on the parameter definition
+      auto def_position = FindPosition(module_code, symbol_name, 1);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, def_position);
+
+      // Should point to itself
+      auto expected_range = CreateRange(def_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
+
+    SECTION("Input port definition resolves to itself") {
+      std::string symbol_name = "test_in";
+      // Click on the input port definition
+      auto def_position = FindPosition(module_code, symbol_name, 1);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, def_position);
+
+      // Should point to itself
+      auto expected_range = CreateRange(def_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
+
+    SECTION("Output port definition resolves to itself") {
+      std::string symbol_name = "test_out";
+      // Click on the output port definition
+      auto def_position = FindPosition(module_code, symbol_name, 1);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, def_position);
+
+      // Should point to itself
+      auto expected_range = CreateRange(def_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
   });
 }
