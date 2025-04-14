@@ -43,8 +43,7 @@ auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
         // Only add instance definitions for valid instances with names and real
         // locations
         if (has_valid_location && !symbol.name.empty()) {
-          SymbolKey key{
-              .bufferId = loc.buffer().getId(), .offset = loc.offset()};
+          SymbolKey key = SymbolKey::FromSourceLocation(loc);
 
           // Create a range using the symbol name length
           size_t name_length = symbol.name.length();
@@ -71,9 +70,8 @@ auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
             auto module_name_range = header_name.range();
 
             // Create a key and definition for the module declaration
-            SymbolKey module_key{
-                .bufferId = definition.location.buffer().getId(),
-                .offset = definition.location.offset()};
+            SymbolKey module_key =
+                SymbolKey::FromSourceLocation(definition.location);
 
             // Only add the definition if not already present
             if (index.GetDefinitionRange(module_key) == std::nullopt) {
@@ -105,7 +103,7 @@ auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
         spdlog::debug("SymbolIndex visiting variable symbol {}", symbol.name);
 
         const auto& loc = symbol.location;
-        SymbolKey key{.bufferId = loc.buffer().getId(), .offset = loc.offset()};
+        SymbolKey key = SymbolKey::FromSourceLocation(loc);
 
         // Create a range using the symbol name length
         size_t name_length = symbol.name.length();
@@ -123,7 +121,7 @@ auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
         spdlog::debug("SymbolIndex visiting parameter symbol {}", symbol.name);
 
         const auto& loc = symbol.location;
-        SymbolKey key{.bufferId = loc.buffer().getId(), .offset = loc.offset()};
+        SymbolKey key = SymbolKey::FromSourceLocation(loc);
 
         // Create a range using the symbol name length
         size_t name_length = symbol.name.length();
@@ -144,7 +142,7 @@ auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
         const auto& loc = expr.symbol.location;
         const auto& range = expr.sourceRange;
 
-        SymbolKey key{.bufferId = loc.buffer().getId(), .offset = loc.offset()};
+        SymbolKey key = SymbolKey::FromSourceLocation(loc);
 
         index.AddReference(range, key);
         self.visitDefault(expr);

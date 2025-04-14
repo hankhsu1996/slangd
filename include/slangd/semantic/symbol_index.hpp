@@ -14,6 +14,12 @@ struct SymbolKey {
   size_t offset;
 
   auto operator==(const SymbolKey&) const -> bool = default;
+
+  // Factory method to create from SourceLocation
+  static auto FromSourceLocation(const slang::SourceLocation& loc)
+      -> SymbolKey {
+    return SymbolKey{.bufferId = loc.buffer().getId(), .offset = loc.offset()};
+  }
 };
 
 }  // namespace slangd::semantic
