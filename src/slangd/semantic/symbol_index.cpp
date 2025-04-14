@@ -16,7 +16,11 @@ namespace slangd::semantic {
 
 void SymbolIndex::AddDefinition(
     const SymbolKey& key, const slang::SourceRange& range) {
+  // Store the definition location
   definition_locations_[key] = range;
+
+  // Also add the reference to the reference map
+  reference_map_[range] = key;
 }
 
 void SymbolIndex::AddReference(
@@ -37,27 +41,8 @@ auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
       [&](auto& self, const slang::ast::InstanceSymbol& symbol) {
         spdlog::debug("SymbolIndex visiting instance symbol {}", symbol.name);
 
-        const auto& loc = symbol.location;
-        bool has_valid_location = loc && loc.buffer().valid();
-
-        // Only add instance definitions for valid instances with names and real
-        // locations
-        if (has_valid_location && !symbol.name.empty()) {
-          SymbolKey key = SymbolKey::FromSourceLocation(loc);
-
-          // Create a range using the symbol name length
-          size_t name_length = symbol.name.length();
-          auto end_loc =
-              slang::SourceLocation(loc.buffer(), loc.offset() + name_length);
-          slang::SourceRange symbol_range(loc, end_loc);
-
-          index.AddDefinition(key, symbol_range);
-          index.AddReference(symbol_range, key);
-        }
-
-        // Handle module declaration syntax to find endmodule names
-        // (this works even for instances with placeholder locations)
         const auto& definition = symbol.getDefinition();
+        SymbolKey key = SymbolKey::FromSourceLocation(definition.location);
 
         if (const auto* syntax_node = definition.getSyntax()) {
           if (syntax_node->kind ==
@@ -65,32 +50,12 @@ auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
             const auto& module_syntax =
                 syntax_node->as<slang::syntax::ModuleDeclarationSyntax>();
 
-            // Get the header name (module declaration name)
-            const auto& header_name = module_syntax.header->name;
-            auto module_name_range = header_name.range();
-
-            // Create a key and definition for the module declaration
-            SymbolKey module_key =
-                SymbolKey::FromSourceLocation(definition.location);
-
-            // Only add the definition if not already present
-            if (index.GetDefinitionRange(module_key) == std::nullopt) {
-              index.AddDefinition(module_key, module_name_range);
-              index.AddReference(module_name_range, module_key);
-            }
+            const auto& range = module_syntax.header->name.range();
+            index.AddDefinition(key, range);
 
             // Handle endmodule name if present
             if (const auto& end_name = module_syntax.blockName) {
-              auto end_name_range = end_name->name.range();
-
-              // Skip invalid buffers
-              if (!end_name_range.start().buffer().valid()) {
-                spdlog::debug("End module name has invalid buffer, skipping");
-                self.visitDefault(symbol);
-                return;
-              }
-
-              index.AddReference(end_name_range, module_key);
+              index.AddReference(end_name->name.range(), key);
             }
           }
         }
@@ -105,14 +70,10 @@ auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
         const auto& loc = symbol.location;
         SymbolKey key = SymbolKey::FromSourceLocation(loc);
 
-        // Create a range using the symbol name length
-        size_t name_length = symbol.name.length();
-        auto end_loc =
-            slang::SourceLocation(loc.buffer(), loc.offset() + name_length);
-        slang::SourceRange symbol_range(loc, end_loc);
+        if (const auto& symbol_syntax = symbol.getSyntax()) {
+          index.AddDefinition(key, symbol_syntax->sourceRange());
+        }
 
-        index.AddDefinition(key, symbol_range);
-        index.AddReference(symbol_range, key);
         self.visitDefault(symbol);
       },
 
@@ -123,14 +84,10 @@ auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
         const auto& loc = symbol.location;
         SymbolKey key = SymbolKey::FromSourceLocation(loc);
 
-        // Create a range using the symbol name length
-        size_t name_length = symbol.name.length();
-        auto end_loc =
-            slang::SourceLocation(loc.buffer(), loc.offset() + name_length);
-        slang::SourceRange symbol_range(loc, end_loc);
+        if (const auto& symbol_syntax = symbol.getSyntax()) {
+          index.AddDefinition(key, symbol_syntax->sourceRange());
+        }
 
-        index.AddDefinition(key, symbol_range);
-        index.AddReference(symbol_range, key);
         self.visitDefault(symbol);
       },
 
