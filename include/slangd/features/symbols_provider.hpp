@@ -67,6 +67,18 @@ class SymbolsProvider : public LanguageFeatureProvider {
       -> lsp::Range;
 
   // Filter and unwrap
+  // Check if a symbol is physically located in the document
+  static auto IsSymbolInDocument(
+      const slang::ast::Symbol& symbol,
+      const std::shared_ptr<slang::SourceManager>& source_manager,
+      const std::string& uri) -> bool;
+
+  // Check if a symbol should be included in document symbols (outline view)
+  static auto IsRelevantDocumentSymbol(const slang::ast::Symbol& symbol)
+      -> bool;
+
+  // Legacy function that combines the above checks - kept for backward
+  // compatibility
   static auto IsSymbolInUriDocument(
       const slang::ast::Symbol& symbol,
       const std::shared_ptr<slang::SourceManager>& source_manager,

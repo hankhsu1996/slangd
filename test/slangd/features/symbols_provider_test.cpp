@@ -183,15 +183,18 @@ TEST_CASE("GetDocumentSymbols extracts enum type", "[symbol_utils]") {
     REQUIRE(symbols[0].name == "pkg_with_enum");
     REQUIRE(symbols[0].kind == lsp::SymbolKind::kPackage);
 
-    REQUIRE(symbols[0].children->size() == 4);
-    REQUIRE(symbols[0].children->at(0).name == "RED");
-    REQUIRE(symbols[0].children->at(0).kind == lsp::SymbolKind::kConstant);
-    REQUIRE(symbols[0].children->at(1).name == "GREEN");
-    REQUIRE(symbols[0].children->at(1).kind == lsp::SymbolKind::kConstant);
-    REQUIRE(symbols[0].children->at(2).name == "BLUE");
-    REQUIRE(symbols[0].children->at(2).kind == lsp::SymbolKind::kConstant);
-    REQUIRE(symbols[0].children->at(3).name == "color_t");
-    REQUIRE(symbols[0].children->at(3).kind == lsp::SymbolKind::kEnum);
+    REQUIRE(symbols[0].children->size() == 1);
+    REQUIRE(symbols[0].children->at(0).name == "color_t");
+    REQUIRE(symbols[0].children->at(0).kind == lsp::SymbolKind::kEnum);
+
+    auto enum_symbol = symbols[0].children->at(0);
+    REQUIRE(enum_symbol.children->size() == 3);
+    REQUIRE(enum_symbol.children->at(0).name == "RED");
+    REQUIRE(enum_symbol.children->at(0).kind == lsp::SymbolKind::kEnumMember);
+    REQUIRE(enum_symbol.children->at(1).name == "GREEN");
+    REQUIRE(enum_symbol.children->at(1).kind == lsp::SymbolKind::kEnumMember);
+    REQUIRE(enum_symbol.children->at(2).name == "BLUE");
+    REQUIRE(enum_symbol.children->at(2).kind == lsp::SymbolKind::kEnumMember);
   });
 }
 

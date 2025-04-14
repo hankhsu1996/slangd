@@ -133,7 +133,39 @@ void SymbolsProvider::BuildSymbolChildren(
     const auto& type_alias = symbol.as<slang::ast::TypeAliasType>();
     const auto& canonical_type = type_alias.getCanonicalType();
 
-    if (canonical_type.kind == SK::PackedStructType) {
+    if (canonical_type.kind == SK::EnumType) {
+      // Special handling for enums - add enum values as children
+      const auto& enum_type = canonical_type.as<slang::ast::EnumType>();
+
+      // Create a separate scope for enum values to avoid name conflicts
+      std::unordered_set<std::string> enum_seen_names;
+
+      // Process all enum values from the enum type
+      for (const auto& enum_value : enum_type.values()) {
+        // Only check if the enum value is in the current document
+        // (we only check location, not symbol kind since we know it's an enum
+        // value)
+        if (IsSymbolInDocument(enum_value, source_manager, uri)) {
+          // Create a document symbol for this enum value
+          lsp::DocumentSymbol enum_value_symbol;
+          enum_value_symbol.name = std::string(enum_value.name);
+          enum_value_symbol.kind = lsp::SymbolKind::kEnumMember;
+
+          if (enum_value.location) {
+            enum_value_symbol.range = ConvertSlangLocationToLspRange(
+                enum_value.location, source_manager);
+            enum_value_symbol.selectionRange =
+                ConvertSymbolNameRangeToLsp(enum_value, source_manager);
+          }
+
+          // Add empty children vector
+          enum_value_symbol.children = std::vector<lsp::DocumentSymbol>();
+
+          // Add to parent's children
+          parent_symbol.children->push_back(std::move(enum_value_symbol));
+        }
+      }
+    } else if (canonical_type.kind == SK::PackedStructType) {
       const auto& struct_type =
           canonical_type.as<slang::ast::PackedStructType>();
       // Make sure to process all members of the struct
@@ -187,6 +219,7 @@ void SymbolsProvider::BuildScopeSymbolChildren(
   // Each scope gets its own set of seen names
   std::unordered_set<std::string> scope_seen_names;
 
+  // Process all members (enum values are filtered out by IsSymbolInUriDocument)
   for (const auto& member : scope.members()) {
     // Unwrap at the boundary before passing to BuildSymbolHierarchy
     const auto& unwrapped_member = GetUnwrappedSymbol(member);
@@ -306,12 +339,10 @@ auto SymbolsProvider::ConvertSymbolNameRangeToLsp(
   return ConvertSlangLocationToLspRange(symbol.location, source_manager);
 }
 
-auto SymbolsProvider::IsSymbolInUriDocument(
+auto SymbolsProvider::IsSymbolInDocument(
     const slang::ast::Symbol& symbol,
     const std::shared_ptr<slang::SourceManager>& source_manager,
     const std::string& uri) -> bool {
-  using SK = slang::ast::SymbolKind;
-
   // Skip symbols without a valid location
   if (!symbol.location) {
     return false;
@@ -328,9 +359,12 @@ auto SymbolsProvider::IsSymbolInUriDocument(
   }
 
   // Check if the symbol is from the current document using our utility
-  if (!IsLocationInDocument(symbol.location, source_manager, uri)) {
-    return false;
-  }
+  return IsLocationInDocument(symbol.location, source_manager, uri);
+}
+
+auto SymbolsProvider::IsRelevantDocumentSymbol(const slang::ast::Symbol& symbol)
+    -> bool {
+  using SK = slang::ast::SymbolKind;
 
   // Include only specific types of symbols that are relevant to users
   switch (symbol.kind) {
@@ -366,10 +400,6 @@ auto SymbolsProvider::IsSymbolInUriDocument(
     case SK::Instance:
       return true;
 
-    // For enum values, include them
-    case SK::EnumValue:
-      return true;
-
     // For struct fields, include them
     case SK::Field:
       return true;
@@ -378,10 +408,24 @@ auto SymbolsProvider::IsSymbolInUriDocument(
     case SK::UninstantiatedDef:
       return true;
 
+    // Explicitly exclude enum values - they'll be handled through their parent
+    // enum types
+    case SK::EnumValue:
+      return false;
+
     // Default: exclude other symbols
     default:
       return false;
   }
+}
+
+auto SymbolsProvider::IsSymbolInUriDocument(
+    const slang::ast::Symbol& symbol,
+    const std::shared_ptr<slang::SourceManager>& source_manager,
+    const std::string& uri) -> bool {
+  // Combine both checks
+  return IsSymbolInDocument(symbol, source_manager, uri) &&
+         IsRelevantDocumentSymbol(symbol);
 }
 
 // Helper function to unwrap TransparentMember symbols
