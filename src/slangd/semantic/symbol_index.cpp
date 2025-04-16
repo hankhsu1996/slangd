@@ -59,10 +59,11 @@ namespace {
 
 [[maybe_unused]] void IndexDefinition(
     const slang::ast::DefinitionSymbol& def, SymbolIndex& index,
-    slang::ast::Compilation& compilation, auto& visitor) {
+    slang::ast::Compilation& compilation) {
   spdlog::debug("SymbolIndex visiting definition symbol {}", def.name);
   const auto* syntax = def.getSyntax();
-  if (syntax && syntax->kind == slang::syntax::SyntaxKind::ModuleDeclaration) {
+  if ((syntax != nullptr) &&
+      syntax->kind == slang::syntax::SyntaxKind::ModuleDeclaration) {
     // Add the definition to the index
     const auto& module_syntax =
         syntax->as<slang::syntax::ModuleDeclarationSyntax>();
@@ -84,7 +85,7 @@ namespace {
           auto package_range = import_syntax.package.range();
           const auto& package_name = import_syntax.package.valueText();
           const auto* package_symbol = compilation.getPackage(package_name);
-          if (package_symbol) {
+          if (package_symbol != nullptr) {
             SymbolKey key =
                 SymbolKey::FromSourceLocation(package_symbol->location);
             index.AddReference(package_range, key);
@@ -92,15 +93,6 @@ namespace {
         }
       }
     }
-  }
-
-  // Instantiate the definition to access the body.
-  // Only instances (not definitions) have traversable bodies.
-  if (def.definitionKind == slang::ast::DefinitionKind::Module ||
-      def.definitionKind == slang::ast::DefinitionKind::Interface) {
-    const auto& instance =
-        slang::ast::InstanceSymbol::createDefault(compilation, def);
-    instance.body.visit(visitor);
   }
 }
 
@@ -115,11 +107,19 @@ namespace {
     if (symbol_syntax->kind == slang::syntax::SyntaxKind::TypedefDeclaration) {
       const auto& type_alias_syntax =
           symbol_syntax->as<slang::syntax::TypedefDeclarationSyntax>();
-
-      spdlog::debug(
-          "SymbolIndex visiting typedef declaration {}",
-          type_alias_syntax.name.valueText());
       index.AddDefinition(key, type_alias_syntax.name.range());
+    }
+  }
+
+  // If it's an enum type, process all enum values
+  if (symbol.targetType.getType().kind == slang::ast::SymbolKind::EnumType) {
+    const auto& enum_type =
+        symbol.targetType.getType().as<slang::ast::EnumType>();
+    for (const auto& enum_value : enum_type.values()) {
+      auto key = SymbolKey::FromSourceLocation(enum_value.location);
+      if (const auto& value_syntax = enum_value.getSyntax()) {
+        index.AddDefinition(key, value_syntax->sourceRange());
+      }
     }
   }
 }
@@ -220,14 +220,21 @@ auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
       // Package definition visitor
       [&](auto& self, const slang::ast::PackageSymbol& symbol) {
         IndexPackage(symbol, index);
+
         self.visitDefault(symbol);
       },
 
       // Module/interface definition visitor
       [&](auto& self, const slang::ast::DefinitionSymbol& def) {
-        IndexDefinition(def, index, compilation, self);
-        // Note: visitDefault is handled within IndexDefinition due to special
-        // instantiation logic
+        IndexDefinition(def, index, compilation);
+
+        // Handle instance traversal here for better separation of concerns
+        if (def.definitionKind == slang::ast::DefinitionKind::Module ||
+            def.definitionKind == slang::ast::DefinitionKind::Interface) {
+          const auto& instance =
+              slang::ast::InstanceSymbol::createDefault(compilation, def);
+          instance.body.visit(self);
+        }
       },
 
       // Type alias definition visitor
