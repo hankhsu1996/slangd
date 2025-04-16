@@ -28,6 +28,186 @@ void SymbolIndex::AddReference(
   reference_map_[range] = key;
 }
 
+namespace {
+// Indexing helper functions
+
+[[maybe_unused]] void IndexPackage(
+    const slang::ast::PackageSymbol& symbol, SymbolIndex& index) {
+  spdlog::debug("SymbolIndex visiting package symbol {}", symbol.name);
+
+  SymbolKey key = SymbolKey::FromSourceLocation(symbol.location);
+
+  if (const auto* syntax_node = symbol.getSyntax()) {
+    if (syntax_node->kind == slang::syntax::SyntaxKind::PackageDeclaration) {
+      // Module and package both use ModuleDeclarationSyntax
+      const auto& package_syntax =
+          syntax_node->as<slang::syntax::ModuleDeclarationSyntax>();
+
+      const auto& range = package_syntax.header->name.range();
+      index.AddDefinition(key, range);
+
+      // Handle endpackage name if present
+      if (const auto& end_name = package_syntax.blockName) {
+        spdlog::debug(
+            "SymbolIndex visiting endpackage name {}",
+            end_name->name.valueText());
+        index.AddReference(end_name->name.range(), key);
+      }
+    }
+  }
+}
+
+[[maybe_unused]] void IndexDefinition(
+    const slang::ast::DefinitionSymbol& def, SymbolIndex& index,
+    slang::ast::Compilation& compilation, auto& visitor) {
+  spdlog::debug("SymbolIndex visiting definition symbol {}", def.name);
+  const auto* syntax = def.getSyntax();
+  if (syntax && syntax->kind == slang::syntax::SyntaxKind::ModuleDeclaration) {
+    // Add the definition to the index
+    const auto& module_syntax =
+        syntax->as<slang::syntax::ModuleDeclarationSyntax>();
+    const auto& module_range = module_syntax.header->name.range();
+    SymbolKey key = SymbolKey::FromSourceLocation(def.location);
+    index.AddDefinition(key, module_range);
+
+    // Add the endmodule label to the reference map
+    if (const auto& end_label = module_syntax.blockName) {
+      index.AddReference(end_label->name.range(), key);
+    }
+
+    // Handle imports
+    for (const auto& import_decl : module_syntax.header->imports) {
+      for (const auto& import_item : import_decl->items) {
+        if (import_item->kind == slang::syntax::SyntaxKind::PackageImportItem) {
+          const auto& import_syntax =
+              import_item->as<slang::syntax::PackageImportItemSyntax>();
+          auto package_range = import_syntax.package.range();
+          const auto& package_name = import_syntax.package.valueText();
+          const auto* package_symbol = compilation.getPackage(package_name);
+          if (package_symbol) {
+            SymbolKey key =
+                SymbolKey::FromSourceLocation(package_symbol->location);
+            index.AddReference(package_range, key);
+          }
+        }
+      }
+    }
+  }
+
+  // Instantiate the definition to access the body.
+  // Only instances (not definitions) have traversable bodies.
+  if (def.definitionKind == slang::ast::DefinitionKind::Module ||
+      def.definitionKind == slang::ast::DefinitionKind::Interface) {
+    const auto& instance =
+        slang::ast::InstanceSymbol::createDefault(compilation, def);
+    instance.body.visit(visitor);
+  }
+}
+
+[[maybe_unused]] void IndexTypeAlias(
+    const slang::ast::TypeAliasType& symbol, SymbolIndex& index) {
+  spdlog::debug("SymbolIndex visiting type alias symbol {}", symbol.name);
+
+  const auto& loc = symbol.location;
+  SymbolKey key = SymbolKey::FromSourceLocation(loc);
+
+  if (const auto& symbol_syntax = symbol.getSyntax()) {
+    if (symbol_syntax->kind == slang::syntax::SyntaxKind::TypedefDeclaration) {
+      const auto& type_alias_syntax =
+          symbol_syntax->as<slang::syntax::TypedefDeclarationSyntax>();
+
+      spdlog::debug(
+          "SymbolIndex visiting typedef declaration {}",
+          type_alias_syntax.name.valueText());
+      index.AddDefinition(key, type_alias_syntax.name.range());
+    }
+  }
+}
+
+[[maybe_unused]] void IndexVariable(
+    const slang::ast::VariableSymbol& symbol, SymbolIndex& index) {
+  spdlog::debug("SymbolIndex visiting variable symbol {}", symbol.name);
+
+  const auto& loc = symbol.location;
+  SymbolKey key = SymbolKey::FromSourceLocation(loc);
+
+  if (const auto& symbol_syntax = symbol.getSyntax()) {
+    index.AddDefinition(key, symbol_syntax->sourceRange());
+  }
+
+  // Variable type reference
+  const auto& declared_type = symbol.getDeclaredType();
+  if (const auto& type_syntax = declared_type->getTypeSyntax()) {
+    if (type_syntax->kind == slang::syntax::SyntaxKind::NamedType) {
+      const auto& named_type =
+          type_syntax->as<slang::syntax::NamedTypeSyntax>();
+      const auto& resolved_type = symbol.getType();
+      SymbolKey type_key =
+          SymbolKey::FromSourceLocation(resolved_type.location);
+      index.AddReference(named_type.name->sourceRange(), type_key);
+    }
+  }
+}
+
+[[maybe_unused]] void IndexParameter(
+    const slang::ast::ParameterSymbol& symbol, SymbolIndex& index) {
+  spdlog::debug("SymbolIndex visiting parameter symbol {}", symbol.name);
+
+  const auto& loc = symbol.location;
+  SymbolKey key = SymbolKey::FromSourceLocation(loc);
+
+  if (const auto& symbol_syntax = symbol.getSyntax()) {
+    index.AddDefinition(key, symbol_syntax->sourceRange());
+  }
+
+  // Parameter type reference
+  const auto& declared_type = symbol.getDeclaredType();
+  if (const auto& type_syntax = declared_type->getTypeSyntax()) {
+    if (type_syntax->kind == slang::syntax::SyntaxKind::NamedType) {
+      const auto& named_type =
+          type_syntax->as<slang::syntax::NamedTypeSyntax>();
+      const auto& resolved_type = symbol.getType();
+      SymbolKey type_key =
+          SymbolKey::FromSourceLocation(resolved_type.location);
+      index.AddReference(named_type.name->sourceRange(), type_key);
+    }
+  }
+}
+
+[[maybe_unused]] void IndexPort(
+    const slang::ast::PortSymbol& port, SymbolIndex& index) {
+  spdlog::debug("SymbolIndex visiting port symbol {}", port.name);
+
+  const auto& declared_type =
+      port.internalSymbol->as<slang::ast::ValueSymbol>().getDeclaredType();
+
+  SymbolKey key = SymbolKey::FromSourceLocation(port.getType().location);
+
+  if (const auto& type_alias = declared_type->getTypeSyntax()) {
+    if (type_alias->kind == slang::syntax::SyntaxKind::NamedType) {
+      const auto& named_type = type_alias->as<slang::syntax::NamedTypeSyntax>();
+      const auto& name = named_type.name;
+      const auto& range = name->sourceRange();
+      index.AddReference(range, key);
+    }
+  }
+}
+
+[[maybe_unused]] void IndexNamedValue(
+    const slang::ast::NamedValueExpression& expr, SymbolIndex& index) {
+  spdlog::debug(
+      "SymbolIndex visiting named value expression {}", expr.symbol.name);
+
+  const auto& loc = expr.symbol.location;
+  const auto& range = expr.sourceRange;
+
+  SymbolKey key = SymbolKey::FromSourceLocation(loc);
+
+  index.AddReference(range, key);
+}
+
+}  // anonymous namespace
+
 auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
     -> SymbolIndex {
   SymbolIndex index;
@@ -37,75 +217,62 @@ auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
         self.visitDefault(symbol);
       },
 
-      // Module/instance definition visitor
-      [&](auto& self, const slang::ast::InstanceSymbol& symbol) {
-        spdlog::debug("SymbolIndex visiting instance symbol {}", symbol.name);
+      // Package definition visitor
+      [&](auto& self, const slang::ast::PackageSymbol& symbol) {
+        IndexPackage(symbol, index);
+        self.visitDefault(symbol);
+      },
 
-        const auto& definition = symbol.getDefinition();
-        SymbolKey key = SymbolKey::FromSourceLocation(definition.location);
+      // Module/interface definition visitor
+      [&](auto& self, const slang::ast::DefinitionSymbol& def) {
+        IndexDefinition(def, index, compilation, self);
+        // Note: visitDefault is handled within IndexDefinition due to special
+        // instantiation logic
+      },
 
-        if (const auto* syntax_node = definition.getSyntax()) {
-          if (syntax_node->kind ==
-              slang::syntax::SyntaxKind::ModuleDeclaration) {
-            const auto& module_syntax =
-                syntax_node->as<slang::syntax::ModuleDeclarationSyntax>();
-
-            const auto& range = module_syntax.header->name.range();
-            index.AddDefinition(key, range);
-
-            // Handle endmodule name if present
-            if (const auto& end_name = module_syntax.blockName) {
-              index.AddReference(end_name->name.range(), key);
-            }
-          }
-        }
-
+      // Type alias definition visitor
+      [&](auto& self, const slang::ast::TypeAliasType& symbol) {
+        IndexTypeAlias(symbol, index);
         self.visitDefault(symbol);
       },
 
       // Variable definition visitor
       [&](auto& self, const slang::ast::VariableSymbol& symbol) {
-        spdlog::debug("SymbolIndex visiting variable symbol {}", symbol.name);
-
-        const auto& loc = symbol.location;
-        SymbolKey key = SymbolKey::FromSourceLocation(loc);
-
-        if (const auto& symbol_syntax = symbol.getSyntax()) {
-          index.AddDefinition(key, symbol_syntax->sourceRange());
-        }
-
+        IndexVariable(symbol, index);
         self.visitDefault(symbol);
       },
 
       // Parameter definition visitor
       [&](auto& self, const slang::ast::ParameterSymbol& symbol) {
-        spdlog::debug("SymbolIndex visiting parameter symbol {}", symbol.name);
-
-        const auto& loc = symbol.location;
-        SymbolKey key = SymbolKey::FromSourceLocation(loc);
-
-        if (const auto& symbol_syntax = symbol.getSyntax()) {
-          index.AddDefinition(key, symbol_syntax->sourceRange());
-        }
-
+        IndexParameter(symbol, index);
         self.visitDefault(symbol);
+      },
+
+      // Port list type reference visitor
+      [&](auto& self, const slang::ast::PortSymbol& port) {
+        IndexPort(port, index);
+        self.visitDefault(port);
       },
 
       // Named value reference visitor
       [&](auto& self, const slang::ast::NamedValueExpression& expr) {
-        spdlog::debug(
-            "SymbolIndex visiting named value expression {}", expr.symbol.name);
-
-        const auto& loc = expr.symbol.location;
-        const auto& range = expr.sourceRange;
-
-        SymbolKey key = SymbolKey::FromSourceLocation(loc);
-
-        index.AddReference(range, key);
+        IndexNamedValue(expr, index);
         self.visitDefault(expr);
       });
 
-  compilation.getRoot().visit(visitor);
+  // Visit all definitions
+  for (const auto* symbol : compilation.getDefinitions()) {
+    if (symbol != nullptr) {
+      symbol->visit(visitor);
+    }
+  }
+
+  // Visit all packages
+  for (const auto* pkg : compilation.getPackages()) {
+    if (pkg != nullptr) {
+      pkg->visit(visitor);
+    }
+  }
 
   return index;
 }

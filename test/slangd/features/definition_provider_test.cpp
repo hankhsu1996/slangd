@@ -296,3 +296,145 @@ TEST_CASE(
     }
   });
 }
+
+TEST_CASE(
+    "GetDefinitionForUri handles package + module", "[definition_provider]") {
+  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    std::string module_code = R"(
+      package TrafficLightPkg;
+        typedef enum logic [1:0] {
+          Red,
+          Green,
+          Yellow
+        } Color;
+      endpackage : TrafficLightPkg
+
+      module TrafficLight
+        import TrafficLightPkg::*;
+      (
+        input  logic clk,
+        input  logic reset,
+        output Color light
+      );
+
+        parameter Color DEFAULT_COLOR = Red;
+        Color light_next;
+
+        always_comb begin : light_next_logic
+          case (light)
+            Red: light_next = Green;
+            Green: light_next = Yellow;
+            Yellow: light_next = Red;
+            default: light_next = Red;
+          endcase
+        end
+
+        always_ff @(posedge clk) begin : light_ff
+          if (reset) begin
+            light <= DEFAULT_COLOR;
+          end
+          else begin
+            light <= light_next;
+          end
+        end
+
+      endmodule : TrafficLight
+    )";
+
+    SECTION("Package reference resolves to definition") {
+      std::string symbol_name = "TrafficLightPkg";
+      auto ref_position = FindPosition(module_code, symbol_name, 3);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, ref_position);
+
+      auto expected_position = FindPosition(module_code, symbol_name, 1);
+      auto expected_range =
+          CreateRange(expected_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
+
+    SECTION("Type alias port list reference resolves to definition") {
+      std::string symbol_name = "Color";
+      auto ref_position = FindPosition(module_code, symbol_name, 2);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, ref_position);
+
+      auto expected_position = FindPosition(module_code, symbol_name, 1);
+      auto expected_range =
+          CreateRange(expected_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
+
+    SECTION("Parameter type reference resolves to definition") {
+      std::string symbol_name = "Color";
+      auto ref_position = FindPosition(module_code, symbol_name, 3);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, ref_position);
+
+      auto expected_position = FindPosition(module_code, symbol_name, 1);
+      auto expected_range =
+          CreateRange(expected_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
+
+    SECTION("Variable type reference resolves to definition") {
+      std::string symbol_name = "Color";
+      auto ref_position = FindPosition(module_code, symbol_name, 4);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, ref_position);
+
+      auto expected_position = FindPosition(module_code, symbol_name, 1);
+      auto expected_range =
+          CreateRange(expected_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
+
+    SECTION("Package definition resolves to definition") {
+      std::string symbol_name = "TrafficLightPkg";
+      auto ref_position = FindPosition(module_code, symbol_name, 1);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, ref_position);
+
+      auto expected_position = FindPosition(module_code, symbol_name, 1);
+      auto expected_range =
+          CreateRange(expected_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
+
+    SECTION("Endpackage label resolves to definition") {
+      std::string symbol_name = "TrafficLightPkg";
+      auto ref_position = FindPosition(module_code, symbol_name, 2);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, ref_position);
+
+      auto expected_position = FindPosition(module_code, symbol_name, 1);
+      auto expected_range =
+          CreateRange(expected_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
+  });
+}

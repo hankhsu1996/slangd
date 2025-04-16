@@ -28,8 +28,10 @@ namespace std {
 template <>
 struct hash<slangd::semantic::SymbolKey> {
   auto operator()(const slangd::semantic::SymbolKey& key) const -> size_t {
-    return std::hash<uint32_t>()(key.bufferId) ^
-           (std::hash<uint32_t>()(key.offset) << 1);
+    size_t hash = std::hash<uint32_t>()(key.bufferId);
+    hash ^= std::hash<size_t>()(key.offset) + 0x9e3779b9 + (hash << 6) +
+            (hash >> 2);
+    return hash;
   }
 };
 }  // namespace std
