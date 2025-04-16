@@ -206,6 +206,25 @@ namespace {
   index.AddReference(range, key);
 }
 
+[[maybe_unused]] void IndexStatementBlock(
+    const slang::ast::StatementBlockSymbol& symbol, SymbolIndex& index) {
+  spdlog::debug("SymbolIndex visiting statement block symbol {}", symbol.name);
+
+  if (!symbol.name.empty()) {
+    SymbolKey key = SymbolKey::FromSourceLocation(symbol.location);
+    if (const auto* syntax = symbol.getSyntax()) {
+      if (syntax->kind == slang::syntax::SyntaxKind::SequentialBlockStatement ||
+          syntax->kind == slang::syntax::SyntaxKind::ParallelBlockStatement) {
+        const auto& block_syntax =
+            syntax->as<slang::syntax::BlockStatementSyntax>();
+        if (block_syntax.blockName != nullptr) {
+          index.AddDefinition(key, block_syntax.blockName->name.range());
+        }
+      }
+    }
+  }
+}
+
 }  // anonymous namespace
 
 auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
@@ -265,6 +284,12 @@ auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
       [&](auto& self, const slang::ast::NamedValueExpression& expr) {
         IndexNamedValue(expr, index);
         self.visitDefault(expr);
+      },
+
+      // Procedural block label visitor
+      [&](auto& self, const slang::ast::StatementBlockSymbol& symbol) {
+        IndexStatementBlock(symbol, index);
+        self.visitDefault(symbol);
       });
 
   // Visit all definitions
@@ -275,9 +300,9 @@ auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
   }
 
   // Visit all packages
-  for (const auto* pkg : compilation.getPackages()) {
-    if (pkg != nullptr) {
-      pkg->visit(visitor);
+  for (const auto* package_symbol : compilation.getPackages()) {
+    if (package_symbol != nullptr) {
+      package_symbol->visit(visitor);
     }
   }
 

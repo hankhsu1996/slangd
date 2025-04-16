@@ -452,5 +452,21 @@ TEST_CASE(
       REQUIRE(locations[0].uri == "file://test.sv");
       REQUIRE(locations[0].range == expected_range);
     }
+
+    SECTION("Procedural block label resolves to definition") {
+      std::string symbol_name = "light_next_logic";
+      auto ref_position = FindPosition(module_code, symbol_name, 1);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, ref_position);
+
+      auto expected_position = FindPosition(module_code, symbol_name, 1);
+      auto expected_range =
+          CreateRange(expected_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
   });
 }
