@@ -25,11 +25,7 @@ DocumentManager::DocumentManager(
 
 auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
     -> asio::awaitable<void> {
-  // Create a new source manager for this document if it doesn't exist
-  if (source_managers_.find(uri) == source_managers_.end()) {
-    source_managers_[uri] = std::make_shared<slang::SourceManager>();
-  }
-
+  source_managers_[uri] = std::make_shared<slang::SourceManager>();
   auto& source_manager = *source_managers_[uri];
   std::string_view content_view(content);
 

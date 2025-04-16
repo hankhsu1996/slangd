@@ -274,7 +274,7 @@ auto SlangdLspServer::OnGotoDefinition(lsp::DefinitionParams params)
 auto SlangdLspServer::OnDidChangeWatchedFiles(
     lsp::DidChangeWatchedFilesParams params)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
-  Logger()->info("SlangdLspServer OnDidChangeWatchedFiles");
+  Logger()->debug("SlangdLspServer OnDidChangeWatchedFiles");
 
   asio::co_spawn(
       strand_,

@@ -229,6 +229,7 @@ namespace {
 
 auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
     -> SymbolIndex {
+  spdlog::debug("SymbolIndex building from compilation");
   SymbolIndex index;
   auto visitor = slang::ast::makeVisitor(
       // Special handling for instance body
