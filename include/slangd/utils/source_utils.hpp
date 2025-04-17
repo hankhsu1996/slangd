@@ -16,10 +16,10 @@ namespace slangd {
  * @param uri The URI of the document to check against
  * @return True if the location is in the document with the given URI
  */
-bool IsLocationInDocument(
+auto IsLocationInDocument(
     const slang::SourceLocation& location,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    const std::string& uri);
+    const std::string& uri) -> bool;
 
 /**
  * Extract a filename from a path or URI
@@ -27,7 +27,7 @@ bool IsLocationInDocument(
  * @param path A file path or URI that may contain directory components
  * @return The filename part without directory components
  */
-std::string ExtractFilename(const std::string& path);
+auto ExtractFilename(const std::string& path) -> std::string;
 
 /**
  * Check if a file is a SystemVerilog file based on its extension
@@ -35,7 +35,7 @@ std::string ExtractFilename(const std::string& path);
  * @param path The file path to check
  * @return True if the file has a SystemVerilog extension (.sv, .svh, .v, .vh)
  */
-bool IsSystemVerilogFile(const std::string& path);
+auto IsSystemVerilogFile(const std::string& path) -> bool;
 
 /**
  * Normalize a file path by resolving symbolic links and returning the canonical
@@ -45,6 +45,6 @@ bool IsSystemVerilogFile(const std::string& path);
  * @return The canonical path with symbolic links resolved, or the original path
  * if canonical cannot be determined
  */
-std::string NormalizePath(const std::string& path);
+auto NormalizePath(const std::string& path) -> std::string;
 
 }  // namespace slangd
