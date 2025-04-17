@@ -32,6 +32,9 @@ bazel_dep(name = "llvm-project", version = "17.0.3.bcr.2")
 # SPDLOG Logging Library
 bazel_dep(name = "spdlog", version = "1.15.1")
 
+# YAML Parser Library
+bazel_dep(name = "yaml-cpp", version = "0.8.0")
+
 # Testing framework
 bazel_dep(name = "catch2", version = "3.8.0")
 
