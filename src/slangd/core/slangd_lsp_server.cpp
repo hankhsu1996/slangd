@@ -79,7 +79,8 @@ auto SlangdLspServer::OnInitialized(lsp::InitializedParams /*unused*/)
   // Register the file system watcher for workspace changes
   auto register_watcher = [this]() -> asio::awaitable<void> {
     Logger()->debug("SlangdLspServer registering file system watcher");
-    auto watcher = lsp::FileSystemWatcher{.globPattern = "**/*.{sv,svh,v,vh}"};
+    auto watcher =
+        lsp::FileSystemWatcher{.globPattern = "**/*.{sv,svh,v,vh},**/.slangd"};
     auto options = lsp::DidChangeWatchedFilesRegistrationOptions{
         .watchers = {watcher},
     };

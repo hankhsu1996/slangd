@@ -2,6 +2,7 @@
 
 #include <expected>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -14,15 +15,18 @@
 #include <spdlog/spdlog.h>
 
 #include "lsp/workspace.hpp"
+#include "slangd/core/slangd_config_file.hpp"
 
 namespace slangd {
 
 class WorkspaceManager {
  public:
+  // Constructor
   explicit WorkspaceManager(
       asio::any_io_executor executor,
       std::shared_ptr<spdlog::logger> logger = nullptr);
 
+  // Logger accessor
   auto Logger() -> std::shared_ptr<spdlog::logger> {
     return logger_;
   }
@@ -54,37 +58,39 @@ class WorkspaceManager {
   }
 
  private:
+  // Configuration file handling
+  auto TryLoadConfigFile(const std::string& workspace_path) -> bool;
+  auto IsUsingConfigFile() const -> bool {
+    return using_config_file_;
+  }
+  [[nodiscard]] static auto IsSlangdConfigFile(const std::string& path) -> bool;
+  auto GetSourceFilesFromConfig() -> std::vector<std::string>;
+  auto ProcessFileList(const std::string& path, bool absolute)
+      -> std::vector<std::string>;
+  auto HandleConfigFileChange(std::string config_path) -> asio::awaitable<void>;
+
+  // File discovery and indexing
+  auto GetWorkspaceSourceFiles() -> asio::awaitable<std::vector<std::string>>;
+  auto FindSystemVerilogFilesInDirectory(std::string directory)
+      -> asio::awaitable<std::vector<std::string>>;
+  auto IndexFiles(std::vector<std::string> file_paths) -> asio::awaitable<void>;
+  auto ParseFile(std::string path)
+      -> asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>>;
+
+  // File change handlers
+  auto HandleFileCreated(std::string path) -> asio::awaitable<void>;
+  auto HandleFileChanged(std::string path) -> asio::awaitable<void>;
+  auto HandleFileDeleted(std::string path) -> asio::awaitable<void>;
+  auto RebuildWorkspaceCompilation() -> asio::awaitable<void>;
+
+  // Utility
+  auto DumpWorkspaceStats() -> void;
+
   // Logger
   std::shared_ptr<spdlog::logger> logger_;
 
   // Store workspace folder local paths
   std::vector<std::string> workspace_folders_;
-
-  // Find all SystemVerilog files in a directory recursively
-  auto FindSystemVerilogFilesInDirectory(std::string directory)
-      -> asio::awaitable<std::vector<std::string>>;
-
-  // Index files and build compilation
-  auto IndexFiles(std::vector<std::string> file_paths) -> asio::awaitable<void>;
-
-  // Parse a single file and return its syntax tree
-  auto ParseFile(std::string path)
-      -> asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>>;
-
-  // Handle a created file
-  auto HandleFileCreated(std::string path) -> asio::awaitable<void>;
-
-  // Handle a changed file
-  auto HandleFileChanged(std::string path) -> asio::awaitable<void>;
-
-  // Handle a deleted file
-  auto HandleFileDeleted(std::string path) -> asio::awaitable<void>;
-
-  // Rebuild compilation after file changes
-  auto RebuildWorkspaceCompilation() -> asio::awaitable<void>;
-
-  // Dump workspace stats
-  auto DumpWorkspaceStats() -> void;
 
   // Map of file path to syntax tree
   std::unordered_map<std::string, std::shared_ptr<slang::syntax::SyntaxTree>>
@@ -98,6 +104,10 @@ class WorkspaceManager {
 
   // Global compilation for workspace-wide symbol resolution
   std::shared_ptr<slang::ast::Compilation> compilation_;
+
+  // Config file state
+  std::optional<SlangdConfigFile> config_;
+  bool using_config_file_ = false;
 
   // ASIO executor and strand for synchronization
   asio::any_io_executor executor_;

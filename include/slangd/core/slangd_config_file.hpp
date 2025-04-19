@@ -10,7 +10,7 @@
 namespace slangd {
 
 // Represents the contents of a .slangd configuration file
-class SlangdConfig {
+class SlangdConfigFile {
  public:
   // File lists from .f files
   struct FileLists {
@@ -19,18 +19,18 @@ class SlangdConfig {
   };
 
   // Constructor with optional logger
-  explicit SlangdConfig(std::shared_ptr<spdlog::logger> logger = nullptr);
+  explicit SlangdConfigFile(std::shared_ptr<spdlog::logger> logger = nullptr);
 
   // Create a default configuration with sensible fallback values
   static auto CreateDefault(std::shared_ptr<spdlog::logger> logger = nullptr)
-      -> SlangdConfig;
+      -> SlangdConfigFile;
 
   // Load a configuration from a .slangd file in the specified root directory
   // Returns std::nullopt if file doesn't exist or has critical parsing errors
   static auto LoadFromFile(
       const std::filesystem::path& root,
       std::shared_ptr<spdlog::logger> logger = nullptr)
-      -> std::optional<SlangdConfig>;
+      -> std::optional<SlangdConfigFile>;
 
   // Accessors
   [[nodiscard]] auto GetFileLists() const -> const FileLists& {

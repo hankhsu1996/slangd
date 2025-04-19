@@ -1,4 +1,4 @@
-#include "slangd/core/config.hpp"
+#include "slangd/core/slangd_config_file.hpp"
 
 #include <yaml-cpp/yaml.h>
 
@@ -6,22 +6,22 @@
 
 namespace slangd {
 
-SlangdConfig::SlangdConfig(std::shared_ptr<spdlog::logger> logger)
+SlangdConfigFile::SlangdConfigFile(std::shared_ptr<spdlog::logger> logger)
     : logger_(logger ? logger : spdlog::default_logger()) {
 }
 
-auto SlangdConfig::CreateDefault(std::shared_ptr<spdlog::logger> logger)
-    -> SlangdConfig {
-  SlangdConfig config(logger);
+auto SlangdConfigFile::CreateDefault(std::shared_ptr<spdlog::logger> logger)
+    -> SlangdConfigFile {
+  SlangdConfigFile config(logger);
   // For fallback, we'll add the current directory as an include directory
   config.include_dirs_.emplace_back(".");
   return config;
 }
 
-auto SlangdConfig::LoadFromFile(
+auto SlangdConfigFile::LoadFromFile(
     const std::filesystem::path& root, std::shared_ptr<spdlog::logger> logger)
-    -> std::optional<SlangdConfig> {
-  SlangdConfig config(logger);
+    -> std::optional<SlangdConfigFile> {
+  SlangdConfigFile config(logger);
   auto config_path = root / ".slangd";
 
   if (!std::filesystem::exists(config_path)) {
