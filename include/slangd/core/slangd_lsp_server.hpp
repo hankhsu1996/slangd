@@ -8,6 +8,7 @@
 
 #include "lsp/lifecycle.hpp"
 #include "lsp/lsp_server.hpp"
+#include "slangd/core/config_manager.hpp"
 #include "slangd/core/document_manager.hpp"
 #include "slangd/core/workspace_manager.hpp"
 #include "slangd/features/definition_provider.hpp"
@@ -28,23 +29,32 @@ class SlangdLspServer : public lsp::LspServer {
   bool initialized_ = false;
   bool shutdown_requested_ = false;
 
-  // Thread safety
+  // Logger
+  std::shared_ptr<spdlog::logger> logger_;
+
+  // Executor
+  asio::any_io_executor executor_;
+
+  // Strand for thread safety
   asio::strand<asio::any_io_executor> strand_;
 
+  // Configuration manager
+  std::shared_ptr<ConfigManager> config_manager_{nullptr};
+
   // Document management
-  std::shared_ptr<DocumentManager> document_manager_;
+  std::shared_ptr<DocumentManager> document_manager_{nullptr};
 
   // Workspace manager
-  std::shared_ptr<WorkspaceManager> workspace_manager_;
+  std::shared_ptr<WorkspaceManager> workspace_manager_{nullptr};
 
   // Definition provider
-  std::unique_ptr<DefinitionProvider> definition_provider_;
+  std::unique_ptr<DefinitionProvider> definition_provider_{nullptr};
 
   // Diagnostics provider
-  std::unique_ptr<DiagnosticsProvider> diagnostics_provider_;
+  std::unique_ptr<DiagnosticsProvider> diagnostics_provider_{nullptr};
 
   // Symbols provider
-  std::unique_ptr<SymbolsProvider> symbols_provider_;
+  std::unique_ptr<SymbolsProvider> symbols_provider_{nullptr};
 
  protected:
   // Initialize Request

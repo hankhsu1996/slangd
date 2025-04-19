@@ -2,11 +2,13 @@
 
 #include <filesystem>
 #include <fstream>
+#include <utility>
 
 #include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/parsing/Lexer.h>
 #include <slang/parsing/Preprocessor.h>
 #include <slang/util/Bag.h>
+#include <slangd/core/config_manager.hpp>
 #include <spdlog/spdlog.h>
 
 #include "slangd/utils/source_utils.hpp"
@@ -16,45 +18,22 @@
 namespace slangd {
 
 WorkspaceManager::WorkspaceManager(
-    asio::any_io_executor executor, std::shared_ptr<spdlog::logger> logger)
+    asio::any_io_executor executor, std::string workspace_folder,
+    std::shared_ptr<ConfigManager> config_manager,
+    std::shared_ptr<spdlog::logger> logger)
     : logger_(logger ? logger : spdlog::default_logger()),
+      workspace_folder_(std::move(workspace_folder)),
       source_manager_(std::make_shared<slang::SourceManager>()),
       source_loader_(
           std::make_unique<slang::driver::SourceLoader>(*source_manager_)),
+      config_manager_(config_manager),
       executor_(executor),
       strand_(asio::make_strand(executor)) {
-}
-
-void WorkspaceManager::AddWorkspaceFolder(
-    const std::string& uri, const std::string& name) {
-  if (!IsFileUri(uri)) {
-    Logger()->warn(
-        "WorkspaceManager skipping non-file URI workspace folder: {}", uri);
-    return;
-  }
-
-  std::string local_path = UriToPath(uri);
-
-  if (!std::filesystem::exists(local_path)) {
-    Logger()->warn(
-        "WorkspaceManager skipping non-existent workspace folder: {}",
-        local_path);
-    return;
-  }
-
-  Logger()->debug(
-      "WorkspaceManager adding workspace folder: {} ({})", name, local_path);
-  workspace_folders_.push_back(local_path);
 }
 
 auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
   Logger()->debug(
       "WorkspaceManager starting workspace scan for SystemVerilog files");
-
-  // Check for .slangd file and load if present
-  if (!workspace_folders_.empty()) {
-    using_config_file_ = TryLoadConfigFile(workspace_folders_[0]);
-  }
 
   // Get source files based on config or auto-discovery
   auto all_files = co_await GetWorkspaceSourceFiles();
@@ -86,11 +65,12 @@ auto WorkspaceManager::HandleFileChanges(std::vector<lsp::FileEvent> changes)
     // Normalize path early to ensure consistent path handling
     std::string normalized_path = NormalizePath(local_path);
 
-    // Check if this is a config file change
-    if (IsSlangdConfigFile(normalized_path)) {
+    // Check if this is a config file change - handled by ConfigManager already
+    // We skip config files in WorkspaceManager since they're handled at the
+    // server level
+    if (ConfigManager::IsConfigFile(normalized_path)) {
       Logger()->debug(
-          "WorkspaceManager detected config file change: {}", normalized_path);
-      co_await HandleConfigFileChange(normalized_path);
+          "WorkspaceManager skipping config file: {}", normalized_path);
       continue;
     }
 
@@ -121,70 +101,47 @@ auto WorkspaceManager::HandleFileChanges(std::vector<lsp::FileEvent> changes)
 
 auto WorkspaceManager::GetWorkspaceSourceFiles()
     -> asio::awaitable<std::vector<std::string>> {
-  if (IsUsingConfigFile()) {
-    // Use files from config
-    auto files = GetSourceFilesFromConfig();
+  // Use files from config if available
+  if (config_manager_ && config_manager_->HasValidConfig()) {
+    // Get files from config
+    const auto& config = config_manager_->GetConfig();
+
+    // Combine the files directly specified in the config
+    std::vector<std::string> all_files = config->GetFiles();
+
+    // Process file lists if present
+    const auto& file_lists = config->GetFileLists();
+    for (const auto& file_list_path : file_lists.paths) {
+      std::string resolved_path = file_list_path;
+      if (!file_lists.absolute && !workspace_folder_.empty()) {
+        resolved_path =
+            (std::filesystem::path(workspace_folder_) / file_list_path)
+                .string();
+      }
+
+      // Process the file list and add files
+      auto files_from_list =
+          ProcessFileList(resolved_path, file_lists.absolute);
+      all_files.insert(
+          all_files.end(), files_from_list.begin(), files_from_list.end());
+    }
+
     Logger()->debug(
         "WorkspaceManager using {} source files from config file",
-        files.size());
-    co_return files;
+        all_files.size());
+    co_return all_files;
   } else {
     // Fall back to auto-discovery
     std::vector<std::string> all_files;
-    for (const auto& folder : workspace_folders_) {
-      Logger()->debug("WorkspaceManager scanning workspace folder: {}", folder);
-      auto files = co_await FindSystemVerilogFilesInDirectory(folder);
-      Logger()->debug(
-          "WorkspaceManager found {} SystemVerilog files in {}", files.size(),
-          folder);
-      all_files.insert(all_files.end(), files.begin(), files.end());
-    }
+    Logger()->debug(
+        "WorkspaceManager scanning workspace folder: {}", workspace_folder_);
+    auto files = co_await FindSystemVerilogFilesInDirectory(workspace_folder_);
+    Logger()->debug(
+        "WorkspaceManager found {} SystemVerilog files in {}", files.size(),
+        workspace_folder_);
+    all_files.insert(all_files.end(), files.begin(), files.end());
     co_return all_files;
   }
-}
-
-auto WorkspaceManager::TryLoadConfigFile(const std::string& workspace_path)
-    -> bool {
-  std::filesystem::path config_path =
-      std::filesystem::path(workspace_path) / ".slangd";
-
-  auto loaded_config = SlangdConfigFile::LoadFromFile(config_path);
-
-  if (loaded_config) {
-    config_ = std::move(loaded_config.value());
-    Logger()->info("Loaded .slangd config file from {}", config_path.string());
-    return true;
-  }
-  Logger()->debug("No .slangd config file found at {}", config_path.string());
-  return false;
-}
-
-auto WorkspaceManager::IsSlangdConfigFile(const std::string& path) -> bool {
-  return std::filesystem::path(path).filename() == ".slangd";
-}
-
-auto WorkspaceManager::GetSourceFilesFromConfig() -> std::vector<std::string> {
-  if (!IsUsingConfigFile() || !config_.has_value()) {
-    return {};
-  }
-
-  auto all_files = config_->GetFiles();
-
-  // Also process any file lists referenced in the config
-  const auto& file_lists = config_->GetFileLists();
-  for (const auto& file_list_path : file_lists.paths) {
-    std::string resolved_path = file_list_path;
-    if (!file_lists.absolute) {
-      resolved_path =
-          (std::filesystem::path(workspace_folders_[0]) / file_list_path)
-              .string();
-    }
-
-    auto list_files = ProcessFileList(resolved_path, file_lists.absolute);
-    all_files.insert(all_files.end(), list_files.begin(), list_files.end());
-  }
-
-  return all_files;
 }
 
 auto WorkspaceManager::ProcessFileList(const std::string& path, bool absolute)
@@ -236,37 +193,6 @@ auto WorkspaceManager::ProcessFileList(const std::string& path, bool absolute)
   return files;
 }
 
-auto WorkspaceManager::HandleConfigFileChange(std::string config_path)
-    -> asio::awaitable<void> {
-  Logger()->info("WorkspaceManager reloading config file: {}", config_path);
-
-  // Get the workspace path containing this config
-  std::string workspace_path;
-  for (const auto& folder : workspace_folders_) {
-    if (config_path.starts_with(folder)) {
-      workspace_path = folder;
-      break;
-    }
-  }
-
-  if (workspace_path.empty()) {
-    Logger()->warn(
-        "WorkspaceManager couldn't determine workspace for config file: {}",
-        config_path);
-    co_return;
-  }
-
-  // Try to load the updated config
-  using_config_file_ = TryLoadConfigFile(workspace_path);
-
-  // Re-scan the workspace with the new config
-  auto all_files = co_await GetWorkspaceSourceFiles();
-  co_await IndexFiles(all_files);
-
-  Logger()->info("Workspace reloaded after config change");
-  co_return;
-}
-
 auto WorkspaceManager::FindSystemVerilogFilesInDirectory(std::string directory)
     -> asio::awaitable<std::vector<std::string>> {
   std::vector<std::string> sv_files;
@@ -309,24 +235,23 @@ auto WorkspaceManager::IndexFiles(std::vector<std::string> file_paths)
   }
 
   // Add include directories to source loader
-  if (IsUsingConfigFile() && config_.has_value()) {
-    for (const auto& include_dir : config_->GetIncludeDirs()) {
+  if (config_manager_->HasValidConfig()) {
+    const auto& config = config_manager_->GetConfig();
+    for (const auto& include_dir : config->GetIncludeDirs()) {
       source_loader_->addSearchDirectories(include_dir);
     }
     Logger()->debug(
         "WorkspaceManager added {} include directories",
-        config_->GetIncludeDirs().size());
+        config->GetIncludeDirs().size());
   }
   // Add all the subdirectories of the workspace folders to the source loader
   else {
     int count = 0;
-    for (const auto& folder : workspace_folders_) {
-      for (const auto& entry :
-           std::filesystem::recursive_directory_iterator(folder)) {
-        if (entry.is_directory()) {
-          source_loader_->addSearchDirectories(entry.path().string());
-          count++;
-        }
+    for (const auto& entry :
+         std::filesystem::recursive_directory_iterator(workspace_folder_)) {
+      if (entry.is_directory()) {
+        source_loader_->addSearchDirectories(entry.path().string());
+        count++;
       }
     }
     Logger()->debug("WorkspaceManager added {} include directories", count);
@@ -334,8 +259,9 @@ auto WorkspaceManager::IndexFiles(std::vector<std::string> file_paths)
 
   // Add defines to source loader
   slang::parsing::PreprocessorOptions pp_options;
-  if (IsUsingConfigFile() && config_.has_value()) {
-    for (const auto& define : config_->GetDefines()) {
+  if (config_manager_->HasValidConfig()) {
+    const auto& config = config_manager_->GetConfig();
+    for (const auto& define : config->GetDefines()) {
       Logger()->debug("WorkspaceManager adding define: {}", define);
       pp_options.predefines.push_back(define);
     }
@@ -425,11 +351,11 @@ auto WorkspaceManager::HandleFileCreated(std::string path)
     co_return;
   }
 
-  // If using config file mode, check if this file is part of the config
-  if (IsUsingConfigFile()) {
+  // If using config, check if this file is part of the config
+  if (config_manager_ && config_manager_->HasValidConfig()) {
     bool in_config = false;
-    auto config_files = GetSourceFilesFromConfig();
-    for (const auto& config_file : config_files) {
+    auto all_files = co_await GetWorkspaceSourceFiles();
+    for (const auto& config_file : all_files) {
       if (NormalizePath(config_file) == NormalizePath(path)) {
         in_config = true;
         break;
@@ -551,33 +477,32 @@ auto WorkspaceManager::RebuildWorkspaceCompilation() -> asio::awaitable<void> {
 // Dump workspace stats
 auto WorkspaceManager::DumpWorkspaceStats() -> void {
   Logger()->info("WorkspaceManager Statistics:");
-  Logger()->info("  Workspace folders: {}", workspace_folders_.size());
-  Logger()->info("  Using config file: {}", IsUsingConfigFile());
+  Logger()->info("  Workspace folder: {}", workspace_folder_);
+  Logger()->info("  Using config file: {}", config_manager_->HasValidConfig());
   Logger()->info("  Syntax trees: {}", syntax_trees_.size());
   Logger()->info("  Compilation active: {}", compilation_ != nullptr);
 
   // Find files that failed to parse
   std::vector<std::string> failed_files;
 
-  for (const auto& folder : workspace_folders_) {
-    try {
-      // Find SV files in this folder
-      for (const auto& entry :
-           std::filesystem::recursive_directory_iterator(folder)) {
-        if (entry.is_regular_file() &&
-            IsSystemVerilogFile(entry.path().string())) {
-          std::string path = entry.path().string();
-          // Normalize the path to match how we store paths in syntax_trees_
-          std::string normalized_path = NormalizePath(path);
+  try {
+    // Find SV files in this folder
+    for (const auto& entry :
+         std::filesystem::recursive_directory_iterator(workspace_folder_)) {
+      if (entry.is_regular_file() &&
+          IsSystemVerilogFile(entry.path().string())) {
+        std::string path = entry.path().string();
+        // Normalize the path to match how we store paths in syntax_trees_
+        std::string normalized_path = NormalizePath(path);
 
-          if (syntax_trees_.find(normalized_path) == syntax_trees_.end()) {
-            failed_files.push_back(path);  // Keep original path for display
-          }
+        if (syntax_trees_.find(normalized_path) == syntax_trees_.end()) {
+          failed_files.push_back(path);  // Keep original path for display
         }
       }
-    } catch (const std::exception& e) {
-      Logger()->warn("Error scanning directory {}: {}", folder, e.what());
     }
+  } catch (const std::exception& e) {
+    Logger()->warn(
+        "Error scanning directory {}: {}", workspace_folder_, e.what());
   }
 
   Logger()->info("  Failed to parse: {}", failed_files.size());

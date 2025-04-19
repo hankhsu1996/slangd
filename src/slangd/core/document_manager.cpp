@@ -18,9 +18,12 @@
 namespace slangd {
 
 DocumentManager::DocumentManager(
-    asio::any_io_executor executor, std::shared_ptr<spdlog::logger> logger)
-    : executor_(std::move(executor)),
-      logger_(logger ? logger : spdlog::default_logger()) {
+    asio::any_io_executor executor,
+    std::shared_ptr<ConfigManager> config_manager,
+    std::shared_ptr<spdlog::logger> logger)
+    : executor_(executor),
+      logger_(logger ? logger : spdlog::default_logger()),
+      config_manager_(config_manager) {
 }
 
 auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)

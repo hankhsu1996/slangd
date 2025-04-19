@@ -10,7 +10,7 @@ namespace slangd {
 // Examples:
 // "file:///home/user/file.sv" -> "/home/user/file.sv"
 // "file:///c:/Users/user/file.sv" -> "c:/Users/user/file.sv"
-inline std::string UriToPath(std::string_view uri) {
+inline auto UriToPath(std::string_view uri) -> std::string {
   if (uri.substr(0, 7) != "file://") {
     return std::string(uri);
   }
@@ -26,11 +26,11 @@ inline std::string UriToPath(std::string_view uri) {
   }
 
   // Replace URL encoded characters
-  static const std::regex escape_regex("%([0-9A-Fa-f]{2})");
+  static const std::regex kEscapeRegex("%([0-9A-Fa-f]{2})");
   std::string result;
 
   std::regex_iterator<std::string::iterator> it(
-      path.begin(), path.end(), escape_regex);
+      path.begin(), path.end(), kEscapeRegex);
   std::regex_iterator<std::string::iterator> end;
 
   std::size_t last_pos = 0;
@@ -58,7 +58,7 @@ inline std::string UriToPath(std::string_view uri) {
 // Examples:
 // "/home/user/file.sv" -> "file:///home/user/file.sv"
 // "c:/Users/user/file.sv" -> "file:///c:/Users/user/file.sv"
-inline std::string PathToUri(std::string_view path) {
+inline auto PathToUri(std::string_view path) -> std::string {
   std::string result = "file://";
 
   // For Windows paths add an extra slash before the drive letter
@@ -83,7 +83,7 @@ inline std::string PathToUri(std::string_view path) {
 }
 
 // Check if the URI starts with file://
-inline bool IsFileUri(std::string_view uri) {
+inline auto IsFileUri(std::string_view uri) -> bool {
   return uri.substr(0, 7) == "file://";
 }
 

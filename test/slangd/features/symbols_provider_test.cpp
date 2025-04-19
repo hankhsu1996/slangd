@@ -54,10 +54,15 @@ void RunTest(F&& test_fn) {
 auto ExtractSymbolsFromString(
     asio::any_io_executor executor, std::string source)
     -> asio::awaitable<std::vector<lsp::DocumentSymbol>> {
+  const std::string workspace_root = ".";
   const std::string uri = "file://test.sv";
-  auto doc_manager = std::make_shared<slangd::DocumentManager>(executor);
+  auto config_manager =
+      std::make_shared<slangd::ConfigManager>(executor, workspace_root);
+  auto doc_manager =
+      std::make_shared<slangd::DocumentManager>(executor, config_manager);
   co_await doc_manager->ParseWithCompilation(uri, source);
-  auto workspace_manager = std::make_shared<slangd::WorkspaceManager>(executor);
+  auto workspace_manager = std::make_shared<slangd::WorkspaceManager>(
+      executor, workspace_root, config_manager);
   auto symbols_provider =
       slangd::SymbolsProvider(doc_manager, workspace_manager);
 

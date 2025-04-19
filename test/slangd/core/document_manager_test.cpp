@@ -60,7 +60,10 @@ void RunTest(F&& test_fn) {
 TEST_CASE("DocumentManager initialization", "[basic]") {
   asio::io_context io_context;
   auto executor = io_context.get_executor();
-  REQUIRE_NOTHROW(slangd::DocumentManager(executor));
+  const std::string workspace_root = ".";
+  auto config_manager =
+      std::make_shared<slangd::ConfigManager>(executor, workspace_root);
+  REQUIRE_NOTHROW(slangd::DocumentManager(executor, config_manager));
   INFO("DocumentManager can be initialized");
 }
 
@@ -85,7 +88,10 @@ TEST_CASE("DocumentManager can read files", "[basic]") {
 TEST_CASE("DocumentManager can parse a document", "[parse]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Create document manager
-    slangd::DocumentManager doc_manager(executor);
+    const std::string workspace_root = ".";
+    auto config_manager =
+        std::make_shared<slangd::ConfigManager>(executor, workspace_root);
+    slangd::DocumentManager doc_manager(executor, config_manager);
 
     // Load real SystemVerilog content from test file
     std::string file_path = GetTestFilePath("parse_test.sv");
@@ -101,7 +107,10 @@ TEST_CASE("DocumentManager can parse a document", "[parse]") {
 TEST_CASE("DocumentManager can retrieve a syntax tree", "[syntax]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Create document manager
-    slangd::DocumentManager doc_manager(executor);
+    const std::string workspace_root = ".";
+    auto config_manager =
+        std::make_shared<slangd::ConfigManager>(executor, workspace_root);
+    slangd::DocumentManager doc_manager(executor, config_manager);
 
     // Load real SystemVerilog content from test file
     std::string file_path = GetTestFilePath("syntax_test.sv");
@@ -129,7 +138,10 @@ TEST_CASE("DocumentManager can retrieve a syntax tree", "[syntax]") {
 TEST_CASE("DocumentManager can retrieve a compilation", "[compilation]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Create document manager
-    slangd::DocumentManager doc_manager(executor);
+    const std::string workspace_root = ".";
+    auto config_manager =
+        std::make_shared<slangd::ConfigManager>(executor, workspace_root);
+    slangd::DocumentManager doc_manager(executor, config_manager);
 
     // Load real SystemVerilog content from test file
     std::string file_path = GetTestFilePath("compile_test.sv");
@@ -154,9 +166,15 @@ TEST_CASE("DocumentManager can retrieve a compilation", "[compilation]") {
     bool found_fifo = false;
 
     for (const auto* def : definitions) {
-      if (def->name == "compile_top") found_compile_top = true;
-      if (def->name == "memory") found_memory = true;
-      if (def->name == "fifo") found_fifo = true;
+      if (def->name == "compile_top") {
+        found_compile_top = true;
+      }
+      if (def->name == "memory") {
+        found_memory = true;
+      }
+      if (def->name == "fifo") {
+        found_fifo = true;
+      }
     }
 
     REQUIRE(found_compile_top);
@@ -171,7 +189,10 @@ TEST_CASE("DocumentManager can retrieve a compilation", "[compilation]") {
 TEST_CASE("DocumentManager can extract symbols from a document", "[symbols]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Create document manager
-    slangd::DocumentManager doc_manager(executor);
+    const std::string workspace_root = ".";
+    auto config_manager =
+        std::make_shared<slangd::ConfigManager>(executor, workspace_root);
+    slangd::DocumentManager doc_manager(executor, config_manager);
 
     // Load real SystemVerilog content from test file
     std::string file_path = GetTestFilePath("symbol_test.sv");

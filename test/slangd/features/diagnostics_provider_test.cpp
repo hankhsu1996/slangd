@@ -50,11 +50,15 @@ void RunTest(F&& test_fn) {
 auto ExtractDiagnosticsFromString(
     asio::any_io_executor executor, std::string source)
     -> asio::awaitable<std::vector<lsp::Diagnostic>> {
+  const std::string workspace_root = ".";
   const std::string uri = "file://test.sv";
-
-  auto document_manager = std::make_shared<slangd::DocumentManager>(executor);
+  auto config_manager =
+      std::make_shared<slangd::ConfigManager>(executor, workspace_root);
+  auto document_manager =
+      std::make_shared<slangd::DocumentManager>(executor, config_manager);
   co_await document_manager->ParseWithCompilation(uri, source);
-  auto workspace_manager = std::make_shared<slangd::WorkspaceManager>(executor);
+  auto workspace_manager = std::make_shared<slangd::WorkspaceManager>(
+      executor, workspace_root, config_manager);
   auto diagnostics_provider =
       slangd::DiagnosticsProvider(document_manager, workspace_manager);
 

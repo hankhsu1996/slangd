@@ -6,10 +6,12 @@
 #include <spdlog/spdlog.h>
 
 #include "lsp/document_features.hpp"
+#include "slangd/utils/uri.hpp"
 
 namespace slangd {
 
 using lsp::LspError;
+using lsp::LspErrorCode;
 using lsp::Ok;
 
 SlangdLspServer::SlangdLspServer(
@@ -17,25 +19,39 @@ SlangdLspServer::SlangdLspServer(
     std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint,
     std::shared_ptr<spdlog::logger> logger)
     : lsp::LspServer(executor, std::move(endpoint), logger),
-      strand_(asio::make_strand(executor)),
-      document_manager_(std::make_shared<DocumentManager>(executor, logger)),
-      workspace_manager_(std::make_shared<WorkspaceManager>(executor, logger)),
-      definition_provider_(std::make_unique<DefinitionProvider>(
-          document_manager_, workspace_manager_, logger)),
-      diagnostics_provider_(std::make_unique<DiagnosticsProvider>(
-          document_manager_, workspace_manager_, logger)),
-      symbols_provider_(std::make_unique<SymbolsProvider>(
-          document_manager_, workspace_manager_, logger)) {
+      logger_(logger ? logger : spdlog::default_logger()),
+      executor_(executor),
+      strand_(asio::make_strand(executor)) {
 }
 
 auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
     -> asio::awaitable<std::expected<lsp::InitializeResult, lsp::LspError>> {
   Logger()->debug("SlangdLspServer OnInitialize");
 
-  if (auto workspace_folders_opt = params.workspaceFolders) {
-    for (const auto& folder : *workspace_folders_opt) {
-      workspace_manager_->AddWorkspaceFolder(folder.uri, folder.name);
+  // rewrite: check the number of workspace folders first
+  if (const auto& workspace_folders_opt = params.workspaceFolders) {
+    if (workspace_folders_opt->size() != 1) {
+      Logger()->error("SlangdLspServer only supports a single workspace");
+      co_return LspError::UnexpectedFromCode(
+          LspErrorCode::kInvalidRequest, "Only one workspace is supported");
     }
+
+    const auto& workspace_folder = workspace_folders_opt->front();
+    config_manager_ = std::make_shared<ConfigManager>(
+        executor_, UriToPath(workspace_folder.uri), logger_);
+    co_await config_manager_->LoadConfig(UriToPath(workspace_folder.uri));
+
+    document_manager_ =
+        std::make_shared<DocumentManager>(executor_, config_manager_, logger_);
+    workspace_manager_ = std::make_shared<WorkspaceManager>(
+        executor_, UriToPath(workspace_folder.uri), config_manager_, logger_);
+
+    definition_provider_ = std::make_unique<DefinitionProvider>(
+        document_manager_, workspace_manager_, logger_);
+    diagnostics_provider_ = std::make_unique<DiagnosticsProvider>(
+        document_manager_, workspace_manager_, logger_);
+    symbols_provider_ = std::make_unique<SymbolsProvider>(
+        document_manager_, workspace_manager_, logger_);
   }
 
   lsp::TextDocumentSyncOptions sync_options{
@@ -280,7 +296,49 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
   asio::co_spawn(
       strand_,
       [this, params]() -> asio::awaitable<void> {
-        co_await workspace_manager_->HandleFileChanges(params.changes);
+        // Process each file change
+        for (const auto& change : params.changes) {
+          std::string path = UriToPath(change.uri);
+
+          // Check if this is a config file change
+          if (ConfigManager::IsConfigFile(path)) {
+            if (!config_manager_) {
+              Logger()->error(
+                  "SlangdLspServer config_manager_ is nullptr, cannot handle "
+                  "config file change");
+              co_return;
+            }
+
+            Logger()->debug(
+                "SlangdLspServer detected config file change: {}", path);
+
+            // Handle the config file change
+            bool config_updated =
+                co_await config_manager_->HandleConfigFileChange(path);
+
+            if (config_updated) {
+              // Config was updated, rescan workspace with new settings
+              Logger()->debug(
+                  "SlangdLspServer config updated, rescanning workspace");
+              co_await workspace_manager_->ScanWorkspace();
+
+              // Reparse open documents with new config settings
+              Logger()->debug(
+                  "SlangdLspServer updating open document parse settings");
+
+              // For simplicity, since we don't have a direct way to get all
+              // open files, we'll handle any documents that need reparsing when
+              // they're next accessed This avoids the need to maintain a
+              // separate list of open documents
+            }
+
+            // Skip normal file change handling for config files
+            continue;
+          }
+
+          // Normal file change handling - delegate to workspace manager
+          co_await workspace_manager_->HandleFileChanges({change});
+        }
       },
       asio::detached);
 
