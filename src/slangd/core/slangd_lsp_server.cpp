@@ -50,7 +50,7 @@ auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
     definition_provider_ = std::make_unique<DefinitionProvider>(
         document_manager_, workspace_manager_, logger_);
     diagnostics_provider_ = std::make_unique<DiagnosticsProvider>(
-        document_manager_, workspace_manager_, logger_);
+        executor_, document_manager_, workspace_manager_, logger_);
     symbols_provider_ = std::make_unique<SymbolsProvider>(
         document_manager_, workspace_manager_, logger_);
   }
@@ -205,18 +205,12 @@ auto SlangdLspServer::OnDidChangeTextDocument(
       file.content = text;
       file.version = version;
 
-      // Re-parse the file using syntax-only parsing (fast)
-      asio::co_spawn(
-          strand_,
-          [this, uri, text, version]() -> asio::awaitable<void> {
-            Logger()->debug("Starting document change parse for: {}", uri);
-
-            // Parse with compilation for interactive feedback
-            co_await document_manager_->ParseWithCompilation(uri, text);
-
-            // Get diagnostics
-            auto diagnostics = diagnostics_provider_->GetDiagnosticsForUri(uri);
-
+      // Schedule diagnostics with debouncing
+      diagnostics_provider_->ScheduleDiagnostics(
+          uri, text, version,
+          [this](
+              std::string uri, std::vector<lsp::Diagnostic> diagnostics,
+              int version) -> asio::awaitable<void> {
             Logger()->debug(
                 "Publishing {} diagnostics for document change: {}",
                 diagnostics.size(), uri);
@@ -228,8 +222,8 @@ auto SlangdLspServer::OnDidChangeTextDocument(
 
             Logger()->debug(
                 "Completed publishing diagnostics for change: {}", uri);
-          },
-          asio::detached);
+            co_return;
+          });
     }
   }
 
@@ -244,18 +238,33 @@ auto SlangdLspServer::OnDidSaveTextDocument(
   const auto& text_doc = params.textDocument;
   const auto& uri = text_doc.uri;
 
-  // We reparse with full elaboration
-  // Need the sync to ensure the file is parsed before we get the diagnostics
-  asio::co_spawn(
-      strand_,
-      [this, uri]() -> asio::awaitable<void> {
-        auto file_opt = GetOpenFile(uri);
-        if (file_opt) {
-          lsp::OpenFile& file = file_opt->get();
-          co_await document_manager_->ParseWithElaboration(uri, file.content);
-        }
-      },
-      asio::detached);
+  // Process diagnostics immediately on save
+  auto file_opt = GetOpenFile(uri);
+  if (file_opt) {
+    lsp::OpenFile& file = file_opt->get();
+
+    // Parse with full elaboration
+    co_await document_manager_->ParseWithElaboration(uri, file.content);
+
+    // Process diagnostics immediately without debounce
+    co_await diagnostics_provider_->ProcessImmediateDiagnostics(
+        uri, file.content, file.version,
+        [this](
+            std::string uri, std::vector<lsp::Diagnostic> diagnostics,
+            int version) -> asio::awaitable<void> {
+          Logger()->debug(
+              "Publishing {} diagnostics for document save: {}",
+              diagnostics.size(), uri);
+
+          // Publish diagnostics
+          lsp::PublishDiagnosticsParams diag_params{
+              .uri = uri, .version = version, .diagnostics = diagnostics};
+          co_await PublishDiagnostics(diag_params);
+
+          Logger()->debug("Completed publishing diagnostics for save: {}", uri);
+          co_return;
+        });
+  }
 
   co_return Ok();
 }
