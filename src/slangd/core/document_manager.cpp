@@ -11,8 +11,10 @@
 #include <slang/ast/symbols/MemberSymbols.h>
 #include <slang/ast/symbols/VariableSymbols.h>
 #include <slang/diagnostics/DiagnosticEngine.h>
+#include <slang/parsing/Preprocessor.h>
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/text/SourceManager.h>
+#include <slang/util/Bag.h>
 #include <spdlog/spdlog.h>
 
 namespace slangd {
@@ -47,10 +49,41 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
   syntax_trees_[uri] = syntax_tree;
 
   // Create compilation options with lint mode enabled
-  slang::ast::CompilationOptions options;
-  options.flags |= slang::ast::CompilationFlags::LintMode;
+  slang::ast::CompilationOptions comp_options;
+  comp_options.flags |= slang::ast::CompilationFlags::LintMode;
 
-  // Create a new compilation with lint mode options
+  // Create preprocessor options for defines
+  slang::Bag options;
+  options.set(comp_options);
+
+  // Apply configuration settings from ConfigManager
+  if (config_manager_) {
+    // Get preprocessing defines from config
+    slang::parsing::PreprocessorOptions pp_options;
+
+    // Add defines from configuration
+    for (const auto& define : config_manager_->GetDefines()) {
+      pp_options.predefines.push_back(define);
+    }
+
+    // Add preprocessor options to the bag
+    options.set(pp_options);
+
+    // Log include directories (we don't directly apply them to the source
+    // manager)
+    auto include_dirs = config_manager_->GetIncludeDirectories();
+    if (!include_dirs.empty()) {
+      Logger()->debug(
+          "DocumentManager has {} include directories available (applied "
+          "during imports)",
+          include_dirs.size());
+    }
+
+    Logger()->debug(
+        "DocumentManager applied config settings to compilation for: {}", uri);
+  }
+
+  // Create a new compilation with the options bag
   compilations_[uri] = std::make_shared<slang::ast::Compilation>(options);
   auto& compilation = *compilations_[uri];
 

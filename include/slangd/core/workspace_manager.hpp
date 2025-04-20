@@ -1,9 +1,9 @@
 #pragma once
 
 #include <expected>
+#include <map>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include <asio.hpp>
@@ -20,85 +20,72 @@ namespace slangd {
 
 class WorkspaceManager {
  public:
-  // Constructor
-  explicit WorkspaceManager(
+  WorkspaceManager(
       asio::any_io_executor executor, std::string workspace_folder,
       std::shared_ptr<ConfigManager> config_manager,
       std::shared_ptr<spdlog::logger> logger = nullptr);
 
-  // Logger accessor
-  auto Logger() -> std::shared_ptr<spdlog::logger> {
-    return logger_;
-  }
-
-  // Scan all workspace folders for SystemVerilog files and build the
-  // compilation
+  // Scan the workspace to find and process all SystemVerilog files
   auto ScanWorkspace() -> asio::awaitable<void>;
 
-  // Handle file changes from workspace file watcher
+  // Handle LSP file change events
   auto HandleFileChanges(std::vector<lsp::FileEvent> changes)
       -> asio::awaitable<void>;
 
-  // Get workspace folder
-  auto GetWorkspaceFolder() const -> const std::string& {
-    return workspace_folder_;
-  }
-
-  // Get the shared source manager
-  auto GetSourceManager() const -> std::shared_ptr<slang::SourceManager> {
-    return source_manager_;
-  }
-
-  // Get the compilation
-  auto GetCompilation() const -> std::shared_ptr<slang::ast::Compilation> {
+  // Get the compilation for this workspace
+  [[nodiscard]] auto GetCompilation() const
+      -> std::shared_ptr<slang::ast::Compilation> {
     return compilation_;
   }
 
+  // Get the source manager
+  [[nodiscard]] auto GetSourceManager() const
+      -> std::shared_ptr<slang::SourceManager> {
+    return source_manager_;
+  }
+
+  // Output debugging statistics for the workspace
+  auto DumpWorkspaceStats() -> void;
+
  private:
-  // File discovery and indexing
-  auto GetWorkspaceSourceFiles() -> asio::awaitable<std::vector<std::string>>;
-  auto FindSystemVerilogFilesInDirectory(std::string directory)
-      -> asio::awaitable<std::vector<std::string>>;
+  // Process a list of source files to create syntax trees and compilation
   auto IndexFiles(std::vector<std::string> file_paths) -> asio::awaitable<void>;
+
+  // Parse a single file
   auto ParseFile(std::string path)
       -> asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>>;
 
-  // Process a file list (.f file)
-  auto ProcessFileList(const std::string& path, bool absolute)
-      -> std::vector<std::string>;
-
-  // File change handlers
+  // Event handlers for file changes
   auto HandleFileCreated(std::string path) -> asio::awaitable<void>;
   auto HandleFileChanged(std::string path) -> asio::awaitable<void>;
   auto HandleFileDeleted(std::string path) -> asio::awaitable<void>;
+
+  // Rebuild the workspace compilation after file changes
   auto RebuildWorkspaceCompilation() -> asio::awaitable<void>;
 
-  // Utility
-  auto DumpWorkspaceStats() -> void;
-
-  // Logger
+  // Logger instance
   std::shared_ptr<spdlog::logger> logger_;
 
-  // Store workspace folder local paths
+  // Workspace folder path
   std::string workspace_folder_;
 
-  // Map of file path to syntax tree
-  std::unordered_map<std::string, std::shared_ptr<slang::syntax::SyntaxTree>>
-      syntax_trees_;
-
-  // Source manager for tracking all source buffers
+  // Source manager for all workspace files
   std::shared_ptr<slang::SourceManager> source_manager_;
 
-  // Source loader for loading and parsing files
+  // Source loader for files in this workspace
   std::unique_ptr<slang::driver::SourceLoader> source_loader_;
 
-  // Global compilation for workspace-wide symbol resolution
+  // Map of file paths to their syntax trees
+  std::map<std::string, std::shared_ptr<slang::syntax::SyntaxTree>>
+      syntax_trees_;
+
+  // The compilation for this workspace
   std::shared_ptr<slang::ast::Compilation> compilation_;
 
-  // Config manager
+  // The configuration manager
   std::shared_ptr<ConfigManager> config_manager_;
 
-  // ASIO executor and strand for synchronization
+  // ASIO executor and strand for concurrency control
   asio::any_io_executor executor_;
   asio::strand<asio::any_io_executor> strand_;
 };

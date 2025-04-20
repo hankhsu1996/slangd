@@ -3,6 +3,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <asio.hpp>
 #include <spdlog/spdlog.h>
@@ -25,25 +26,33 @@ class ConfigManager {
   // Returns true if a config was found and loaded
   auto LoadConfig(std::string workspace_root) -> asio::awaitable<bool>;
 
-  // Check if the given path is a .slangd config file
-  [[nodiscard]] static auto IsConfigFile(const std::string& path) -> bool;
-
   // Handle a change to the config file
   // Returns true if a new valid config was loaded
   auto HandleConfigFileChange(std::string config_path) -> asio::awaitable<bool>;
-
-  // Get the loaded config file
-  [[nodiscard]] auto GetConfig() const
-      -> const std::optional<SlangdConfigFile>& {
-    return config_;
-  }
 
   // Check if a valid configuration is loaded
   [[nodiscard]] auto HasValidConfig() const -> bool {
     return config_.has_value();
   }
 
+  // Get source files from config or fall back to scanning workspace
+  [[nodiscard]] auto GetSourceFiles() -> std::vector<std::string>;
+
+  // Get include directories from config or fall back to all workspace dirs
+  [[nodiscard]] auto GetIncludeDirectories() -> std::vector<std::string>;
+
+  // Get preprocessor defines from config or empty list
+  [[nodiscard]] auto GetDefines() -> std::vector<std::string>;
+
  private:
+  // Process file list from configuration
+  [[nodiscard]] auto ProcessFileList(const std::string& path, bool absolute)
+      -> std::vector<std::string>;
+
+  // Helper to scan for SystemVerilog files
+  [[nodiscard]] auto FindSystemVerilogFilesInDirectory(
+      const std::string& directory) -> std::vector<std::string>;
+
   // Logger instance
   std::shared_ptr<spdlog::logger> logger_;
 

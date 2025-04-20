@@ -38,6 +38,14 @@ auto ExtractFilename(const std::string& path) -> std::string;
 auto IsSystemVerilogFile(const std::string& path) -> bool;
 
 /**
+ * Check if a file is a config file based on its extension
+ *
+ * @param path The file path to check
+ * @return True if the file has a config extension (.slangd)
+ */
+auto IsConfigFile(const std::string& path) -> bool;
+
+/**
  * Normalize a file path by resolving symbolic links and returning the canonical
  * path
  *

@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include "lsp/document_features.hpp"
+#include "slangd/utils/source_utils.hpp"
 #include "slangd/utils/uri.hpp"
 
 namespace slangd {
@@ -301,7 +302,7 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
           std::string path = UriToPath(change.uri);
 
           // Check if this is a config file change
-          if (ConfigManager::IsConfigFile(path)) {
+          if (IsConfigFile(path)) {
             if (!config_manager_) {
               Logger()->error(
                   "SlangdLspServer config_manager_ is nullptr, cannot handle "

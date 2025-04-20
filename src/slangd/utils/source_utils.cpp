@@ -42,6 +42,11 @@ auto IsSystemVerilogFile(const std::string& path) -> bool {
   return ext == ".sv" || ext == ".svh" || ext == ".v" || ext == ".vh";
 }
 
+auto IsConfigFile(const std::string& path) -> bool {
+  std::string ext = std::filesystem::path(path).extension().string();
+  return ext == ".slangd";
+}
+
 auto NormalizePath(const std::string& path) -> std::string {
   try {
     return std::filesystem::canonical(path).string();
