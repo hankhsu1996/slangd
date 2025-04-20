@@ -1,20 +1,19 @@
 #pragma once
 
-#include <expected>
-#include <map>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
-#include <asio.hpp>
 #include <slang/ast/Compilation.h>
-#include <slang/driver/SourceLoader.h>
+#include <slang/driver/Driver.h>
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
 #include "lsp/workspace.hpp"
 #include "slangd/core/config_manager.hpp"
+#include "slangd/semantic/symbol_index.hpp"
 
 namespace slangd {
 
@@ -44,12 +43,20 @@ class WorkspaceManager {
     return source_manager_;
   }
 
+  // Get the workspace symbol index
+  auto GetSymbolIndex() const -> std::shared_ptr<semantic::SymbolIndex> {
+    return symbol_index_;
+  }
+
   // Output debugging statistics for the workspace
   auto DumpWorkspaceStats() -> void;
 
+  // Track open files for better indexing
+  auto AddOpenFile(std::string uri) -> asio::awaitable<void>;
+
  private:
   // Process a list of source files to create syntax trees and compilation
-  auto IndexFiles(std::vector<std::string> file_paths) -> asio::awaitable<void>;
+  void IndexFiles(std::vector<std::string> file_paths);
 
   // Parse a single file
   auto ParseFile(std::string path)
@@ -84,6 +91,12 @@ class WorkspaceManager {
 
   // The configuration manager
   std::shared_ptr<ConfigManager> config_manager_;
+
+  // Workspace symbol index
+  std::shared_ptr<semantic::SymbolIndex> symbol_index_{nullptr};
+
+  // Track open files
+  std::unordered_set<std::string> open_file_paths_;
 
   // ASIO executor and strand for concurrency control
   asio::any_io_executor executor_;

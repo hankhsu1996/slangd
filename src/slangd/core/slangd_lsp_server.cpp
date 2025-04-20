@@ -153,6 +153,14 @@ auto SlangdLspServer::OnDidOpenTextDocument(
 
   AddOpenFile(uri, text, language_id, version);
 
+  // Track this file in the workspace manager for better indexing
+  asio::co_spawn(
+      strand_,
+      [this, uri = std::string(uri)]() -> asio::awaitable<void> {
+        co_await workspace_manager_->AddOpenFile(uri);
+      },
+      asio::detached);
+
   // Post to strand to ensure thread safety and sequencing
   asio::co_spawn(
       strand_,

@@ -22,15 +22,16 @@ class SymbolIndexFixture {
 
  public:
   auto BuildIndexFromSource(const std::string& source) -> SymbolIndex {
+    std::string path = "test.sv";
     sourceManager_ = std::make_unique<slang::SourceManager>();
-    auto buffer = sourceManager_->assignText(source);
+    auto buffer = sourceManager_->assignText(path, source);
     buffer_id_ = buffer.id;
     auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *sourceManager_);
 
     compilation_ = std::make_unique<slang::ast::Compilation>();
     compilation_->addSyntaxTree(tree);
 
-    return SymbolIndex::FromCompilation(*compilation_);
+    return SymbolIndex::FromCompilation(*compilation_, {path});
   }
 
   auto MakeKey(const std::string& source, const std::string& symbol)

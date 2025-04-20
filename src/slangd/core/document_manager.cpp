@@ -17,6 +17,9 @@
 #include <slang/util/Bag.h>
 #include <spdlog/spdlog.h>
 
+#include "slangd/utils/source_utils.hpp"
+#include "slangd/utils/uri.hpp"
+
 namespace slangd {
 
 DocumentManager::DocumentManager(
@@ -72,8 +75,9 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
   compilation.addSyntaxTree(syntax_trees_[uri]);
 
   // Build a basic symbol index (definitions only) for quick navigation
+  auto path = NormalizePath(UriToPath(uri));
   symbol_indices_[uri] = std::make_shared<semantic::SymbolIndex>(
-      semantic::SymbolIndex::FromCompilation(compilation));
+      semantic::SymbolIndex::FromCompilation(compilation, {path}));
 
   logger_->debug("DocumentManager compilation completed for document: {}", uri);
   co_return;
@@ -96,10 +100,6 @@ auto DocumentManager::ParseWithElaboration(std::string uri, std::string content)
 
   // Handle elaboration failures via diagnostics, not exceptions
   compilation.getRoot();
-
-  // Build a comprehensive symbol index with references after full elaboration
-  symbol_indices_[uri] = std::make_shared<semantic::SymbolIndex>(
-      semantic::SymbolIndex::FromCompilation(compilation));
 
   logger_->debug(
       "DocumentManager full elaboration completed for document: {}", uri);

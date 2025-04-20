@@ -25,7 +25,7 @@ WorkspaceManager::WorkspaceManager(
       source_manager_(std::make_shared<slang::SourceManager>()),
       source_loader_(
           std::make_unique<slang::driver::SourceLoader>(*source_manager_)),
-      config_manager_(config_manager),
+      config_manager_(std::move(config_manager)),
       executor_(executor),
       strand_(asio::make_strand(executor)) {
 }
@@ -38,7 +38,20 @@ auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
   auto all_files = config_manager_->GetSourceFiles();
 
   // Process all collected files together
-  co_await IndexFiles(all_files);
+  IndexFiles(all_files);
+
+  // Ensure the workspace symbol index is built
+  if (!symbol_index_) {
+    logger_->debug("WorkspaceManager building initial workspace symbol index");
+    ScopedTimer timer("Building initial workspace symbol index", logger_);
+
+    // Build the workspace symbol index
+    symbol_index_ = std::make_shared<semantic::SymbolIndex>(
+        semantic::SymbolIndex::FromCompilation(
+            *compilation_, open_file_paths_));
+
+    logger_->debug("WorkspaceManager initial workspace symbol index built");
+  }
 
   logger_->debug(
       "WorkspaceManager workspace scan completed. Total indexed files: {}",
@@ -98,8 +111,7 @@ auto WorkspaceManager::HandleFileChanges(std::vector<lsp::FileEvent> changes)
   co_return;
 }
 
-auto WorkspaceManager::IndexFiles(std::vector<std::string> file_paths)
-    -> asio::awaitable<void> {
+void WorkspaceManager::IndexFiles(std::vector<std::string> file_paths) {
   logger_->debug("WorkspaceManager processing {} files", file_paths.size());
 
   // First, normalize all paths for consistent handling
@@ -179,7 +191,6 @@ auto WorkspaceManager::IndexFiles(std::vector<std::string> file_paths)
   }
 
   logger_->debug("Successfully processed {} files", syntax_trees_.size());
-  co_return;
 }
 
 // Parse a single file and return its syntax tree
@@ -189,18 +200,16 @@ auto WorkspaceManager::ParseFile(std::string path)
   slang::Bag options;
 
   // Use fromFile which returns a TreeOrError type
-  auto result =
-      slang::syntax::SyntaxTree::fromFile(path, *source_manager_, options);
-
-  if (!result) {
-    // Handle critical error case - result contains error information
-    auto [error_code, message] = result.error();
-    logger_->error(
-        "WorkspaceManager failed to open file {}: {}", path, message);
+  auto buffer_or_error = source_manager_->readSource(path, nullptr);
+  if (!buffer_or_error) {
+    logger_->error("WorkspaceManager failed to read file {}", path);
     co_return nullptr;
   }
+  auto buffer = buffer_or_error.value();
+  auto result =
+      slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager_, options);
 
-  co_return result.value();
+  co_return result;
 }
 
 // Handle a created file
@@ -310,6 +319,31 @@ auto WorkspaceManager::HandleFileDeleted(std::string path)
   co_return;
 }
 
+auto WorkspaceManager::AddOpenFile(std::string uri) -> asio::awaitable<void> {
+  std::string path = UriToPath(uri);
+  std::string normalized_path = NormalizePath(path);
+
+  // Add to open files collection
+  bool was_added = open_file_paths_.insert(normalized_path).second;
+
+  if (was_added) {
+    logger_->debug(
+        "WorkspaceManager added open file to workspace tracking: {}",
+        normalized_path);
+
+    // Immediately rebuild the index to include this file if compilation exists
+    if (compilation_) {
+      symbol_index_ = std::make_shared<semantic::SymbolIndex>(
+          semantic::SymbolIndex::FromCompilation(
+              *compilation_, open_file_paths_));
+
+      logger_->debug("Workspace symbol index rebuilt for newly opened file");
+    }
+  }
+
+  co_return;
+}
+
 // Rebuild compilation after file changes
 auto WorkspaceManager::RebuildWorkspaceCompilation() -> asio::awaitable<void> {
   logger_->debug(
@@ -333,6 +367,18 @@ auto WorkspaceManager::RebuildWorkspaceCompilation() -> asio::awaitable<void> {
 
   // Replace the old compilation with the new one
   compilation_ = new_compilation;
+
+  // Build a workspace symbol index
+  {
+    ScopedTimer timer("Building workspace symbol index", logger_);
+
+    // Build the index
+    symbol_index_ = std::make_shared<semantic::SymbolIndex>(
+        semantic::SymbolIndex::FromCompilation(
+            *compilation_, open_file_paths_));
+
+    logger_->debug("Workspace symbol index built successfully");
+  }
 
   logger_->debug("WorkspaceManager compilation rebuilt successfully");
   co_return;

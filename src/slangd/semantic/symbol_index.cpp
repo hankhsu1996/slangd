@@ -11,6 +11,9 @@
 #include "slang/ast/symbols/CompilationUnitSymbols.h"
 #include "slang/ast/symbols/InstanceSymbols.h"
 #include "slang/syntax/AllSyntax.h"
+#include "slang/text/SourceManager.h"
+#include "slangd/utils/source_utils.hpp"
+#include "slangd/utils/uri.hpp"
 
 namespace slangd::semantic {
 
@@ -227,10 +230,11 @@ namespace {
 
 }  // anonymous namespace
 
-auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
-    -> SymbolIndex {
+auto SymbolIndex::FromCompilation(
+    slang::ast::Compilation& compilation,
+    const std::unordered_set<std::string>& traverse_paths) -> SymbolIndex {
   spdlog::debug("SymbolIndex building from compilation");
-  SymbolIndex index;
+  SymbolIndex index(compilation);
   auto visitor = slang::ast::makeVisitor(
       // Special handling for instance body
       [&](auto& self, const slang::ast::InstanceBodySymbol& symbol) {
@@ -248,9 +252,15 @@ auto SymbolIndex::FromCompilation(slang::ast::Compilation& compilation)
       [&](auto& self, const slang::ast::DefinitionSymbol& def) {
         IndexDefinition(def, index, compilation);
 
-        // Handle instance traversal here for better separation of concerns
-        if (def.definitionKind == slang::ast::DefinitionKind::Module ||
-            def.definitionKind == slang::ast::DefinitionKind::Interface) {
+        // Check if we should traverse the instance body
+        auto path = NormalizePath(UriToPath(std::string(
+            compilation.getSourceManager()->getFileName(def.location))));
+        auto should_traverse =
+            traverse_paths.find(path) != traverse_paths.end();
+
+        if (should_traverse &&
+            (def.definitionKind == slang::ast::DefinitionKind::Module ||
+             def.definitionKind == slang::ast::DefinitionKind::Interface)) {
           const auto& instance =
               slang::ast::InstanceSymbol::createDefault(compilation, def);
           instance.body.visit(self);

@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "slang/ast/Compilation.h"
 #include "slang/text/SourceLocation.h"
@@ -40,13 +41,23 @@ namespace slangd::semantic {
 
 class SymbolIndex {
  public:
-  // Factory method to create a SymbolIndex from a compilation
-  static auto FromCompilation(slang::ast::Compilation& compilation)
+  SymbolIndex() = delete;
+
+  explicit SymbolIndex(slang::ast::Compilation& compilation)
+      : compilation_(compilation) {
+  }
+
+  // Create a symbol index from a compilation
+  static auto FromCompilation(
+      slang::ast::Compilation& compilation,
+      const std::unordered_set<std::string>& traverse_paths = {})
       -> SymbolIndex;
 
+  // Looks up a symbol at the given location
   auto LookupSymbolAt(slang::SourceLocation loc) const
       -> std::optional<SymbolKey>;
 
+  // Gets the definition range for a symbol
   auto GetDefinitionRange(const SymbolKey& key) const
       -> std::optional<slang::SourceRange>;
 
@@ -60,11 +71,17 @@ class SymbolIndex {
     return reference_map_;
   }
 
+  // Adds a definition location for a symbol
+  // This will also add the symbol to the reference map
   void AddDefinition(const SymbolKey& key, const slang::SourceRange& range);
 
+  // Adds a reference location for a symbol
   void AddReference(const slang::SourceRange& range, const SymbolKey& key);
 
  private:
+  // Store the compilation reference
+  std::reference_wrapper<slang::ast::Compilation> compilation_;
+
   // Maps a symbol key to its declaration range
   std::unordered_map<SymbolKey, slang::SourceRange> definition_locations_;
 

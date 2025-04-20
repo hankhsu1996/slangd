@@ -33,16 +33,30 @@ auto DefinitionProvider::GetDefinitionForUri(
   auto location =
       ConvertLspPositionToSlangLocation(position, buffer, source_manager);
 
-  // If we have a symbol index, try using it
+  // First try using document-specific symbol index
   if (symbol_index) {
     auto locations = ResolveDefinitionFromSymbolIndex(
         *symbol_index, source_manager, location);
     if (!locations.empty()) {
+      logger_->debug("Definition found in document-specific index");
       return locations;
     }
   }
 
-  // No definition found
+  // If not found in document index, try workspace symbol index
+  auto workspace_symbol_index = workspace_manager_->GetSymbolIndex();
+  if (workspace_symbol_index) {
+    logger_->debug("Looking up definition in workspace symbol index");
+
+    auto locations = ResolveDefinitionFromSymbolIndex(
+        *workspace_symbol_index, source_manager, location);
+    if (!locations.empty()) {
+      logger_->debug("Definition found in workspace symbol index");
+      return locations;
+    }
+  }
+
+  // No definition found in either index
   logger_->debug(
       "DefinitionProvider cannot find definition for position {}:{}",
       position.line, position.character);
