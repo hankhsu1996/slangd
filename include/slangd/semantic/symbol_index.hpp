@@ -4,6 +4,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include <spdlog/spdlog.h>
+
 #include "slang/ast/Compilation.h"
 #include "slang/text/SourceLocation.h"
 
@@ -43,15 +45,11 @@ class SymbolIndex {
  public:
   SymbolIndex() = delete;
 
-  explicit SymbolIndex(slang::ast::Compilation& compilation)
-      : compilation_(compilation) {
-  }
-
   // Create a symbol index from a compilation
   static auto FromCompilation(
       slang::ast::Compilation& compilation,
-      const std::unordered_set<std::string>& traverse_paths = {})
-      -> SymbolIndex;
+      const std::unordered_set<std::string>& traverse_paths = {},
+      std::shared_ptr<spdlog::logger> logger = nullptr) -> SymbolIndex;
 
   // Looks up a symbol at the given location
   auto LookupSymbolAt(slang::SourceLocation loc) const
@@ -71,6 +69,9 @@ class SymbolIndex {
     return reference_map_;
   }
 
+  // Helper method for debugging
+  auto PrintInfo() const -> void;
+
   // Adds a definition location for a symbol
   // This will also add the symbol to the reference map
   void AddDefinition(const SymbolKey& key, const slang::SourceRange& range);
@@ -79,6 +80,16 @@ class SymbolIndex {
   void AddReference(const slang::SourceRange& range, const SymbolKey& key);
 
  private:
+  explicit SymbolIndex(
+      slang::ast::Compilation& compilation,
+      std::shared_ptr<spdlog::logger> logger = nullptr)
+      : logger_(logger ? logger : spdlog::default_logger()),
+        compilation_(compilation) {
+  }
+
+  // Logger
+  std::shared_ptr<spdlog::logger> logger_;
+
   // Store the compilation reference
   std::reference_wrapper<slang::ast::Compilation> compilation_;
 

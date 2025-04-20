@@ -36,8 +36,6 @@ namespace {
 
 [[maybe_unused]] void IndexPackage(
     const slang::ast::PackageSymbol& symbol, SymbolIndex& index) {
-  spdlog::debug("SymbolIndex visiting package symbol {}", symbol.name);
-
   SymbolKey key = SymbolKey::FromSourceLocation(symbol.location);
 
   if (const auto* syntax_node = symbol.getSyntax()) {
@@ -51,9 +49,6 @@ namespace {
 
       // Handle endpackage name if present
       if (const auto& end_name = package_syntax.blockName) {
-        spdlog::debug(
-            "SymbolIndex visiting endpackage name {}",
-            end_name->name.valueText());
         index.AddReference(end_name->name.range(), key);
       }
     }
@@ -63,7 +58,6 @@ namespace {
 [[maybe_unused]] void IndexDefinition(
     const slang::ast::DefinitionSymbol& def, SymbolIndex& index,
     slang::ast::Compilation& compilation) {
-  spdlog::debug("SymbolIndex visiting definition symbol {}", def.name);
   const auto* syntax = def.getSyntax();
   if ((syntax != nullptr) &&
       syntax->kind == slang::syntax::SyntaxKind::ModuleDeclaration) {
@@ -101,8 +95,6 @@ namespace {
 
 [[maybe_unused]] void IndexTypeAlias(
     const slang::ast::TypeAliasType& symbol, SymbolIndex& index) {
-  spdlog::debug("SymbolIndex visiting type alias symbol {}", symbol.name);
-
   const auto& loc = symbol.location;
   SymbolKey key = SymbolKey::FromSourceLocation(loc);
 
@@ -129,8 +121,6 @@ namespace {
 
 [[maybe_unused]] void IndexVariable(
     const slang::ast::VariableSymbol& symbol, SymbolIndex& index) {
-  spdlog::debug("SymbolIndex visiting variable symbol {}", symbol.name);
-
   const auto& loc = symbol.location;
   SymbolKey key = SymbolKey::FromSourceLocation(loc);
 
@@ -154,8 +144,6 @@ namespace {
 
 [[maybe_unused]] void IndexParameter(
     const slang::ast::ParameterSymbol& symbol, SymbolIndex& index) {
-  spdlog::debug("SymbolIndex visiting parameter symbol {}", symbol.name);
-
   const auto& loc = symbol.location;
   SymbolKey key = SymbolKey::FromSourceLocation(loc);
 
@@ -179,8 +167,6 @@ namespace {
 
 [[maybe_unused]] void IndexPort(
     const slang::ast::PortSymbol& port, SymbolIndex& index) {
-  spdlog::debug("SymbolIndex visiting port symbol {}", port.name);
-
   const auto& declared_type =
       port.internalSymbol->as<slang::ast::ValueSymbol>().getDeclaredType();
 
@@ -198,9 +184,6 @@ namespace {
 
 [[maybe_unused]] void IndexNamedValue(
     const slang::ast::NamedValueExpression& expr, SymbolIndex& index) {
-  spdlog::debug(
-      "SymbolIndex visiting named value expression {}", expr.symbol.name);
-
   const auto& loc = expr.symbol.location;
   const auto& range = expr.sourceRange;
 
@@ -211,8 +194,6 @@ namespace {
 
 [[maybe_unused]] void IndexStatementBlock(
     const slang::ast::StatementBlockSymbol& symbol, SymbolIndex& index) {
-  spdlog::debug("SymbolIndex visiting statement block symbol {}", symbol.name);
-
   if (!symbol.name.empty()) {
     SymbolKey key = SymbolKey::FromSourceLocation(symbol.location);
     if (const auto* syntax = symbol.getSyntax()) {
@@ -232,9 +213,9 @@ namespace {
 
 auto SymbolIndex::FromCompilation(
     slang::ast::Compilation& compilation,
-    const std::unordered_set<std::string>& traverse_paths) -> SymbolIndex {
-  spdlog::debug("SymbolIndex building from compilation");
-  SymbolIndex index(compilation);
+    const std::unordered_set<std::string>& traverse_paths,
+    std::shared_ptr<spdlog::logger> logger) -> SymbolIndex {
+  SymbolIndex index(compilation, logger);
   auto visitor = slang::ast::makeVisitor(
       // Special handling for instance body
       [&](auto& self, const slang::ast::InstanceBodySymbol& symbol) {
@@ -337,6 +318,12 @@ auto SymbolIndex::GetDefinitionRange(const SymbolKey& key) const
     return it->second;
   }
   return std::nullopt;
+}
+
+auto SymbolIndex::PrintInfo() const -> void {
+  logger_->info("SymbolIndex info:");
+  logger_->info("  Definition locations: {}", definition_locations_.size());
+  logger_->info("  Reference map: {}", reference_map_.size());
 }
 
 }  // namespace slangd::semantic

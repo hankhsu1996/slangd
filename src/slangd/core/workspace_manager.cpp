@@ -48,7 +48,7 @@ auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
     // Build the workspace symbol index
     symbol_index_ = std::make_shared<semantic::SymbolIndex>(
         semantic::SymbolIndex::FromCompilation(
-            *compilation_, open_file_paths_));
+            *compilation_, open_file_paths_, logger_));
 
     logger_->debug("WorkspaceManager initial workspace symbol index built");
   }
@@ -335,7 +335,7 @@ auto WorkspaceManager::AddOpenFile(std::string uri) -> asio::awaitable<void> {
     if (compilation_) {
       symbol_index_ = std::make_shared<semantic::SymbolIndex>(
           semantic::SymbolIndex::FromCompilation(
-              *compilation_, open_file_paths_));
+              *compilation_, open_file_paths_, logger_));
 
       logger_->debug("Workspace symbol index rebuilt for newly opened file");
     }
@@ -375,7 +375,9 @@ auto WorkspaceManager::RebuildWorkspaceCompilation() -> asio::awaitable<void> {
     // Build the index
     symbol_index_ = std::make_shared<semantic::SymbolIndex>(
         semantic::SymbolIndex::FromCompilation(
-            *compilation_, open_file_paths_));
+            *compilation_, open_file_paths_, logger_));
+
+    symbol_index_->PrintInfo();
 
     logger_->debug("Workspace symbol index built successfully");
   }
