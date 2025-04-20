@@ -56,11 +56,12 @@ class WorkspaceManager {
 
  private:
   // Process a list of source files to create syntax trees and compilation
-  void IndexFiles(std::vector<std::string> file_paths);
+  // This method change the internal state of the workspace manager
+  void LoadAndCompileFiles(std::vector<std::string> file_paths);
 
   // Parse a single file
   auto ParseFile(std::string path)
-      -> asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>>;
+      -> std::shared_ptr<slang::syntax::SyntaxTree>;
 
   // Event handlers for file changes
   auto HandleFileCreated(std::string path) -> asio::awaitable<void>;

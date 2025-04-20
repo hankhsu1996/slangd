@@ -38,7 +38,7 @@ auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
   auto all_files = config_manager_->GetSourceFiles();
 
   // Process all collected files together
-  IndexFiles(all_files);
+  LoadAndCompileFiles(all_files);
 
   // Ensure the workspace symbol index is built
   if (!symbol_index_) {
@@ -111,7 +111,8 @@ auto WorkspaceManager::HandleFileChanges(std::vector<lsp::FileEvent> changes)
   co_return;
 }
 
-void WorkspaceManager::IndexFiles(std::vector<std::string> file_paths) {
+void WorkspaceManager::LoadAndCompileFiles(
+    std::vector<std::string> file_paths) {
   logger_->debug("WorkspaceManager processing {} files", file_paths.size());
 
   // First, normalize all paths for consistent handling
@@ -195,7 +196,7 @@ void WorkspaceManager::IndexFiles(std::vector<std::string> file_paths) {
 
 // Parse a single file and return its syntax tree
 auto WorkspaceManager::ParseFile(std::string path)
-    -> asio::awaitable<std::shared_ptr<slang::syntax::SyntaxTree>> {
+    -> std::shared_ptr<slang::syntax::SyntaxTree> {
   // Create parsing options with default settings
   slang::Bag options;
 
@@ -203,13 +204,13 @@ auto WorkspaceManager::ParseFile(std::string path)
   auto buffer_or_error = source_manager_->readSource(path, nullptr);
   if (!buffer_or_error) {
     logger_->error("WorkspaceManager failed to read file {}", path);
-    co_return nullptr;
+    return nullptr;
   }
   auto buffer = buffer_or_error.value();
   auto result =
       slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager_, options);
 
-  co_return result;
+  return result;
 }
 
 // Handle a created file
@@ -249,7 +250,7 @@ auto WorkspaceManager::HandleFileCreated(std::string path)
   }
 
   // Parse the file
-  auto tree = co_await ParseFile(path);
+  auto tree = ParseFile(path);
   if (!tree) {
     co_return;
   }
@@ -283,7 +284,7 @@ auto WorkspaceManager::HandleFileChanged(std::string path)
   }
 
   // Re-parse the file
-  auto tree = co_await ParseFile(path);
+  auto tree = ParseFile(path);
   if (!tree) {
     co_return;
   }

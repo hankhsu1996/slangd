@@ -64,8 +64,6 @@ auto ExtractDefinitionFromString(
   auto definition_provider =
       slangd::DefinitionProvider(doc_manager, workspace_manager);
 
-  auto symbol_index = doc_manager->GetSymbolIndex(uri);
-
   co_return definition_provider.GetDefinitionForUri(uri, position);
 }
 
