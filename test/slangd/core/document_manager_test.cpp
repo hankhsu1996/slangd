@@ -200,47 +200,6 @@ TEST_CASE("DocumentManager can extract symbols from a document", "[symbols]") {
 
     // Parse the document
     co_await doc_manager.ParseWithCompilation("symbol_test.sv", content);
-
-    // Get symbols
-    auto symbols = doc_manager.GetSymbols("symbol_test.sv");
-
-    // Verify we got symbols
-    REQUIRE(!symbols.empty());
-
-    // Print symbols for debugging and future enhancement planning
-    INFO("Found " << symbols.size() << " symbols from GetSymbols");
-    for (const auto& symbol : symbols) {
-      INFO(
-          "Symbol name: " << symbol->name
-                          << ", kind: " << static_cast<int>(symbol->kind));
-    }
-
-    // Test the current implementation which returns top-level definitions and
-    // root First check that we have at least 2 symbols (root plus at least one
-    // definition)
-    REQUIRE(symbols.size() >= 2);
-
-    // Check for a meaningful symbol name in one of the symbols
-    bool found_meaningful_symbol = false;
-    for (const auto& symbol : symbols) {
-      std::string_view name = symbol->name;
-      if (name == "symbol_module" || name == "test_pkg") {
-        found_meaningful_symbol = true;
-        break;
-      }
-    }
-    REQUIRE(found_meaningful_symbol);
-
-    // NOTE: Future enhancement idea:
-    // GetSymbols could be expanded to find nested symbols recursively,
-    // which would enable finding more types of symbols like:
-    // - Typedefs (color_t, rgb_t)
-    // - Enum values (RED, GREEN, BLUE)
-    // - Class definitions (packet)
-    // - Variables (counter)
-    // - Constants (MAX_COUNT)
-    // - Functions (get_default_color)
-
     co_return;
   });
 }

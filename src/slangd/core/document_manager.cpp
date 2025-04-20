@@ -34,13 +34,24 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
   auto& source_manager = *source_managers_[uri];
   std::string_view content_view(content);
 
+  // Prepare preprocessor options
+  slang::Bag options;
+  slang::parsing::PreprocessorOptions pp_options;
+  for (const auto& define : config_manager_->GetDefines()) {
+    pp_options.predefines.push_back(define);
+  }
+  for (const auto& include_dir : config_manager_->GetIncludeDirectories()) {
+    pp_options.additionalIncludePaths.emplace_back(include_dir);
+  }
+  options.set(pp_options);
+
   // Parse the document to create a syntax tree
-  auto syntax_tree =
-      slang::syntax::SyntaxTree::fromText(content_view, source_manager, uri);
+  auto syntax_tree = slang::syntax::SyntaxTree::fromText(
+      content_view, source_manager, uri, "", options);
 
   // This should be extremely rare - handle only critical failures
   if (!syntax_tree) {
-    Logger()->error(
+    logger_->error(
         "Critical failure creating syntax tree for document {}", uri);
     co_return;
   }
@@ -51,37 +62,7 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
   // Create compilation options with lint mode enabled
   slang::ast::CompilationOptions comp_options;
   comp_options.flags |= slang::ast::CompilationFlags::LintMode;
-
-  // Create preprocessor options for defines
-  slang::Bag options;
   options.set(comp_options);
-
-  // Apply configuration settings from ConfigManager
-  if (config_manager_) {
-    // Get preprocessing defines from config
-    slang::parsing::PreprocessorOptions pp_options;
-
-    // Add defines from configuration
-    for (const auto& define : config_manager_->GetDefines()) {
-      pp_options.predefines.push_back(define);
-    }
-
-    // Add preprocessor options to the bag
-    options.set(pp_options);
-
-    // Log include directories (we don't directly apply them to the source
-    // manager)
-    auto include_dirs = config_manager_->GetIncludeDirectories();
-    if (!include_dirs.empty()) {
-      Logger()->debug(
-          "DocumentManager has {} include directories available (applied "
-          "during imports)",
-          include_dirs.size());
-    }
-
-    Logger()->debug(
-        "DocumentManager applied config settings to compilation for: {}", uri);
-  }
 
   // Create a new compilation with the options bag
   compilations_[uri] = std::make_shared<slang::ast::Compilation>(options);
@@ -94,8 +75,7 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
   symbol_indices_[uri] = std::make_shared<semantic::SymbolIndex>(
       semantic::SymbolIndex::FromCompilation(compilation));
 
-  Logger()->debug(
-      "DocumentManager compilation completed for document: {}", uri);
+  logger_->debug("DocumentManager compilation completed for document: {}", uri);
   co_return;
 }
 
@@ -107,7 +87,7 @@ auto DocumentManager::ParseWithElaboration(std::string uri, std::string content)
   // Ensure we have a compilation
   auto comp_it = compilations_.find(uri);
   if (comp_it == compilations_.end()) {
-    Logger()->error("No compilation found for document: {}", uri);
+    logger_->error("No compilation found for document: {}", uri);
     co_return;
   }
 
@@ -121,7 +101,7 @@ auto DocumentManager::ParseWithElaboration(std::string uri, std::string content)
   symbol_indices_[uri] = std::make_shared<semantic::SymbolIndex>(
       semantic::SymbolIndex::FromCompilation(compilation));
 
-  Logger()->debug(
+  logger_->debug(
       "DocumentManager full elaboration completed for document: {}", uri);
   co_return;
 }
@@ -160,46 +140,6 @@ auto DocumentManager::GetSymbolIndex(std::string uri)
     return it->second;
   }
   return nullptr;
-}
-
-auto DocumentManager::GetSymbols(std::string uri)
-    -> std::vector<std::shared_ptr<const slang::ast::Symbol>> {
-  std::vector<std::shared_ptr<const slang::ast::Symbol>> symbols;
-
-  // Get the compilation for this document
-  auto it = compilations_.find(uri);
-  if (it == compilations_.end()) {
-    return symbols;  // Empty vector if no compilation exists
-  }
-
-  auto& compilation = it->second;
-
-  // Create a shared_ptr for each compilation definition
-  // This uses a custom deleter that doesn't actually delete the symbol
-  // since the symbol is owned by the compilation
-  for (const auto* definition : compilation->getDefinitions()) {
-    if (definition != nullptr) {
-      auto symbol_ptr = std::shared_ptr<const slang::ast::Symbol>(
-          definition, [compilation](const slang::ast::Symbol*) {
-            // No deletion - the compilation owns the symbol
-          });
-      symbols.push_back(symbol_ptr);
-    }
-  }
-
-  // Also include the root as a symbol
-  const auto& root = compilation->getRoot();
-  auto root_ptr = std::shared_ptr<const slang::ast::Symbol>(
-      &root, [compilation](const slang::ast::Symbol*) {
-        // No deletion - the compilation owns the symbol
-      });
-  symbols.push_back(root_ptr);
-
-  // Output the number of symbols found for debugging
-  Logger()->debug(
-      "DocumentManager found {} symbols in document: {}", symbols.size(), uri);
-
-  return symbols;
 }
 
 }  // namespace slangd

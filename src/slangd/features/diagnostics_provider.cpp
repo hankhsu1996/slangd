@@ -30,11 +30,15 @@ auto DiagnosticsProvider::GetDiagnosticsForUri(std::string uri)
   auto diagnostics = ResolveDiagnosticsFromCompilation(
       compilation, syntax_tree, source_manager, uri);
 
-  logger_->debug(
-      "DiagnosticsProvider found {} diagnostics in {}", diagnostics.size(),
-      uri);
+  // Apply filtering and modification to diagnostics
+  auto filtered_diagnostics =
+      FilterAndModifyDiagnostics(std::move(diagnostics));
 
-  return diagnostics;
+  logger_->debug(
+      "DiagnosticsProvider found {} diagnostics in {}",
+      filtered_diagnostics.size(), uri);
+
+  return filtered_diagnostics;
 }
 
 auto DiagnosticsProvider::ResolveDiagnosticsFromCompilation(
@@ -174,6 +178,59 @@ auto DiagnosticsProvider::IsDiagnosticInUriDocument(
   }
 
   return IsLocationInDocument(diag.location, source_manager, uri);
+}
+
+auto DiagnosticsProvider::FilterAndModifyDiagnostics(
+    std::vector<lsp::Diagnostic> diagnostics) -> std::vector<lsp::Diagnostic> {
+  std::vector<lsp::Diagnostic> result;
+  result.reserve(diagnostics.size());
+
+  for (auto& diag : diagnostics) {
+    // 1. Check for diagnostics to completely exclude
+    if (diag.code == "ParamHasNoValue" || diag.code == "InfoTask") {
+      // Skip these diagnostics entirely
+      continue;
+    }
+
+    // 2. Check for diagnostics to demote and enhance
+    if (diag.code == "CouldNotOpenIncludeFile") {
+      // Demote to warning
+      diag.severity = lsp::DiagnosticSeverity::kWarning;
+
+      // Replace original message with more helpful one
+      std::string original_path;
+      size_t quote_pos = diag.message.find('\'');
+      if (quote_pos != std::string::npos) {
+        size_t end_quote = diag.message.find('\'', quote_pos + 1);
+        if (end_quote != std::string::npos) {
+          original_path =
+              diag.message.substr(quote_pos, end_quote - quote_pos + 1);
+        }
+      }
+
+      if (!original_path.empty()) {
+        diag.message = "Cannot find include file " + original_path;
+      }
+
+      // Add hint about configuration
+      diag.message +=
+          " (Consider configuring include directories in a .slangd file)";
+    } else if (diag.code == "UnknownDirective") {
+      // Demote to warning
+      diag.severity = lsp::DiagnosticSeverity::kWarning;
+
+      // Add hint about configuration
+      diag.message += " (Add defines in .slangd file if needed)";
+    }
+
+    result.push_back(diag);
+  }
+
+  logger_->debug(
+      "DiagnosticsProvider filtered {} diagnostics",
+      diagnostics.size() - result.size());
+
+  return result;
 }
 
 }  // namespace slangd

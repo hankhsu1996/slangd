@@ -54,11 +54,6 @@ auto SymbolsProvider::ResolveSymbolsFromCompilation(
         compilation);
   }
 
-  // Log the number of symbols found
-  logger_->debug(
-      "SymbolsProvider found {} document symbols for document: {}",
-      result.size(), uri);
-
   return result;
 }
 

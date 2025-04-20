@@ -69,7 +69,7 @@ auto ExtractSymbolsFromString(
   co_return symbols_provider.GetSymbolsForUri(uri);
 }
 
-TEST_CASE("GetDocumentSymbols extracts basic module", "[symbol_utils]") {
+TEST_CASE("SymbolsProvider extracts basic module", "[symbol_utils]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     std::string module_code = R"(
     module test_module;
@@ -83,7 +83,7 @@ TEST_CASE("GetDocumentSymbols extracts basic module", "[symbol_utils]") {
   });
 }
 
-TEST_CASE("GetDocumentSymbols extracts basic package", "[symbol_utils]") {
+TEST_CASE("SymbolsProvider extracts basic package", "[symbol_utils]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // The simplest possible package
     std::string package_code = R"(
@@ -98,7 +98,7 @@ TEST_CASE("GetDocumentSymbols extracts basic package", "[symbol_utils]") {
   });
 }
 
-TEST_CASE("GetDocumentSymbols extracts basic interface", "[symbol_utils]") {
+TEST_CASE("SymbolsProvider extracts basic interface", "[symbol_utils]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // The simplest possible interface
     std::string interface_code = R"(
@@ -114,7 +114,7 @@ TEST_CASE("GetDocumentSymbols extracts basic interface", "[symbol_utils]") {
 }
 
 TEST_CASE(
-    "GetDocumentSymbols extracts module with parameters and variables",
+    "SymbolsProvider extracts module with parameters and variables",
     "[symbol_utils]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Module with parameters and variables
@@ -141,7 +141,7 @@ TEST_CASE(
   });
 }
 
-TEST_CASE("GetDocumentSymbols extracts module ports", "[symbol_utils]") {
+TEST_CASE("SymbolsProvider extracts module ports", "[symbol_utils]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Module with ports
     std::string module_ports_code = R"(
@@ -171,7 +171,7 @@ TEST_CASE("GetDocumentSymbols extracts module ports", "[symbol_utils]") {
   });
 }
 
-TEST_CASE("GetDocumentSymbols extracts enum type", "[symbol_utils]") {
+TEST_CASE("SymbolsProvider extracts enum type", "[symbol_utils]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Package with enum
     // Note that in SystemVerilog, enum members are flattened into the parent
@@ -203,7 +203,7 @@ TEST_CASE("GetDocumentSymbols extracts enum type", "[symbol_utils]") {
   });
 }
 
-TEST_CASE("GetDocumentSymbols extracts struct type", "[symbol_utils]") {
+TEST_CASE("SymbolsProvider extracts struct type", "[symbol_utils]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Package with struct
     std::string struct_code = R"(
@@ -237,7 +237,7 @@ TEST_CASE("GetDocumentSymbols extracts struct type", "[symbol_utils]") {
   });
 }
 
-TEST_CASE("GetDocumentSymbols extracts functions", "[symbol_utils]") {
+TEST_CASE("SymbolsProvider extracts functions", "[symbol_utils]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Package with function
     std::string function_code = R"(
@@ -261,8 +261,7 @@ TEST_CASE("GetDocumentSymbols extracts functions", "[symbol_utils]") {
 }
 
 TEST_CASE(
-    "GetDocumentSymbols extracts multiple top-level symbols",
-    "[symbol_utils]") {
+    "SymbolsProvider extracts multiple top-level symbols", "[symbol_utils]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Multiple top-level entities
     std::string multi_code = R"(
@@ -283,7 +282,7 @@ TEST_CASE(
   });
 }
 
-TEST_CASE("GetDocumentSymbols extracts nested struct", "[symbol_utils]") {
+TEST_CASE("SymbolsProvider extracts nested struct", "[symbol_utils]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Package with nested struct
     std::string nested_struct_code = R"(
@@ -322,7 +321,7 @@ TEST_CASE("GetDocumentSymbols extracts nested struct", "[symbol_utils]") {
   });
 }
 
-TEST_CASE("GetDocumentSymbols extracts type parameters", "[symbol_utils]") {
+TEST_CASE("SymbolsProvider extracts type parameters", "[symbol_utils]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     std::string type_param_code = R"(
     module mod_with_type_param #(
@@ -350,8 +349,7 @@ TEST_CASE("GetDocumentSymbols extracts type parameters", "[symbol_utils]") {
   });
 }
 
-TEST_CASE(
-    "GetDocumentSymbols extracts module instantiation", "[symbol_utils]") {
+TEST_CASE("SymbolsProvider extracts module instantiation", "[symbol_utils]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     std::string module_inst_code = R"(
     module submodule;
@@ -383,8 +381,7 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "GetDocumentSymbols extracts unknown module instantiation",
-    "[symbol_utils]") {
+    "SymbolsProvider extracts unknown module instantiation", "[symbol_utils]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     std::string module_inst_code = R"(
     module mod_with_inst;

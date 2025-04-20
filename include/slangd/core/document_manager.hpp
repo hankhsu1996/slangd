@@ -10,7 +10,6 @@
 #include <slang/syntax/SyntaxTree.h>
 #include <spdlog/spdlog.h>
 
-#include "lsp/document_features.hpp"
 #include "slangd/core/config_manager.hpp"
 #include "slangd/semantic/symbol_index.hpp"
 
@@ -22,10 +21,6 @@ class DocumentManager {
       asio::any_io_executor executor,
       std::shared_ptr<ConfigManager> config_manager,
       std::shared_ptr<spdlog::logger> logger = nullptr);
-
-  auto Logger() -> std::shared_ptr<spdlog::logger> {
-    return logger_;
-  }
 
   // Parse a document with compilation (fast)
   auto ParseWithCompilation(std::string uri, std::string content)
@@ -50,13 +45,6 @@ class DocumentManager {
   // Get the symbol index for a document
   auto GetSymbolIndex(std::string uri)
       -> std::shared_ptr<semantic::SymbolIndex>;
-
-  // Get the symbols for a document
-  auto GetSymbols(std::string uri)
-      -> std::vector<std::shared_ptr<const slang::ast::Symbol>>;
-
-  // Get hierarchical document symbols defined in a document
-  auto GetDocumentSymbols(std::string uri) -> std::vector<lsp::DocumentSymbol>;
 
  private:
   // Executor
