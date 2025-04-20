@@ -93,6 +93,35 @@ namespace {
   }
 }
 
+[[maybe_unused]] void IndexInstance(
+    const slang::ast::InstanceSymbol& symbol, SymbolIndex& index) {
+  const auto& def = symbol.getDefinition();
+  const auto& loc = def.location;
+  SymbolKey key = SymbolKey::FromSourceLocation(loc);
+
+  if (const auto& symbol_syntax = symbol.getSyntax()) {
+    if (symbol_syntax->kind !=
+        slang::syntax::SyntaxKind::HierarchicalInstance) {
+      return;
+    }
+
+    const auto& instance_syntax =
+        symbol_syntax->as<slang::syntax::HierarchicalInstanceSyntax>();
+
+    if (instance_syntax.parent == nullptr ||
+        instance_syntax.parent->kind !=
+            slang::syntax::SyntaxKind::HierarchyInstantiation) {
+      return;
+    }
+
+    const auto& instantiation_syntax =
+        instance_syntax.parent
+            ->as<slang::syntax::HierarchyInstantiationSyntax>();
+    auto ref_range = instantiation_syntax.type.range();
+    index.AddReference(ref_range, key);
+  }
+}
+
 [[maybe_unused]] void IndexTypeAlias(
     const slang::ast::TypeAliasType& symbol, SymbolIndex& index) {
   const auto& loc = symbol.location;
@@ -246,6 +275,12 @@ auto SymbolIndex::FromCompilation(
               slang::ast::InstanceSymbol::createDefault(compilation, def);
           instance.body.visit(self);
         }
+      },
+
+      // Module instance visitor
+      [&](auto& self, const slang::ast::InstanceSymbol& symbol) {
+        IndexInstance(symbol, index);
+        self.visitDefault(symbol);
       },
 
       // Type alias definition visitor

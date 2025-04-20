@@ -473,3 +473,42 @@ TEST_CASE(
     }
   });
 }
+
+TEST_CASE(
+    "GetDefinitionForUri handles module instance", "[definition_provider]") {
+  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    std::string module_code = R"(
+      module parent (
+        input logic clk,
+        input int   data
+      );
+        child instance1(clk, data);
+        child instance2(.clk(clk), .data(data));
+      endmodule : parent
+
+      module child (
+        input logic clk,
+        input int   data
+      );
+        logic child_logic;
+        assign child_logic = clk & data;
+      endmodule : child
+    )";
+
+    SECTION("Module instance reference resolves to definition") {
+      std::string symbol_name = "child";
+      auto ref_position = FindPosition(module_code, symbol_name, 1);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, ref_position);
+
+      auto expected_position = FindPosition(module_code, symbol_name, 3);
+      auto expected_range =
+          CreateRange(expected_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
+  });
+}
