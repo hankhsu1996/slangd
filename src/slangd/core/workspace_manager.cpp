@@ -28,10 +28,11 @@ WorkspaceManager::WorkspaceManager(
 }
 
 // Factory method for test environments
-std::shared_ptr<WorkspaceManager> WorkspaceManager::CreateForTesting(
+auto WorkspaceManager::CreateForTesting(
     asio::any_io_executor executor,
     std::map<std::string, std::string> source_map,
-    std::shared_ptr<spdlog::logger> logger) {
+    std::shared_ptr<spdlog::logger> logger)
+    -> std::shared_ptr<WorkspaceManager> {
   auto workspace_manager = std::make_shared<WorkspaceManager>(
       executor, "/virtual/workspace",
       std::make_shared<ConfigManager>(executor, "/virtual/workspace"), logger);

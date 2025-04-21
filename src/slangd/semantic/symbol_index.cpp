@@ -104,17 +104,16 @@ namespace {
         index.AddDefinition(key, instance_syntax.decl->name.range());
       }
 
-      // Instance type reference
       if (instance_syntax.parent != nullptr &&
           instance_syntax.parent->kind ==
               slang::syntax::SyntaxKind::HierarchyInstantiation) {
         const auto& instantiation_syntax =
             instance_syntax.parent
                 ->as<slang::syntax::HierarchyInstantiationSyntax>();
-        auto ref_range = instantiation_syntax.type.range();
+        auto module_range = instantiation_syntax.type.range();
         SymbolKey key =
             SymbolKey::FromSourceLocation(symbol.getDefinition().location);
-        index.AddReference(ref_range, key);
+        index.AddReference(module_range, key);
       }
     }
   }

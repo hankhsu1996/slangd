@@ -60,6 +60,17 @@ class WorkspaceManager {
     return source_manager_;
   }
 
+  // Get the buffer ID from a path
+  [[nodiscard]] auto GetBufferIdFromPath(std::string path) const
+      -> slang::BufferID {
+    auto it = buffers_.find(path);
+    if (it == buffers_.end()) {
+      logger_->error("WorkspaceManager: No buffer ID found for path: {}", path);
+      return slang::BufferID{};
+    }
+    return it->second;
+  }
+
   // Get the workspace symbol index
   auto GetSymbolIndex() const -> std::shared_ptr<semantic::SymbolIndex> {
     return symbol_index_;
