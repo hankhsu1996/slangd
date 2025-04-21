@@ -95,30 +95,31 @@ namespace {
 
 [[maybe_unused]] void IndexInstance(
     const slang::ast::InstanceSymbol& symbol, SymbolIndex& index) {
-  const auto& def = symbol.getDefinition();
-  const auto& loc = def.location;
-  SymbolKey key = SymbolKey::FromSourceLocation(loc);
-
   if (const auto& symbol_syntax = symbol.getSyntax()) {
-    if (symbol_syntax->kind !=
+    if (symbol_syntax->kind ==
         slang::syntax::SyntaxKind::HierarchicalInstance) {
-      return;
+      const auto& instance_syntax =
+          symbol_syntax->as<slang::syntax::HierarchicalInstanceSyntax>();
+
+      // Instance name definition
+      if (instance_syntax.decl != nullptr) {
+        SymbolKey key = SymbolKey::FromSourceLocation(symbol.location);
+        index.AddDefinition(key, instance_syntax.decl->name.range());
+      }
+
+      // Instance type reference
+      if (instance_syntax.parent != nullptr &&
+          instance_syntax.parent->kind ==
+              slang::syntax::SyntaxKind::HierarchyInstantiation) {
+        const auto& instantiation_syntax =
+            instance_syntax.parent
+                ->as<slang::syntax::HierarchyInstantiationSyntax>();
+        auto ref_range = instantiation_syntax.type.range();
+        SymbolKey key =
+            SymbolKey::FromSourceLocation(symbol.getDefinition().location);
+        index.AddReference(ref_range, key);
+      }
     }
-
-    const auto& instance_syntax =
-        symbol_syntax->as<slang::syntax::HierarchicalInstanceSyntax>();
-
-    if (instance_syntax.parent == nullptr ||
-        instance_syntax.parent->kind !=
-            slang::syntax::SyntaxKind::HierarchyInstantiation) {
-      return;
-    }
-
-    const auto& instantiation_syntax =
-        instance_syntax.parent
-            ->as<slang::syntax::HierarchyInstantiationSyntax>();
-    auto ref_range = instantiation_syntax.type.range();
-    index.AddReference(ref_range, key);
   }
 }
 
@@ -201,6 +202,7 @@ namespace {
 
   SymbolKey key = SymbolKey::FromSourceLocation(port.getType().location);
 
+  // Port definition type reference
   if (const auto& type_alias = declared_type->getTypeSyntax()) {
     if (type_alias->kind == slang::syntax::SyntaxKind::NamedType) {
       const auto& named_type = type_alias->as<slang::syntax::NamedTypeSyntax>();
@@ -209,6 +211,19 @@ namespace {
       index.AddReference(range, key);
     }
   }
+
+  // // Internal symbol reference
+  // if (port.internalSymbol != nullptr) {
+  //   // key is  port.location
+  //   // ref range is
+  //   spdlog::info(
+  //       "Internal symbol: {}", port.internalSymbol->getSyntax()->toString());
+  //   // internal symbol range
+  //   spdlog::info(
+  //       "Internal symbol range: {}:{}",
+  //       port.internalSymbol->getSyntax()->sourceRange().start().offset(),
+  //       port.internalSymbol->getSyntax()->sourceRange().end().offset());
+  // }
 }
 
 [[maybe_unused]] void IndexNamedValue(

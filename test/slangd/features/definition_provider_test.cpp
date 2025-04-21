@@ -479,19 +479,19 @@ TEST_CASE(
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     std::string module_code = R"(
       module parent (
-        input logic clk,
-        input int   data
+        input logic clk_p,
+        input int   data_p
       );
-        child instance1(clk, data);
-        child instance2(.clk(clk), .data(data));
+        child instance1(clk_p, data_p);
+        child instance2(.clk_c(clk_p), .data_c(data_p));
       endmodule : parent
 
       module child (
-        input logic clk,
-        input int   data
+        input logic clk_c,
+        input int   data_c
       );
         logic child_logic;
-        assign child_logic = clk & data;
+        assign child_logic = clk_c & data_c;
       endmodule : child
     )";
 
@@ -503,6 +503,71 @@ TEST_CASE(
           executor, module_code, ref_position);
 
       auto expected_position = FindPosition(module_code, symbol_name, 3);
+      auto expected_range =
+          CreateRange(expected_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
+
+    SECTION("Non-ansi port assignment resolves to definition") {
+      std::string symbol_name = "data_p";
+      auto ref_position = FindPosition(module_code, symbol_name, 2);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, ref_position);
+
+      auto expected_position = FindPosition(module_code, symbol_name, 1);
+      auto expected_range =
+          CreateRange(expected_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
+
+    // // It seems not available in the current slang implementation
+    // SECTION("Port ansi definition resolves to definition") {
+    //   std::string symbol_name = "data_c";
+    //   auto ref_position = FindPosition(module_code, symbol_name, 1);
+
+    //   auto locations = co_await ExtractDefinitionFromString(
+    //       executor, module_code, ref_position);
+
+    //   auto expected_position = FindPosition(module_code, symbol_name, 2);
+    //   auto expected_range =
+    //       CreateRange(expected_position, symbol_name.length());
+
+    //   REQUIRE(locations.size() == 1);
+    //   REQUIRE(locations[0].uri == "file://test.sv");
+    //   REQUIRE(locations[0].range == expected_range);
+    // }
+
+    SECTION("Port ansi definition resolves to definition") {
+      std::string symbol_name = "data_p";
+      auto ref_position = FindPosition(module_code, symbol_name, 3);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, ref_position);
+
+      auto expected_position = FindPosition(module_code, symbol_name, 1);
+      auto expected_range =
+          CreateRange(expected_position, symbol_name.length());
+
+      REQUIRE(locations.size() == 1);
+      REQUIRE(locations[0].uri == "file://test.sv");
+      REQUIRE(locations[0].range == expected_range);
+    }
+
+    SECTION("Instance self reference resolves to definition") {
+      std::string symbol_name = "instance1";
+      auto ref_position = FindPosition(module_code, symbol_name, 1);
+
+      auto locations = co_await ExtractDefinitionFromString(
+          executor, module_code, ref_position);
+
+      auto expected_position = FindPosition(module_code, symbol_name, 1);
       auto expected_range =
           CreateRange(expected_position, symbol_name.length());
 
