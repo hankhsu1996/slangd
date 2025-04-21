@@ -76,3 +76,16 @@ cc_test(
         "@slang",
     ],
 )
+
+cc_test(
+    name = "definition_provider_workspace_test",
+    timeout = "short",
+    srcs = [
+        "features/definition_provider_workspace_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)

@@ -48,7 +48,7 @@ class SymbolIndex {
   // Create a symbol index from a compilation
   static auto FromCompilation(
       slang::ast::Compilation& compilation,
-      const std::unordered_set<std::string>& traverse_paths = {},
+      const std::unordered_set<slang::BufferID>& traverse_buffers = {},
       std::shared_ptr<spdlog::logger> logger = nullptr) -> SymbolIndex;
 
   // Looks up a symbol at the given location

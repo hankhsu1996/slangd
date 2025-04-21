@@ -1,7 +1,13 @@
 #pragma once
 
 #include <memory>
+#include <string>
+#include <vector>
 
+#include <slang/text/SourceLocation.h>
+#include <spdlog/spdlog.h>
+
+#include "lsp/basic.hpp"
 #include "slangd/core/document_manager.hpp"
 #include "slangd/core/workspace_manager.hpp"
 #include "slangd/features/language_feature_provider.hpp"
@@ -19,6 +25,9 @@ class DefinitionProvider : public LanguageFeatureProvider {
 
   // Public API
   auto GetDefinitionForUri(std::string uri, lsp::Position position)
+      -> std::vector<lsp::Location>;
+
+  auto GetDefinitionFromWorkspace(slang::SourceLocation location)
       -> std::vector<lsp::Location>;
 
   // Core resolvers

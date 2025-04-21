@@ -31,7 +31,7 @@ class SymbolIndexFixture {
     compilation_ = std::make_unique<slang::ast::Compilation>();
     compilation_->addSyntaxTree(tree);
 
-    return SymbolIndex::FromCompilation(*compilation_, {path});
+    return SymbolIndex::FromCompilation(*compilation_, {buffer_id_});
   }
 
   auto MakeKey(const std::string& source, const std::string& symbol)

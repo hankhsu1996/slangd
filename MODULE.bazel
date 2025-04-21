@@ -35,6 +35,9 @@ bazel_dep(name = "spdlog", version = "1.15.1")
 # YAML Parser Library
 bazel_dep(name = "yaml-cpp", version = "0.8.0")
 
+# fmt String Formatting Library
+bazel_dep(name = "fmt", version = "11.1.3")
+
 # Testing framework
 bazel_dep(name = "catch2", version = "3.8.0")
 

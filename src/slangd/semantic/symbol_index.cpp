@@ -11,9 +11,6 @@
 #include "slang/ast/symbols/CompilationUnitSymbols.h"
 #include "slang/ast/symbols/InstanceSymbols.h"
 #include "slang/syntax/AllSyntax.h"
-#include "slang/text/SourceManager.h"
-#include "slangd/utils/source_utils.hpp"
-#include "slangd/utils/uri.hpp"
 
 namespace slangd::semantic {
 
@@ -257,7 +254,7 @@ namespace {
 
 auto SymbolIndex::FromCompilation(
     slang::ast::Compilation& compilation,
-    const std::unordered_set<std::string>& traverse_paths,
+    const std::unordered_set<slang::BufferID>& traverse_buffers,
     std::shared_ptr<spdlog::logger> logger) -> SymbolIndex {
   SymbolIndex index(compilation, logger);
   auto visitor = slang::ast::makeVisitor(
@@ -278,10 +275,9 @@ auto SymbolIndex::FromCompilation(
         IndexDefinition(def, index, compilation);
 
         // Check if we should traverse the instance body
-        auto path = NormalizePath(UriToPath(std::string(
-            compilation.getSourceManager()->getFileName(def.location))));
+        auto def_buffer = def.location.buffer();
         auto should_traverse =
-            traverse_paths.find(path) != traverse_paths.end();
+            traverse_buffers.find(def_buffer) != traverse_buffers.end();
 
         if (should_traverse &&
             (def.definitionKind == slang::ast::DefinitionKind::Module ||

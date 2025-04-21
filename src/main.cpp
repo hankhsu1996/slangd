@@ -57,7 +57,7 @@ auto SetupLoggers()
   };
 }
 
-int main(int argc, char* argv[]) {
+auto main(int argc, char* argv[]) -> int {
   // Parse command-line arguments
   const std::vector<std::string> args(argv, argv + argc);
   auto pipe_name_opt = ParsePipeName(args);

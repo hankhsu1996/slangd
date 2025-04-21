@@ -5,7 +5,7 @@
 
 #include <spdlog/spdlog.h>
 
-#include "slangd/utils/source_utils.hpp"
+#include "slangd/utils/path_utils.hpp"
 
 namespace slangd {
 

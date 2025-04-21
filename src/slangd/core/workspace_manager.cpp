@@ -10,9 +10,8 @@
 #include <slangd/core/config_manager.hpp>
 #include <spdlog/spdlog.h>
 
-#include "slangd/utils/source_utils.hpp"
+#include "slangd/utils/path_utils.hpp"
 #include "slangd/utils/timer.hpp"
-#include "slangd/utils/uri.hpp"
 
 namespace slangd {
 
@@ -23,11 +22,107 @@ WorkspaceManager::WorkspaceManager(
     : logger_(logger ? logger : spdlog::default_logger()),
       workspace_folder_(std::move(workspace_folder)),
       source_manager_(std::make_shared<slang::SourceManager>()),
-      source_loader_(
-          std::make_unique<slang::driver::SourceLoader>(*source_manager_)),
       config_manager_(std::move(config_manager)),
       executor_(executor),
       strand_(asio::make_strand(executor)) {
+}
+
+// Factory method for test environments
+std::shared_ptr<WorkspaceManager> WorkspaceManager::CreateForTesting(
+    asio::any_io_executor executor,
+    std::map<std::string, std::string> source_map,
+    std::shared_ptr<spdlog::logger> logger) {
+  auto workspace_manager = std::make_shared<WorkspaceManager>(
+      executor, "/virtual/workspace",
+      std::make_shared<ConfigManager>(executor, "/virtual/workspace"), logger);
+
+  auto source_manager = workspace_manager->GetSourceManager();
+  auto compilation = std::make_shared<slang::ast::Compilation>();
+
+  // Create buffers, syntax trees and register them
+  for (const auto& [uri, content] : source_map) {
+    auto buffer = source_manager->assignText(uri, content);
+    auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
+    compilation->addSyntaxTree(tree);
+
+    // Register this buffer and tree
+    workspace_manager->RegisterBuffer(uri, buffer.id, tree);
+  }
+
+  // Set the compilation
+  workspace_manager->SetCompilation(compilation);
+
+  return workspace_manager;
+}
+
+// Register a buffer and its syntax tree
+void WorkspaceManager::RegisterBuffer(
+    std::string uri, slang::BufferID buffer_id,
+    std::shared_ptr<slang::syntax::SyntaxTree> syntax_tree) {
+  std::string normalized_path = UriToNormalizedPath(uri);
+
+  buffers_[normalized_path] = buffer_id;
+  syntax_trees_[normalized_path] = syntax_tree;
+}
+
+// Add a file to the set of open files
+void WorkspaceManager::AddOpenFile(std::string uri) {
+  std::string normalized_path = UriToNormalizedPath(uri);
+
+  auto it = buffers_.find(normalized_path);
+  if (it != buffers_.end()) {
+    slang::BufferID buffer_id = it->second;
+    bool was_added = open_buffers_.insert(buffer_id).second;
+
+    if (was_added) {
+      RebuildSymbolIndex();
+    }
+  } else {
+    logger_->warn("Attempted to open file without registered buffer: {}", uri);
+  }
+}
+
+// Validate internal state consistency
+auto WorkspaceManager::ValidateState() const -> bool {
+  bool valid = true;
+
+  // Check that all syntax trees have corresponding buffers
+  for (const auto& [path, tree] : syntax_trees_) {
+    if (buffers_.find(path) == buffers_.end()) {
+      logger_->error(
+          "Inconsistent state: syntax tree for path {} has no buffer", path);
+      valid = false;
+    }
+  }
+
+  // Check that all buffers have corresponding syntax trees
+  for (const auto& [path, buffer_id] : buffers_) {
+    if (syntax_trees_.find(path) == syntax_trees_.end()) {
+      logger_->error(
+          "Inconsistent state: buffer for path {} has no syntax tree", path);
+      valid = false;
+    }
+  }
+
+  // Check that all open buffers are registered in the buffers_ map
+  for (const auto& buffer_id : open_buffers_) {
+    bool found = false;
+    for (const auto& [path, id] : buffers_) {
+      if (id == buffer_id) {
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      logger_->error(
+          "Inconsistent state: open buffer ID {} not found in buffers map",
+          buffer_id.getId());
+      valid = false;
+    }
+  }
+
+  return valid;
 }
 
 auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
@@ -48,7 +143,7 @@ auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
     // Build the workspace symbol index
     symbol_index_ = std::make_shared<semantic::SymbolIndex>(
         semantic::SymbolIndex::FromCompilation(
-            *compilation_, open_file_paths_, logger_));
+            *compilation_, open_buffers_, logger_));
 
     logger_->debug("WorkspaceManager initial workspace symbol index built");
   }
@@ -111,6 +206,14 @@ auto WorkspaceManager::HandleFileChanges(std::vector<lsp::FileEvent> changes)
   co_return;
 }
 
+void WorkspaceManager::RebuildSymbolIndex() {
+  if (compilation_) {
+    symbol_index_ = std::make_shared<semantic::SymbolIndex>(
+        semantic::SymbolIndex::FromCompilation(
+            *compilation_, open_buffers_, logger_));
+  }
+}
+
 void WorkspaceManager::LoadAndCompileFiles(
     std::vector<std::string> file_paths) {
   logger_->debug("WorkspaceManager processing {} files", file_paths.size());
@@ -123,80 +226,39 @@ void WorkspaceManager::LoadAndCompileFiles(
     normalized_paths.push_back(NormalizePath(path));
   }
 
-  // Add all files to source loader
-  for (const auto& path : normalized_paths) {
-    source_loader_->addFiles(path);
-  }
-
-  // Add include directories to source loader from ConfigManager
-  auto include_dirs = config_manager_->GetIncludeDirectories();
-  for (const auto& include_dir : include_dirs) {
-    source_loader_->addSearchDirectories(include_dir);
-  }
-  logger_->debug(
-      "WorkspaceManager added {} include directories", include_dirs.size());
-
-  // Add defines to source loader from ConfigManager
-  slang::parsing::PreprocessorOptions pp_options;
-  auto defines = config_manager_->GetDefines();
-  for (const auto& define : defines) {
-    logger_->debug("WorkspaceManager adding define: {}", define);
-    pp_options.predefines.push_back(define);
-  }
-
-  // Create an options bag with the preprocessor options
-  slang::Bag options;
-  options.set(pp_options);
-
-  // Load and parse all sources
-  std::vector<std::shared_ptr<slang::syntax::SyntaxTree>> syntax_trees;
-  {
-    ScopedTimer timer("Loading and parsing sources", logger_);
-    syntax_trees = source_loader_->loadAndParseSources(options);
-  }
-
-  // Store the syntax trees in our map
+  // Clear the maps before adding new files
   syntax_trees_.clear();
+  buffers_.clear();
 
-  // Create a mapping from file paths to their corresponding syntax trees
-  // For simplicity, we'll use the file paths passed to the source loader as
-  // keys and match them with syntax trees by their index
-  for (size_t i = 0; i < normalized_paths.size() && i < syntax_trees.size();
-       i++) {
-    if (syntax_trees[i]) {
-      syntax_trees_[normalized_paths[i]] = syntax_trees[i];
+  // Create a new compilation
+  auto new_compilation = std::make_shared<slang::ast::Compilation>();
+
+  // For each path, we'll parse the file and add it to the compilation
+  for (const auto& path : normalized_paths) {
+    auto [buffer_id, syntax_tree] = ParseFile(path);
+    if (syntax_tree) {
+      // Use URI for consistent approach across real and virtual files
+      std::string uri = PathToUri(path);
+
+      // Register this buffer and tree
+      RegisterBuffer(uri, buffer_id, syntax_tree);
+
+      // Add to compilation
+      new_compilation->addSyntaxTree(syntax_tree);
+
+      logger_->debug("Added file to compilation: {}", path);
     }
   }
 
-  // Create and populate compilation
-  {
-    ScopedTimer timer("Creating compilation", logger_);
-    // Create a new compilation with default options
-    compilation_ = std::make_shared<slang::ast::Compilation>();
-
-    // Add all syntax trees to the compilation
-    for (auto& tree : syntax_trees) {
-      if (tree) {
-        compilation_->addSyntaxTree(tree);
-      }
-    }
-  }
-
-  // Check for source loader errors
-  auto errors = source_loader_->getErrors();
-  if (!errors.empty()) {
-    logger_->warn("Source loader encountered {} errors", errors.size());
-    for (const auto& error : errors) {
-      logger_->warn("Source loader error: {}", error);
-    }
-  }
+  // Set the new compilation
+  compilation_ = new_compilation;
 
   logger_->debug("Successfully processed {} files", syntax_trees_.size());
 }
 
 // Parse a single file and return its syntax tree
 auto WorkspaceManager::ParseFile(std::string path)
-    -> std::shared_ptr<slang::syntax::SyntaxTree> {
+    -> std::pair<slang::BufferID, std::shared_ptr<slang::syntax::SyntaxTree>> {
   // Create parsing options with default settings
   slang::Bag options;
 
@@ -204,13 +266,13 @@ auto WorkspaceManager::ParseFile(std::string path)
   auto buffer_or_error = source_manager_->readSource(path, nullptr);
   if (!buffer_or_error) {
     logger_->error("WorkspaceManager failed to read file {}", path);
-    return nullptr;
+    return std::make_pair(slang::BufferID(), nullptr);
   }
   auto buffer = buffer_or_error.value();
-  auto result =
+  auto syntax_tree =
       slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager_, options);
 
-  return result;
+  return std::make_pair(buffer.id, syntax_tree);
 }
 
 // Handle a created file
@@ -250,17 +312,13 @@ auto WorkspaceManager::HandleFileCreated(std::string path)
   }
 
   // Parse the file
-  auto tree = ParseFile(path);
-  if (!tree) {
+  auto [buffer_id, syntax_tree] = ParseFile(path);
+  if (!syntax_tree) {
     co_return;
   }
 
   // Add the syntax tree to our map
-  syntax_trees_[path] = tree;
-
-  logger_->debug(
-      "WorkspaceManager successfully added created file to workspace: {}",
-      path);
+  syntax_trees_[path] = syntax_tree;
   co_return;
 }
 
@@ -284,17 +342,13 @@ auto WorkspaceManager::HandleFileChanged(std::string path)
   }
 
   // Re-parse the file
-  auto tree = ParseFile(path);
-  if (!tree) {
+  auto [buffer_id, syntax_tree] = ParseFile(path);
+  if (!syntax_tree) {
     co_return;
   }
 
   // Update the syntax tree in our map
-  syntax_trees_[path] = tree;
-
-  logger_->debug(
-      "WorkspaceManager successfully updated changed file in workspace: {}",
-      path);
+  syntax_trees_[path] = syntax_tree;
   co_return;
 }
 
@@ -317,31 +371,6 @@ auto WorkspaceManager::HandleFileDeleted(std::string path)
   logger_->debug(
       "WorkspaceManager successfully removed deleted file from workspace: {}",
       path);
-  co_return;
-}
-
-auto WorkspaceManager::AddOpenFile(std::string uri) -> asio::awaitable<void> {
-  std::string path = UriToPath(uri);
-  std::string normalized_path = NormalizePath(path);
-
-  // Add to open files collection
-  bool was_added = open_file_paths_.insert(normalized_path).second;
-
-  if (was_added) {
-    logger_->debug(
-        "WorkspaceManager added open file to workspace tracking: {}",
-        normalized_path);
-
-    // Immediately rebuild the index to include this file if compilation exists
-    if (compilation_) {
-      symbol_index_ = std::make_shared<semantic::SymbolIndex>(
-          semantic::SymbolIndex::FromCompilation(
-              *compilation_, open_file_paths_, logger_));
-
-      logger_->debug("Workspace symbol index rebuilt for newly opened file");
-    }
-  }
-
   co_return;
 }
 
@@ -370,17 +399,12 @@ auto WorkspaceManager::RebuildWorkspaceCompilation() -> asio::awaitable<void> {
   compilation_ = new_compilation;
 
   // Build a workspace symbol index
-  {
-    ScopedTimer timer("Building workspace symbol index", logger_);
+  RebuildSymbolIndex();
 
-    // Build the index
-    symbol_index_ = std::make_shared<semantic::SymbolIndex>(
-        semantic::SymbolIndex::FromCompilation(
-            *compilation_, open_file_paths_, logger_));
-
-    symbol_index_->PrintInfo();
-
-    logger_->debug("Workspace symbol index built successfully");
+  // Validate state to ensure consistency
+  if (!ValidateState()) {
+    logger_->warn(
+        "Workspace state validation failed after rebuilding compilation");
   }
 
   logger_->debug("WorkspaceManager compilation rebuilt successfully");

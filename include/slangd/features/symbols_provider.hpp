@@ -33,7 +33,7 @@ class SymbolsProvider : public LanguageFeatureProvider {
       -> std::vector<lsp::DocumentSymbol>;
 
   // Core resolver
-  auto ResolveSymbolsFromCompilation(
+  static auto ResolveSymbolsFromCompilation(
       slang::ast::Compilation& compilation,
       const std::shared_ptr<slang::SourceManager>& source_manager,
       const std::string& uri) -> std::vector<lsp::DocumentSymbol>;

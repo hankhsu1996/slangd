@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_set>
@@ -24,6 +25,14 @@ class WorkspaceManager {
       std::shared_ptr<ConfigManager> config_manager,
       std::shared_ptr<spdlog::logger> logger = nullptr);
 
+  // Factory method to create a WorkspaceManager for testing with in-memory
+  // buffers
+  static auto CreateForTesting(
+      asio::any_io_executor executor,
+      std::map<std::string, std::string> source_map,
+      std::shared_ptr<spdlog::logger> logger = nullptr)
+      -> std::shared_ptr<WorkspaceManager>;
+
   // Scan the workspace to find and process all SystemVerilog files
   auto ScanWorkspace() -> asio::awaitable<void>;
 
@@ -31,10 +40,18 @@ class WorkspaceManager {
   auto HandleFileChanges(std::vector<lsp::FileEvent> changes)
       -> asio::awaitable<void>;
 
+  // Rebuild the symbol index
+  void RebuildSymbolIndex();
+
   // Get the compilation for this workspace
   [[nodiscard]] auto GetCompilation() const
       -> std::shared_ptr<slang::ast::Compilation> {
     return compilation_;
+  }
+
+  // Set the compilation for this workspace
+  void SetCompilation(std::shared_ptr<slang::ast::Compilation> compilation) {
+    compilation_ = compilation;
   }
 
   // Get the source manager
@@ -51,8 +68,16 @@ class WorkspaceManager {
   // Output debugging statistics for the workspace
   auto DumpWorkspaceStats() -> void;
 
+  // Register a buffer and its syntax tree - explicitly manages internal state
+  void RegisterBuffer(
+      std::string uri, slang::BufferID buffer_id,
+      std::shared_ptr<slang::syntax::SyntaxTree> syntax_tree);
+
   // Track open files for better indexing
-  auto AddOpenFile(std::string uri) -> asio::awaitable<void>;
+  void AddOpenFile(std::string uri);
+
+  // Check if the workspace has valid internal state
+  auto ValidateState() const -> bool;
 
  private:
   // Process a list of source files to create syntax trees and compilation
@@ -61,7 +86,7 @@ class WorkspaceManager {
 
   // Parse a single file
   auto ParseFile(std::string path)
-      -> std::shared_ptr<slang::syntax::SyntaxTree>;
+      -> std::pair<slang::BufferID, std::shared_ptr<slang::syntax::SyntaxTree>>;
 
   // Event handlers for file changes
   auto HandleFileCreated(std::string path) -> asio::awaitable<void>;
@@ -80,10 +105,12 @@ class WorkspaceManager {
   // Source manager for all workspace files
   std::shared_ptr<slang::SourceManager> source_manager_;
 
-  // Source loader for files in this workspace
-  std::unique_ptr<slang::driver::SourceLoader> source_loader_;
+  // Map of file paths to their source buffers
+  // The key is the normalized path
+  std::map<std::string, slang::BufferID> buffers_;
 
   // Map of file paths to their syntax trees
+  // The key is the normalized path
   std::map<std::string, std::shared_ptr<slang::syntax::SyntaxTree>>
       syntax_trees_;
 
@@ -96,8 +123,8 @@ class WorkspaceManager {
   // Workspace symbol index
   std::shared_ptr<semantic::SymbolIndex> symbol_index_{nullptr};
 
-  // Track open files
-  std::unordered_set<std::string> open_file_paths_;
+  // Track open buffers
+  std::unordered_set<slang::BufferID> open_buffers_;
 
   // ASIO executor and strand for concurrency control
   asio::any_io_executor executor_;

@@ -50,21 +50,23 @@ void RunTest(F&& test_fn) {
 
 // Helper function that combines compilation and symbol extraction
 auto ExtractDefinitionFromString(
-    asio::any_io_executor executor, std::string source, lsp::Position position)
+    asio::any_io_executor executor,
+    std::pair<std::string, std::string> source_pair, lsp::Position position)
     -> asio::awaitable<std::vector<lsp::Location>> {
   const std::string workspace_root = ".";
-  const std::string uri = "file://test.sv";
   auto config_manager =
       std::make_shared<slangd::ConfigManager>(executor, workspace_root);
   auto doc_manager =
       std::make_shared<slangd::DocumentManager>(executor, config_manager);
-  co_await doc_manager->ParseWithCompilation(uri, source);
+  co_await doc_manager->ParseWithCompilation(
+      source_pair.first, source_pair.second);
   auto workspace_manager = std::make_shared<slangd::WorkspaceManager>(
       executor, workspace_root, config_manager);
   auto definition_provider =
       slangd::DefinitionProvider(doc_manager, workspace_manager);
 
-  co_return definition_provider.GetDefinitionForUri(uri, position);
+  co_return definition_provider.GetDefinitionForUri(
+      source_pair.first, position);
 }
 
 // Simple helper to find position of text in source code
@@ -111,14 +113,16 @@ auto CreateRange(const lsp::Position& position, size_t symbol_length)
 // Helper for finding definition and checking results
 auto CheckDefinition(
     asio::any_io_executor executor, std::string source, std::string symbol,
-    int ref_occurrence, int def_occurrence,
-    std::string expected_uri = "file://test.sv") -> asio::awaitable<void> {
+    int ref_occurrence, int def_occurrence) -> asio::awaitable<void> {
+  std::string uri = "file://test.sv";
+  std::pair<std::string, std::string> source_pair{uri, source};
+
   // Find reference position
   auto ref_position = FindPosition(source, symbol, ref_occurrence);
 
   // Get definition locations
   auto def_locations =
-      co_await ExtractDefinitionFromString(executor, source, ref_position);
+      co_await ExtractDefinitionFromString(executor, source_pair, ref_position);
 
   // Find expected definition position
   auto expected_position = FindPosition(source, symbol, def_occurrence);
@@ -126,7 +130,7 @@ auto CheckDefinition(
 
   // Verify results
   REQUIRE(def_locations.size() == 1);
-  REQUIRE(def_locations[0].uri == expected_uri);
+  REQUIRE(def_locations[0].uri == uri);
   REQUIRE(def_locations[0].range == expected_range);
 }
 

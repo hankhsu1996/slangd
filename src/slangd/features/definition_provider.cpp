@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include "slangd/utils/conversion.hpp"
+#include "slangd/utils/path_utils.hpp"
 
 namespace slangd {
 
@@ -44,16 +45,13 @@ auto DefinitionProvider::GetDefinitionForUri(
   }
 
   // If not found in document index, try workspace symbol index
-  auto workspace_symbol_index = workspace_manager_->GetSymbolIndex();
-  if (workspace_symbol_index) {
-    logger_->debug("Looking up definition in workspace symbol index");
+  logger_->debug(
+      "No definition found in document index, trying workspace index");
+  auto workspace_locations = GetDefinitionFromWorkspace(location);
 
-    auto locations = ResolveDefinitionFromSymbolIndex(
-        *workspace_symbol_index, source_manager, location);
-    if (!locations.empty()) {
-      logger_->debug("Definition found in workspace symbol index");
-      return locations;
-    }
+  if (!workspace_locations.empty()) {
+    logger_->debug("Definition found in workspace symbol index");
+    return workspace_locations;
   }
 
   // No definition found in either index
@@ -63,12 +61,33 @@ auto DefinitionProvider::GetDefinitionForUri(
   return {};
 }
 
+auto DefinitionProvider::GetDefinitionFromWorkspace(
+    slang::SourceLocation location) -> std::vector<lsp::Location> {
+  auto workspace_symbol_index = workspace_manager_->GetSymbolIndex();
+  auto source_manager = workspace_manager_->GetSourceManager();
+
+  if (!workspace_symbol_index) {
+    logger_->error("Workspace symbol index not available");
+    return {};
+  }
+
+  if (!source_manager) {
+    logger_->error("Source manager not available");
+    return {};
+  }
+
+  logger_->debug("Looking up definition in workspace symbol index");
+
+  return ResolveDefinitionFromSymbolIndex(
+      *workspace_symbol_index, source_manager, location);
+}
+
 auto DefinitionProvider::ResolveDefinitionFromSymbolIndex(
     const semantic::SymbolIndex& index,
     const std::shared_ptr<slang::SourceManager>& source_manager,
-    slang::SourceLocation location) -> std::vector<lsp::Location> {
+    slang::SourceLocation lookup_location) -> std::vector<lsp::Location> {
   // Look up the definition using the symbol index
-  auto symbol_key = index.LookupSymbolAt(location);
+  auto symbol_key = index.LookupSymbolAt(lookup_location);
   if (!symbol_key) {
     // No symbol found at the given location
     return {};
@@ -86,8 +105,9 @@ auto DefinitionProvider::ResolveDefinitionFromSymbolIndex(
 
   // Create a location with a proper range for the symbol
   lsp::Location result_location;
+
   result_location.uri =
-      lsp::DocumentUri(source_manager->getFileName(def_range.start()));
+      PathToUri(source_manager->getFileName(def_range.start()));
 
   // Convert start position
   auto start_line = source_manager->getLineNumber(def_range.start());

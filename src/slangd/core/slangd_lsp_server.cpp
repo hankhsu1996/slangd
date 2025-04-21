@@ -6,8 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include "lsp/document_features.hpp"
-#include "slangd/utils/source_utils.hpp"
-#include "slangd/utils/uri.hpp"
+#include "slangd/utils/path_utils.hpp"
 
 namespace slangd {
 
@@ -157,7 +156,8 @@ auto SlangdLspServer::OnDidOpenTextDocument(
   asio::co_spawn(
       strand_,
       [this, uri = std::string(uri)]() -> asio::awaitable<void> {
-        co_await workspace_manager_->AddOpenFile(uri);
+        workspace_manager_->AddOpenFile(uri);
+        co_return;
       },
       asio::detached);
 
