@@ -14,7 +14,7 @@ class SlangdConfigFile {
  public:
   // File lists from .f files
   struct FileLists {
-    std::vector<std::string> paths;
+    std::vector<std::filesystem::path> paths;
     bool absolute = false;
   };
 
@@ -37,11 +37,13 @@ class SlangdConfigFile {
     return file_lists_;
   }
 
-  [[nodiscard]] auto GetFiles() const -> const std::vector<std::string>& {
+  [[nodiscard]] auto GetFiles() const
+      -> const std::vector<std::filesystem::path>& {
     return files_;
   }
 
-  [[nodiscard]] auto GetIncludeDirs() const -> const std::vector<std::string>& {
+  [[nodiscard]] auto GetIncludeDirs() const
+      -> const std::vector<std::filesystem::path>& {
     return include_dirs_;
   }
 
@@ -66,10 +68,10 @@ class SlangdConfigFile {
   FileLists file_lists_;
 
   // Additional individual source files
-  std::vector<std::string> files_;
+  std::vector<std::filesystem::path> files_;
 
   // Include directories for `include files
-  std::vector<std::string> include_dirs_;
+  std::vector<std::filesystem::path> include_dirs_;
 
   // Macro definitions (NAME or NAME=value)
   std::vector<std::string> defines_;

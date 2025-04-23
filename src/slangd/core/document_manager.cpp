@@ -47,7 +47,7 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
 
   // Parse the document to create a syntax tree
   auto normalized_path = UriToNormalizedPath(uri);
-  auto buffer = source_manager.assignText(normalized_path, content);
+  auto buffer = source_manager.assignText(normalized_path.string(), content);
   auto syntax_tree =
       slang::syntax::SyntaxTree::fromBuffer(buffer, source_manager, options);
 

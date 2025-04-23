@@ -53,8 +53,9 @@ void RunTest(F&& test_fn) {
 // Helper function that combines compilation and symbol extraction
 auto ExtractDefinitionFromFiles(
     asio::any_io_executor executor,
-    std::map<std::string, std::string> source_map, std::string current_file,
-    lsp::Position position) -> asio::awaitable<std::vector<lsp::Location>> {
+    std::map<std::filesystem::path, std::string> source_map,
+    std::filesystem::path current_file, lsp::Position position)
+    -> asio::awaitable<std::vector<lsp::Location>> {
   const std::string workspace_root = ".";
   auto config_manager =
       std::make_shared<slangd::ConfigManager>(executor, workspace_root);
@@ -130,9 +131,10 @@ auto CreateRange(const lsp::Position& position, size_t symbol_length)
 // Helper for finding definition and checking results
 auto CheckDefinitionAcrossFiles(
     asio::any_io_executor executor,
-    std::map<std::string, std::string> source_map, std::string symbol,
-    std::string ref_path, int ref_occurrence, std::string def_path,
-    int def_occurrence) -> asio::awaitable<void> {
+    std::map<std::filesystem::path, std::string> source_map,
+    std::filesystem::path symbol, std::filesystem::path ref_path,
+    int ref_occurrence, std::filesystem::path def_path, int def_occurrence)
+    -> asio::awaitable<void> {
   // Find reference position
   auto ref_position =
       FindPosition(source_map[ref_path], symbol, ref_occurrence);
@@ -144,7 +146,8 @@ auto CheckDefinitionAcrossFiles(
   // Find expected definition position
   auto expected_position =
       FindPosition(source_map[def_path], symbol, def_occurrence);
-  auto expected_range = CreateRange(expected_position, symbol.length());
+  auto expected_range =
+      CreateRange(expected_position, symbol.string().length());
 
   // Verify results
   REQUIRE(def_locations.size() == 1);
@@ -157,8 +160,8 @@ TEST_CASE(
     "GetDefinitionForUri resolves cross-file symbols",
     "[definition_provider]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
-    std::string top_module_path = "top_module.sv";
-    std::string submodule_path = "sub_module.sv";
+    std::filesystem::path top_module_path = "top_module.sv";
+    std::filesystem::path submodule_path = "sub_module.sv";
 
     std::string top_module_content = R"(
       module top_module;
@@ -172,7 +175,7 @@ TEST_CASE(
       endmodule
     )";
 
-    auto source_map = std::map<std::string, std::string>{
+    auto source_map = std::map<std::filesystem::path, std::string>{
         {top_module_path, top_module_content},
         {submodule_path, submodule_content},
     };

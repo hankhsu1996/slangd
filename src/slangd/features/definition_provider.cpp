@@ -12,6 +12,9 @@ namespace slangd {
 
 auto DefinitionProvider::GetDefinitionForUri(
     std::string uri, lsp::Position position) -> std::vector<lsp::Location> {
+  logger_->debug(
+      "DefinitionProvider getting definition for location: {}:{}:{}", uri,
+      position.line, position.character);
   auto compilation = document_manager_->GetCompilation(uri);
   auto syntax_tree = document_manager_->GetSyntaxTree(uri);
   auto source_manager = document_manager_->GetSourceManager(uri);
@@ -39,18 +42,22 @@ auto DefinitionProvider::GetDefinitionForUri(
     auto locations = ResolveDefinitionFromSymbolIndex(
         *symbol_index, source_manager, location);
     if (!locations.empty()) {
-      logger_->debug("Definition found in document-specific index");
+      logger_->debug(
+          "DefinitionProvider found definition: {}:{}:{}", locations[0].uri,
+          locations[0].range.start.line, locations[0].range.start.character);
       return locations;
     }
   }
 
   // If not found in document index, try workspace symbol index
   logger_->debug(
-      "No definition found in document index, trying workspace index");
+      "DefinitionProvider cannot find definition in document index, trying "
+      "workspace index");
   auto workspace_locations = GetDefinitionFromWorkspace(location);
 
   if (!workspace_locations.empty()) {
-    logger_->debug("Definition found in workspace symbol index");
+    logger_->debug(
+        "DefinitionProvider found definition in workspace symbol index");
     return workspace_locations;
   }
 
@@ -67,16 +74,17 @@ auto DefinitionProvider::GetDefinitionFromWorkspace(
   auto source_manager = workspace_manager_->GetSourceManager();
 
   if (!workspace_symbol_index) {
-    logger_->error("Workspace symbol index not available");
+    logger_->error("DefinitionProvider cannot get workspace symbol index");
     return {};
   }
 
   if (!source_manager) {
-    logger_->error("Source manager not available");
+    logger_->error("DefinitionProvider cannot get source manager");
     return {};
   }
 
-  logger_->debug("Looking up definition in workspace symbol index");
+  logger_->debug(
+      "DefinitionProvider looking up definition in workspace symbol index");
 
   return ResolveDefinitionFromSymbolIndex(
       *workspace_symbol_index, source_manager, location);
@@ -107,7 +115,7 @@ auto DefinitionProvider::ResolveDefinitionFromSymbolIndex(
   lsp::Location result_location;
 
   result_location.uri =
-      PathToUri(source_manager->getFileName(def_range.start()));
+      PathToUri(source_manager->getFullPath(def_range.start().buffer()));
 
   // Convert start position
   auto start_line = source_manager->getLineNumber(def_range.start());

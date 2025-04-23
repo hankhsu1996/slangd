@@ -6,10 +6,11 @@
 #include <fmt/format.h>
 
 namespace slangd {
+using std::filesystem::path;
 
-auto UriToPath(std::string_view uri) -> std::string {
+auto UriToPath(std::string_view uri) -> std::filesystem::path {
   if (!uri.starts_with("file://")) {
-    return std::string(uri);
+    return {uri};
   }
 
   // Strip "file://"
@@ -48,14 +49,14 @@ auto UriToPath(std::string_view uri) -> std::string {
   return result;
 }
 
-auto PathToUri(std::string_view path) -> std::string {
+auto PathToUri(std::filesystem::path path) -> std::string {
   std::string result = "file://";
 
-  if (path.size() >= 2 && path[1] == ':') {
+  if (path.string().size() >= 2 && path.string()[1] == ':') {
     result += '/';
   }
 
-  for (char c : path) {
+  for (char c : path.string()) {
     if (c == ' ' || c == '%' || c == '#' || c == '?' ||
         static_cast<unsigned char>(c) > 127 ||
         static_cast<unsigned char>(c) < 32) {
@@ -72,26 +73,19 @@ auto IsFileUri(std::string_view uri) -> bool {
   return uri.substr(0, 7) == "file://";
 }
 
-auto NormalizePath(std::string_view path) -> std::string {
+auto NormalizePath(std::filesystem::path path) -> std::filesystem::path {
   try {
-    std::filesystem::path fs_path(path);
-    if (std::filesystem::exists(fs_path)) {
-      return std::filesystem::canonical(fs_path).string();
+    if (std::filesystem::exists(path)) {
+      return std::filesystem::canonical(path);
     }
   } catch (const std::exception&) {
     // Fall back to original path if we can't canonicalize
   }
-  return std::string(path);
+  return path;
 }
 
-auto ExtractFilename(std::string_view path) -> std::string {
-  std::filesystem::path fs_path(path);
-  return fs_path.filename().string();
-}
-
-auto IsSystemVerilogFile(std::string_view path) -> bool {
-  std::filesystem::path fs_path(path);
-  std::string ext = fs_path.extension().string();
+auto IsSystemVerilogFile(std::filesystem::path path) -> bool {
+  std::string ext = path.extension().string();
 
   if (ext.empty()) {
     return false;
@@ -104,9 +98,8 @@ auto IsSystemVerilogFile(std::string_view path) -> bool {
   return ext == ".sv" || ext == ".svh" || ext == ".v" || ext == ".vh";
 }
 
-auto IsConfigFile(std::string_view path) -> bool {
-  std::filesystem::path fs_path(path);
-  std::string ext = fs_path.extension().string();
+auto IsConfigFile(std::filesystem::path path) -> bool {
+  std::string ext = path.extension().string();
 
   if (ext.empty()) {
     return false;
@@ -124,8 +117,7 @@ auto IsLocationInDocument(
   }
 
   std::string document_path = UriToPath(uri);
-  std::string location_path =
-      std::string(source_manager->getFileName(location));
+  std::filesystem::path location_path = source_manager->getFileName(location);
 
   return NormalizePath(document_path) == NormalizePath(location_path);
 }

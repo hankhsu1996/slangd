@@ -14,7 +14,7 @@ auto SlangdConfigFile::CreateDefault(std::shared_ptr<spdlog::logger> logger)
     -> SlangdConfigFile {
   SlangdConfigFile config(logger);
   // For fallback, we'll add the current directory as an include directory
-  config.include_dirs_.emplace_back(".");
+  config.include_dirs_.emplace_back(std::filesystem::current_path());
   return config;
 }
 
@@ -38,7 +38,8 @@ auto SlangdConfigFile::LoadFromFile(
     if (yaml["FileLists"]) {
       if (yaml["FileLists"]["Paths"]) {
         for (const auto& path : yaml["FileLists"]["Paths"]) {
-          config.file_lists_.paths.push_back(path.as<std::string>());
+          auto raw = path.as<std::string>();
+          config.file_lists_.paths.emplace_back(raw);
         }
       }
 
@@ -50,14 +51,16 @@ auto SlangdConfigFile::LoadFromFile(
     // Parse Files section
     if (yaml["Files"]) {
       for (const auto& file : yaml["Files"]) {
-        config.files_.push_back(file.as<std::string>());
+        auto raw = file.as<std::string>();
+        config.files_.emplace_back(raw);
       }
     }
 
     // Parse IncludeDirs section
     if (yaml["IncludeDirs"]) {
       for (const auto& dir : yaml["IncludeDirs"]) {
-        config.include_dirs_.push_back(dir.as<std::string>());
+        auto raw = dir.as<std::string>();
+        config.include_dirs_.emplace_back(raw);
       }
     }
 

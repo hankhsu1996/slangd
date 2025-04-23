@@ -95,7 +95,7 @@ auto ConvertLspPositionToSlangLocation(
   }
 
   // Create and return the Slang source location
-  return slang::SourceLocation(buffer_id, offset);
+  return {buffer_id, offset};
 }
 
 auto ConvertSlangLocationToLspLocation(

@@ -13,6 +13,9 @@ using jsonrpc::endpoint::RpcEndpoint;
 using jsonrpc::transport::FramedPipeTransport;
 using slangd::SlangdLspServer;
 
+// global var to enable debug print
+constexpr bool kDebugPrint = false;
+
 auto ParsePipeName(const std::vector<std::string>& args)
     -> std::optional<std::string> {
   const std::string pipe_prefix = "--pipe=";
@@ -25,7 +28,11 @@ auto ParsePipeName(const std::vector<std::string>& args)
 auto SetupLoggers()
     -> std::unordered_map<std::string, std::shared_ptr<spdlog::logger>> {
   // Configure default logger - disable it to avoid unexpected output
-  spdlog::set_level(spdlog::level::off);
+  if (kDebugPrint) {
+    spdlog::set_level(spdlog::level::debug);
+  } else {
+    spdlog::set_level(spdlog::level::off);
+  }
 
   // Create named loggers
   auto transport_logger = spdlog::stdout_color_mt("transport");
@@ -46,9 +53,15 @@ auto SetupLoggers()
   }
 
   // Configure individual logger levels
-  transport_logger->set_level(spdlog::level::off);
-  jsonrpc_logger->set_level(spdlog::level::off);
-  slangd_logger->set_level(spdlog::level::info);
+  if (kDebugPrint) {
+    transport_logger->set_level(spdlog::level::info);
+    jsonrpc_logger->set_level(spdlog::level::info);
+    slangd_logger->set_level(spdlog::level::debug);
+  } else {
+    transport_logger->set_level(spdlog::level::off);
+    jsonrpc_logger->set_level(spdlog::level::off);
+    slangd_logger->set_level(spdlog::level::info);
+  }
 
   return {
       {"transport", transport_logger},

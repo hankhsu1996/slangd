@@ -16,7 +16,7 @@
 namespace slangd {
 
 WorkspaceManager::WorkspaceManager(
-    asio::any_io_executor executor, std::string workspace_folder,
+    asio::any_io_executor executor, std::filesystem::path workspace_folder,
     std::shared_ptr<ConfigManager> config_manager,
     std::shared_ptr<spdlog::logger> logger)
     : logger_(logger ? logger : spdlog::default_logger()),
@@ -30,7 +30,7 @@ WorkspaceManager::WorkspaceManager(
 // Factory method for test environments
 auto WorkspaceManager::CreateForTesting(
     asio::any_io_executor executor,
-    std::map<std::string, std::string> source_map,
+    std::map<std::filesystem::path, std::string> source_map,
     std::shared_ptr<spdlog::logger> logger)
     -> std::shared_ptr<WorkspaceManager> {
   auto workspace_manager = std::make_shared<WorkspaceManager>(
@@ -41,13 +41,13 @@ auto WorkspaceManager::CreateForTesting(
   auto compilation = std::make_shared<slang::ast::Compilation>();
 
   // Create buffers, syntax trees and register them
-  for (const auto& [uri, content] : source_map) {
-    auto buffer = source_manager->assignText(uri, content);
+  for (const auto& [path, content] : source_map) {
+    auto buffer = source_manager->assignText(path.string(), content);
     auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
     compilation->addSyntaxTree(tree);
 
     // Register this buffer and tree
-    workspace_manager->RegisterBuffer(uri, buffer.id, tree);
+    workspace_manager->RegisterBuffer(path, buffer.id, tree);
   }
 
   // Set the compilation
@@ -58,19 +58,15 @@ auto WorkspaceManager::CreateForTesting(
 
 // Register a buffer and its syntax tree
 void WorkspaceManager::RegisterBuffer(
-    std::string uri, slang::BufferID buffer_id,
+    std::filesystem::path path, slang::BufferID buffer_id,
     std::shared_ptr<slang::syntax::SyntaxTree> syntax_tree) {
-  std::string normalized_path = UriToNormalizedPath(uri);
-
-  buffers_[normalized_path] = buffer_id;
-  syntax_trees_[normalized_path] = syntax_tree;
+  buffers_[path] = buffer_id;
+  syntax_trees_[path] = syntax_tree;
 }
 
 // Add a file to the set of open files
-void WorkspaceManager::AddOpenFile(std::string uri) {
-  std::string normalized_path = UriToNormalizedPath(uri);
-
-  auto it = buffers_.find(normalized_path);
+void WorkspaceManager::AddOpenFile(std::filesystem::path path) {
+  auto it = buffers_.find(path);
   if (it != buffers_.end()) {
     slang::BufferID buffer_id = it->second;
     bool was_added = open_buffers_.insert(buffer_id).second;
@@ -79,7 +75,8 @@ void WorkspaceManager::AddOpenFile(std::string uri) {
       RebuildSymbolIndex();
     }
   } else {
-    logger_->warn("Attempted to open file without registered buffer: {}", uri);
+    logger_->warn(
+        "Attempted to open file without registered buffer: {}", path.string());
   }
 }
 
@@ -91,7 +88,8 @@ auto WorkspaceManager::ValidateState() const -> bool {
   for (const auto& [path, tree] : syntax_trees_) {
     if (buffers_.find(path) == buffers_.end()) {
       logger_->error(
-          "Inconsistent state: syntax tree for path {} has no buffer", path);
+          "Inconsistent state: syntax tree for path {} has no buffer",
+          path.string());
       valid = false;
     }
   }
@@ -100,7 +98,8 @@ auto WorkspaceManager::ValidateState() const -> bool {
   for (const auto& [path, buffer_id] : buffers_) {
     if (syntax_trees_.find(path) == syntax_trees_.end()) {
       logger_->error(
-          "Inconsistent state: buffer for path {} has no syntax tree", path);
+          "Inconsistent state: buffer for path {} has no syntax tree",
+          path.string());
       valid = false;
     }
   }
@@ -168,34 +167,38 @@ auto WorkspaceManager::HandleFileChanges(std::vector<lsp::FileEvent> changes)
       continue;
     }
 
-    std::string local_path = UriToPath(change.uri);
+    std::filesystem::path local_path = UriToPath(change.uri);
 
     // Normalize path early to ensure consistent path handling
-    std::string normalized_path = NormalizePath(local_path);
+    std::filesystem::path normalized_path = NormalizePath(local_path);
 
     // Check if this is a config file change - handled by ConfigManager already
     // We skip config files in WorkspaceManager since they're handled at the
     // server level
     if (IsConfigFile(normalized_path)) {
       logger_->debug(
-          "WorkspaceManager skipping config file: {}", normalized_path);
+          "WorkspaceManager skipping config file: {}",
+          normalized_path.string());
       continue;
     }
 
     // Call the appropriate handler based on change type
     switch (change.type) {
       case lsp::FileChangeType::kCreated:
-        logger_->debug("WorkspaceManager file created: {}", local_path);
+        logger_->debug(
+            "WorkspaceManager file created: {}", local_path.string());
         co_await HandleFileCreated(normalized_path);
         break;
 
       case lsp::FileChangeType::kChanged:
-        logger_->debug("WorkspaceManager file changed: {}", local_path);
+        logger_->debug(
+            "WorkspaceManager file changed: {}", local_path.string());
         co_await HandleFileChanged(normalized_path);
         break;
 
       case lsp::FileChangeType::kDeleted:
-        logger_->debug("WorkspaceManager file deleted: {}", local_path);
+        logger_->debug(
+            "WorkspaceManager file deleted: {}", local_path.string());
         co_await HandleFileDeleted(normalized_path);
         break;
     }
@@ -216,11 +219,11 @@ void WorkspaceManager::RebuildSymbolIndex() {
 }
 
 void WorkspaceManager::LoadAndCompileFiles(
-    std::vector<std::string> file_paths) {
+    std::vector<std::filesystem::path> file_paths) {
   logger_->debug("WorkspaceManager processing {} files", file_paths.size());
 
   // First, normalize all paths for consistent handling
-  std::vector<std::string> normalized_paths;
+  std::vector<std::filesystem::path> normalized_paths;
   normalized_paths.reserve(file_paths.size());
 
   for (const auto& path : file_paths) {
@@ -238,16 +241,13 @@ void WorkspaceManager::LoadAndCompileFiles(
   for (const auto& path : normalized_paths) {
     auto [buffer_id, syntax_tree] = ParseFile(path);
     if (syntax_tree) {
-      // Use URI for consistent approach across real and virtual files
-      std::string uri = PathToUri(path);
-
       // Register this buffer and tree
-      RegisterBuffer(uri, buffer_id, syntax_tree);
+      RegisterBuffer(path, buffer_id, syntax_tree);
 
       // Add to compilation
       new_compilation->addSyntaxTree(syntax_tree);
 
-      logger_->debug("Added file to compilation: {}", path);
+      logger_->debug("Added file to compilation: {}", path.string());
     }
   }
 
@@ -258,7 +258,7 @@ void WorkspaceManager::LoadAndCompileFiles(
 }
 
 // Parse a single file and return its syntax tree
-auto WorkspaceManager::ParseFile(std::string path)
+auto WorkspaceManager::ParseFile(std::filesystem::path path)
     -> std::pair<slang::BufferID, std::shared_ptr<slang::syntax::SyntaxTree>> {
   // Create parsing options with default settings
   slang::Bag options;
@@ -266,7 +266,7 @@ auto WorkspaceManager::ParseFile(std::string path)
   // Use fromFile which returns a TreeOrError type
   auto buffer_or_error = source_manager_->readSource(path, nullptr);
   if (!buffer_or_error) {
-    logger_->error("WorkspaceManager failed to read file {}", path);
+    logger_->error("WorkspaceManager failed to read file {}", path.string());
     return std::make_pair(slang::BufferID(), nullptr);
   }
   auto buffer = buffer_or_error.value();
@@ -277,14 +277,14 @@ auto WorkspaceManager::ParseFile(std::string path)
 }
 
 // Handle a created file
-auto WorkspaceManager::HandleFileCreated(std::string path)
+auto WorkspaceManager::HandleFileCreated(std::filesystem::path path)
     -> asio::awaitable<void> {
-  logger_->debug("WorkspaceManager handling created file: {}", path);
+  logger_->debug("WorkspaceManager handling created file: {}", path.string());
 
   // Check if the file is a SystemVerilog file
   if (!IsSystemVerilogFile(path)) {
     logger_->debug(
-        "WorkspaceManager skipping non-SystemVerilog file: {}", path);
+        "WorkspaceManager skipping non-SystemVerilog file: {}", path.string());
     co_return;
   }
 
@@ -301,14 +301,16 @@ auto WorkspaceManager::HandleFileCreated(std::string path)
 
     if (!in_config) {
       logger_->debug(
-          "WorkspaceManager skipping file not in configuration: {}", path);
+          "WorkspaceManager skipping file not in configuration: {}",
+          path.string());
       co_return;
     }
   }
 
   // Check if the file exists and is readable
   if (!std::filesystem::exists(path)) {
-    logger_->warn("WorkspaceManager created file does not exist: {}", path);
+    logger_->warn(
+        "WorkspaceManager created file does not exist: {}", path.string());
     co_return;
   }
 
@@ -324,21 +326,23 @@ auto WorkspaceManager::HandleFileCreated(std::string path)
 }
 
 // Handle a changed file
-auto WorkspaceManager::HandleFileChanged(std::string path)
+auto WorkspaceManager::HandleFileChanged(std::filesystem::path path)
     -> asio::awaitable<void> {
-  logger_->debug("WorkspaceManager handling changed file: {}", path);
+  logger_->debug("WorkspaceManager handling changed file: {}", path.string());
 
   // Check if this file is being tracked (if not, it might not be a
   // SystemVerilog file or not in the current config)
   if (syntax_trees_.find(path) == syntax_trees_.end()) {
     logger_->debug(
-        "WorkspaceManager changed file is not tracked in workspace: {}", path);
+        "WorkspaceManager changed file is not tracked in workspace: {}",
+        path.string());
     co_return;
   }
 
   // Check if the file still exists
   if (!std::filesystem::exists(path)) {
-    logger_->warn("WorkspaceManager changed file no longer exists: {}", path);
+    logger_->warn(
+        "WorkspaceManager changed file no longer exists: {}", path.string());
     co_return;
   }
 
@@ -354,15 +358,16 @@ auto WorkspaceManager::HandleFileChanged(std::string path)
 }
 
 // Handle a deleted file
-auto WorkspaceManager::HandleFileDeleted(std::string path)
+auto WorkspaceManager::HandleFileDeleted(std::filesystem::path path)
     -> asio::awaitable<void> {
-  logger_->debug("WorkspaceManager handling deleted file: {}", path);
+  logger_->debug("WorkspaceManager handling deleted file: {}", path.string());
 
   // Check if this file is being tracked in our workspace
   auto it = syntax_trees_.find(path);
   if (it == syntax_trees_.end()) {
     logger_->debug(
-        "WorkspaceManager deleted file was not tracked in workspace: {}", path);
+        "WorkspaceManager deleted file was not tracked in workspace: {}",
+        path.string());
     co_return;
   }
 
@@ -371,7 +376,7 @@ auto WorkspaceManager::HandleFileDeleted(std::string path)
 
   logger_->debug(
       "WorkspaceManager successfully removed deleted file from workspace: {}",
-      path);
+      path.string());
   co_return;
 }
 
@@ -415,31 +420,30 @@ auto WorkspaceManager::RebuildWorkspaceCompilation() -> asio::awaitable<void> {
 // Dump workspace stats
 auto WorkspaceManager::DumpWorkspaceStats() -> void {
   logger_->info("WorkspaceManager Statistics:");
-  logger_->info("  Workspace folder: {}", workspace_folder_);
+  logger_->info("  Workspace folder: {}", workspace_folder_.string());
   logger_->info("  Syntax trees: {}", syntax_trees_.size());
   logger_->info("  Compilation active: {}", compilation_ != nullptr);
 
   // Find files that failed to parse
-  std::vector<std::string> failed_files;
+  std::vector<std::filesystem::path> failed_files;
 
   try {
     // Find SV files in this folder
     for (const auto& entry :
          std::filesystem::recursive_directory_iterator(workspace_folder_)) {
-      if (entry.is_regular_file() &&
-          IsSystemVerilogFile(entry.path().string())) {
-        std::string path = entry.path().string();
+      if (entry.is_regular_file() && IsSystemVerilogFile(entry.path())) {
         // Normalize the path to match how we store paths in syntax_trees_
-        std::string normalized_path = NormalizePath(path);
+        std::filesystem::path normalized_path = NormalizePath(entry.path());
 
         if (syntax_trees_.find(normalized_path) == syntax_trees_.end()) {
-          failed_files.push_back(path);  // Keep original path for display
+          failed_files.push_back(normalized_path);
         }
       }
     }
   } catch (const std::exception& e) {
     logger_->warn(
-        "Error scanning directory {}: {}", workspace_folder_, e.what());
+        "Error scanning directory {}: {}", workspace_folder_.string(),
+        e.what());
   }
 
   logger_->info("  Failed to parse: {}", failed_files.size());
@@ -450,20 +454,20 @@ auto WorkspaceManager::DumpWorkspaceStats() -> void {
     // Take at most 5 samples to avoid too much output
     size_t samples = std::min(failed_files.size(), static_cast<size_t>(5));
     for (size_t i = 0; i < samples; i++) {
-      logger_->info("    - {}", failed_files[i]);
+      logger_->info("    - {}", failed_files[i].string());
     }
 
     // Try to parse one of the failed files with detailed diagnostics
     if (!failed_files.empty()) {
-      std::string test_file = failed_files[0];
-      logger_->info("  Diagnostic parse attempt for: {}", test_file);
+      std::filesystem::path test_file = failed_files[0];
+      logger_->info("  Diagnostic parse attempt for: {}", test_file.string());
 
       // Create parsing options with diagnostic collection
       slang::Bag options;
 
       // Try parsing with detailed diagnostics
       auto result = slang::syntax::SyntaxTree::fromFile(
-          test_file, *source_manager_, options);
+          test_file.string(), *source_manager_, options);
 
       if (!result) {
         // Handle error case - result contains error information
@@ -481,11 +485,11 @@ auto WorkspaceManager::DumpWorkspaceStats() -> void {
 
           // Special check: see if the file is actually in our syntax tree map
           // under a different path
-          std::string canonical_path = NormalizePath(test_file);
+          std::filesystem::path canonical_path = NormalizePath(test_file);
           if (syntax_trees_.find(canonical_path) != syntax_trees_.end()) {
             logger_->info(
                 "  But file IS tracked under normalized path: {}",
-                canonical_path);
+                canonical_path.string());
           }
         } else {
           logger_->info("  Parse diagnostics ({}): ", diagnostics.size());
