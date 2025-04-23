@@ -95,10 +95,10 @@ auto SlangdLspServer::OnInitialized(lsp::InitializedParams /*unused*/)
   // Register the file system watcher for workspace changes
   auto register_watcher = [this]() -> asio::awaitable<void> {
     Logger()->debug("SlangdLspServer registering file system watcher");
-    auto watcher =
-        lsp::FileSystemWatcher{.globPattern = "**/*.{sv,svh,v,vh},**/.slangd"};
+    lsp::FileSystemWatcher sv_files{.globPattern = "**/*.{sv,svh,v,vh}"};
+    lsp::FileSystemWatcher slangd_config{.globPattern = "**/.slangd"};
     auto options = lsp::DidChangeWatchedFilesRegistrationOptions{
-        .watchers = {watcher},
+        .watchers = {sv_files, slangd_config},
     };
     auto registration = lsp::Registration{
         .id = "slangd-file-system-watcher",
@@ -155,9 +155,8 @@ auto SlangdLspServer::OnDidOpenTextDocument(
   // Track this file in the workspace manager for better indexing
   asio::co_spawn(
       strand_,
-      [this, uri = std::string(uri)]() -> asio::awaitable<void> {
-        workspace_manager_->AddOpenFile(uri);
-        co_return;
+      [this, path = UriToPath(uri)]() -> asio::awaitable<void> {
+        co_await workspace_manager_->AddOpenFile(path);
       },
       asio::detached);
 

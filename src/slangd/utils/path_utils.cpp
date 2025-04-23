@@ -117,7 +117,8 @@ auto IsLocationInDocument(
   }
 
   std::string document_path = UriToPath(uri);
-  std::filesystem::path location_path = source_manager->getFileName(location);
+  std::filesystem::path location_path =
+      source_manager->getFullPath(location.buffer());
 
   return NormalizePath(document_path) == NormalizePath(location_path);
 }

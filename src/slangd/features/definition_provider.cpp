@@ -53,7 +53,7 @@ auto DefinitionProvider::GetDefinitionForUri(
   logger_->debug(
       "DefinitionProvider cannot find definition in document index, trying "
       "workspace index");
-  auto workspace_locations = GetDefinitionFromWorkspace(location);
+  auto workspace_locations = GetDefinitionFromWorkspace(uri, position);
 
   if (!workspace_locations.empty()) {
     logger_->debug(
@@ -63,15 +63,19 @@ auto DefinitionProvider::GetDefinitionForUri(
 
   // No definition found in either index
   logger_->debug(
-      "DefinitionProvider cannot find definition for position {}:{}",
+      "DefinitionProvider cannot find definition for position {}:{}:{}", uri,
       position.line, position.character);
   return {};
 }
 
 auto DefinitionProvider::GetDefinitionFromWorkspace(
-    slang::SourceLocation location) -> std::vector<lsp::Location> {
+    std::string uri, lsp::Position position) -> std::vector<lsp::Location> {
   auto workspace_symbol_index = workspace_manager_->GetSymbolIndex();
   auto source_manager = workspace_manager_->GetSourceManager();
+  auto path = UriToPath(uri);
+  auto buffer_id = workspace_manager_->GetBufferIdFromPath(path);
+  slang::SourceLocation location =
+      ConvertLspPositionToSlangLocation(position, buffer_id, source_manager);
 
   if (!workspace_symbol_index) {
     logger_->error("DefinitionProvider cannot get workspace symbol index");

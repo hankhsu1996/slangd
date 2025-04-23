@@ -9,7 +9,6 @@
 #include <spdlog/spdlog.h>
 
 #include "include/lsp/basic.hpp"
-#include "include/slangd/utils/conversion.hpp"
 #include "include/slangd/utils/path_utils.hpp"
 
 auto main(int argc, char* argv[]) -> int {
@@ -53,23 +52,23 @@ void RunTest(F&& test_fn) {
 // Helper function that combines compilation and symbol extraction
 auto ExtractDefinitionFromFiles(
     asio::any_io_executor executor,
-    std::map<std::filesystem::path, std::string> source_map,
-    std::filesystem::path current_file, lsp::Position position)
-    -> asio::awaitable<std::vector<lsp::Location>> {
+    std::map<std::string, std::string> source_map, std::string current_uri,
+    lsp::Position position) -> asio::awaitable<std::vector<lsp::Location>> {
+  auto current_path = slangd::UriToPath(current_uri);
   const std::string workspace_root = ".";
   auto config_manager =
       std::make_shared<slangd::ConfigManager>(executor, workspace_root);
   auto doc_manager =
       std::make_shared<slangd::DocumentManager>(executor, config_manager);
   co_await doc_manager->ParseWithCompilation(
-      current_file, source_map[current_file]);
+      current_uri, source_map[current_uri]);
 
   // Create workspace manager using our test factory
   auto workspace_manager =
       slangd::WorkspaceManager::CreateForTesting(executor, source_map);
 
   // Mark the current file as open for indexing
-  workspace_manager->AddOpenFile(current_file);
+  co_await workspace_manager->AddOpenFile(current_path);
 
   bool state_valid = workspace_manager->ValidateState();
   if (!state_valid) {
@@ -79,12 +78,8 @@ auto ExtractDefinitionFromFiles(
   auto definition_provider =
       slangd::DefinitionProvider(doc_manager, workspace_manager);
 
-  // Prepare the lookup location
-  auto buffer = workspace_manager->GetBufferIdFromPath(current_file);
-  auto location = slangd::ConvertLspPositionToSlangLocation(
-      position, buffer, workspace_manager->GetSourceManager());
-
-  co_return definition_provider.GetDefinitionFromWorkspace(location);
+  co_return definition_provider.GetDefinitionFromWorkspace(
+      current_uri, position);
 }
 
 // Simple helper to find position of text in source code
@@ -131,37 +126,33 @@ auto CreateRange(const lsp::Position& position, size_t symbol_length)
 // Helper for finding definition and checking results
 auto CheckDefinitionAcrossFiles(
     asio::any_io_executor executor,
-    std::map<std::filesystem::path, std::string> source_map,
-    std::filesystem::path symbol, std::filesystem::path ref_path,
-    int ref_occurrence, std::filesystem::path def_path, int def_occurrence)
-    -> asio::awaitable<void> {
+    std::map<std::string, std::string> source_map, std::string symbol,
+    std::string ref_uri, int ref_occurrence, std::string def_uri,
+    int def_occurrence) -> asio::awaitable<void> {
   // Find reference position
-  auto ref_position =
-      FindPosition(source_map[ref_path], symbol, ref_occurrence);
+  auto ref_position = FindPosition(source_map[ref_uri], symbol, ref_occurrence);
 
   // Get definition locations
   auto def_locations = co_await ExtractDefinitionFromFiles(
-      executor, source_map, ref_path, ref_position);
+      executor, source_map, ref_uri, ref_position);
 
   // Find expected definition position
   auto expected_position =
-      FindPosition(source_map[def_path], symbol, def_occurrence);
-  auto expected_range =
-      CreateRange(expected_position, symbol.string().length());
+      FindPosition(source_map[def_uri], symbol, def_occurrence);
+  auto expected_range = CreateRange(expected_position, symbol.length());
 
   // Verify results
   REQUIRE(def_locations.size() == 1);
-  REQUIRE(def_locations[0].uri == slangd::PathToUri(def_path));
+  REQUIRE(def_locations[0].uri == def_uri);
   REQUIRE(def_locations[0].range == expected_range);
 }
 
 // Get module definition from another file
 TEST_CASE(
-    "GetDefinitionForUri resolves cross-file symbols",
-    "[definition_provider]") {
+    "DefinitionProvider resolves cross-file symbols", "[definition_provider]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
-    std::filesystem::path top_module_path = "top_module.sv";
-    std::filesystem::path submodule_path = "sub_module.sv";
+    std::string top_module_uri = "file:///top_module.sv";
+    std::string submodule_uri = "file:///sub_module.sv";
 
     std::string top_module_content = R"(
       module top_module;
@@ -175,14 +166,14 @@ TEST_CASE(
       endmodule
     )";
 
-    auto source_map = std::map<std::filesystem::path, std::string>{
-        {top_module_path, top_module_content},
-        {submodule_path, submodule_content},
+    auto source_map = std::map<std::string, std::string>{
+        {top_module_uri, top_module_content},
+        {submodule_uri, submodule_content},
     };
 
     SECTION("Submodule instantiation type resolves to definition") {
       co_await CheckDefinitionAcrossFiles(
-          executor, source_map, "submodule", top_module_path, 1, submodule_path,
+          executor, source_map, "submodule", top_module_uri, 1, submodule_uri,
           1);
     }
   });

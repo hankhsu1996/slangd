@@ -385,8 +385,21 @@ auto SymbolIndex::GetDefinitionRange(const SymbolKey& key) const
 
 auto SymbolIndex::PrintInfo() const -> void {
   logger_->info("SymbolIndex info:");
-  logger_->info("  Definition locations: {}", definition_locations_.size());
-  logger_->info("  Reference map: {}", reference_map_.size());
+  logger_->info(
+      "  Definition locations size: {}", definition_locations_.size());
+  for (const auto& [key, range] : definition_locations_) {
+    logger_->info(
+        "    {}:{} -> {}:{}-{}:{}", key.bufferId, key.offset,
+        range.start().buffer().getId(), range.start().offset(),
+        range.end().buffer().getId(), range.end().offset());
+  }
+  logger_->info("  Reference map size: {}", reference_map_.size());
+  for (const auto& [range, key] : reference_map_) {
+    logger_->info(
+        "    {}:{}-{}:{} -> {}:{}", range.start().buffer().getId(),
+        range.start().offset(), range.end().buffer().getId(),
+        range.end().offset(), key.bufferId, key.offset);
+  }
 }
 
 }  // namespace slangd::semantic

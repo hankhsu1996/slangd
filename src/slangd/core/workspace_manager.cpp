@@ -30,7 +30,7 @@ WorkspaceManager::WorkspaceManager(
 // Factory method for test environments
 auto WorkspaceManager::CreateForTesting(
     asio::any_io_executor executor,
-    std::map<std::filesystem::path, std::string> source_map,
+    std::map<std::string, std::string> source_map,
     std::shared_ptr<spdlog::logger> logger)
     -> std::shared_ptr<WorkspaceManager> {
   auto workspace_manager = std::make_shared<WorkspaceManager>(
@@ -41,7 +41,8 @@ auto WorkspaceManager::CreateForTesting(
   auto compilation = std::make_shared<slang::ast::Compilation>();
 
   // Create buffers, syntax trees and register them
-  for (const auto& [path, content] : source_map) {
+  for (const auto& [uri, content] : source_map) {
+    auto path = UriToPath(uri);
     auto buffer = source_manager->assignText(path.string(), content);
     auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
     compilation->addSyntaxTree(tree);
@@ -60,23 +61,25 @@ auto WorkspaceManager::CreateForTesting(
 void WorkspaceManager::RegisterBuffer(
     std::filesystem::path path, slang::BufferID buffer_id,
     std::shared_ptr<slang::syntax::SyntaxTree> syntax_tree) {
-  buffers_[path] = buffer_id;
+  buffer_ids_[path] = buffer_id;
   syntax_trees_[path] = syntax_tree;
 }
 
 // Add a file to the set of open files
-void WorkspaceManager::AddOpenFile(std::filesystem::path path) {
-  auto it = buffers_.find(path);
-  if (it != buffers_.end()) {
-    slang::BufferID buffer_id = it->second;
-    bool was_added = open_buffers_.insert(buffer_id).second;
+auto WorkspaceManager::AddOpenFile(std::filesystem::path path)
+    -> asio::awaitable<void> {
+  logger_->debug("WorkspaceManager adding open file: {}", path.string());
+  co_await asio::post(strand_, asio::use_awaitable);
 
-    if (was_added) {
-      RebuildSymbolIndex();
-    }
+  auto it = buffer_ids_.find(path);
+  if (it != buffer_ids_.end()) {
+    slang::BufferID buffer_id = it->second;
+    open_buffers_.insert(buffer_id);
+    RebuildSymbolIndex();
   } else {
     logger_->warn(
-        "Attempted to open file without registered buffer: {}", path.string());
+        "WorkspaceManager attempted to open file without registered buffer: {}",
+        path.string());
   }
 }
 
@@ -86,19 +89,21 @@ auto WorkspaceManager::ValidateState() const -> bool {
 
   // Check that all syntax trees have corresponding buffers
   for (const auto& [path, tree] : syntax_trees_) {
-    if (buffers_.find(path) == buffers_.end()) {
+    if (buffer_ids_.find(path) == buffer_ids_.end()) {
       logger_->error(
-          "Inconsistent state: syntax tree for path {} has no buffer",
+          "WorkspaceManager inconsistent state: syntax tree for path {} has no "
+          "buffer",
           path.string());
       valid = false;
     }
   }
 
   // Check that all buffers have corresponding syntax trees
-  for (const auto& [path, buffer_id] : buffers_) {
+  for (const auto& [path, buffer_id] : buffer_ids_) {
     if (syntax_trees_.find(path) == syntax_trees_.end()) {
       logger_->error(
-          "Inconsistent state: buffer for path {} has no syntax tree",
+          "WorkspaceManager inconsistent state: buffer for path {} has no "
+          "syntax tree",
           path.string());
       valid = false;
     }
@@ -107,7 +112,7 @@ auto WorkspaceManager::ValidateState() const -> bool {
   // Check that all open buffers are registered in the buffers_ map
   for (const auto& buffer_id : open_buffers_) {
     bool found = false;
-    for (const auto& [path, id] : buffers_) {
+    for (const auto& [path, id] : buffer_ids_) {
       if (id == buffer_id) {
         found = true;
         break;
@@ -116,7 +121,8 @@ auto WorkspaceManager::ValidateState() const -> bool {
 
     if (!found) {
       logger_->error(
-          "Inconsistent state: open buffer ID {} not found in buffers map",
+          "WorkspaceManager inconsistent state: open buffer ID {} not found in "
+          "buffers map",
           buffer_id.getId());
       valid = false;
     }
@@ -128,6 +134,7 @@ auto WorkspaceManager::ValidateState() const -> bool {
 auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
   logger_->debug(
       "WorkspaceManager starting workspace scan for SystemVerilog files");
+  co_await asio::post(strand_, asio::use_awaitable);
 
   // Get source files based on config or auto-discovery
   auto all_files = config_manager_->GetSourceFiles();
@@ -137,15 +144,7 @@ auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
 
   // Ensure the workspace symbol index is built
   if (!symbol_index_) {
-    logger_->debug("WorkspaceManager building initial workspace symbol index");
-    ScopedTimer timer("Building initial workspace symbol index", logger_);
-
-    // Build the workspace symbol index
-    symbol_index_ = std::make_shared<semantic::SymbolIndex>(
-        semantic::SymbolIndex::FromCompilation(
-            *compilation_, open_buffers_, logger_));
-
-    logger_->debug("WorkspaceManager initial workspace symbol index built");
+    RebuildSymbolIndex();
   }
 
   logger_->debug(
@@ -158,6 +157,7 @@ auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
 auto WorkspaceManager::HandleFileChanges(std::vector<lsp::FileEvent> changes)
     -> asio::awaitable<void> {
   logger_->debug("WorkspaceManager handling {} file changes", changes.size());
+  co_await asio::post(strand_, asio::use_awaitable);
 
   // Process each file change event
   for (const auto& change : changes) {
@@ -211,6 +211,7 @@ auto WorkspaceManager::HandleFileChanges(std::vector<lsp::FileEvent> changes)
 }
 
 void WorkspaceManager::RebuildSymbolIndex() {
+  logger_->debug("WorkspaceManager rebuilding symbol index");
   if (compilation_) {
     symbol_index_ = std::make_shared<semantic::SymbolIndex>(
         semantic::SymbolIndex::FromCompilation(
@@ -232,7 +233,7 @@ void WorkspaceManager::LoadAndCompileFiles(
 
   // Clear the maps before adding new files
   syntax_trees_.clear();
-  buffers_.clear();
+  buffer_ids_.clear();
 
   // Create a new compilation
   auto new_compilation = std::make_shared<slang::ast::Compilation>();

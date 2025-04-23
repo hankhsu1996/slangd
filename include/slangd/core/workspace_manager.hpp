@@ -29,7 +29,7 @@ class WorkspaceManager {
   // buffers
   static auto CreateForTesting(
       asio::any_io_executor executor,
-      std::map<std::filesystem::path, std::string> source_map,
+      std::map<std::string, std::string> source_map,
       std::shared_ptr<spdlog::logger> logger = nullptr)
       -> std::shared_ptr<WorkspaceManager>;
 
@@ -63,8 +63,8 @@ class WorkspaceManager {
   // Get the buffer ID from a path
   [[nodiscard]] auto GetBufferIdFromPath(std::filesystem::path path) const
       -> slang::BufferID {
-    auto it = buffers_.find(path);
-    if (it == buffers_.end()) {
+    auto it = buffer_ids_.find(path);
+    if (it == buffer_ids_.end()) {
       logger_->error(
           "WorkspaceManager: No buffer ID found for path: {}", path.string());
       return slang::BufferID{};
@@ -86,7 +86,7 @@ class WorkspaceManager {
       std::shared_ptr<slang::syntax::SyntaxTree> syntax_tree);
 
   // Track open files for better indexing
-  void AddOpenFile(std::filesystem::path path);
+  auto AddOpenFile(std::filesystem::path path) -> asio::awaitable<void>;
 
   // Check if the workspace has valid internal state
   auto ValidateState() const -> bool;
@@ -119,7 +119,7 @@ class WorkspaceManager {
 
   // Map of file paths to their source buffers
   // The key is the normalized path
-  std::map<std::filesystem::path, slang::BufferID> buffers_;
+  std::map<std::filesystem::path, slang::BufferID> buffer_ids_;
 
   // Map of file paths to their syntax trees
   // The key is the normalized path

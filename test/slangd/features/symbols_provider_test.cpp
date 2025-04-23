@@ -55,7 +55,7 @@ auto ExtractSymbolsFromString(
     asio::any_io_executor executor, std::string source)
     -> asio::awaitable<std::vector<lsp::DocumentSymbol>> {
   const std::string workspace_root = ".";
-  const std::string uri = "file://test.sv";
+  const std::string uri = "file:///test.sv";
   auto config_manager =
       std::make_shared<slangd::ConfigManager>(executor, workspace_root);
   auto doc_manager =

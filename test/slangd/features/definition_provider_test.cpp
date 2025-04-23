@@ -114,7 +114,7 @@ auto CreateRange(const lsp::Position& position, size_t symbol_length)
 auto CheckDefinition(
     asio::any_io_executor executor, std::string source, std::string symbol,
     int ref_occurrence, int def_occurrence) -> asio::awaitable<void> {
-  std::string uri = "file://test.sv";
+  std::string uri = "file:///test.sv";
   std::pair<std::string, std::string> source_pair{uri, source};
 
   // Find reference position
@@ -134,8 +134,7 @@ auto CheckDefinition(
   REQUIRE(def_locations[0].range == expected_range);
 }
 
-TEST_CASE(
-    "GetDefinitionForUri extracts basic module", "[definition_provider]") {
+TEST_CASE("DefinitionProvider extracts basic module", "[definition_provider]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     std::string module_code = R"(
       module test_module;
@@ -151,7 +150,7 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "GetDefinitionForUri handles parameterized module",
+    "DefinitionProvider handles parameterized module",
     "[definition_provider]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     std::string module_code = R"(
@@ -204,7 +203,7 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "GetDefinitionForUri handles package + module", "[definition_provider]") {
+    "DefinitionProvider handles package + module", "[definition_provider]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     std::string module_code = R"(
       package TrafficLightPkg;
@@ -282,7 +281,7 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "GetDefinitionForUri handles module instance", "[definition_provider]") {
+    "DefinitionProvider handles module instance", "[definition_provider]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     std::string module_code = R"(
       module parent (

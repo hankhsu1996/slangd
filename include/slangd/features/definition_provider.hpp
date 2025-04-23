@@ -27,7 +27,7 @@ class DefinitionProvider : public LanguageFeatureProvider {
   auto GetDefinitionForUri(std::string uri, lsp::Position position)
       -> std::vector<lsp::Location>;
 
-  auto GetDefinitionFromWorkspace(slang::SourceLocation location)
+  auto GetDefinitionFromWorkspace(std::string uri, lsp::Position position)
       -> std::vector<lsp::Location>;
 
   // Core resolvers
