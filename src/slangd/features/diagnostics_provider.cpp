@@ -283,7 +283,7 @@ auto DiagnosticsProvider::FilterAndModifyDiagnostics(
 
   for (auto& diag : diagnostics) {
     // 1. Check for diagnostics to completely exclude
-    if (diag.code == "ParamHasNoValue" || diag.code == "InfoTask") {
+    if (diag.code == "InfoTask") {
       // Skip these diagnostics entirely
       continue;
     }

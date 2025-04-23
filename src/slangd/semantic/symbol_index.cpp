@@ -90,8 +90,46 @@ namespace {
   }
 }
 
-[[maybe_unused]] void IndexInstance(
-    const slang::ast::InstanceSymbol& symbol, SymbolIndex& index) {
+[[maybe_unused]] void IndexUninstantiatedDef(
+    const slang::ast::UninstantiatedDefSymbol& symbol, SymbolIndex& index,
+    slang::ast::Compilation& compilation) {
+  // Get the instance type location
+  slang::SourceRange instance_type_range;
+  if (symbol.getSyntax()->kind ==
+      slang::syntax::SyntaxKind::HierarchicalInstance) {
+    const auto& hierarchical_instance_syntax =
+        symbol.getSyntax()->as<slang::syntax::HierarchicalInstanceSyntax>();
+    // Try get parent and convert to HierarchicalInstantiationSyntax to get the
+    // type range
+    if (const auto* parent = hierarchical_instance_syntax.parent) {
+      if (parent->kind == slang::syntax::SyntaxKind::HierarchyInstantiation) {
+        instance_type_range =
+            parent->as<slang::syntax::HierarchyInstantiationSyntax>()
+                .type.range();
+      }
+    }
+  }
+
+  // Lookup for the module definition. If found, add the instance type to
+  // the reference map
+  const auto* scope = symbol.getParentScope();
+  if (scope != nullptr) {
+    auto module_def =
+        compilation.tryGetDefinition(symbol.definitionName, *scope);
+    if (module_def.definition != nullptr) {
+      const auto* syntax = module_def.definition->getSyntax();
+      if (syntax->kind == slang::syntax::SyntaxKind::ModuleDeclaration) {
+        const auto& module_syntax =
+            syntax->as<slang::syntax::ModuleDeclarationSyntax>();
+        auto module_def_location = module_syntax.header->name.range().start();
+        SymbolKey key = SymbolKey::FromSourceLocation(module_def_location);
+
+        index.AddReference(instance_type_range, key);
+      }
+    }
+  }
+
+  // Add the instance name to the definition map
   if (const auto& symbol_syntax = symbol.getSyntax()) {
     if (symbol_syntax->kind ==
         slang::syntax::SyntaxKind::HierarchicalInstance) {
@@ -102,18 +140,6 @@ namespace {
       if (instance_syntax.decl != nullptr) {
         SymbolKey key = SymbolKey::FromSourceLocation(symbol.location);
         index.AddDefinition(key, instance_syntax.decl->name.range());
-      }
-
-      if (instance_syntax.parent != nullptr &&
-          instance_syntax.parent->kind ==
-              slang::syntax::SyntaxKind::HierarchyInstantiation) {
-        const auto& instantiation_syntax =
-            instance_syntax.parent
-                ->as<slang::syntax::HierarchyInstantiationSyntax>();
-        auto module_range = instantiation_syntax.type.range();
-        SymbolKey key =
-            SymbolKey::FromSourceLocation(symbol.getDefinition().location);
-        index.AddReference(module_range, key);
       }
     }
   }
@@ -207,19 +233,6 @@ namespace {
       index.AddReference(range, key);
     }
   }
-
-  // // Internal symbol reference
-  // if (port.internalSymbol != nullptr) {
-  //   // key is  port.location
-  //   // ref range is
-  //   spdlog::info(
-  //       "Internal symbol: {}", port.internalSymbol->getSyntax()->toString());
-  //   // internal symbol range
-  //   spdlog::info(
-  //       "Internal symbol range: {}:{}",
-  //       port.internalSymbol->getSyntax()->sourceRange().start().offset(),
-  //       port.internalSymbol->getSyntax()->sourceRange().end().offset());
-  // }
 }
 
 [[maybe_unused]] void IndexNamedValue(
@@ -282,14 +295,19 @@ auto SymbolIndex::FromCompilation(
             (def.definitionKind == slang::ast::DefinitionKind::Module ||
              def.definitionKind == slang::ast::DefinitionKind::Interface)) {
           const auto& instance =
-              slang::ast::InstanceSymbol::createDefault(compilation, def);
+              slang::ast::InstanceSymbol::createInvalid(compilation, def);
           instance.body.visit(self);
         }
       },
 
-      // Module instance visitor
-      [&](auto& self, const slang::ast::InstanceSymbol& symbol) {
-        IndexInstance(symbol, index);
+      // UninstantiatedDefSymbol visitor
+      [&](auto& self, const slang::ast::UninstantiatedDefSymbol& symbol) {
+        IndexUninstantiatedDef(symbol, index, compilation);
+        for (const auto& port_connection : symbol.getPortConnections()) {
+          if (port_connection != nullptr) {
+            port_connection->visit(self);
+          }
+        }
         self.visitDefault(symbol);
       },
 
