@@ -19,10 +19,9 @@ auto SlangdConfigFile::CreateDefault(std::shared_ptr<spdlog::logger> logger)
 }
 
 auto SlangdConfigFile::LoadFromFile(
-    const CanonicalPath& root, std::shared_ptr<spdlog::logger> logger)
+    const CanonicalPath& config_path, std::shared_ptr<spdlog::logger> logger)
     -> std::optional<SlangdConfigFile> {
   SlangdConfigFile config(logger);
-  auto config_path = root / ".slangd";
 
   if (!std::filesystem::exists(config_path.Path())) {
     config.logger_->debug(

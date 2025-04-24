@@ -14,7 +14,7 @@ using jsonrpc::transport::FramedPipeTransport;
 using slangd::SlangdLspServer;
 
 // global var to enable debug print
-constexpr bool kDebugPrint = true;
+constexpr bool kDebugPrint = false;
 
 auto ParsePipeName(const std::vector<std::string>& args)
     -> std::optional<std::string> {

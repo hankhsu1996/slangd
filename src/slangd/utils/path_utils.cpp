@@ -4,6 +4,7 @@
 #include <regex>
 
 #include <fmt/format.h>
+#include <spdlog/spdlog.h>
 
 namespace slangd {
 using std::filesystem::path;
@@ -25,7 +26,7 @@ auto IsSystemVerilogFile(std::filesystem::path path) -> bool {
 }
 
 auto IsConfigFile(std::filesystem::path path) -> bool {
-  return HasExtension(path, {".slangd"});
+  return path.filename() == ".slangd";
 }
 
 auto UriToPath(std::string_view uri) -> std::filesystem::path {

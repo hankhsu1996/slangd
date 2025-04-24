@@ -31,7 +31,7 @@ class SlangdConfigFile {
   // Load a configuration from a .slangd file in the specified root directory
   // Returns std::nullopt if file doesn't exist or has critical parsing errors
   static auto LoadFromFile(
-      const CanonicalPath& root,
+      const CanonicalPath& config_path,
       std::shared_ptr<spdlog::logger> logger = nullptr)
       -> std::optional<SlangdConfigFile>;
 
