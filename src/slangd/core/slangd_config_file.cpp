@@ -19,20 +19,20 @@ auto SlangdConfigFile::CreateDefault(std::shared_ptr<spdlog::logger> logger)
 }
 
 auto SlangdConfigFile::LoadFromFile(
-    const std::filesystem::path& root, std::shared_ptr<spdlog::logger> logger)
+    const CanonicalPath& root, std::shared_ptr<spdlog::logger> logger)
     -> std::optional<SlangdConfigFile> {
   SlangdConfigFile config(logger);
   auto config_path = root / ".slangd";
 
-  if (!std::filesystem::exists(config_path)) {
+  if (!std::filesystem::exists(config_path.Path())) {
     config.logger_->debug(
-        "No .slangd configuration file found at {}", config_path.string());
+        "No .slangd configuration file found at {}", config_path);
     return std::nullopt;
   }
 
   try {
     // Load YAML file
-    YAML::Node yaml = YAML::LoadFile(config_path.string());
+    YAML::Node yaml = YAML::LoadFile(config_path.String());
 
     // Parse FileLists section
     if (yaml["FileLists"]) {
@@ -71,8 +71,7 @@ auto SlangdConfigFile::LoadFromFile(
       }
     }
 
-    config.logger_->debug(
-        "Loaded .slangd configuration from {}", config_path.string());
+    config.logger_->debug("Loaded .slangd configuration from {}", config_path);
     return config;
 
   } catch (const YAML::Exception& e) {

@@ -8,6 +8,26 @@
 namespace slangd {
 using std::filesystem::path;
 
+inline auto HasExtension(
+    std::filesystem::path path, std::initializer_list<std::string_view> exts)
+    -> bool {
+  std::string ext = path.extension().string();
+  if (ext.empty()) {
+    return false;
+  }
+  std::ranges::transform(
+      ext, ext.begin(), [](unsigned char c) { return std::tolower(c); });
+  return std::ranges::find(exts, ext) != exts.end();
+}
+
+auto IsSystemVerilogFile(std::filesystem::path path) -> bool {
+  return HasExtension(path, {".sv", ".svh", ".v", ".vh"});
+}
+
+auto IsConfigFile(std::filesystem::path path) -> bool {
+  return HasExtension(path, {".slangd"});
+}
+
 auto UriToPath(std::string_view uri) -> std::filesystem::path {
   if (!uri.starts_with("file://")) {
     return {uri};
@@ -46,7 +66,7 @@ auto UriToPath(std::string_view uri) -> std::filesystem::path {
   }
 
   result.append(path, last_pos, path.length() - last_pos);
-  return result;
+  return NormalizePath(result);
 }
 
 auto PathToUri(std::filesystem::path path) -> std::string {
@@ -69,43 +89,12 @@ auto PathToUri(std::filesystem::path path) -> std::string {
   return result;
 }
 
-auto IsFileUri(std::string_view uri) -> bool {
-  return uri.substr(0, 7) == "file://";
-}
-
 auto NormalizePath(std::filesystem::path path) -> std::filesystem::path {
   try {
-    if (std::filesystem::exists(path)) {
-      return std::filesystem::canonical(path);
-    }
+    return std::filesystem::canonical(path);
   } catch (const std::exception&) {
-    // Fall back to original path if we can't canonicalize
+    return path;
   }
-  return path;
-}
-
-auto IsSystemVerilogFile(std::filesystem::path path) -> bool {
-  std::string ext = path.extension().string();
-
-  if (ext.empty()) {
-    return false;
-  }
-
-  // Convert to lowercase for case-insensitive comparison
-  std::ranges::transform(
-      ext, ext.begin(), [](unsigned char c) { return std::tolower(c); });
-
-  return ext == ".sv" || ext == ".svh" || ext == ".v" || ext == ".vh";
-}
-
-auto IsConfigFile(std::filesystem::path path) -> bool {
-  std::string ext = path.extension().string();
-
-  if (ext.empty()) {
-    return false;
-  }
-
-  return ext == ".slangd";
 }
 
 auto IsLocationInDocument(

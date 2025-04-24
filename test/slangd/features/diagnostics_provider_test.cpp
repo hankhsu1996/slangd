@@ -50,7 +50,7 @@ void RunTest(F&& test_fn) {
 auto ExtractDiagnosticsFromString(
     asio::any_io_executor executor, std::string source)
     -> asio::awaitable<std::vector<lsp::Diagnostic>> {
-  const std::filesystem::path workspace_root = ".";
+  auto workspace_root = slangd::CanonicalPath::CurrentPath();
   const std::string uri = "file:///test.sv";
   auto config_manager =
       std::make_shared<slangd::ConfigManager>(executor, workspace_root);

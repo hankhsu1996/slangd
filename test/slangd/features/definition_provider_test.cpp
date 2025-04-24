@@ -53,7 +53,7 @@ auto ExtractDefinitionFromString(
     asio::any_io_executor executor,
     std::pair<std::string, std::string> source_pair, lsp::Position position)
     -> asio::awaitable<std::vector<lsp::Location>> {
-  const std::string workspace_root = ".";
+  auto workspace_root = slangd::CanonicalPath::CurrentPath();
   auto config_manager =
       std::make_shared<slangd::ConfigManager>(executor, workspace_root);
   auto doc_manager =

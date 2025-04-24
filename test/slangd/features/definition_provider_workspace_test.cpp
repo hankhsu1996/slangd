@@ -9,7 +9,7 @@
 #include <spdlog/spdlog.h>
 
 #include "include/lsp/basic.hpp"
-#include "include/slangd/utils/path_utils.hpp"
+#include "slangd/utils/canonical_path.hpp"
 
 auto main(int argc, char* argv[]) -> int {
   spdlog::set_level(spdlog::level::debug);
@@ -54,8 +54,8 @@ auto ExtractDefinitionFromFiles(
     asio::any_io_executor executor,
     std::map<std::string, std::string> source_map, std::string current_uri,
     lsp::Position position) -> asio::awaitable<std::vector<lsp::Location>> {
-  auto current_path = slangd::UriToPath(current_uri);
-  const std::string workspace_root = ".";
+  auto current_path = slangd::CanonicalPath::FromUri(current_uri);
+  auto workspace_root = slangd::CanonicalPath::CurrentPath();
   auto config_manager =
       std::make_shared<slangd::ConfigManager>(executor, workspace_root);
   auto doc_manager =

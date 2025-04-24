@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 #include <slang/ast/Compilation.h>
 #include <slang/ast/Symbol.h>
@@ -16,23 +17,22 @@
 #include <slang/text/SourceManager.h>
 #include <slang/util/Bag.h>
 
-#include "slangd/utils/path_utils.hpp"
-
 namespace slangd {
 
 DocumentManager::DocumentManager(
     asio::any_io_executor executor,
     std::shared_ptr<ConfigManager> config_manager,
     std::shared_ptr<spdlog::logger> logger)
-    : executor_(executor),
+    : executor_(std::move(executor)),
       logger_(logger ? logger : spdlog::default_logger()),
-      config_manager_(config_manager) {
+      config_manager_(std::move(config_manager)) {
 }
 
 auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
     -> asio::awaitable<void> {
-  source_managers_[uri] = std::make_shared<slang::SourceManager>();
-  auto& source_manager = *source_managers_[uri];
+  auto path = CanonicalPath::FromUri(uri);
+  source_managers_[path] = std::make_shared<slang::SourceManager>();
+  auto& source_manager = *source_managers_[path];
 
   // Prepare preprocessor options
   slang::Bag options;
@@ -41,13 +41,12 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
     pp_options.predefines.push_back(define);
   }
   for (const auto& include_dir : config_manager_->GetIncludeDirectories()) {
-    pp_options.additionalIncludePaths.emplace_back(include_dir);
+    pp_options.additionalIncludePaths.emplace_back(include_dir.Path());
   }
   options.set(pp_options);
 
   // Parse the document to create a syntax tree
-  auto normalized_path = UriToNormalizedPath(uri);
-  auto buffer = source_manager.assignText(normalized_path.string(), content);
+  auto buffer = source_manager.assignText(path.String(), content);
   auto syntax_tree =
       slang::syntax::SyntaxTree::fromBuffer(buffer, source_manager, options);
 
@@ -59,7 +58,7 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
   }
 
   // Store the syntax tree
-  syntax_trees_[uri] = syntax_tree;
+  syntax_trees_[path] = syntax_tree;
 
   // Create compilation options with lint mode enabled
   slang::ast::CompilationOptions comp_options;
@@ -67,14 +66,14 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
   options.set(comp_options);
 
   // Create a new compilation with the options bag
-  compilations_[uri] = std::make_shared<slang::ast::Compilation>(options);
-  auto& compilation = *compilations_[uri];
+  compilations_[path] = std::make_shared<slang::ast::Compilation>(options);
+  auto& compilation = *compilations_[path];
 
   // Add the syntax tree to the compilation
-  compilation.addSyntaxTree(syntax_trees_[uri]);
+  compilation.addSyntaxTree(syntax_trees_[path]);
 
   // Build a basic symbol index (definitions only) for quick navigation
-  symbol_indices_[uri] = std::make_shared<semantic::SymbolIndex>(
+  symbol_indices_[path] = std::make_shared<semantic::SymbolIndex>(
       semantic::SymbolIndex::FromCompilation(
           compilation, {buffer.id}, logger_));
 
@@ -84,11 +83,13 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
 
 auto DocumentManager::ParseWithElaboration(std::string uri, std::string content)
     -> asio::awaitable<void> {
+  auto path = CanonicalPath::FromUri(uri);
+
   // First perform basic compilation
   co_await ParseWithCompilation(uri, content);
 
   // Ensure we have a compilation
-  auto comp_it = compilations_.find(uri);
+  auto comp_it = compilations_.find(path);
   if (comp_it == compilations_.end()) {
     logger_->error("No compilation found for document: {}", uri);
     co_return;
@@ -107,7 +108,8 @@ auto DocumentManager::ParseWithElaboration(std::string uri, std::string content)
 
 auto DocumentManager::GetSyntaxTree(std::string uri)
     -> std::shared_ptr<slang::syntax::SyntaxTree> {
-  auto it = syntax_trees_.find(uri);
+  auto path = CanonicalPath::FromUri(uri);
+  auto it = syntax_trees_.find(path);
   if (it != syntax_trees_.end()) {
     return it->second;
   }
@@ -116,7 +118,8 @@ auto DocumentManager::GetSyntaxTree(std::string uri)
 
 auto DocumentManager::GetCompilation(std::string uri)
     -> std::shared_ptr<slang::ast::Compilation> {
-  auto it = compilations_.find(uri);
+  auto path = CanonicalPath::FromUri(uri);
+  auto it = compilations_.find(path);
   if (it != compilations_.end()) {
     return it->second;
   }
@@ -125,7 +128,8 @@ auto DocumentManager::GetCompilation(std::string uri)
 
 auto DocumentManager::GetSourceManager(std::string uri)
     -> std::shared_ptr<slang::SourceManager> {
-  auto it = source_managers_.find(uri);
+  auto path = CanonicalPath::FromUri(uri);
+  auto it = source_managers_.find(path);
   if (it != source_managers_.end()) {
     return it->second;
   }
@@ -134,7 +138,8 @@ auto DocumentManager::GetSourceManager(std::string uri)
 
 auto DocumentManager::GetSymbolIndex(std::string uri)
     -> std::shared_ptr<semantic::SymbolIndex> {
-  auto it = symbol_indices_.find(uri);
+  auto path = CanonicalPath::FromUri(uri);
+  auto it = symbol_indices_.find(path);
   if (it != symbol_indices_.end()) {
     return it->second;
   }

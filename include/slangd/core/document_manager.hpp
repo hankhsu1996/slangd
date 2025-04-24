@@ -57,19 +57,19 @@ class DocumentManager {
   std::shared_ptr<ConfigManager> config_manager_;
 
   // Maps document URIs to their syntax trees
-  std::unordered_map<std::string, std::shared_ptr<slang::syntax::SyntaxTree>>
+  std::unordered_map<CanonicalPath, std::shared_ptr<slang::syntax::SyntaxTree>>
       syntax_trees_;
 
   // Maps document URIs to their compilation objects
-  std::unordered_map<std::string, std::shared_ptr<slang::ast::Compilation>>
+  std::unordered_map<CanonicalPath, std::shared_ptr<slang::ast::Compilation>>
       compilations_;
 
   // Maps document URIs to their source managers
-  std::unordered_map<std::string, std::shared_ptr<slang::SourceManager>>
+  std::unordered_map<CanonicalPath, std::shared_ptr<slang::SourceManager>>
       source_managers_;
 
   // Maps document URIs to their symbol indices
-  std::unordered_map<std::string, std::shared_ptr<semantic::SymbolIndex>>
+  std::unordered_map<CanonicalPath, std::shared_ptr<semantic::SymbolIndex>>
       symbol_indices_;
 };
 

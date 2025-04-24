@@ -38,13 +38,15 @@ auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
 
     const auto& workspace_folder = workspace_folders_opt->front();
     config_manager_ = std::make_shared<ConfigManager>(
-        executor_, UriToPath(workspace_folder.uri), logger_);
-    co_await config_manager_->LoadConfig(UriToPath(workspace_folder.uri));
+        executor_, CanonicalPath::FromUri(workspace_folder.uri), logger_);
+    co_await config_manager_->LoadConfig(
+        CanonicalPath::FromUri(workspace_folder.uri));
 
     document_manager_ =
         std::make_shared<DocumentManager>(executor_, config_manager_, logger_);
     workspace_manager_ = std::make_shared<WorkspaceManager>(
-        executor_, UriToPath(workspace_folder.uri), config_manager_, logger_);
+        executor_, CanonicalPath::FromUri(workspace_folder.uri),
+        config_manager_, logger_);
 
     definition_provider_ = std::make_unique<DefinitionProvider>(
         document_manager_, workspace_manager_, logger_);
@@ -155,7 +157,8 @@ auto SlangdLspServer::OnDidOpenTextDocument(
   // Track this file in the workspace manager for better indexing
   asio::co_spawn(
       strand_,
-      [this, path = UriToPath(uri)]() -> asio::awaitable<void> {
+      [this, uri]() -> asio::awaitable<void> {
+        auto path = CanonicalPath::FromUri(uri);
         co_await workspace_manager_->AddOpenFile(path);
       },
       asio::detached);
@@ -315,10 +318,14 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
       [this, params]() -> asio::awaitable<void> {
         // Process each file change
         for (const auto& change : params.changes) {
-          std::string path = UriToPath(change.uri);
+          auto path = CanonicalPath::FromUri(change.uri);
+
+          Logger()->debug("SlangdLspServer detected file change: {}", path);
 
           // Check if this is a config file change
-          if (IsConfigFile(path)) {
+          if (IsConfigFile(path.Path())) {
+            Logger()->debug(
+                "SlangdLspServer detected config file change: {}", path);
             if (!config_manager_) {
               Logger()->error(
                   "SlangdLspServer config_manager_ is nullptr, cannot handle "

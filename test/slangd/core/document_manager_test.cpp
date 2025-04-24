@@ -7,6 +7,7 @@
 #include <spdlog/spdlog.h>
 
 #include "../utils/fixture_utils.hpp"
+#include "slangd/utils/canonical_path.hpp"
 
 using bazel::tools::cpp::runfiles::Runfiles;
 
@@ -60,7 +61,7 @@ void RunTest(F&& test_fn) {
 TEST_CASE("DocumentManager initialization", "[basic]") {
   asio::io_context io_context;
   auto executor = io_context.get_executor();
-  const std::string workspace_root = ".";
+  auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
   auto config_manager =
       std::make_shared<slangd::ConfigManager>(executor, workspace_root);
   REQUIRE_NOTHROW(slangd::DocumentManager(executor, config_manager));
@@ -88,7 +89,7 @@ TEST_CASE("DocumentManager can read files", "[basic]") {
 TEST_CASE("DocumentManager can parse a document", "[parse]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Create document manager
-    const std::string workspace_root = ".";
+    auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
     auto config_manager =
         std::make_shared<slangd::ConfigManager>(executor, workspace_root);
     slangd::DocumentManager doc_manager(executor, config_manager);
@@ -107,7 +108,7 @@ TEST_CASE("DocumentManager can parse a document", "[parse]") {
 TEST_CASE("DocumentManager can retrieve a syntax tree", "[syntax]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Create document manager
-    const std::string workspace_root = ".";
+    auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
     auto config_manager =
         std::make_shared<slangd::ConfigManager>(executor, workspace_root);
     slangd::DocumentManager doc_manager(executor, config_manager);
@@ -138,7 +139,7 @@ TEST_CASE("DocumentManager can retrieve a syntax tree", "[syntax]") {
 TEST_CASE("DocumentManager can retrieve a compilation", "[compilation]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Create document manager
-    const std::string workspace_root = ".";
+    auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
     auto config_manager =
         std::make_shared<slangd::ConfigManager>(executor, workspace_root);
     slangd::DocumentManager doc_manager(executor, config_manager);
@@ -189,7 +190,7 @@ TEST_CASE("DocumentManager can retrieve a compilation", "[compilation]") {
 TEST_CASE("DocumentManager can extract symbols from a document", "[symbols]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Create document manager
-    const std::string workspace_root = ".";
+    auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
     auto config_manager =
         std::make_shared<slangd::ConfigManager>(executor, workspace_root);
     slangd::DocumentManager doc_manager(executor, config_manager);

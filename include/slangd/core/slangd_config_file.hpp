@@ -1,20 +1,23 @@
 #pragma once
 
-#include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include <spdlog/spdlog.h>
 
+#include "slangd/utils/canonical_path.hpp"
+
 namespace slangd {
 
 // Represents the contents of a .slangd configuration file
 class SlangdConfigFile {
+  using RelativePath = std::filesystem::path;
+
  public:
   // File lists from .f files
   struct FileLists {
-    std::vector<std::filesystem::path> paths;
+    std::vector<RelativePath> paths;
     bool absolute = false;
   };
 
@@ -28,7 +31,7 @@ class SlangdConfigFile {
   // Load a configuration from a .slangd file in the specified root directory
   // Returns std::nullopt if file doesn't exist or has critical parsing errors
   static auto LoadFromFile(
-      const std::filesystem::path& root,
+      const CanonicalPath& root,
       std::shared_ptr<spdlog::logger> logger = nullptr)
       -> std::optional<SlangdConfigFile>;
 
@@ -37,13 +40,12 @@ class SlangdConfigFile {
     return file_lists_;
   }
 
-  [[nodiscard]] auto GetFiles() const
-      -> const std::vector<std::filesystem::path>& {
+  [[nodiscard]] auto GetFiles() const -> const std::vector<CanonicalPath>& {
     return files_;
   }
 
   [[nodiscard]] auto GetIncludeDirs() const
-      -> const std::vector<std::filesystem::path>& {
+      -> const std::vector<CanonicalPath>& {
     return include_dirs_;
   }
 
@@ -68,10 +70,10 @@ class SlangdConfigFile {
   FileLists file_lists_;
 
   // Additional individual source files
-  std::vector<std::filesystem::path> files_;
+  std::vector<CanonicalPath> files_;
 
   // Include directories for `include files
-  std::vector<std::filesystem::path> include_dirs_;
+  std::vector<CanonicalPath> include_dirs_;
 
   // Macro definitions (NAME or NAME=value)
   std::vector<std::string> defines_;

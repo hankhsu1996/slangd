@@ -15,13 +15,14 @@
 #include "lsp/workspace.hpp"
 #include "slangd/core/config_manager.hpp"
 #include "slangd/semantic/symbol_index.hpp"
+#include "slangd/utils/canonical_path.hpp"
 
 namespace slangd {
 
 class WorkspaceManager {
  public:
   WorkspaceManager(
-      asio::any_io_executor executor, std::filesystem::path workspace_folder,
+      asio::any_io_executor executor, CanonicalPath workspace_folder,
       std::shared_ptr<ConfigManager> config_manager,
       std::shared_ptr<spdlog::logger> logger = nullptr);
 
@@ -61,12 +62,11 @@ class WorkspaceManager {
   }
 
   // Get the buffer ID from a path
-  [[nodiscard]] auto GetBufferIdFromPath(std::filesystem::path path) const
+  [[nodiscard]] auto GetBufferIdFromPath(CanonicalPath path) const
       -> slang::BufferID {
     auto it = buffer_ids_.find(path);
     if (it == buffer_ids_.end()) {
-      logger_->error(
-          "WorkspaceManager: No buffer ID found for path: {}", path.string());
+      logger_->error("WorkspaceManager: No buffer ID found for path: {}", path);
       return slang::BufferID{};
     }
     return it->second;
@@ -82,11 +82,11 @@ class WorkspaceManager {
 
   // Register a buffer and its syntax tree - explicitly manages internal state
   void RegisterBuffer(
-      std::filesystem::path path, slang::BufferID buffer_id,
+      CanonicalPath path, slang::BufferID buffer_id,
       std::shared_ptr<slang::syntax::SyntaxTree> syntax_tree);
 
   // Track open files for better indexing
-  auto AddOpenFile(std::filesystem::path path) -> asio::awaitable<void>;
+  auto AddOpenFile(CanonicalPath path) -> asio::awaitable<void>;
 
   // Check if the workspace has valid internal state
   auto ValidateState() const -> bool;
@@ -94,16 +94,16 @@ class WorkspaceManager {
  private:
   // Process a list of source files to create syntax trees and compilation
   // This method change the internal state of the workspace manager
-  void LoadAndCompileFiles(std::vector<std::filesystem::path> file_paths);
+  void LoadAndCompileFiles(std::vector<CanonicalPath> file_paths);
 
   // Parse a single file
-  auto ParseFile(std::filesystem::path path)
+  auto ParseFile(CanonicalPath path)
       -> std::pair<slang::BufferID, std::shared_ptr<slang::syntax::SyntaxTree>>;
 
   // Event handlers for file changes
-  auto HandleFileCreated(std::filesystem::path path) -> asio::awaitable<void>;
-  auto HandleFileChanged(std::filesystem::path path) -> asio::awaitable<void>;
-  auto HandleFileDeleted(std::filesystem::path path) -> asio::awaitable<void>;
+  auto HandleFileCreated(CanonicalPath path) -> asio::awaitable<void>;
+  auto HandleFileChanged(CanonicalPath path) -> asio::awaitable<void>;
+  auto HandleFileDeleted(CanonicalPath path) -> asio::awaitable<void>;
 
   // Rebuild the workspace compilation after file changes
   auto RebuildWorkspaceCompilation() -> asio::awaitable<void>;
@@ -112,18 +112,18 @@ class WorkspaceManager {
   std::shared_ptr<spdlog::logger> logger_;
 
   // Workspace folder path
-  std::filesystem::path workspace_folder_;
+  CanonicalPath workspace_folder_;
 
   // Source manager for all workspace files
   std::shared_ptr<slang::SourceManager> source_manager_;
 
   // Map of file paths to their source buffers
   // The key is the normalized path
-  std::map<std::filesystem::path, slang::BufferID> buffer_ids_;
+  std::map<CanonicalPath, slang::BufferID> buffer_ids_;
 
   // Map of file paths to their syntax trees
   // The key is the normalized path
-  std::map<std::filesystem::path, std::shared_ptr<slang::syntax::SyntaxTree>>
+  std::map<CanonicalPath, std::shared_ptr<slang::syntax::SyntaxTree>>
       syntax_trees_;
 
   // The compilation for this workspace

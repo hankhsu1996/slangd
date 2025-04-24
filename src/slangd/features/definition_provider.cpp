@@ -72,7 +72,7 @@ auto DefinitionProvider::GetDefinitionFromWorkspace(
     std::string uri, lsp::Position position) -> std::vector<lsp::Location> {
   auto workspace_symbol_index = workspace_manager_->GetSymbolIndex();
   auto source_manager = workspace_manager_->GetSourceManager();
-  auto path = UriToPath(uri);
+  auto path = CanonicalPath::FromUri(uri);
   auto buffer_id = workspace_manager_->GetBufferIdFromPath(path);
   slang::SourceLocation location =
       ConvertLspPositionToSlangLocation(position, buffer_id, source_manager);
