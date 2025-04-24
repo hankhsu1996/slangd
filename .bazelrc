@@ -1,43 +1,29 @@
-# .bazelrc
-
-# Use clang as the compiler
 build --action_env=CC=clang
 build --action_env=CXX=clang++
-
-# C++ settings
 build --cxxopt='-std=c++23'
-build --cxxopt='-Wall'
-build --cxxopt='-Wextra'
-build --cxxopt='-Wno-unused-parameter'
-build --cxxopt='-Wno-deprecated-declarations'
-
-# Build settings
 build --incompatible_strict_action_env
 build --disk_cache=~/.cache/bazel-disk
 build --local_resources=cpu=HOST_CPUS*0.7
 build --verbose_failures
 
-# Debug config
 build:debug --compilation_mode=dbg
 build:debug --cxxopt='-g3'
 build:debug --cxxopt='-O0'
 build:debug --strip=never
+build:debug --cxxopt='-Wall'
+build:debug --cxxopt='-Wextra'
+build:debug --cxxopt='-Wno-unused-parameter'
+build:debug --cxxopt='-Wno-deprecated-declarations'
 
-# Release config
 build:release --compilation_mode=opt
 build:release --cxxopt='-O3'
 build:release --cxxopt='-DNDEBUG'
 build:release --strip=always
-build:release --copt='-march=native'
+build:release --linkopt='-s'
 
-# Fastbuild config
 build:fastbuild --compilation_mode=fastbuild
 build:fastbuild --cxxopt='-O1'
 build:fastbuild --strip=never
 
-# Test settings
 test --test_output=errors
 test --test_timeout=5
-
-# Default to debug for development
-build --config=debug
