@@ -1,5 +1,8 @@
 FROM ubuntu:22.04
 
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH="/root/bin:${PATH}"
+
 RUN apt-get update && apt-get install -y \
     build-essential \
     clang \
