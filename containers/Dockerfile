@@ -8,7 +8,9 @@ RUN apt-get update && apt-get install -y \
 
 RUN mkdir /sysroot && \
     tar -czf /sysroot/sysroot-glibc-2.27.tar.gz \
-        /lib /lib64 /usr/lib /usr/lib64 /usr/include
+        /lib \
+        /usr/lib \
+        /usr/include
 
 # Stage 2: Final builder image based on Ubuntu 22.04
 FROM ubuntu:22.04
