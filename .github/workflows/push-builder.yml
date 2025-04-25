@@ -23,7 +23,7 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Build Docker image
-        run: run: docker build -f containers/Dockerfile -t ghcr.io/${{ github.repository_owner }}/slangd-cross-builder:latest .
+        run: docker build -f containers/Dockerfile -t ghcr.io/${{ github.repository_owner }}/slangd-cross-builder:latest .
 
       - name: Push Docker image
         run: docker push ghcr.io/${{ github.repository_owner }}/slangd-cross-builder:latest
