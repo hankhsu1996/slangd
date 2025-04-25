@@ -6,24 +6,22 @@ build --disk_cache=~/.cache/bazel-disk
 build --local_resources=cpu=HOST_CPUS*0.7
 build --verbose_failures
 
+# Debug build configuration
 build:debug --compilation_mode=dbg
-build:debug --cxxopt='-g3'
-build:debug --cxxopt='-O0'
-build:debug --strip=never
 build:debug --cxxopt='-Wall'
 build:debug --cxxopt='-Wextra'
 build:debug --cxxopt='-Wno-unused-parameter'
 build:debug --cxxopt='-Wno-deprecated-declarations'
 
+# Release build configuration
 build:release --compilation_mode=opt
 build:release --cxxopt='-O3'
 build:release --cxxopt='-DNDEBUG'
-build:release --strip=always
-build:release --linkopt='-s'
 
+# Fastbuild configuration
 build:fastbuild --compilation_mode=fastbuild
 build:fastbuild --cxxopt='-O1'
-build:fastbuild --strip=never
 
+# Test configuration
 test --test_output=errors
 test --test_timeout=5
