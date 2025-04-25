@@ -36,7 +36,7 @@
     "copy-binary": "mkdir -p ./bin && rm -f ./bin/slangd && cp ../../bazel-bin/slangd ./bin/",
     "lint": "eslint src --ext ts",
     "package": "npm run prepare-binary && npx @vscode/vsce package",
-    "package:container": "npm run build-binary && npm run copy-binary && npx @vscode/vsce package",
+    "package:ci": "bazel build --config=release --copt=--sysroot=/opt/sysroot-glibc-2.27 --cxxopt=--sysroot=/opt/sysroot-glibc-2.27 //:slangd && npm run copy-binary && npx @vscode/vsce package",
     "prepare-binary": "npm run build-binary && npm run copy-binary",
     "sort": "sort-package-json",
     "test": "node ./out/test/runTest.js",
