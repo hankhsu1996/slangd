@@ -1,0 +1,106 @@
+{
+  "name": "systemverilog",
+  "displayName": "SystemVerilog",
+  "version": "0.1.0",
+  "description": "SystemVerilog language support using slangd LSP",
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "keywords": [
+    "systemverilog",
+    "verilog",
+    "hdl",
+    "lsp",
+    "language-server"
+  ],
+  "homepage": "https://github.com/hankhsu1996/slangd",
+  "bugs": {
+    "url": "https://github.com/hankhsu1996/slangd/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hankhsu1996/slangd"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Shou-Li Hsu",
+    "email": "hank850503@gmail.com"
+  },
+  "publisher": "hankhsu1996",
+  "main": "./out/extension.js",
+  "scripts": {
+    "build": "npm run compile && npm run prepare-binary",
+    "build-binary": "bazel build --config=release //:slangd",
+    "build-container": "docker build -t slangd-builder:ubuntu18 -f ../../containers/Dockerfile.ubuntu18 ../..",
+    "build-in-container": "npm run build-container && docker run --rm -v $(cd ../.. && pwd):/workspace slangd-builder:ubuntu18 bazel build --config=release //:slangd && npm run copy-binary",
+    "compile": "webpack",
+    "copy-binary": "mkdir -p ./bin && rm -f ./bin/slangd && cp ../../bazel-bin/slangd ./bin/",
+    "lint": "eslint src --ext ts",
+    "package": "npm run prepare-binary && npx @vscode/vsce package",
+    "package:container": "npm run build-in-container && npx @vscode/vsce package",
+    "prepare-binary": "npm run build-binary && npm run copy-binary",
+    "sort": "sort-package-json",
+    "test": "node ./out/test/runTest.js",
+    "vscode:prepublish": "webpack --mode production",
+    "watch": "webpack --watch"
+  },
+  "contributes": {
+    "configuration": {
+      "title": "SystemVerilog",
+      "properties": {
+        "systemverilog.server.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the slangd executable. Leave empty to use the bundled executable."
+        }
+      }
+    },
+    "languages": [
+      {
+        "id": "systemverilog",
+        "aliases": [
+          "SystemVerilog",
+          "systemverilog",
+          "sv"
+        ],
+        "extensions": [
+          ".sv",
+          ".svh",
+          ".v",
+          ".vh"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ]
+  },
+  "activationEvents": [],
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver-protocol": "^3.17.5"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.3.2",
+    "glob": "^11.0.1",
+    "mocha": "^11.1.0",
+    "sort-package-json": "^3.0.0",
+    "ts-loader": "^9.5.2",
+    "typescript": "^5.3.2",
+    "webpack": "^5.99.6",
+    "webpack-cli": "^5.1.4"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "icon": "images/icon.png",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true,
+      "description": "This extension only reads files and provides language features"
+    }
+  }
+}
