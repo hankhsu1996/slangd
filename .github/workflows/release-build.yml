@@ -9,14 +9,24 @@ jobs:
     container:
       image: ghcr.io/${{ github.repository_owner }}/slangd-cross-builder:latest
 
+    env:
+      CC: "clang --sysroot=/opt/sysroot-glibc-2.27"
+      CXX: "clang++ --sysroot=/opt/sysroot-glibc-2.27"
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
 
+      - name: Print compiler and Bazel versions
+        run: |
+          which clang && clang --version
+          which clang++ && clang++ --version
+          which bazel && bazel --version
+
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
       - name: Install npm dependencies
         working-directory: editor/vscode
@@ -24,7 +34,15 @@ jobs:
 
       - name: Build and package extension
         working-directory: editor/vscode
-        run: npm run package:container
+        run: |
+          bazel build \
+            --config=release \
+            --action_env=CC="clang --sysroot=/opt/sysroot-glibc-2.27" \
+            --action_env=CXX="clang++ --sysroot=/opt/sysroot-glibc-2.27" \
+            //:slangd
+          mkdir -p editor/vscode/bin
+          cp bazel-bin/slangd editor/vscode/bin/slangd
+          npx @vscode/vsce package
 
       - name: Upload packaged .vsix
         uses: actions/upload-artifact@v4
