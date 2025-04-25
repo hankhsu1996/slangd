@@ -20,8 +20,6 @@ ENV PATH="/root/bin:${PATH}"
 
 RUN apt-get update && apt-get install -y \
     build-essential \
-    clang \
-    lld \
     curl \
     zip \
     unzip \
@@ -29,14 +27,25 @@ RUN apt-get update && apt-get install -y \
     python3 \
     git \
     cmake \
-    ca-certificates
+    ca-certificates \
+    xz-utils
 
+# Install LLVM 19.1.7 (Clang + LLD etc.)
+RUN curl -LO https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.7/LLVM-19.1.7-Linux-X64.tar.xz && \
+    mkdir -p /opt/clang-19 && \
+    tar -xf LLVM-19.1.7-Linux-X64.tar.xz -C /opt/clang-19 --strip-components=1 && \
+    ln -sf /opt/clang-19/bin/clang /usr/bin/clang && \
+    ln -sf /opt/clang-19/bin/clang++ /usr/bin/clang++ && \
+    rm LLVM-19.1.7-Linux-X64.tar.xz
+
+# Install Bazel 8.1.1
 RUN curl -LO https://github.com/bazelbuild/bazel/releases/download/8.1.1/bazel-8.1.1-installer-linux-x86_64.sh && \
     chmod +x bazel-8.1.1-installer-linux-x86_64.sh && \
     ./bazel-8.1.1-installer-linux-x86_64.sh --user && \
     ln -s /root/bin/bazel /usr/local/bin/bazel && \
     rm bazel-8.1.1-installer-linux-x86_64.sh
 
+# Extract sysroot
 COPY --from=sysroot-builder /sysroot/sysroot-glibc-2.27.tar.gz /opt/
 RUN mkdir -p /opt/sysroot-glibc-2.27 && \
     tar -xzf /opt/sysroot-glibc-2.27.tar.gz -C /opt/sysroot-glibc-2.27
