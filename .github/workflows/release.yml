@@ -1,4 +1,4 @@
-name: Release Build
+name: Build and Release
 
 on:
   workflow_dispatch:
@@ -7,12 +7,16 @@ jobs:
   build-extension:
     runs-on: ubuntu-latest
 
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/slangd-cross-builder:latest
-
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}
+          repository-cache: true
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -25,13 +29,21 @@ jobs:
           which clang++ && clang++ --version
           which bazel && bazel --version
 
+      - name: Build slangd binary
+        run: bazel build --config=release --features=fully_static_link //:slangd
+
+      - name: Copy slangd binary to extension
+        run: |
+          mkdir -p editor/vscode/bin
+          cp bazel-bin/slangd editor/vscode/bin/slangd
+
       - name: Install npm dependencies
         working-directory: editor/vscode
         run: npm ci
 
       - name: Build and package VSIX
         working-directory: editor/vscode
-        run: npm run package:ci
+        run: npm run package
 
       - name: Upload packaged .vsix
         uses: actions/upload-artifact@v4

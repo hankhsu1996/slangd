@@ -1,20 +1,20 @@
-name: Code Style Check
+name: Check Code Style
 
 on:
   push:
     branches: [main]
     paths:
-      - '**.cpp'
-      - '**.hpp'
-      - '.clang-format'
-      - '.github/workflows/style.yml'
+      - "**.cpp"
+      - "**.hpp"
+      - ".clang-format"
+      - ".github/workflows/style.yml"
   pull_request:
     branches: [main]
     paths:
-      - '**.cpp'
-      - '**.hpp'
-      - '.clang-format'
-      - '.github/workflows/style.yml'
+      - "**.cpp"
+      - "**.hpp"
+      - ".clang-format"
+      - ".github/workflows/style.yml"
 
 jobs:
   clang-format-check:
