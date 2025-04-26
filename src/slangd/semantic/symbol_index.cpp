@@ -285,7 +285,6 @@ auto SymbolIndex::FromCompilation(
       // Module/interface definition visitor
       [&](auto& self, const slang::ast::DefinitionSymbol& def) {
         IndexDefinition(def, index, compilation);
-        logger->debug("SymbolIndex indexing definition: {}", def.name);
 
         // Check if we should traverse the instance body
         auto def_buffer = def.location.buffer();
@@ -295,7 +294,6 @@ auto SymbolIndex::FromCompilation(
         if (should_traverse &&
             (def.definitionKind == slang::ast::DefinitionKind::Module ||
              def.definitionKind == slang::ast::DefinitionKind::Interface)) {
-          logger->debug("SymbolIndex traversing instance body: {}", def.name);
           const auto& instance =
               slang::ast::InstanceSymbol::createInvalid(compilation, def);
           instance.body.visit(self);
