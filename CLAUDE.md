@@ -22,13 +22,11 @@ This is a SystemVerilog Language Server Protocol (LSP) implementation with a mod
 ### Core Components
 
 **LSP Core Library (`lsp/`)**
-
 - Language-agnostic LSP protocol implementation built on JSON-RPC
 - Base `LspServer` class with virtual handlers for LSP lifecycle and features
 - Document management and ASIO coroutine-based async operations
 
 **Slangd Server (`slangd/`)**
-
 - SystemVerilog LSP server extending the generic `LspServer`
 - Uses Slang library for SystemVerilog parsing and semantic analysis
 - Core managers handle configuration, documents, and workspace operations
@@ -52,7 +50,6 @@ This is a SystemVerilog Language Server Protocol (LSP) implementation with a mod
 ### Coding Standards
 
 Follow Google C++ Style Guide with these specifics:
-
 - Use C++23 features, avoid macros
 - ASIO coroutines with strands for synchronization (no mutexes/futures)
 - `std::expected` for error handling over exceptions
@@ -67,3 +64,57 @@ Follow Google C++ Style Guide with these specifics:
 - Repository-wide symbol indexing (infrastructure complete, not yet exposed via LSP)
 
 The architecture enables future language servers (e.g. VHDL) to reuse the generic `lsp` core.
+
+## Branch Naming Conventions
+
+Use these prefixes for branch names:
+- `feature/` - for new features
+- `bugfix/` - for bug fixes
+- `docs/` - for documentation changes  
+- `chore/` - for maintenance tasks
+
+## Git Commit Message Rules
+
+1. **First line**: Short summary (50-72 characters max)
+2. **Body**: Use bullet points with `-` for multiple changes/reasons
+   - Wrap lines at 72 characters
+   - Explain what and why, not how
+
+**Example format:**
+```
+Short summary under 72 chars
+
+- First change or reason explained
+- Second change or reason explained
+```
+
+**Note**: Claude Code attribution goes in PR descriptions, not individual commits
+
+## Pull Request Rules
+
+**Title:**
+- Short summary (50-72 chars max)
+- Match branch naming style if helpful
+
+**Description Structure:**
+```markdown
+## Summary
+- Brief bullet points of main changes
+- Use `-` for consistency
+
+## Additional sections as needed:
+- Changes (for complex PRs)
+- Breaking Changes (if applicable)  
+- Notes (context, decisions, etc.)
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+```
+
+**Guidelines:**
+- Always include Summary
+- Add other sections only when they add value
+- Keep it concise and relevant to the specific change
+
+## Configuration Notes
+
+- Use `CLAUDE.local.md` for project instructions (not `CLAUDE.md`)

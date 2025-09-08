@@ -36,5 +36,4 @@ Thumbs.db
 *tmp*
 
 # Claude Code configuration
-CLAUDE.local.md
 .claude/settings.local.json
