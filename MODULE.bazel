@@ -15,7 +15,7 @@ bazel_dep(name = "slang", version = "9.0.0")
 git_override(
     module_name = "slang",
     remote = "https://github.com/hankhsu1996/slang.git",
-    commit = "ce2c738dbe41a2bc52613a604999c656f59a5579",  # Latest from feature/bazel-support
+    commit = "d99effdecb0f9d9fc18a49725514ac9d4715e8a5",  # Latest from feature/bazel-support
 )
 
 # JSON-RPC C++ Library
