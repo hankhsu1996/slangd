@@ -8,14 +8,14 @@ module(
 )
 
 # Bazel rules for C/C++
-bazel_dep(name = "rules_cc", version = "0.1.1")
+bazel_dep(name = "rules_cc", version = "0.2.4")
 
 # Slang SystemVerilog Compiler Library
-bazel_dep(name = "slang", version = "8.0.0")
+bazel_dep(name = "slang", version = "9.0.0")
 git_override(
     module_name = "slang",
-    remote = "https://github.com/hankhsu1996/slang-bazel.git",
-    commit = "9642fc21a07f3a58f00ea841ca0262871006683d",
+    remote = "https://github.com/hankhsu1996/slang.git",
+    commit = "ce2c738dbe41a2bc52613a604999c656f59a5579",  # Latest from feature/bazel-support
 )
 
 # JSON-RPC C++ Library
