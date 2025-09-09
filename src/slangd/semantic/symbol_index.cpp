@@ -294,9 +294,12 @@ auto SymbolIndex::FromCompilation(
         if (should_traverse &&
             (def.definitionKind == slang::ast::DefinitionKind::Module ||
              def.definitionKind == slang::ast::DefinitionKind::Interface)) {
-          // Skip invalid instance creation to avoid parameter resolution crashes
-          // in single-file LSP analysis where parameters may be unresolved
-          logger->debug("SymbolIndex skipping invalid instance creation for {}", def.name);
+          // Skip invalid instance creation to avoid parameter resolution
+          // crashes in single-file LSP analysis where parameters may be
+          // unresolved
+          logger->debug(
+              "SymbolIndex skipping invalid instance creation for {}",
+              def.name);
         }
       },
 
