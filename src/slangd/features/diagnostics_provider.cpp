@@ -153,6 +153,11 @@ auto DiagnosticsProvider::ResolveDiagnosticsFromCompilation(
   // This ensures proper location information for diagnostics
   slang::DiagnosticEngine diagnostic_engine(*source_manager);
 
+  // Disable unnamed-generate warnings by default: start with "none"
+  // then enable only the default group with "default"
+  std::vector<std::string> warning_options = {"none", "default"};
+  diagnostic_engine.setWarningOptions(warning_options);
+
   // Extract semantic diagnostics if we have a compilation
   // This already includes syntax diagnostics
   if (compilation) {

@@ -12,11 +12,16 @@ bazel_dep(name = "rules_cc", version = "0.2.4")
 
 # Slang SystemVerilog Compiler Library
 bazel_dep(name = "slang", version = "9.0.0")
+
 git_override(
     module_name = "slang",
     remote = "https://github.com/hankhsu1996/slang.git",
-    commit = "d99effdecb0f9d9fc18a49725514ac9d4715e8a5",  # Latest from feature/bazel-support
+    commit = "2d2ba7aa4c868410667d7d6c258cb086ddd956e0",  # Latest with LanguageServerMode flag
 )
+# local_path_override(
+#     module_name = "slang",
+#     path = "../slang",
+# )
 
 # JSON-RPC C++ Library
 bazel_dep(name = "jsonrpc", version = "0.0.0")

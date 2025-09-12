@@ -60,9 +60,10 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
   // Store the syntax tree
   syntax_trees_[path] = syntax_tree;
 
-  // Create compilation options with lint mode enabled
+  // Create compilation options with lint mode and language server mode enabled
   slang::ast::CompilationOptions comp_options;
   comp_options.flags |= slang::ast::CompilationFlags::LintMode;
+  comp_options.flags |= slang::ast::CompilationFlags::LanguageServerMode;
   options.set(comp_options);
 
   // Create a new compilation with the options bag

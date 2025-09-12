@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Build with configuration**: `bazel build //... --config=debug` (or `release`, `fastbuild`)
 - **Run specific test**: `bazel test //test/slangd:document_manager_test`
 - **Generate compile_commands.json**: `bazel run @hedron_compile_commands//:refresh_all`
+- **Format code**: `clang-format -i <file>` (required before commits)
 
 ## Requirements
 
@@ -72,6 +73,13 @@ Use these prefixes for branch names:
 - `bugfix/` - for bug fixes
 - `docs/` - for documentation changes  
 - `chore/` - for maintenance tasks
+
+## Pre-Commit Requirements
+
+**IMPORTANT**: Before committing any code changes:
+1. **Format code**: Run `clang-format -i <modified-files>` on all changed files
+2. **Build check**: Ensure `bazel build //...` passes
+3. **Test check**: Ensure `bazel test //...` passes
 
 ## Git Commit Message Rules
 
