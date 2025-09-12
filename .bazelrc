@@ -1,9 +1,14 @@
+# Toolchain configuration
 build --action_env=CC=clang
 build --action_env=CXX=clang++
 build --cxxopt='-std=c++23'
 build --incompatible_strict_action_env
+
+# Performance and caching
 build --disk_cache=~/.cache/bazel-disk
 build --local_resources=cpu=HOST_CPUS*0.7
+
+# Error reporting
 build --verbose_failures
 
 # Debug build configuration
