@@ -1,7 +1,4 @@
 {
-  "editor.insertSpaces": true,
-  "editor.tabSize": 2,
-  "editor.formatOnSave": true,
   "files.exclude": {
     "out": false,
     "node_modules": true
@@ -17,12 +14,6 @@
     "*.vh": "systemverilog",
     "*.vp": "systemverilog",
     "*.vg": "systemverilog",
-    "*.svh": "systemverilog",
-    "*.lds": "linkerscript",
-    "*.m": "matlab",
-    "*.adder": "racket",
-    "*.mdinc": "markdown",
-    "*.json": "json",
-    "chrono": "cpp"
+    "*.svh": "systemverilog"
   }
 }

@@ -12,7 +12,6 @@
 /.clangd/
 
 # Editor files
-.vscode/
 .idea/
 .cursor/
 *.swp
