@@ -169,7 +169,7 @@ TEST_CASE(
       module processor(undefined_if bus);
         assign bus.signal = 1'b1;    // Interface doesn't exist
         assign bus.data = 32'hDEAD;  // Member doesn't exist
-        
+
         // Regular symbols should still be indexed
         logic internal_state;
         logic [7:0] counter;
@@ -178,15 +178,16 @@ TEST_CASE(
 
     // Primary: Should not crash even with undefined interface
     auto index = fixture.BuildIndexFromSource(source);
-    
+
     // Secondary: Regular symbols still indexed despite interface errors
     REQUIRE(!index.GetDefinitionRanges().empty());
     REQUIRE(index.GetDefinitionRanges().contains(
         fixture.MakeKey(source, "internal_state")));
     REQUIRE(index.GetDefinitionRanges().contains(
         fixture.MakeKey(source, "counter")));
-    
-    // The undefined interface references (bus.signal, bus.data) are gracefully handled
+
+    // The undefined interface references (bus.signal, bus.data) are gracefully
+    // handled
   }
 
   SECTION("interface in always_comb conditions and RHS") {
@@ -200,7 +201,7 @@ TEST_CASE(
         always_comb begin
           if (enable & ~iface.ready) begin      // Interface in condition
             state = 1'b0;
-          end else if (enable & iface.ready) begin   
+          end else if (enable & iface.ready) begin
             if (iface.mode == 1'b1) begin      // Interface in comparison
               state = 1'b1;
             end else begin
@@ -213,16 +214,16 @@ TEST_CASE(
 
     // Primary: Should not crash with interface expressions in always_comb
     auto index = fixture.BuildIndexFromSource(source);
-    
+
     // Secondary: Regular symbols still indexed despite interface usage
     REQUIRE(!index.GetDefinitionRanges().empty());
-    REQUIRE(index.GetDefinitionRanges().contains(
-        fixture.MakeKey(source, "state")));
+    REQUIRE(
+        index.GetDefinitionRanges().contains(fixture.MakeKey(source, "state")));
     REQUIRE(index.GetDefinitionRanges().contains(
         fixture.MakeKey(source, "counter")));
     REQUIRE(index.GetDefinitionRanges().contains(
         fixture.MakeKey(source, "enable")));
-    
+
     // This test targets Expression::tryBindInterfaceRef code path
     // that differs from simple continuous assignments
   }
