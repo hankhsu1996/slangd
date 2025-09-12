@@ -152,9 +152,9 @@ auto DiagnosticsProvider::ResolveDiagnosticsFromCompilation(
   // Create a diagnostic engine using the document's source manager
   // This ensures proper location information for diagnostics
   slang::DiagnosticEngine diagnostic_engine(*source_manager);
-  
-  // Configure warning options to disable unnamed-generate warnings by default
-  // "none" disables all warnings first, then "default" enables only the default group
+
+  // Disable unnamed-generate warnings by default: start with "none"
+  // then enable only the default group with "default"
   std::vector<std::string> warning_options = {"none", "default"};
   diagnostic_engine.setWarningOptions(warning_options);
 
