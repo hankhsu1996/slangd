@@ -14,6 +14,7 @@
 # Editor files
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 *~
@@ -22,18 +23,13 @@
 .DS_Store
 Thumbs.db
 
-# Editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.cursor/
-
-# Misc
+# Logs and temporary files
 *.log
 *.log.*
 *tmp*
+
+# Local documentation (not for commit)
+*.local.md
 
 # Claude Code configuration
 .claude/settings.local.json

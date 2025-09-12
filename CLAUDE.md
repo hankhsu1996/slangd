@@ -23,11 +23,13 @@ This is a SystemVerilog Language Server Protocol (LSP) implementation with a mod
 ### Core Components
 
 **LSP Core Library (`lsp/`)**
+
 - Language-agnostic LSP protocol implementation built on JSON-RPC
 - Base `LspServer` class with virtual handlers for LSP lifecycle and features
 - Document management and ASIO coroutine-based async operations
 
 **Slangd Server (`slangd/`)**
+
 - SystemVerilog LSP server extending the generic `LspServer`
 - Uses Slang library for SystemVerilog parsing and semantic analysis
 - Core managers handle configuration, documents, and workspace operations
@@ -51,6 +53,7 @@ This is a SystemVerilog Language Server Protocol (LSP) implementation with a mod
 ### Coding Standards
 
 Follow Google C++ Style Guide with these specifics:
+
 - Use C++23 features, avoid macros
 - ASIO coroutines with strands for synchronization (no mutexes/futures)
 - `std::expected` for error handling over exceptions
@@ -69,14 +72,16 @@ The architecture enables future language servers (e.g. VHDL) to reuse the generi
 ## Branch Naming Conventions
 
 Use these prefixes for branch names:
+
 - `feature/` - for new features
 - `bugfix/` - for bug fixes
-- `docs/` - for documentation changes  
+- `docs/` - for documentation changes
 - `chore/` - for maintenance tasks
 
 ## Pre-Commit Requirements
 
 **IMPORTANT**: Before committing any code changes:
+
 1. **Format code**: Run `clang-format -i <modified-files>` on all changed files
 2. **Build check**: Ensure `bazel build //...` passes
 3. **Test check**: Ensure `bazel test //...` passes
@@ -89,6 +94,7 @@ Use these prefixes for branch names:
    - Explain what and why, not how
 
 **Example format:**
+
 ```
 Short summary under 72 chars
 
@@ -101,28 +107,33 @@ Short summary under 72 chars
 ## Pull Request Rules
 
 **Title:**
+
 - Short summary (50-72 chars max)
 - Match branch naming style if helpful
 
 **Description Structure:**
+
 ```markdown
 ## Summary
+
 - Brief bullet points of main changes
 - Use `-` for consistency
 
 ## Additional sections as needed:
+
 - Changes (for complex PRs)
-- Breaking Changes (if applicable)  
+- Breaking Changes (if applicable)
 - Notes (context, decisions, etc.)
 
 🤖 Generated with [Claude Code](https://claude.ai/code)
 ```
 
 **Guidelines:**
+
 - Always include Summary
 - Add other sections only when they add value
 - Keep it concise and relevant to the specific change
 
 ## Configuration Notes
 
-- Use `CLAUDE.local.md` for project instructions (not `CLAUDE.md`)
+- Use `CLAUDE.local.md` for local development notes and debugging details
