@@ -1,0 +1,28 @@
+{
+  "editor.insertSpaces": true,
+  "editor.tabSize": 2,
+  "editor.formatOnSave": true,
+  "files.exclude": {
+    "out": false,
+    "node_modules": true
+  },
+  "search.exclude": {
+    "out": true,
+    "node_modules": true
+  },
+  "typescript.tsc.autoDetect": "on",
+  "files.associations": {
+    "*.verilog": "systemverilog",
+    "*.v": "systemverilog",
+    "*.vh": "systemverilog",
+    "*.vp": "systemverilog",
+    "*.vg": "systemverilog",
+    "*.svh": "systemverilog",
+    "*.lds": "linkerscript",
+    "*.m": "matlab",
+    "*.adder": "racket",
+    "*.mdinc": "markdown",
+    "*.json": "json",
+    "chrono": "cpp"
+  }
+}
