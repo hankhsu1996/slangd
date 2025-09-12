@@ -58,7 +58,6 @@ auto WorkspaceManager::CreateForTesting(
 void WorkspaceManager::RegisterBuffer(
     CanonicalPath path, slang::BufferID buffer_id,
     std::shared_ptr<slang::syntax::SyntaxTree> syntax_tree) {
-  logger_->debug("WorkspaceManager registering buffer: {}", path);
   buffer_ids_[path] = buffer_id;
   syntax_trees_[path] = syntax_tree;
 }
@@ -231,8 +230,6 @@ void WorkspaceManager::LoadAndCompileFiles(
 
       // Add to compilation
       new_compilation->addSyntaxTree(syntax_tree);
-
-      logger_->debug("Added file to compilation: {}", path);
     }
   }
 

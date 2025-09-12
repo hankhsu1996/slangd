@@ -1,8 +1,4 @@
-// symbol_index.cpp
-
 #include "slangd/semantic/symbol_index.hpp"
-
-#include <cassert>
 
 #include <spdlog/spdlog.h>
 
@@ -294,12 +290,16 @@ auto SymbolIndex::FromCompilation(
         if (should_traverse &&
             (def.definitionKind == slang::ast::DefinitionKind::Module ||
              def.definitionKind == slang::ast::DefinitionKind::Interface)) {
-          // Skip invalid instance creation to avoid parameter resolution
-          // crashes in single-file LSP analysis where parameters may be
-          // unresolved
-          logger->debug(
-              "SymbolIndex skipping invalid instance creation for {}",
-              def.name);
+          auto& instance =
+              slang::ast::InstanceSymbol::createInvalid(compilation, def);
+
+          // Set parent scope to enable port connection resolution
+          instance.setParent(compilation.getRoot());
+
+          // Trigger port connection resolution to create interface instances
+          instance.getPortConnections();
+
+          instance.body.visit(self);
         }
       },
 
