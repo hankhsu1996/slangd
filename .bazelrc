@@ -1,17 +1,28 @@
+# Toolchain configuration
 build --action_env=CC=clang
 build --action_env=CXX=clang++
 build --cxxopt='-std=c++23'
 build --incompatible_strict_action_env
+
+# Performance and caching
 build --disk_cache=~/.cache/bazel-disk
 build --local_resources=cpu=HOST_CPUS*0.7
+
+# Error reporting
 build --verbose_failures
 
 # Debug build configuration
 build:debug --compilation_mode=dbg
+build:debug --cxxopt='-O0'
+build:debug --cxxopt='-g3'
+build:debug --cxxopt='-fno-omit-frame-pointer'
+build:debug --cxxopt='-fno-optimize-sibling-calls'
 build:debug --cxxopt='-Wall'
 build:debug --cxxopt='-Wextra'
 build:debug --cxxopt='-Wno-unused-parameter'
 build:debug --cxxopt='-Wno-deprecated-declarations'
+build:debug --linkopt='-rdynamic'
+build:debug --linkopt='-ldl'
 
 # Release build configuration
 build:release --compilation_mode=opt

@@ -36,3 +36,6 @@ Thumbs.db
 
 # Package Files
 *.vsix
+
+# Personal VSCode settings (keep project-specific settings in repo)
+.vscode/settings.json

@@ -1,0 +1,45 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
+      "outFiles": ["${workspaceFolder}/out/**/*.js"],
+      "preLaunchTask": "Prepare Extension",
+      "env": {
+        "WAIT_FOR_GDB": "1"
+      }
+    },
+    {
+      "name": "Extension Tests",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--extensionTestsPath=${workspaceFolder}/out/test/suite/index"
+      ],
+      "outFiles": ["${workspaceFolder}/out/test/**/*.js"],
+      "preLaunchTask": "Prepare Extension"
+    },
+    {
+      "name": "Attach to LSP (pick PID)",
+      "type": "cppdbg",
+      "program": "${workspaceFolder}/../../bazel-bin/slangd",
+      "request": "attach",
+      "processId": "${command:pickProcess}",
+      "MIMode": "gdb",
+      "setupCommands": [
+        { "text": "-enable-pretty-printing" },
+        { "text": "set print thread-events off" },
+        {
+          "text": "set substitute-path /proc/self/cwd ${workspaceFolder}/../.."
+        },
+        {
+          "text": "set substitute-path /proc/self/cwd/external/slang+ ${workspaceFolder}/../../bazel-slangd/external/slang+"
+        }
+      ]
+    }
+  ]
+}
