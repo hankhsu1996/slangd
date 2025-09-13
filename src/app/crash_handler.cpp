@@ -1,14 +1,18 @@
 #include "app/crash_handler.hpp"
 
 #ifdef __linux__
+#include <algorithm>
 #include <array>
 #include <csignal>
 #include <cxxabi.h>
 #include <dlfcn.h>
 #include <execinfo.h>
 #include <memory>
+#include <span>
 #include <string_view>
 #include <unistd.h>
+
+#include <fmt/format.h>
 #endif
 
 #include <cstdlib>
@@ -50,22 +54,11 @@ static void PrintFuncNames(int skip = 1, int max_frames = 32) noexcept {
       const char* name =
           (status == 0 && (raw != nullptr)) ? raw : info.dli_sname;
 
-      std::array<char, 512> line{};
-      int written =
-          ::snprintf(line.data(), line.size(), "  [%zu] %s\n", idx, name);
-      if (written > 0) {
-        const size_t len =
-            static_cast<size_t>(std::min<int>(written, line.size()));
-        (void)(::write(STDERR_FILENO, line.data(), len) == 0);
-      }
+      auto formatted = fmt::format("  [{}] {}\n", idx, name);
+      (void)(::write(STDERR_FILENO, formatted.data(), formatted.size()) == 0);
     } else {
-      std::array<char, 64> line{};
-      int written = ::snprintf(line.data(), line.size(), "  [%zu] ??\n", idx);
-      if (written > 0) {
-        const size_t len =
-            static_cast<size_t>(std::min<int>(written, line.size()));
-        (void)(::write(STDERR_FILENO, line.data(), len) == 0);
-      }
+      auto formatted = fmt::format("  [{}] ??\n", idx);
+      (void)(::write(STDERR_FILENO, formatted.data(), formatted.size()) == 0);
     }
     ++idx;
   }
