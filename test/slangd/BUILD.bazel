@@ -42,7 +42,7 @@ cc_test(
     name = "symbols_provider_test",
     timeout = "short",
     srcs = [
-        "features/symbols_provider_test.cpp",
+        "services/legacy/symbols_provider_test.cpp",
     ],
     deps = [
         "//:slangd_core",
@@ -55,7 +55,7 @@ cc_test(
     name = "diagnostics_provider_test",
     timeout = "short",
     srcs = [
-        "features/diagnostics_provider_test.cpp",
+        "services/legacy/diagnostics_provider_test.cpp",
     ],
     deps = [
         "//:slangd_core",
@@ -68,7 +68,7 @@ cc_test(
     name = "definition_provider_test",
     timeout = "short",
     srcs = [
-        "features/definition_provider_test.cpp",
+        "services/legacy/definition_provider_test.cpp",
     ],
     deps = [
         "//:slangd_core",
@@ -81,7 +81,7 @@ cc_test(
     name = "definition_provider_workspace_test",
     timeout = "short",
     srcs = [
-        "features/definition_provider_workspace_test.cpp",
+        "services/legacy/definition_provider_workspace_test.cpp",
     ],
     deps = [
         "//:slangd_core",

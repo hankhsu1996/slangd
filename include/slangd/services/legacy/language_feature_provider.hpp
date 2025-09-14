@@ -3,8 +3,8 @@
 #include <memory>
 #include <utility>
 
-#include "slangd/core/document_manager.hpp"
-#include "slangd/core/workspace_manager.hpp"
+#include "slangd/services/legacy/document_manager.hpp"
+#include "slangd/services/legacy/workspace_manager.hpp"
 
 namespace slangd {
 

@@ -13,8 +13,8 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
-#include "slangd/core/document_manager.hpp"
-#include "slangd/core/workspace_manager.hpp"
+#include "slangd/services/legacy/document_manager.hpp"
+#include "slangd/services/legacy/workspace_manager.hpp"
 #include "slangd/services/legacy/language_feature_provider.hpp"
 
 namespace slangd {

@@ -6,9 +6,9 @@
 #include <spdlog/spdlog.h>
 
 #include "slangd/core/config_manager.hpp"
-#include "slangd/core/document_manager.hpp"
+#include "slangd/services/legacy/document_manager.hpp"
 #include "slangd/core/language_service_base.hpp"
-#include "slangd/core/workspace_manager.hpp"
+#include "slangd/services/legacy/workspace_manager.hpp"
 
 namespace slangd {
 
