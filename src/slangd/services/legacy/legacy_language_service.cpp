@@ -10,9 +10,6 @@
 #include <slang/text/SourceLocation.h>
 #include <slang/text/SourceManager.h>
 
-#include "slangd/core/config_reader.hpp"
-#include "slangd/core/discovery_provider.hpp"
-#include "slangd/core/project_layout_builder.hpp"
 #include "slangd/services/legacy/definition_provider.hpp"
 #include "slangd/services/legacy/diagnostics_provider.hpp"
 #include "slangd/services/legacy/symbols_provider.hpp"
@@ -30,15 +27,7 @@ auto LegacyLanguageService::InitializeWorkspace(std::string workspace_uri)
   // Create managers with workspace information (same logic as old OnInitialize)
   auto workspace_path = CanonicalPath::FromUri(workspace_uri);
 
-  // Create ProjectLayoutBuilder dependencies
-  auto config_reader = std::make_shared<ConfigReader>(logger_);
-  auto filelist_provider = std::make_shared<FilelistProvider>(logger_);
-  auto repo_scan_provider = std::make_shared<RepoScanProvider>(logger_);
-  auto layout_builder = std::make_shared<ProjectLayoutBuilder>(
-      config_reader, filelist_provider, repo_scan_provider, logger_);
-
-  config_manager_ = std::make_shared<ConfigManager>(
-      executor_, workspace_path, layout_builder, logger_);
+  config_manager_ = ConfigManager::Create(executor_, workspace_path, logger_);
   co_await config_manager_->LoadConfig(workspace_path);
 
   document_manager_ =

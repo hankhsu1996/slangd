@@ -7,6 +7,19 @@
 
 namespace slangd {
 
+auto ConfigManager::Create(
+    asio::any_io_executor executor, CanonicalPath workspace_root,
+    std::shared_ptr<spdlog::logger> logger) -> std::shared_ptr<ConfigManager> {
+  auto config_reader = std::make_shared<ConfigReader>(logger);
+  auto filelist_provider = std::make_shared<FilelistProvider>(logger);
+  auto repo_scan_provider = std::make_shared<RepoScanProvider>(logger);
+  auto layout_builder = std::make_shared<ProjectLayoutBuilder>(
+      config_reader, filelist_provider, repo_scan_provider, logger);
+
+  return std::make_shared<ConfigManager>(
+      executor, workspace_root, layout_builder, logger);
+}
+
 ConfigManager::ConfigManager(
     asio::any_io_executor executor, CanonicalPath workspace_root,
     std::shared_ptr<ProjectLayoutBuilder> layout_builder,

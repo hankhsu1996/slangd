@@ -10,9 +10,6 @@
 #include <slangd/core/config_manager.hpp>
 #include <spdlog/spdlog.h>
 
-#include "slangd/core/config_reader.hpp"
-#include "slangd/core/discovery_provider.hpp"
-#include "slangd/core/project_layout_builder.hpp"
 #include "slangd/utils/path_utils.hpp"
 #include "slangd/utils/timer.hpp"
 
@@ -39,17 +36,9 @@ auto WorkspaceManager::CreateForTesting(
   auto workspace_root = CanonicalPath::CurrentPath();
 
   // Create ProjectLayoutBuilder dependencies
-  auto config_reader = std::make_shared<ConfigReader>(logger);
-  auto filelist_provider = std::make_shared<FilelistProvider>(logger);
-  auto repo_scan_provider = std::make_shared<RepoScanProvider>(logger);
-  auto layout_builder = std::make_shared<ProjectLayoutBuilder>(
-      config_reader, filelist_provider, repo_scan_provider, logger);
-
+  auto config_manager = ConfigManager::Create(executor, workspace_root, logger);
   auto workspace_manager = std::make_shared<WorkspaceManager>(
-      executor, workspace_root,
-      std::make_shared<ConfigManager>(
-          executor, workspace_root, layout_builder, logger),
-      logger);
+      executor, workspace_root, config_manager, logger);
 
   auto source_manager = workspace_manager->GetSourceManager();
   auto compilation = std::make_shared<slang::ast::Compilation>();

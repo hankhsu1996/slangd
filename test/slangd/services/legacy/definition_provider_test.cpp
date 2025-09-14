@@ -9,9 +9,6 @@
 #include <spdlog/spdlog.h>
 
 #include "include/lsp/basic.hpp"
-#include "slangd/core/config_reader.hpp"
-#include "slangd/core/discovery_provider.hpp"
-#include "slangd/core/project_layout_builder.hpp"
 
 auto main(int argc, char* argv[]) -> int {
   spdlog::set_level(spdlog::level::debug);
@@ -57,15 +54,7 @@ auto ExtractDefinitionFromString(
     std::pair<std::string, std::string> source_pair, lsp::Position position)
     -> asio::awaitable<std::vector<lsp::Location>> {
   auto workspace_root = slangd::CanonicalPath::CurrentPath();
-  // Create ProjectLayoutBuilder dependencies
-  auto config_reader = std::make_shared<slangd::ConfigReader>();
-  auto filelist_provider = std::make_shared<slangd::FilelistProvider>();
-  auto repo_scan_provider = std::make_shared<slangd::RepoScanProvider>();
-  auto layout_builder = std::make_shared<slangd::ProjectLayoutBuilder>(
-      config_reader, filelist_provider, repo_scan_provider);
-
-  auto config_manager = std::make_shared<slangd::ConfigManager>(
-      executor, workspace_root, layout_builder);
+  auto config_manager = slangd::ConfigManager::Create(executor, workspace_root);
   auto doc_manager =
       std::make_shared<slangd::DocumentManager>(executor, config_manager);
   co_await doc_manager->ParseWithCompilation(

@@ -7,9 +7,6 @@
 #include <spdlog/spdlog.h>
 
 #include "../utils/fixture_utils.hpp"
-#include "slangd/core/config_reader.hpp"
-#include "slangd/core/discovery_provider.hpp"
-#include "slangd/core/project_layout_builder.hpp"
 #include "slangd/utils/canonical_path.hpp"
 
 using bazel::tools::cpp::runfiles::Runfiles;
@@ -66,15 +63,7 @@ TEST_CASE("DocumentManager initialization", "[basic]") {
   auto executor = io_context.get_executor();
   auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
 
-  // Create ProjectLayoutBuilder dependencies
-  auto config_reader = std::make_shared<slangd::ConfigReader>();
-  auto filelist_provider = std::make_shared<slangd::FilelistProvider>();
-  auto repo_scan_provider = std::make_shared<slangd::RepoScanProvider>();
-  auto layout_builder = std::make_shared<slangd::ProjectLayoutBuilder>(
-      config_reader, filelist_provider, repo_scan_provider);
-
-  auto config_manager = std::make_shared<slangd::ConfigManager>(
-      executor, workspace_root, layout_builder);
+  auto config_manager = slangd::ConfigManager::Create(executor, workspace_root);
   REQUIRE_NOTHROW(slangd::DocumentManager(executor, config_manager));
   INFO("DocumentManager can be initialized");
 }
@@ -102,15 +91,8 @@ TEST_CASE("DocumentManager can parse a document", "[parse]") {
     // Create document manager
     auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
 
-    // Create ProjectLayoutBuilder dependencies
-    auto config_reader = std::make_shared<slangd::ConfigReader>();
-    auto filelist_provider = std::make_shared<slangd::FilelistProvider>();
-    auto repo_scan_provider = std::make_shared<slangd::RepoScanProvider>();
-    auto layout_builder = std::make_shared<slangd::ProjectLayoutBuilder>(
-        config_reader, filelist_provider, repo_scan_provider);
-
-    auto config_manager = std::make_shared<slangd::ConfigManager>(
-        executor, workspace_root, layout_builder);
+    auto config_manager =
+        slangd::ConfigManager::Create(executor, workspace_root);
     slangd::DocumentManager doc_manager(executor, config_manager);
 
     // Load real SystemVerilog content from test file
@@ -129,15 +111,8 @@ TEST_CASE("DocumentManager can retrieve a syntax tree", "[syntax]") {
     // Create document manager
     auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
 
-    // Create ProjectLayoutBuilder dependencies
-    auto config_reader = std::make_shared<slangd::ConfigReader>();
-    auto filelist_provider = std::make_shared<slangd::FilelistProvider>();
-    auto repo_scan_provider = std::make_shared<slangd::RepoScanProvider>();
-    auto layout_builder = std::make_shared<slangd::ProjectLayoutBuilder>(
-        config_reader, filelist_provider, repo_scan_provider);
-
-    auto config_manager = std::make_shared<slangd::ConfigManager>(
-        executor, workspace_root, layout_builder);
+    auto config_manager =
+        slangd::ConfigManager::Create(executor, workspace_root);
     slangd::DocumentManager doc_manager(executor, config_manager);
 
     // Load real SystemVerilog content from test file
@@ -168,15 +143,8 @@ TEST_CASE("DocumentManager can retrieve a compilation", "[compilation]") {
     // Create document manager
     auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
 
-    // Create ProjectLayoutBuilder dependencies
-    auto config_reader = std::make_shared<slangd::ConfigReader>();
-    auto filelist_provider = std::make_shared<slangd::FilelistProvider>();
-    auto repo_scan_provider = std::make_shared<slangd::RepoScanProvider>();
-    auto layout_builder = std::make_shared<slangd::ProjectLayoutBuilder>(
-        config_reader, filelist_provider, repo_scan_provider);
-
-    auto config_manager = std::make_shared<slangd::ConfigManager>(
-        executor, workspace_root, layout_builder);
+    auto config_manager =
+        slangd::ConfigManager::Create(executor, workspace_root);
     slangd::DocumentManager doc_manager(executor, config_manager);
 
     // Load real SystemVerilog content from test file
@@ -227,15 +195,8 @@ TEST_CASE("DocumentManager can extract symbols from a document", "[symbols]") {
     // Create document manager
     auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
 
-    // Create ProjectLayoutBuilder dependencies
-    auto config_reader = std::make_shared<slangd::ConfigReader>();
-    auto filelist_provider = std::make_shared<slangd::FilelistProvider>();
-    auto repo_scan_provider = std::make_shared<slangd::RepoScanProvider>();
-    auto layout_builder = std::make_shared<slangd::ProjectLayoutBuilder>(
-        config_reader, filelist_provider, repo_scan_provider);
-
-    auto config_manager = std::make_shared<slangd::ConfigManager>(
-        executor, workspace_root, layout_builder);
+    auto config_manager =
+        slangd::ConfigManager::Create(executor, workspace_root);
     slangd::DocumentManager doc_manager(executor, config_manager);
 
     // Load real SystemVerilog content from test file
