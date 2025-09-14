@@ -14,15 +14,15 @@ class LanguageFeatureProvider {
       std::shared_ptr<DocumentManager> document_manager,
       std::shared_ptr<WorkspaceManager> workspace_manager,
       std::shared_ptr<spdlog::logger> logger = nullptr)
-      : document_manager_(std::move(document_manager)),
-        workspace_manager_(std::move(workspace_manager)),
-        logger_(logger ? logger : spdlog::default_logger()) {
+      : document_manager(std::move(document_manager)),
+        workspace_manager(std::move(workspace_manager)),
+        logger(logger ? logger : spdlog::default_logger()) {
   }
 
  protected:
-  std::shared_ptr<DocumentManager> document_manager_;
-  std::shared_ptr<WorkspaceManager> workspace_manager_;
-  std::shared_ptr<spdlog::logger> logger_;
+  std::shared_ptr<DocumentManager> document_manager;  // NOLINT(cppcoreguidelines-non-private-member-variables-in-classes)
+  std::shared_ptr<WorkspaceManager> workspace_manager;  // NOLINT(cppcoreguidelines-non-private-member-variables-in-classes)
+  std::shared_ptr<spdlog::logger> logger;  // NOLINT(cppcoreguidelines-non-private-member-variables-in-classes)
 };
 
 }  // namespace slangd
