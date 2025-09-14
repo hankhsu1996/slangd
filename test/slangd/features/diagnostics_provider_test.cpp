@@ -59,8 +59,8 @@ auto ExtractDiagnosticsFromString(
   co_await document_manager->ParseWithCompilation(uri, source);
   auto workspace_manager = std::make_shared<slangd::WorkspaceManager>(
       executor, workspace_root, config_manager);
-  auto diagnostics_provider = slangd::DiagnosticsProvider(
-      document_manager, workspace_manager);
+  auto diagnostics_provider =
+      slangd::DiagnosticsProvider(document_manager, workspace_manager);
 
   auto diagnostics = diagnostics_provider.GetDiagnosticsForUri(uri);
   co_return diagnostics;
