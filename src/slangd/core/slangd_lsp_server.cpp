@@ -51,7 +51,7 @@ auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
     definition_provider_ = std::make_unique<DefinitionProvider>(
         document_manager_, workspace_manager_, logger_);
     diagnostics_provider_ = std::make_unique<DiagnosticsProvider>(
-        executor_, document_manager_, workspace_manager_, logger_);
+        document_manager_, workspace_manager_, logger_);
     symbols_provider_ = std::make_unique<SymbolsProvider>(
         document_manager_, workspace_manager_, logger_);
   }
@@ -215,25 +215,8 @@ auto SlangdLspServer::OnDidChangeTextDocument(
       file.content = text;
       file.version = version;
 
-      // Schedule diagnostics with debouncing
-      diagnostics_provider_->ScheduleDiagnostics(
-          uri, text, version,
-          [this](
-              std::string uri, std::vector<lsp::Diagnostic> diagnostics,
-              int version) -> asio::awaitable<void> {
-            Logger()->debug(
-                "Publishing {} diagnostics for document change: {}",
-                diagnostics.size(), uri);
-
-            // Publish diagnostics as a single batch
-            lsp::PublishDiagnosticsParams diag_params{
-                .uri = uri, .version = version, .diagnostics = diagnostics};
-            co_await PublishDiagnostics(diag_params);
-
-            Logger()->debug(
-                "Completed publishing diagnostics for change: {}", uri);
-            co_return;
-          });
+      // Schedule diagnostics with debouncing (moved from DiagnosticsProvider)
+      ScheduleDiagnosticsWithDebounce(uri, text, version);
     }
   }
 
@@ -257,23 +240,7 @@ auto SlangdLspServer::OnDidSaveTextDocument(
     co_await document_manager_->ParseWithElaboration(uri, file.content);
 
     // Process diagnostics immediately without debounce
-    co_await diagnostics_provider_->ProcessImmediateDiagnostics(
-        uri, file.content, file.version,
-        [this](
-            std::string uri, std::vector<lsp::Diagnostic> diagnostics,
-            int version) -> asio::awaitable<void> {
-          Logger()->debug(
-              "Publishing {} diagnostics for document save: {}",
-              diagnostics.size(), uri);
-
-          // Publish diagnostics
-          lsp::PublishDiagnosticsParams diag_params{
-              .uri = uri, .version = version, .diagnostics = diagnostics};
-          co_await PublishDiagnostics(diag_params);
-
-          Logger()->debug("Completed publishing diagnostics for save: {}", uri);
-          co_return;
-        });
+    co_await ProcessDiagnosticsForUri(uri);
   }
 
   co_return Ok();
@@ -367,6 +334,71 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
       asio::detached);
 
   co_return Ok();
+}
+
+// Diagnostics orchestration methods (moved from DiagnosticsProvider)
+
+void SlangdLspServer::ScheduleDiagnosticsWithDebounce(
+    std::string uri, std::string text, int version) {
+  // Store the request or update existing one
+  auto& request = pending_diagnostics_[uri];
+  request.text = text;
+  request.version = version;
+
+  // Cancel existing timer if there is one
+  if (request.timer) {
+    request.timer->cancel();
+  }
+
+  // Create a new timer with debounce delay
+  request.timer =
+      std::make_unique<asio::steady_timer>(strand_, debounce_delay_);
+
+  // Set up timer callback
+  request.timer->async_wait([this, uri](const asio::error_code& ec) {
+    if (ec) {
+      return;  // Timer was cancelled or error
+    }
+
+    // Process the diagnostics after debounce
+    asio::co_spawn(
+        strand_,
+        [this, uri]() -> asio::awaitable<void> {
+          co_await ProcessDiagnosticsForUri(uri);
+        },
+        asio::detached);
+  });
+}
+
+auto SlangdLspServer::ProcessDiagnosticsForUri(std::string uri)
+    -> asio::awaitable<void> {
+  auto file_opt = GetOpenFile(uri);
+  if (!file_opt) {
+    Logger()->debug("ProcessDiagnosticsForUri: File not open: {}", uri);
+    co_return;
+  }
+
+  const auto& file = file_opt->get();
+  Logger()->debug("Processing diagnostics for: {}", uri);
+
+  // Parse the document with current content (ensure up-to-date)
+  co_await document_manager_->ParseWithCompilation(uri, file.content);
+
+  // Use existing consistent API
+  auto diagnostics = diagnostics_provider_->GetDiagnosticsForUri(uri);
+
+  Logger()->debug("Publishing {} diagnostics for: {}", diagnostics.size(), uri);
+
+  // Publish diagnostics as a single batch
+  lsp::PublishDiagnosticsParams diag_params{
+      .uri = uri, .version = file.version, .diagnostics = diagnostics};
+  co_await PublishDiagnostics(diag_params);
+
+  Logger()->debug("Completed publishing diagnostics for: {}", uri);
+
+  // Remove the pending request if it exists
+  pending_diagnostics_.erase(uri);
+  co_return;
 }
 
 }  // namespace slangd

@@ -1,9 +1,12 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
+#include <unordered_map>
 
 #include <asio/awaitable.hpp>
 #include <asio/io_context.hpp>
+#include <asio/steady_timer.hpp>
 #include <asio/strand.hpp>
 
 #include "lsp/lifecycle.hpp"
@@ -55,6 +58,23 @@ class SlangdLspServer : public lsp::LspServer {
 
   // Symbols provider
   std::unique_ptr<SymbolsProvider> symbols_provider_{nullptr};
+
+  // Diagnostics debouncing - moved from DiagnosticsProvider (protocol concerns
+  // belong here)
+  struct PendingDiagnosticsRequest {
+    std::string text;
+    int version;
+    std::unique_ptr<asio::steady_timer> timer;
+  };
+
+  std::unordered_map<std::string, PendingDiagnosticsRequest>
+      pending_diagnostics_;
+  std::chrono::milliseconds debounce_delay_{500};
+
+  // Helper methods for diagnostics orchestration
+  auto ScheduleDiagnosticsWithDebounce(
+      std::string uri, std::string text, int version) -> void;
+  auto ProcessDiagnosticsForUri(std::string uri) -> asio::awaitable<void>;
 
  protected:
   // Initialize Request

@@ -60,7 +60,7 @@ auto ExtractDiagnosticsFromString(
   auto workspace_manager = std::make_shared<slangd::WorkspaceManager>(
       executor, workspace_root, config_manager);
   auto diagnostics_provider = slangd::DiagnosticsProvider(
-      executor, document_manager, workspace_manager);
+      document_manager, workspace_manager);
 
   auto diagnostics = diagnostics_provider.GetDiagnosticsForUri(uri);
   co_return diagnostics;

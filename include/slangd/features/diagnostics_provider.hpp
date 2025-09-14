@@ -1,10 +1,7 @@
 #pragma once
 
-#include <chrono>
-#include <functional>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include <asio.hpp>
@@ -23,28 +20,11 @@ namespace slangd {
 class DiagnosticsProvider : public LanguageFeatureProvider {
  public:
   DiagnosticsProvider(
-      asio::any_io_executor executor,
       std::shared_ptr<DocumentManager> document_manager,
       std::shared_ptr<WorkspaceManager> workspace_manager,
       std::shared_ptr<spdlog::logger> logger = nullptr)
-      : LanguageFeatureProvider(document_manager, workspace_manager, logger),
-        strand_(asio::make_strand(executor)) {
+      : LanguageFeatureProvider(document_manager, workspace_manager, logger) {
   }
-
-  // Schedule diagnostics with debouncing
-  // The publisher callback will be called after the debounce period
-  auto ScheduleDiagnostics(
-      std::string uri, std::string text, int version,
-      std::function<
-          asio::awaitable<void>(std::string, std::vector<lsp::Diagnostic>, int)>
-          publisher) -> void;
-
-  // Force immediate diagnostics (e.g., on document save)
-  auto ProcessImmediateDiagnostics(
-      std::string uri, std::string text, int version,
-      std::function<
-          asio::awaitable<void>(std::string, std::vector<lsp::Diagnostic>, int)>
-          publisher) -> asio::awaitable<void>;
 
   // Top-level API to get diagnostics for a document
   auto GetDiagnosticsForUri(std::string uri) -> std::vector<lsp::Diagnostic>;
@@ -57,19 +37,6 @@ class DiagnosticsProvider : public LanguageFeatureProvider {
       const std::string& uri) -> std::vector<lsp::Diagnostic>;
 
  private:
-  // Debounce management
-  struct PendingRequest {
-    std::string text;
-    int version;
-    std::unique_ptr<asio::steady_timer> timer;
-    std::function<asio::awaitable<void>(
-        std::string, std::vector<lsp::Diagnostic>, int)>
-        publisher;
-  };
-
-  // Process diagnostics after debounce
-  auto ProcessDiagnostics(std::string uri) -> asio::awaitable<void>;
-
   // Filter and modify diagnostics before returning to client
   // - Exclude certain diagnostics
   // - Demote severity of specific diagnostics
@@ -105,11 +72,6 @@ class DiagnosticsProvider : public LanguageFeatureProvider {
       const slang::Diagnostic& diag,
       const std::shared_ptr<slang::SourceManager>& source_manager,
       const std::string& uri) -> bool;
-
-  // Debounce tracking
-  std::unordered_map<std::string, PendingRequest> pending_requests_;
-  asio::strand<asio::any_io_executor> strand_;
-  std::chrono::milliseconds debounce_delay_{500};
 };
 
 }  // namespace slangd
