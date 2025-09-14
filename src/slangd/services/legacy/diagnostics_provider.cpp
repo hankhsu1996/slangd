@@ -18,9 +18,9 @@ namespace slangd {
 auto DiagnosticsProvider::GetDiagnosticsForUri(std::string uri)
     -> std::vector<lsp::Diagnostic> {
   // Get the compilation and syntax tree for this document
-  auto compilation = document_manager_->GetCompilation(uri);
-  auto syntax_tree = document_manager_->GetSyntaxTree(uri);
-  auto source_manager = document_manager_->GetSourceManager(uri);
+  auto compilation = document_manager->GetCompilation(uri);
+  auto syntax_tree = document_manager->GetSyntaxTree(uri);
+  auto source_manager = document_manager->GetSourceManager(uri);
 
   // If any required component is missing, return empty vector
   if (!compilation || !syntax_tree || !source_manager) {
@@ -34,7 +34,7 @@ auto DiagnosticsProvider::GetDiagnosticsForUri(std::string uri)
   auto filtered_diagnostics =
       FilterAndModifyDiagnostics(std::move(diagnostics));
 
-  logger_->debug(
+  logger->debug(
       "DiagnosticsProvider found {} diagnostics in {}",
       filtered_diagnostics.size(), uri);
 
@@ -231,7 +231,7 @@ auto DiagnosticsProvider::FilterAndModifyDiagnostics(
     result.push_back(diag);
   }
 
-  logger_->debug(
+  logger->debug(
       "DiagnosticsProvider filtered {} diagnostics",
       diagnostics.size() - result.size());
 
