@@ -1,4 +1,4 @@
-#include "slangd/core/document_manager.hpp"
+#include "slangd/services/legacy/document_manager.hpp"
 
 #include <string>
 

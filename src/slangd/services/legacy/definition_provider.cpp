@@ -1,4 +1,4 @@
-#include "slangd/features/definition_provider.hpp"
+#include "slangd/services/legacy/definition_provider.hpp"
 
 #include <slang/ast/ASTVisitor.h>
 #include <slang/syntax/AllSyntax.h>
@@ -12,23 +12,23 @@ namespace slangd {
 
 auto DefinitionProvider::GetDefinitionForUri(
     std::string uri, lsp::Position position) -> std::vector<lsp::Location> {
-  logger_->debug(
+  logger->debug(
       "DefinitionProvider getting definition for location: {}:{}:{}", uri,
       position.line, position.character);
-  auto compilation = document_manager_->GetCompilation(uri);
-  auto syntax_tree = document_manager_->GetSyntaxTree(uri);
-  auto source_manager = document_manager_->GetSourceManager(uri);
-  auto symbol_index = document_manager_->GetSymbolIndex(uri);
+  auto compilation = document_manager->GetCompilation(uri);
+  auto syntax_tree = document_manager->GetSyntaxTree(uri);
+  auto source_manager = document_manager->GetSourceManager(uri);
+  auto symbol_index = document_manager->GetSymbolIndex(uri);
 
   if (!compilation || !syntax_tree || !source_manager) {
-    logger_->error("Failed to get compilation, syntax tree, or source manager");
+    logger->error("Failed to get compilation, syntax tree, or source manager");
     return std::vector<lsp::Location>{};
   }
 
   // Get the first buffer
   auto buffers = source_manager->getAllBuffers();
   if (buffers.empty()) {
-    logger_->error("DefinitionProvider cannot find buffers for URI: {}", uri);
+    logger->error("DefinitionProvider cannot find buffers for URI: {}", uri);
     return std::vector<lsp::Location>{};
   }
   auto buffer = buffers[0];
@@ -42,7 +42,7 @@ auto DefinitionProvider::GetDefinitionForUri(
     auto locations = ResolveDefinitionFromSymbolIndex(
         *symbol_index, source_manager, location);
     if (!locations.empty()) {
-      logger_->debug(
+      logger->debug(
           "DefinitionProvider found definition: {}:{}:{}", locations[0].uri,
           locations[0].range.start.line, locations[0].range.start.character);
       return locations;
@@ -50,19 +50,19 @@ auto DefinitionProvider::GetDefinitionForUri(
   }
 
   // If not found in document index, try workspace symbol index
-  logger_->debug(
+  logger->debug(
       "DefinitionProvider cannot find definition in document index, trying "
       "workspace index");
   auto workspace_locations = GetDefinitionFromWorkspace(uri, position);
 
   if (!workspace_locations.empty()) {
-    logger_->debug(
+    logger->debug(
         "DefinitionProvider found definition in workspace symbol index");
     return workspace_locations;
   }
 
   // No definition found in either index
-  logger_->debug(
+  logger->debug(
       "DefinitionProvider cannot find definition for position {}:{}:{}", uri,
       position.line, position.character);
   return {};
@@ -70,24 +70,24 @@ auto DefinitionProvider::GetDefinitionForUri(
 
 auto DefinitionProvider::GetDefinitionFromWorkspace(
     std::string uri, lsp::Position position) -> std::vector<lsp::Location> {
-  auto workspace_symbol_index = workspace_manager_->GetSymbolIndex();
-  auto source_manager = workspace_manager_->GetSourceManager();
+  auto workspace_symbol_index = workspace_manager->GetSymbolIndex();
+  auto source_manager = workspace_manager->GetSourceManager();
   auto path = CanonicalPath::FromUri(uri);
-  auto buffer_id = workspace_manager_->GetBufferIdFromPath(path);
+  auto buffer_id = workspace_manager->GetBufferIdFromPath(path);
   slang::SourceLocation location =
       ConvertLspPositionToSlangLocation(position, buffer_id, source_manager);
 
   if (!workspace_symbol_index) {
-    logger_->error("DefinitionProvider cannot get workspace symbol index");
+    logger->error("DefinitionProvider cannot get workspace symbol index");
     return {};
   }
 
   if (!source_manager) {
-    logger_->error("DefinitionProvider cannot get source manager");
+    logger->error("DefinitionProvider cannot get source manager");
     return {};
   }
 
-  logger_->debug(
+  logger->debug(
       "DefinitionProvider looking up definition in workspace symbol index");
 
   return ResolveDefinitionFromSymbolIndex(

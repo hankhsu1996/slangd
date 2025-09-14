@@ -1,4 +1,4 @@
-#include "slangd/features/symbols_provider.hpp"
+#include "slangd/services/legacy/symbols_provider.hpp"
 
 #include <unordered_set>
 
@@ -21,8 +21,8 @@ namespace slangd {
 auto SymbolsProvider::GetSymbolsForUri(const std::string& uri)
     -> std::vector<lsp::DocumentSymbol> {
   // Get the compilation for this document
-  auto comp_it = document_manager_->GetCompilation(uri);
-  auto sm_it = document_manager_->GetSourceManager(uri);
+  auto comp_it = document_manager->GetCompilation(uri);
+  auto sm_it = document_manager->GetSourceManager(uri);
 
   // If either compilation or source manager is missing, return empty vector
   if (!comp_it || !sm_it) {

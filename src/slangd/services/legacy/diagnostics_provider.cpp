@@ -1,4 +1,4 @@
-#include "slangd/features/diagnostics_provider.hpp"
+#include "slangd/services/legacy/diagnostics_provider.hpp"
 
 #include <string>
 #include <vector>
@@ -15,108 +15,12 @@
 
 namespace slangd {
 
-auto DiagnosticsProvider::ScheduleDiagnostics(
-    std::string uri, std::string text, int version,
-    std::function<
-        asio::awaitable<void>(std::string, std::vector<lsp::Diagnostic>, int)>
-        publisher) -> void {
-  // Store the request or update existing one
-  auto& request = pending_requests_[uri];
-  request.text = text;
-  request.version = version;
-  request.publisher = publisher;
-
-  // Cancel existing timer if there is one
-  if (request.timer) {
-    request.timer->cancel();
-  }
-
-  // Create a new timer with debounce delay
-  request.timer =
-      std::make_unique<asio::steady_timer>(strand_, debounce_delay_);
-
-  // Set up timer callback
-  request.timer->async_wait([this, uri](const asio::error_code& ec) {
-    if (ec) {
-      return;  // Timer was cancelled or error
-    }
-
-    // Process the diagnostics after debounce
-    asio::co_spawn(
-        strand_,
-        [this, uri]() -> asio::awaitable<void> {
-          co_await ProcessDiagnostics(uri);
-        },
-        asio::detached);
-  });
-}
-
-auto DiagnosticsProvider::ProcessImmediateDiagnostics(
-    std::string uri, std::string text, int version,
-    std::function<
-        asio::awaitable<void>(std::string, std::vector<lsp::Diagnostic>, int)>
-        publisher) -> asio::awaitable<void> {
-  // Cancel any pending request for this URI
-  auto it = pending_requests_.find(uri);
-  if (it != pending_requests_.end()) {
-    if (it->second.timer) {
-      it->second.timer->cancel();
-    }
-    pending_requests_.erase(it);
-  }
-
-  // Store the request information for immediate processing
-  PendingRequest request;
-  request.text = text;
-  request.version = version;
-  request.publisher = publisher;
-  pending_requests_[uri] = std::move(request);
-
-  // Process immediately
-  co_await ProcessDiagnostics(uri);
-}
-
-auto DiagnosticsProvider::ProcessDiagnostics(std::string uri)
-    -> asio::awaitable<void> {
-  // Get the pending request
-  auto it = pending_requests_.find(uri);
-  if (it == pending_requests_.end()) {
-    // No pending request for this URI
-    co_return;
-  }
-
-  // Get request data
-  auto text = it->second.text;
-  auto version = it->second.version;
-  auto publisher = it->second.publisher;
-
-  // Parse the document
-  logger_->debug("DiagnosticsProvider processing diagnostics for: {}", uri);
-
-  // Parse with compilation
-  co_await document_manager_->ParseWithCompilation(uri, text);
-
-  // Get diagnostics
-  auto diagnostics = GetDiagnosticsForUri(uri);
-
-  // Publish the diagnostics
-  co_await publisher(uri, diagnostics, version);
-
-  logger_->debug(
-      "DiagnosticsProvider published {} diagnostics for: {}",
-      diagnostics.size(), uri);
-
-  // Remove the pending request
-  pending_requests_.erase(uri);
-  co_return;
-}
-
 auto DiagnosticsProvider::GetDiagnosticsForUri(std::string uri)
     -> std::vector<lsp::Diagnostic> {
   // Get the compilation and syntax tree for this document
-  auto compilation = document_manager_->GetCompilation(uri);
-  auto syntax_tree = document_manager_->GetSyntaxTree(uri);
-  auto source_manager = document_manager_->GetSourceManager(uri);
+  auto compilation = document_manager->GetCompilation(uri);
+  auto syntax_tree = document_manager->GetSyntaxTree(uri);
+  auto source_manager = document_manager->GetSourceManager(uri);
 
   // If any required component is missing, return empty vector
   if (!compilation || !syntax_tree || !source_manager) {
@@ -130,7 +34,7 @@ auto DiagnosticsProvider::GetDiagnosticsForUri(std::string uri)
   auto filtered_diagnostics =
       FilterAndModifyDiagnostics(std::move(diagnostics));
 
-  logger_->debug(
+  logger->debug(
       "DiagnosticsProvider found {} diagnostics in {}",
       filtered_diagnostics.size(), uri);
 
@@ -327,7 +231,7 @@ auto DiagnosticsProvider::FilterAndModifyDiagnostics(
     result.push_back(diag);
   }
 
-  logger_->debug(
+  logger->debug(
       "DiagnosticsProvider filtered {} diagnostics",
       diagnostics.size() - result.size());
 
