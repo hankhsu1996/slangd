@@ -141,6 +141,26 @@ Short summary under 72 chars
 - Add other sections only when they add value
 - Keep it concise and relevant to the specific change
 
+## Current Development Focus
+
+**Next Task: SourceExplorer Refactor**
+
+The `SourceExplorer` is a foundational service that provides file discovery and configuration reading for the new architecture. It's orthogonal to compilation and will be shared by both Global Index Service and Overlay Session Service.
+
+**Key Responsibilities:**
+- Config file reading (`.slangd` files, defines, include paths)
+- File discovery with repository scanning and ignore rules
+- Supply file sets to compilation services
+- Handle configuration changes and file system events
+
+**Architecture Position:**
+```
+SourceExplorer → supplies file lists and config → GlobalIndexService
+SourceExplorer → supplies file lists and config → OverlaySessionService
+```
+
+This refactor prepares the foundation for Phase 1 (Global Index Service) and Phase 2 (Overlay Session Service).
+
 ## Configuration Notes
 
 - Use `CLAUDE.local.md` for local development notes and debugging details
