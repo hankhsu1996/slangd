@@ -145,4 +145,12 @@ auto ProjectLayoutService::GetLayoutVersion() -> uint64_t {
   return cached_layout_->version;
 }
 
+auto ProjectLayoutService::GetLayoutSnapshot() -> LayoutSnapshot {
+  if (!cached_layout_) {
+    // Force layout initialization by calling GetCurrentLayout()
+    GetCurrentLayout();
+  }
+  return *cached_layout_;
+}
+
 }  // namespace slangd

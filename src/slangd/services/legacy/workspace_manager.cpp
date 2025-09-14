@@ -83,6 +83,28 @@ auto WorkspaceManager::AddOpenFile(CanonicalPath path)
   }
 }
 
+// Check layout version and rebuild workspace if changed
+auto WorkspaceManager::MaybeRebuildIfLayoutChanged() -> asio::awaitable<void> {
+  co_await asio::post(strand_, asio::use_awaitable);
+
+  auto snapshot = layout_service_->GetLayoutSnapshot();
+  if (snapshot.version > cached_layout_version_) {
+    logger_->debug(
+        "WorkspaceManager: Layout version changed from {} to {}, rebuilding "
+        "workspace",
+        cached_layout_version_, snapshot.version);
+
+    cached_layout_version_ = snapshot.version;
+    cached_layout_ = snapshot.layout;
+
+    // Trigger workspace rebuild with new layout
+    LoadAndCompileFiles(cached_layout_->GetFiles());
+
+    // Rebuild symbol index after new compilation
+    RebuildSymbolIndex();
+  }
+}
+
 // Validate internal state consistency
 auto WorkspaceManager::ValidateState() const -> bool {
   bool valid = true;
@@ -136,11 +158,8 @@ auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
       "WorkspaceManager starting workspace scan for SystemVerilog files");
   co_await asio::post(strand_, asio::use_awaitable);
 
-  // Get source files based on config or auto-discovery
-  auto all_files = layout_service_->GetSourceFiles();
-
-  // Process all collected files together
-  LoadAndCompileFiles(all_files);
+  // Check if layout has changed and rebuild if necessary
+  co_await MaybeRebuildIfLayoutChanged();
 
   // Ensure the workspace symbol index is built
   if (!symbol_index_) {
@@ -273,10 +292,17 @@ auto WorkspaceManager::HandleFileCreated(CanonicalPath path)
     co_return;
   }
 
-  // If using config, check if this file is part of the config
+  // If using config, check if this file is part of the cached layout
   if (layout_service_ && layout_service_->HasValidConfig()) {
+    // Ensure we have the latest layout
+    if (!cached_layout_) {
+      auto snapshot = layout_service_->GetLayoutSnapshot();
+      cached_layout_version_ = snapshot.version;
+      cached_layout_ = snapshot.layout;
+    }
+
     bool in_config = false;
-    auto all_files = layout_service_->GetSourceFiles();
+    const auto& all_files = cached_layout_->GetFiles();
     for (const auto& config_file : all_files) {
       if (config_file == path) {
         in_config = true;

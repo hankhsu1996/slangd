@@ -13,6 +13,7 @@
 #include <spdlog/spdlog.h>
 
 #include "lsp/workspace.hpp"
+#include "slangd/core/project_layout.hpp"
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/semantic/symbol_index.hpp"
 #include "slangd/utils/canonical_path.hpp"
@@ -23,7 +24,7 @@ class WorkspaceManager {
  public:
   WorkspaceManager(
       asio::any_io_executor executor, CanonicalPath workspace_folder,
-      std::shared_ptr<ProjectLayoutService> config_manager,
+      std::shared_ptr<ProjectLayoutService> layout_service,
       std::shared_ptr<spdlog::logger> logger = nullptr);
 
   // Factory method to create a WorkspaceManager for testing with in-memory
@@ -91,6 +92,9 @@ class WorkspaceManager {
   // Check if the workspace has valid internal state
   auto ValidateState() const -> bool;
 
+  // Check layout version and rebuild workspace if changed
+  auto MaybeRebuildIfLayoutChanged() -> asio::awaitable<void>;
+
  private:
   // Process a list of source files to create syntax trees and compilation
   // This method change the internal state of the workspace manager
@@ -137,6 +141,10 @@ class WorkspaceManager {
 
   // Track open buffers
   std::unordered_set<slang::BufferID> open_buffers_;
+
+  // Version tracking for efficient layout changes
+  uint64_t cached_layout_version_ = 0;
+  std::shared_ptr<const ProjectLayout> cached_layout_;
 
   // ASIO executor and strand for concurrency control
   asio::any_io_executor executor_;

@@ -16,6 +16,13 @@
 
 namespace slangd {
 
+// LayoutSnapshot for caching ProjectLayout with versioning
+struct LayoutSnapshot {
+  std::shared_ptr<const ProjectLayout> layout;
+  std::chrono::steady_clock::time_point timestamp;
+  uint64_t version;
+};
+
 class ProjectLayoutService {
  public:
   // Factory method - creates all dependencies internally
@@ -58,14 +65,10 @@ class ProjectLayoutService {
   // Get current layout version for testing
   [[nodiscard]] auto GetLayoutVersion() -> uint64_t;
 
- private:
-  // LayoutSnapshot for caching ProjectLayout with versioning
-  struct LayoutSnapshot {
-    std::shared_ptr<const ProjectLayout> layout;
-    std::chrono::steady_clock::time_point timestamp;
-    uint64_t version;
-  };
+  // Get the current layout snapshot with version information
+  [[nodiscard]] auto GetLayoutSnapshot() -> LayoutSnapshot;
 
+ private:
   // Get the current ProjectLayout (rebuilding if needed)
   auto GetCurrentLayout() -> const ProjectLayout&;
 
