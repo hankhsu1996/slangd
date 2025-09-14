@@ -26,10 +26,10 @@ cc_test(
 )
 
 cc_test(
-    name = "config_manager_test",
+    name = "project_layout_service_test",
     timeout = "short",
     srcs = [
-        "core/config_manager_test.cpp",
+        "core/project_layout_service_test.cpp",
     ],
     deps = [
         "//:slangd_core",

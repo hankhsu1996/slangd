@@ -13,7 +13,7 @@
 #include <spdlog/spdlog.h>
 
 #include "lsp/workspace.hpp"
-#include "slangd/core/config_manager.hpp"
+#include "slangd/core/project_layout_service.hpp"
 #include "slangd/semantic/symbol_index.hpp"
 #include "slangd/utils/canonical_path.hpp"
 
@@ -23,7 +23,7 @@ class WorkspaceManager {
  public:
   WorkspaceManager(
       asio::any_io_executor executor, CanonicalPath workspace_folder,
-      std::shared_ptr<ConfigManager> config_manager,
+      std::shared_ptr<ProjectLayoutService> config_manager,
       std::shared_ptr<spdlog::logger> logger = nullptr);
 
   // Factory method to create a WorkspaceManager for testing with in-memory
@@ -130,7 +130,7 @@ class WorkspaceManager {
   std::shared_ptr<slang::ast::Compilation> compilation_;
 
   // The configuration manager
-  std::shared_ptr<ConfigManager> config_manager_;
+  std::shared_ptr<ProjectLayoutService> layout_service_;
 
   // Workspace symbol index
   std::shared_ptr<semantic::SymbolIndex> symbol_index_{nullptr};

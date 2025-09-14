@@ -1,4 +1,4 @@
-#include "slangd/core/config_manager.hpp"
+#include "slangd/core/project_layout_service.hpp"
 
 #include <string>
 
@@ -15,27 +15,28 @@ auto main(int argc, char* argv[]) -> int {
 }
 
 TEST_CASE(
-    "ConfigManager RebuildLayout increments version", "[config_manager]") {
+    "ConfigManager RebuildLayout increments version", "[layout_service]") {
   asio::io_context io_context;
   auto executor = io_context.get_executor();
   auto workspace_root = slangd::CanonicalPath::CurrentPath();
 
-  auto config_manager = slangd::ConfigManager::Create(executor, workspace_root);
+  auto layout_service =
+      slangd::ProjectLayoutService::Create(executor, workspace_root);
 
   // Get initial version
-  uint64_t initial_version = config_manager->GetLayoutVersion();
+  uint64_t initial_version = layout_service->GetLayoutVersion();
 
   // Call RebuildLayout
-  config_manager->RebuildLayout();
+  layout_service->RebuildLayout();
 
   // Verify version incremented
-  uint64_t new_version = config_manager->GetLayoutVersion();
+  uint64_t new_version = layout_service->GetLayoutVersion();
   REQUIRE(new_version == initial_version + 1);
 
   // Call RebuildLayout again
-  config_manager->RebuildLayout();
+  layout_service->RebuildLayout();
 
   // Verify version incremented again
-  uint64_t final_version = config_manager->GetLayoutVersion();
+  uint64_t final_version = layout_service->GetLayoutVersion();
   REQUIRE(final_version == initial_version + 2);
 }

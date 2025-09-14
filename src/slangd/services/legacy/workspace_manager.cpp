@@ -7,7 +7,7 @@
 #include <slang/parsing/Lexer.h>
 #include <slang/parsing/Preprocessor.h>
 #include <slang/util/Bag.h>
-#include <slangd/core/config_manager.hpp>
+#include <slangd/core/project_layout_service.hpp>
 #include <spdlog/spdlog.h>
 
 #include "slangd/utils/path_utils.hpp"
@@ -17,12 +17,12 @@ namespace slangd {
 
 WorkspaceManager::WorkspaceManager(
     asio::any_io_executor executor, CanonicalPath workspace_folder,
-    std::shared_ptr<ConfigManager> config_manager,
+    std::shared_ptr<ProjectLayoutService> layout_service,
     std::shared_ptr<spdlog::logger> logger)
     : logger_(logger ? logger : spdlog::default_logger()),
       workspace_folder_(std::move(workspace_folder)),
       source_manager_(std::make_shared<slang::SourceManager>()),
-      config_manager_(std::move(config_manager)),
+      layout_service_(std::move(layout_service)),
       executor_(executor),
       strand_(asio::make_strand(executor)) {
 }
@@ -36,9 +36,10 @@ auto WorkspaceManager::CreateForTesting(
   auto workspace_root = CanonicalPath::CurrentPath();
 
   // Create ProjectLayoutBuilder dependencies
-  auto config_manager = ConfigManager::Create(executor, workspace_root, logger);
+  auto layout_service =
+      ProjectLayoutService::Create(executor, workspace_root, logger);
   auto workspace_manager = std::make_shared<WorkspaceManager>(
-      executor, workspace_root, config_manager, logger);
+      executor, workspace_root, layout_service, logger);
 
   auto source_manager = workspace_manager->GetSourceManager();
   auto compilation = std::make_shared<slang::ast::Compilation>();
@@ -136,7 +137,7 @@ auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
   co_await asio::post(strand_, asio::use_awaitable);
 
   // Get source files based on config or auto-discovery
-  auto all_files = config_manager_->GetSourceFiles();
+  auto all_files = layout_service_->GetSourceFiles();
 
   // Process all collected files together
   LoadAndCompileFiles(all_files);
@@ -273,9 +274,9 @@ auto WorkspaceManager::HandleFileCreated(CanonicalPath path)
   }
 
   // If using config, check if this file is part of the config
-  if (config_manager_ && config_manager_->HasValidConfig()) {
+  if (layout_service_ && layout_service_->HasValidConfig()) {
     bool in_config = false;
-    auto all_files = config_manager_->GetSourceFiles();
+    auto all_files = layout_service_->GetSourceFiles();
     for (const auto& config_file : all_files) {
       if (config_file == path) {
         in_config = true;

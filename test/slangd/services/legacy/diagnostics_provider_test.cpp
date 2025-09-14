@@ -52,12 +52,13 @@ auto ExtractDiagnosticsFromString(
     -> asio::awaitable<std::vector<lsp::Diagnostic>> {
   auto workspace_root = slangd::CanonicalPath::CurrentPath();
   const std::string uri = "file:///test.sv";
-  auto config_manager = slangd::ConfigManager::Create(executor, workspace_root);
+  auto layout_service =
+      slangd::ProjectLayoutService::Create(executor, workspace_root);
   auto document_manager =
-      std::make_shared<slangd::DocumentManager>(executor, config_manager);
+      std::make_shared<slangd::DocumentManager>(executor, layout_service);
   co_await document_manager->ParseWithCompilation(uri, source);
   auto workspace_manager = std::make_shared<slangd::WorkspaceManager>(
-      executor, workspace_root, config_manager);
+      executor, workspace_root, layout_service);
   auto diagnostics_provider =
       slangd::DiagnosticsProvider(document_manager, workspace_manager);
 

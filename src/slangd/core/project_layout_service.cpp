@@ -1,4 +1,4 @@
-#include "slangd/core/config_manager.hpp"
+#include "slangd/core/project_layout_service.hpp"
 
 #include <filesystem>
 #include <utility>
@@ -7,20 +7,21 @@
 
 namespace slangd {
 
-auto ConfigManager::Create(
+auto ProjectLayoutService::Create(
     asio::any_io_executor executor, CanonicalPath workspace_root,
-    std::shared_ptr<spdlog::logger> logger) -> std::shared_ptr<ConfigManager> {
+    std::shared_ptr<spdlog::logger> logger)
+    -> std::shared_ptr<ProjectLayoutService> {
   auto config_reader = std::make_shared<ConfigReader>(logger);
   auto filelist_provider = std::make_shared<FilelistProvider>(logger);
   auto repo_scan_provider = std::make_shared<RepoScanProvider>(logger);
   auto layout_builder = std::make_shared<ProjectLayoutBuilder>(
       config_reader, filelist_provider, repo_scan_provider, logger);
 
-  return std::make_shared<ConfigManager>(
+  return std::make_shared<ProjectLayoutService>(
       executor, workspace_root, layout_builder, logger);
 }
 
-ConfigManager::ConfigManager(
+ProjectLayoutService::ProjectLayoutService(
     asio::any_io_executor executor, CanonicalPath workspace_root,
     std::shared_ptr<ProjectLayoutBuilder> layout_builder,
     std::shared_ptr<spdlog::logger> logger)
@@ -31,7 +32,7 @@ ConfigManager::ConfigManager(
       layout_builder_(std::move(layout_builder)) {
 }
 
-auto ConfigManager::LoadConfig(CanonicalPath workspace_root)
+auto ProjectLayoutService::LoadConfig(CanonicalPath workspace_root)
     -> asio::awaitable<bool> {
   // Ensure we're running on the strand for thread safety
   co_await asio::post(strand_, asio::use_awaitable);
@@ -65,7 +66,7 @@ auto ConfigManager::LoadConfig(CanonicalPath workspace_root)
   }
 }
 
-auto ConfigManager::HandleConfigFileChange(CanonicalPath config_path)
+auto ProjectLayoutService::HandleConfigFileChange(CanonicalPath config_path)
     -> asio::awaitable<bool> {
   // Ensure we're running on the strand for thread safety
   co_await asio::post(strand_, asio::use_awaitable);
@@ -106,7 +107,7 @@ auto ConfigManager::HandleConfigFileChange(CanonicalPath config_path)
   }
 }
 
-auto ConfigManager::RebuildLayout() -> void {
+auto ProjectLayoutService::RebuildLayout() -> void {
   layout_version_++;
   auto new_layout = layout_builder_->BuildFromWorkspace(workspace_root_);
   cached_layout_ = LayoutSnapshot{
@@ -116,26 +117,27 @@ auto ConfigManager::RebuildLayout() -> void {
   logger_->debug("ConfigManager rebuilt layout (version {})", layout_version_);
 }
 
-auto ConfigManager::GetCurrentLayout() -> const ProjectLayout& {
+auto ProjectLayoutService::GetCurrentLayout() -> const ProjectLayout& {
   if (!cached_layout_.has_value()) {
     RebuildLayout();
   }
   return *cached_layout_->layout;
 }
 
-auto ConfigManager::GetSourceFiles() -> std::vector<CanonicalPath> {
+auto ProjectLayoutService::GetSourceFiles() -> std::vector<CanonicalPath> {
   return GetCurrentLayout().GetFiles();
 }
 
-auto ConfigManager::GetIncludeDirectories() -> std::vector<CanonicalPath> {
+auto ProjectLayoutService::GetIncludeDirectories()
+    -> std::vector<CanonicalPath> {
   return GetCurrentLayout().GetIncludeDirs();
 }
 
-auto ConfigManager::GetDefines() -> std::vector<std::string> {
+auto ProjectLayoutService::GetDefines() -> std::vector<std::string> {
   return GetCurrentLayout().GetDefines();
 }
 
-auto ConfigManager::GetLayoutVersion() -> uint64_t {
+auto ProjectLayoutService::GetLayoutVersion() -> uint64_t {
   if (!cached_layout_) {
     // Force layout initialization
     GetCurrentLayout();

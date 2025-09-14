@@ -63,8 +63,9 @@ TEST_CASE("DocumentManager initialization", "[basic]") {
   auto executor = io_context.get_executor();
   auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
 
-  auto config_manager = slangd::ConfigManager::Create(executor, workspace_root);
-  REQUIRE_NOTHROW(slangd::DocumentManager(executor, config_manager));
+  auto layout_service =
+      slangd::ProjectLayoutService::Create(executor, workspace_root);
+  REQUIRE_NOTHROW(slangd::DocumentManager(executor, layout_service));
   INFO("DocumentManager can be initialized");
 }
 
@@ -91,9 +92,9 @@ TEST_CASE("DocumentManager can parse a document", "[parse]") {
     // Create document manager
     auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
 
-    auto config_manager =
-        slangd::ConfigManager::Create(executor, workspace_root);
-    slangd::DocumentManager doc_manager(executor, config_manager);
+    auto layout_service =
+        slangd::ProjectLayoutService::Create(executor, workspace_root);
+    slangd::DocumentManager doc_manager(executor, layout_service);
 
     // Load real SystemVerilog content from test file
     std::string file_path = GetTestFilePath("parse_test.sv");
@@ -111,9 +112,9 @@ TEST_CASE("DocumentManager can retrieve a syntax tree", "[syntax]") {
     // Create document manager
     auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
 
-    auto config_manager =
-        slangd::ConfigManager::Create(executor, workspace_root);
-    slangd::DocumentManager doc_manager(executor, config_manager);
+    auto layout_service =
+        slangd::ProjectLayoutService::Create(executor, workspace_root);
+    slangd::DocumentManager doc_manager(executor, layout_service);
 
     // Load real SystemVerilog content from test file
     std::string file_path = GetTestFilePath("syntax_test.sv");
@@ -143,9 +144,9 @@ TEST_CASE("DocumentManager can retrieve a compilation", "[compilation]") {
     // Create document manager
     auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
 
-    auto config_manager =
-        slangd::ConfigManager::Create(executor, workspace_root);
-    slangd::DocumentManager doc_manager(executor, config_manager);
+    auto layout_service =
+        slangd::ProjectLayoutService::Create(executor, workspace_root);
+    slangd::DocumentManager doc_manager(executor, layout_service);
 
     // Load real SystemVerilog content from test file
     std::string file_path = GetTestFilePath("compile_test.sv");
@@ -195,9 +196,9 @@ TEST_CASE("DocumentManager can extract symbols from a document", "[symbols]") {
     // Create document manager
     auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
 
-    auto config_manager =
-        slangd::ConfigManager::Create(executor, workspace_root);
-    slangd::DocumentManager doc_manager(executor, config_manager);
+    auto layout_service =
+        slangd::ProjectLayoutService::Create(executor, workspace_root);
+    slangd::DocumentManager doc_manager(executor, layout_service);
 
     // Load real SystemVerilog content from test file
     std::string file_path = GetTestFilePath("symbol_test.sv");

@@ -16,15 +16,15 @@
 
 namespace slangd {
 
-class ConfigManager {
+class ProjectLayoutService {
  public:
   // Factory method - creates all dependencies internally
   static auto Create(
       asio::any_io_executor executor, CanonicalPath workspace_root,
       std::shared_ptr<spdlog::logger> logger = nullptr)
-      -> std::shared_ptr<ConfigManager>;
+      -> std::shared_ptr<ProjectLayoutService>;
 
-  explicit ConfigManager(
+  explicit ProjectLayoutService(
       asio::any_io_executor executor, CanonicalPath workspace_root,
       std::shared_ptr<ProjectLayoutBuilder> layout_builder,
       std::shared_ptr<spdlog::logger> logger = nullptr);

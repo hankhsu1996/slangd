@@ -10,7 +10,7 @@
 #include <slang/syntax/SyntaxTree.h>
 #include <spdlog/spdlog.h>
 
-#include "slangd/core/config_manager.hpp"
+#include "slangd/core/project_layout_service.hpp"
 #include "slangd/semantic/symbol_index.hpp"
 
 namespace slangd {
@@ -19,7 +19,7 @@ class DocumentManager {
  public:
   explicit DocumentManager(
       asio::any_io_executor executor,
-      std::shared_ptr<ConfigManager> config_manager,
+      std::shared_ptr<ProjectLayoutService> config_manager,
       std::shared_ptr<spdlog::logger> logger = nullptr);
 
   // Parse a document with compilation (fast)
@@ -54,7 +54,7 @@ class DocumentManager {
   std::shared_ptr<spdlog::logger> logger_;
 
   // Configuration manager
-  std::shared_ptr<ConfigManager> config_manager_;
+  std::shared_ptr<ProjectLayoutService> layout_service_;
 
   // Maps document URIs to their syntax trees
   std::unordered_map<CanonicalPath, std::shared_ptr<slang::syntax::SyntaxTree>>

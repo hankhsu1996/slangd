@@ -54,13 +54,14 @@ auto ExtractDefinitionFromString(
     std::pair<std::string, std::string> source_pair, lsp::Position position)
     -> asio::awaitable<std::vector<lsp::Location>> {
   auto workspace_root = slangd::CanonicalPath::CurrentPath();
-  auto config_manager = slangd::ConfigManager::Create(executor, workspace_root);
+  auto layout_service =
+      slangd::ProjectLayoutService::Create(executor, workspace_root);
   auto doc_manager =
-      std::make_shared<slangd::DocumentManager>(executor, config_manager);
+      std::make_shared<slangd::DocumentManager>(executor, layout_service);
   co_await doc_manager->ParseWithCompilation(
       source_pair.first, source_pair.second);
   auto workspace_manager = std::make_shared<slangd::WorkspaceManager>(
-      executor, workspace_root, config_manager);
+      executor, workspace_root, layout_service);
   auto definition_provider =
       slangd::DefinitionProvider(doc_manager, workspace_manager);
 

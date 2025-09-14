@@ -21,11 +21,11 @@ namespace slangd {
 
 DocumentManager::DocumentManager(
     asio::any_io_executor executor,
-    std::shared_ptr<ConfigManager> config_manager,
+    std::shared_ptr<ProjectLayoutService> config_manager,
     std::shared_ptr<spdlog::logger> logger)
     : executor_(std::move(executor)),
       logger_(logger ? logger : spdlog::default_logger()),
-      config_manager_(std::move(config_manager)) {
+      layout_service_(std::move(config_manager)) {
 }
 
 auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
@@ -37,10 +37,10 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
   // Prepare preprocessor options
   slang::Bag options;
   slang::parsing::PreprocessorOptions pp_options;
-  for (const auto& define : config_manager_->GetDefines()) {
+  for (const auto& define : layout_service_->GetDefines()) {
     pp_options.predefines.push_back(define);
   }
-  for (const auto& include_dir : config_manager_->GetIncludeDirectories()) {
+  for (const auto& include_dir : layout_service_->GetIncludeDirectories()) {
     pp_options.additionalIncludePaths.emplace_back(include_dir.Path());
   }
   options.set(pp_options);

@@ -27,13 +27,14 @@ auto LegacyLanguageService::InitializeWorkspace(std::string workspace_uri)
   // Create managers with workspace information (same logic as old OnInitialize)
   auto workspace_path = CanonicalPath::FromUri(workspace_uri);
 
-  config_manager_ = ConfigManager::Create(executor_, workspace_path, logger_);
-  co_await config_manager_->LoadConfig(workspace_path);
+  layout_service_ =
+      ProjectLayoutService::Create(executor_, workspace_path, logger_);
+  co_await layout_service_->LoadConfig(workspace_path);
 
   document_manager_ =
-      std::make_shared<DocumentManager>(executor_, config_manager_, logger_);
+      std::make_shared<DocumentManager>(executor_, layout_service_, logger_);
   workspace_manager_ = std::make_shared<WorkspaceManager>(
-      executor_, workspace_path, config_manager_, logger_);
+      executor_, workspace_path, layout_service_, logger_);
 
   logger_->debug(
       "LegacyLanguageService initialized for workspace: {}", workspace_uri);
@@ -106,7 +107,7 @@ auto LegacyLanguageService::GetDocumentSymbols(std::string uri)
 }
 
 auto LegacyLanguageService::HandleConfigChange() -> void {
-  config_manager_->RebuildLayout();
+  layout_service_->RebuildLayout();
 }
 
 }  // namespace slangd
