@@ -9,8 +9,8 @@
 
 #include "app/app_setup.hpp"
 #include "app/crash_handler.hpp"
-#include "slangd/services/legacy/legacy_language_service.hpp"
 #include "slangd/core/slangd_lsp_server.hpp"
+#include "slangd/services/legacy/legacy_language_service.hpp"
 
 using jsonrpc::endpoint::RpcEndpoint;
 using jsonrpc::transport::FramedPipeTransport;

@@ -8,6 +8,7 @@
 
 namespace slangd {
 
+// NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes)
 class LanguageFeatureProvider {
  public:
   LanguageFeatureProvider(
@@ -20,9 +21,10 @@ class LanguageFeatureProvider {
   }
 
  protected:
-  std::shared_ptr<DocumentManager> document_manager;  // NOLINT(cppcoreguidelines-non-private-member-variables-in-classes)
-  std::shared_ptr<WorkspaceManager> workspace_manager;  // NOLINT(cppcoreguidelines-non-private-member-variables-in-classes)
-  std::shared_ptr<spdlog::logger> logger;  // NOLINT(cppcoreguidelines-non-private-member-variables-in-classes)
+  std::shared_ptr<DocumentManager> document_manager;
+  std::shared_ptr<WorkspaceManager> workspace_manager;
+  std::shared_ptr<spdlog::logger> logger;
 };
+// NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes)
 
 }  // namespace slangd

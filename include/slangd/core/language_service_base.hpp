@@ -17,7 +17,8 @@ class LanguageServiceBase {
   LanguageServiceBase() = default;
   LanguageServiceBase(const LanguageServiceBase &) = default;
   LanguageServiceBase(LanguageServiceBase &&) = delete;
-  auto operator=(const LanguageServiceBase &) -> LanguageServiceBase & = default;
+  auto operator=(const LanguageServiceBase &)
+      -> LanguageServiceBase & = default;
   auto operator=(LanguageServiceBase &&) -> LanguageServiceBase & = delete;
   virtual ~LanguageServiceBase() = default;
 

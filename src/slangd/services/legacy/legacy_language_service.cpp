@@ -18,7 +18,8 @@ namespace slangd {
 
 LegacyLanguageService::LegacyLanguageService(
     asio::any_io_executor executor, std::shared_ptr<spdlog::logger> logger)
-    : logger_(logger ? logger : spdlog::default_logger()), executor_(std::move(executor)) {
+    : logger_(logger ? logger : spdlog::default_logger()),
+      executor_(std::move(executor)) {
 }
 
 auto LegacyLanguageService::InitializeWorkspace(std::string workspace_uri)
@@ -39,7 +40,8 @@ auto LegacyLanguageService::InitializeWorkspace(std::string workspace_uri)
       "LegacyLanguageService initialized for workspace: {}", workspace_uri);
 }
 
-auto LegacyLanguageService::ComputeDiagnostics(std::string uri, std::string content)
+auto LegacyLanguageService::ComputeDiagnostics(
+    std::string uri, std::string content)
     -> asio::awaitable<std::vector<lsp::Diagnostic>> {
   // Check if workspace is initialized
   if (!document_manager_) {
