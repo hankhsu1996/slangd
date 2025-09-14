@@ -253,10 +253,10 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
           auto path = CanonicalPath::FromUri(change.uri);
           Logger()->debug("SlangdLspServer detected file change: {}", path);
 
-          // TODO(hankhsu): Language service should handle workspace file
-          // changes For now, just log the changes - future language service
-          // implementations will handle config file changes and workspace
-          // rescanning
+          // Check if this is a config file change and trigger rebuild
+          if (IsConfigFile(change.uri)) {
+            language_service_->HandleConfigChange();
+          }
         }
         co_return;
       },

@@ -26,6 +26,19 @@ cc_test(
 )
 
 cc_test(
+    name = "config_manager_test",
+    timeout = "short",
+    srcs = [
+        "core/config_manager_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)
+
+cc_test(
     name = "symbol_index_test",
     timeout = "short",
     srcs = [

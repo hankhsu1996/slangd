@@ -135,4 +135,12 @@ auto ConfigManager::GetDefines() -> std::vector<std::string> {
   return GetCurrentLayout().GetDefines();
 }
 
+auto ConfigManager::GetLayoutVersion() -> uint64_t {
+  if (!cached_layout_) {
+    // Force layout initialization
+    GetCurrentLayout();
+  }
+  return cached_layout_->version;
+}
+
 }  // namespace slangd

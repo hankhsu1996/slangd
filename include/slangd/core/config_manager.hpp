@@ -52,6 +52,12 @@ class ConfigManager {
   // Get preprocessor defines from config or empty list
   [[nodiscard]] auto GetDefines() -> std::vector<std::string>;
 
+  // Rebuild the cached ProjectLayout (triggers config file re-reading)
+  auto RebuildLayout() -> void;
+
+  // Get current layout version for testing
+  [[nodiscard]] auto GetLayoutVersion() -> uint64_t;
+
  private:
   // LayoutSnapshot for caching ProjectLayout with versioning
   struct LayoutSnapshot {
@@ -59,9 +65,6 @@ class ConfigManager {
     std::chrono::steady_clock::time_point timestamp;
     uint64_t version;
   };
-
-  // Rebuild the cached ProjectLayout
-  auto RebuildLayout() -> void;
 
   // Get the current ProjectLayout (rebuilding if needed)
   auto GetCurrentLayout() -> const ProjectLayout&;

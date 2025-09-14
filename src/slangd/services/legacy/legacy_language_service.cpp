@@ -105,4 +105,8 @@ auto LegacyLanguageService::GetDocumentSymbols(std::string uri)
   return temp_provider.GetSymbolsForUri(uri);
 }
 
+auto LegacyLanguageService::HandleConfigChange() -> void {
+  config_manager_->RebuildLayout();
+}
+
 }  // namespace slangd

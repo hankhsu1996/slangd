@@ -35,6 +35,8 @@ class LegacyLanguageService : public LanguageServiceBase {
   auto GetDocumentSymbols(std::string uri)
       -> std::vector<lsp::DocumentSymbol> override;
 
+  auto HandleConfigChange() -> void override;
+
  private:
   // Core managers - same as current architecture
   std::shared_ptr<ConfigManager> config_manager_;
