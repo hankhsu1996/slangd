@@ -6,7 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include "lsp/document_features.hpp"
-#include "slangd/utils/path_utils.hpp"
+#include "slangd/core/legacy_lsp_backend.hpp"
 
 namespace slangd {
 
@@ -17,18 +17,20 @@ using lsp::Ok;
 SlangdLspServer::SlangdLspServer(
     asio::any_io_executor executor,
     std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint,
+    std::shared_ptr<LspBackendFacade> backend,
     std::shared_ptr<spdlog::logger> logger)
     : lsp::LspServer(executor, std::move(endpoint), logger),
       logger_(logger ? logger : spdlog::default_logger()),
       executor_(executor),
-      strand_(asio::make_strand(executor)) {
+      strand_(asio::make_strand(executor)),
+      backend_(backend) {
 }
 
 auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
     -> asio::awaitable<std::expected<lsp::InitializeResult, lsp::LspError>> {
   Logger()->debug("SlangdLspServer OnInitialize");
 
-  // rewrite: check the number of workspace folders first
+  // Validate workspace folders and initialize backend
   if (const auto& workspace_folders_opt = params.workspaceFolders) {
     if (workspace_folders_opt->size() != 1) {
       Logger()->error("SlangdLspServer only supports a single workspace");
@@ -37,23 +39,13 @@ auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
     }
 
     const auto& workspace_folder = workspace_folders_opt->front();
-    config_manager_ = std::make_shared<ConfigManager>(
-        executor_, CanonicalPath::FromUri(workspace_folder.uri), logger_);
-    co_await config_manager_->LoadConfig(
-        CanonicalPath::FromUri(workspace_folder.uri));
 
-    document_manager_ =
-        std::make_shared<DocumentManager>(executor_, config_manager_, logger_);
-    workspace_manager_ = std::make_shared<WorkspaceManager>(
-        executor_, CanonicalPath::FromUri(workspace_folder.uri),
-        config_manager_, logger_);
-
-    definition_provider_ = std::make_unique<DefinitionProvider>(
-        document_manager_, workspace_manager_, logger_);
-    diagnostics_provider_ = std::make_unique<DiagnosticsProvider>(
-        document_manager_, workspace_manager_, logger_);
-    symbols_provider_ = std::make_unique<SymbolsProvider>(
-        document_manager_, workspace_manager_, logger_);
+    // Initialize backend with workspace - need to cast to LegacyLspBackend to
+    // access InitializeWorkspace
+    if (auto legacy_backend =
+            std::dynamic_pointer_cast<slangd::LegacyLspBackend>(backend_)) {
+      co_await legacy_backend->InitializeWorkspace(workspace_folder.uri);
+    }
   }
 
   lsp::TextDocumentSyncOptions sync_options{
@@ -86,15 +78,7 @@ auto SlangdLspServer::OnInitialized(lsp::InitializedParams /*unused*/)
   Logger()->debug("SlangdLspServer OnInitialized");
   initialized_ = true;
 
-  // Scan workspace for SystemVerilog files to build the initial index
-  auto scan_workspace = [this]() -> asio::awaitable<void> {
-    Logger()->debug(
-        "SlangdLspServer starting workspace scan for SystemVerilog files");
-    co_await workspace_manager_->ScanWorkspace();
-    Logger()->debug("SlangdLspServer workspace scan completed");
-  };
-
-  // Register the file system watcher for workspace changes
+  // Register file system watcher for workspace changes
   auto register_watcher = [this]() -> asio::awaitable<void> {
     Logger()->debug("SlangdLspServer registering file system watcher");
     lsp::FileSystemWatcher sv_files{.globPattern = "**/*.{sv,svh,v,vh}"};
@@ -121,8 +105,7 @@ auto SlangdLspServer::OnInitialized(lsp::InitializedParams /*unused*/)
     co_return;
   };
 
-  // Start workspace scanning in the background
-  asio::co_spawn(strand_, scan_workspace, asio::detached);
+  // Register file watcher in background - backend handles workspace scanning
   asio::co_spawn(strand_, register_watcher, asio::detached);
 
   co_return Ok();
@@ -154,32 +137,20 @@ auto SlangdLspServer::OnDidOpenTextDocument(
 
   AddOpenFile(uri, text, language_id, version);
 
-  // Track this file in the workspace manager for better indexing
-  asio::co_spawn(
-      strand_,
-      [this, uri]() -> asio::awaitable<void> {
-        auto path = CanonicalPath::FromUri(uri);
-        co_await workspace_manager_->AddOpenFile(path);
-      },
-      asio::detached);
-
-  // Post to strand to ensure thread safety and sequencing
+  // Compute and publish initial diagnostics via facade
   asio::co_spawn(
       strand_,
       [this, uri, text, version]() -> asio::awaitable<void> {
         Logger()->debug("SlangdLspServer starting document parse for: {}", uri);
 
-        // Parse with compilation for initial open
-        co_await document_manager_->ParseWithCompilation(uri, text);
-
-        // Get diagnostics (even for empty files)
-        auto diagnostics = diagnostics_provider_->GetDiagnosticsForUri(uri);
+        // Use facade to compute diagnostics
+        auto diagnostics = co_await backend_->ComputeDiagnostics(uri, text);
 
         Logger()->debug(
             "SlangdLspServer publishing {} diagnostics for document: {}",
             diagnostics.size(), uri);
 
-        // Publish diagnostics only once with all collected diagnostics
+        // Publish diagnostics
         lsp::PublishDiagnosticsParams diag_params{
             .uri = uri, .version = version, .diagnostics = diagnostics};
         co_await PublishDiagnostics(diag_params);
@@ -231,17 +202,8 @@ auto SlangdLspServer::OnDidSaveTextDocument(
   const auto& text_doc = params.textDocument;
   const auto& uri = text_doc.uri;
 
-  // Process diagnostics immediately on save
-  auto file_opt = GetOpenFile(uri);
-  if (file_opt) {
-    lsp::OpenFile& file = file_opt->get();
-
-    // Parse with full elaboration
-    co_await document_manager_->ParseWithElaboration(uri, file.content);
-
-    // Process diagnostics immediately without debounce
-    co_await ProcessDiagnosticsForUri(uri);
-  }
+  // Process diagnostics immediately on save (no debounce)
+  co_await ProcessDiagnosticsForUri(uri);
 
   co_return Ok();
 }
@@ -264,14 +226,14 @@ auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
   Logger()->debug("SlangdLspServer OnDocumentSymbols");
 
   co_await asio::post(strand_, asio::use_awaitable);
-  co_return symbols_provider_->GetSymbolsForUri(params.textDocument.uri);
+  co_return backend_->GetDocumentSymbols(params.textDocument.uri);
 }
 
 auto SlangdLspServer::OnGotoDefinition(lsp::DefinitionParams params)
     -> asio::awaitable<std::expected<lsp::DefinitionResult, lsp::LspError>> {
   Logger()->debug("SlangdLspServer OnGotoDefinition");
 
-  co_return definition_provider_->GetDefinitionForUri(
+  co_return backend_->GetDefinitionsForPosition(
       std::string(params.textDocument.uri), params.position);
 }
 
@@ -286,50 +248,13 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
         // Process each file change
         for (const auto& change : params.changes) {
           auto path = CanonicalPath::FromUri(change.uri);
-
           Logger()->debug("SlangdLspServer detected file change: {}", path);
 
-          // Check if this is a config file change
-          if (IsConfigFile(path.Path())) {
-            Logger()->debug(
-                "SlangdLspServer detected config file change: {}", path);
-            if (!config_manager_) {
-              Logger()->error(
-                  "SlangdLspServer config_manager_ is nullptr, cannot handle "
-                  "config file change");
-              co_return;
-            }
-
-            Logger()->debug(
-                "SlangdLspServer detected config file change: {}", path);
-
-            // Handle the config file change
-            bool config_updated =
-                co_await config_manager_->HandleConfigFileChange(path);
-
-            if (config_updated) {
-              // Config was updated, rescan workspace with new settings
-              Logger()->debug(
-                  "SlangdLspServer config updated, rescanning workspace");
-              co_await workspace_manager_->ScanWorkspace();
-
-              // Reparse open documents with new config settings
-              Logger()->debug(
-                  "SlangdLspServer updating open document parse settings");
-
-              // For simplicity, since we don't have a direct way to get all
-              // open files, we'll handle any documents that need reparsing when
-              // they're next accessed This avoids the need to maintain a
-              // separate list of open documents
-            }
-
-            // Skip normal file change handling for config files
-            continue;
-          }
-
-          // Normal file change handling - delegate to workspace manager
-          co_await workspace_manager_->HandleFileChanges({change});
+          // TODO(hankhsu): Backend should handle workspace file changes
+          // For now, just log the changes - future backend implementations
+          // will handle config file changes and workspace rescanning
         }
+        co_return;
       },
       asio::detached);
 
@@ -381,11 +306,8 @@ auto SlangdLspServer::ProcessDiagnosticsForUri(std::string uri)
   const auto& file = file_opt->get();
   Logger()->debug("Processing diagnostics for: {}", uri);
 
-  // Parse the document with current content (ensure up-to-date)
-  co_await document_manager_->ParseWithCompilation(uri, file.content);
-
-  // Use existing consistent API
-  auto diagnostics = diagnostics_provider_->GetDiagnosticsForUri(uri);
+  // Use facade to compute diagnostics
+  auto diagnostics = co_await backend_->ComputeDiagnostics(uri, file.content);
 
   Logger()->debug("Publishing {} diagnostics for: {}", diagnostics.size(), uri);
 
@@ -399,6 +321,10 @@ auto SlangdLspServer::ProcessDiagnosticsForUri(std::string uri)
   // Remove the pending request if it exists
   pending_diagnostics_.erase(uri);
   co_return;
+}
+
+auto SlangdLspServer::IsConfigFile(const std::string& path) -> bool {
+  return path.ends_with("/.slangd") || path.ends_with("\\.slangd");
 }
 
 }  // namespace slangd

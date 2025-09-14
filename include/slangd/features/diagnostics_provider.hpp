@@ -36,7 +36,6 @@ class DiagnosticsProvider : public LanguageFeatureProvider {
       const std::shared_ptr<slang::SourceManager>& source_manager,
       const std::string& uri) -> std::vector<lsp::Diagnostic>;
 
- private:
   // Filter and modify diagnostics before returning to client
   // - Exclude certain diagnostics
   // - Demote severity of specific diagnostics
@@ -44,6 +43,7 @@ class DiagnosticsProvider : public LanguageFeatureProvider {
   auto FilterAndModifyDiagnostics(std::vector<lsp::Diagnostic> diagnostics)
       -> std::vector<lsp::Diagnostic>;
 
+ private:
   // Semantic and syntax diagnostic extraction
   static auto ExtractSemanticDiagnostics(
       const std::shared_ptr<slang::ast::Compilation>& compilation,
