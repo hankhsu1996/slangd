@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -8,6 +9,8 @@
 #include <asio.hpp>
 #include <spdlog/spdlog.h>
 
+#include "slangd/core/project_layout.hpp"
+#include "slangd/core/project_layout_builder.hpp"
 #include "slangd/core/slangd_config_file.hpp"
 #include "slangd/utils/canonical_path.hpp"
 
@@ -17,6 +20,7 @@ class ConfigManager {
  public:
   explicit ConfigManager(
       asio::any_io_executor executor, CanonicalPath workspace_root,
+      std::shared_ptr<ProjectLayoutBuilder> layout_builder,
       std::shared_ptr<spdlog::logger> logger = nullptr);
 
   // Load the config file from the workspace root
@@ -43,13 +47,18 @@ class ConfigManager {
   [[nodiscard]] auto GetDefines() -> std::vector<std::string>;
 
  private:
-  // Process file list from configuration
-  [[nodiscard]] auto ProcessFileList(const CanonicalPath& path, bool absolute)
-      -> std::vector<CanonicalPath>;
+  // LayoutSnapshot for caching ProjectLayout with versioning
+  struct LayoutSnapshot {
+    std::shared_ptr<const ProjectLayout> layout;
+    std::chrono::steady_clock::time_point timestamp;
+    uint64_t version;
+  };
 
-  // Helper to scan for SystemVerilog files
-  [[nodiscard]] auto FindSystemVerilogFilesInDirectory(
-      const CanonicalPath& directory) -> std::vector<CanonicalPath>;
+  // Rebuild the cached ProjectLayout
+  auto RebuildLayout() -> void;
+
+  // Get the current ProjectLayout (rebuilding if needed)
+  auto GetCurrentLayout() -> const ProjectLayout&;
 
   // Logger instance
   std::shared_ptr<spdlog::logger> logger_;
@@ -63,6 +72,11 @@ class ConfigManager {
 
   // Root path of the workspace
   CanonicalPath workspace_root_;
+
+  // New architecture components
+  std::shared_ptr<ProjectLayoutBuilder> layout_builder_;
+  std::optional<LayoutSnapshot> cached_layout_;
+  uint64_t layout_version_ = 0;
 };
 
 }  // namespace slangd

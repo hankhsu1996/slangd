@@ -7,6 +7,9 @@
 #include <spdlog/spdlog.h>
 
 #include "../utils/fixture_utils.hpp"
+#include "slangd/core/config_reader.hpp"
+#include "slangd/core/discovery_provider.hpp"
+#include "slangd/core/project_layout_builder.hpp"
 #include "slangd/utils/canonical_path.hpp"
 
 using bazel::tools::cpp::runfiles::Runfiles;
@@ -62,8 +65,16 @@ TEST_CASE("DocumentManager initialization", "[basic]") {
   asio::io_context io_context;
   auto executor = io_context.get_executor();
   auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
-  auto config_manager =
-      std::make_shared<slangd::ConfigManager>(executor, workspace_root);
+
+  // Create ProjectLayoutBuilder dependencies
+  auto config_reader = std::make_shared<slangd::ConfigReader>();
+  auto filelist_provider = std::make_shared<slangd::FilelistProvider>();
+  auto repo_scan_provider = std::make_shared<slangd::RepoScanProvider>();
+  auto layout_builder = std::make_shared<slangd::ProjectLayoutBuilder>(
+      config_reader, filelist_provider, repo_scan_provider);
+
+  auto config_manager = std::make_shared<slangd::ConfigManager>(
+      executor, workspace_root, layout_builder);
   REQUIRE_NOTHROW(slangd::DocumentManager(executor, config_manager));
   INFO("DocumentManager can be initialized");
 }
@@ -90,8 +101,16 @@ TEST_CASE("DocumentManager can parse a document", "[parse]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Create document manager
     auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
-    auto config_manager =
-        std::make_shared<slangd::ConfigManager>(executor, workspace_root);
+
+    // Create ProjectLayoutBuilder dependencies
+    auto config_reader = std::make_shared<slangd::ConfigReader>();
+    auto filelist_provider = std::make_shared<slangd::FilelistProvider>();
+    auto repo_scan_provider = std::make_shared<slangd::RepoScanProvider>();
+    auto layout_builder = std::make_shared<slangd::ProjectLayoutBuilder>(
+        config_reader, filelist_provider, repo_scan_provider);
+
+    auto config_manager = std::make_shared<slangd::ConfigManager>(
+        executor, workspace_root, layout_builder);
     slangd::DocumentManager doc_manager(executor, config_manager);
 
     // Load real SystemVerilog content from test file
@@ -109,8 +128,16 @@ TEST_CASE("DocumentManager can retrieve a syntax tree", "[syntax]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Create document manager
     auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
-    auto config_manager =
-        std::make_shared<slangd::ConfigManager>(executor, workspace_root);
+
+    // Create ProjectLayoutBuilder dependencies
+    auto config_reader = std::make_shared<slangd::ConfigReader>();
+    auto filelist_provider = std::make_shared<slangd::FilelistProvider>();
+    auto repo_scan_provider = std::make_shared<slangd::RepoScanProvider>();
+    auto layout_builder = std::make_shared<slangd::ProjectLayoutBuilder>(
+        config_reader, filelist_provider, repo_scan_provider);
+
+    auto config_manager = std::make_shared<slangd::ConfigManager>(
+        executor, workspace_root, layout_builder);
     slangd::DocumentManager doc_manager(executor, config_manager);
 
     // Load real SystemVerilog content from test file
@@ -140,8 +167,16 @@ TEST_CASE("DocumentManager can retrieve a compilation", "[compilation]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Create document manager
     auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
-    auto config_manager =
-        std::make_shared<slangd::ConfigManager>(executor, workspace_root);
+
+    // Create ProjectLayoutBuilder dependencies
+    auto config_reader = std::make_shared<slangd::ConfigReader>();
+    auto filelist_provider = std::make_shared<slangd::FilelistProvider>();
+    auto repo_scan_provider = std::make_shared<slangd::RepoScanProvider>();
+    auto layout_builder = std::make_shared<slangd::ProjectLayoutBuilder>(
+        config_reader, filelist_provider, repo_scan_provider);
+
+    auto config_manager = std::make_shared<slangd::ConfigManager>(
+        executor, workspace_root, layout_builder);
     slangd::DocumentManager doc_manager(executor, config_manager);
 
     // Load real SystemVerilog content from test file
@@ -191,8 +226,16 @@ TEST_CASE("DocumentManager can extract symbols from a document", "[symbols]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Create document manager
     auto workspace_root = slangd::CanonicalPath::FromUri(g_runfile_path);
-    auto config_manager =
-        std::make_shared<slangd::ConfigManager>(executor, workspace_root);
+
+    // Create ProjectLayoutBuilder dependencies
+    auto config_reader = std::make_shared<slangd::ConfigReader>();
+    auto filelist_provider = std::make_shared<slangd::FilelistProvider>();
+    auto repo_scan_provider = std::make_shared<slangd::RepoScanProvider>();
+    auto layout_builder = std::make_shared<slangd::ProjectLayoutBuilder>(
+        config_reader, filelist_provider, repo_scan_provider);
+
+    auto config_manager = std::make_shared<slangd::ConfigManager>(
+        executor, workspace_root, layout_builder);
     slangd::DocumentManager doc_manager(executor, config_manager);
 
     // Load real SystemVerilog content from test file

@@ -8,7 +8,11 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
-int main(int argc, char* argv[]) {
+#include "slangd/core/config_reader.hpp"
+#include "slangd/core/discovery_provider.hpp"
+#include "slangd/core/project_layout_builder.hpp"
+
+auto main(int argc, char* argv[]) -> int {
   spdlog::set_level(spdlog::level::debug);
   spdlog::set_pattern("[%l] %v");
   return Catch::Session().run(argc, argv);
@@ -52,8 +56,15 @@ auto ExtractDiagnosticsFromString(
     -> asio::awaitable<std::vector<lsp::Diagnostic>> {
   auto workspace_root = slangd::CanonicalPath::CurrentPath();
   const std::string uri = "file:///test.sv";
-  auto config_manager =
-      std::make_shared<slangd::ConfigManager>(executor, workspace_root);
+  // Create ProjectLayoutBuilder dependencies
+  auto config_reader = std::make_shared<slangd::ConfigReader>();
+  auto filelist_provider = std::make_shared<slangd::FilelistProvider>();
+  auto repo_scan_provider = std::make_shared<slangd::RepoScanProvider>();
+  auto layout_builder = std::make_shared<slangd::ProjectLayoutBuilder>(
+      config_reader, filelist_provider, repo_scan_provider);
+
+  auto config_manager = std::make_shared<slangd::ConfigManager>(
+      executor, workspace_root, layout_builder);
   auto document_manager =
       std::make_shared<slangd::DocumentManager>(executor, config_manager);
   co_await document_manager->ParseWithCompilation(uri, source);
