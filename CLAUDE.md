@@ -9,7 +9,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Build with configuration**: `bazel build //... --config=debug` (or `release`, `fastbuild`)
 - **Run specific test**: `bazel test //test/slangd:document_manager_test`
 - **Generate compile_commands.json**: `bazel run @hedron_compile_commands//:refresh_all`
-- **Format code**: `clang-format -i <file>` (required before commits)
+- **Format code**: `find src include test -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i`
+
+## CRITICAL: Always Format Before Commit
+
+**MANDATORY**: Run formatter before EVERY commit to avoid CI failures:
+```bash
+find src include test -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i
+```
 
 ## Requirements
 
