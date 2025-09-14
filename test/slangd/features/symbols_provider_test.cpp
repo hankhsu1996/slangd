@@ -1,4 +1,4 @@
-#include "include/slangd/features/symbols_provider.hpp"
+#include "include/slangd/services/legacy/symbols_provider.hpp"
 
 #include <string>
 

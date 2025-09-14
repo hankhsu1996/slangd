@@ -1,4 +1,4 @@
-#include "slangd/core/legacy_lsp_backend.hpp"
+#include "slangd/services/legacy/legacy_language_service.hpp"
 
 #include <string>
 #include <utility>
@@ -10,18 +10,18 @@
 #include <slang/text/SourceLocation.h>
 #include <slang/text/SourceManager.h>
 
-#include "slangd/features/definition_provider.hpp"
-#include "slangd/features/diagnostics_provider.hpp"
-#include "slangd/features/symbols_provider.hpp"
+#include "slangd/services/legacy/definition_provider.hpp"
+#include "slangd/services/legacy/diagnostics_provider.hpp"
+#include "slangd/services/legacy/symbols_provider.hpp"
 
 namespace slangd {
 
-LegacyLspBackend::LegacyLspBackend(
+LegacyLanguageService::LegacyLanguageService(
     asio::any_io_executor executor, std::shared_ptr<spdlog::logger> logger)
     : logger_(logger ? logger : spdlog::default_logger()), executor_(std::move(executor)) {
 }
 
-auto LegacyLspBackend::InitializeWorkspace(std::string workspace_uri)
+auto LegacyLanguageService::InitializeWorkspace(std::string workspace_uri)
     -> asio::awaitable<void> {
   // Create managers with workspace information (same logic as old OnInitialize)
   auto workspace_path = CanonicalPath::FromUri(workspace_uri);
@@ -36,14 +36,14 @@ auto LegacyLspBackend::InitializeWorkspace(std::string workspace_uri)
       executor_, workspace_path, config_manager_, logger_);
 
   logger_->debug(
-      "LegacyLspBackend initialized for workspace: {}", workspace_uri);
+      "LegacyLanguageService initialized for workspace: {}", workspace_uri);
 }
 
-auto LegacyLspBackend::ComputeDiagnostics(std::string uri, std::string content)
+auto LegacyLanguageService::ComputeDiagnostics(std::string uri, std::string content)
     -> asio::awaitable<std::vector<lsp::Diagnostic>> {
   // Check if workspace is initialized
   if (!document_manager_) {
-    logger_->error("LegacyLspBackend: Workspace not initialized");
+    logger_->error("LegacyLanguageService: Workspace not initialized");
     co_return std::vector<lsp::Diagnostic>{};
   }
 
@@ -71,17 +71,17 @@ auto LegacyLspBackend::ComputeDiagnostics(std::string uri, std::string content)
       temp_provider.FilterAndModifyDiagnostics(std::move(diagnostics));
 
   logger_->debug(
-      "LegacyLspBackend computed {} diagnostics for {}",
+      "LegacyLanguageService computed {} diagnostics for {}",
       filtered_diagnostics.size(), uri);
 
   co_return filtered_diagnostics;
 }
 
-auto LegacyLspBackend::GetDefinitionsForPosition(
+auto LegacyLanguageService::GetDefinitionsForPosition(
     std::string uri, lsp::Position position) -> std::vector<lsp::Location> {
   // Check if workspace is initialized
   if (!document_manager_) {
-    logger_->error("LegacyLspBackend: Workspace not initialized");
+    logger_->error("LegacyLanguageService: Workspace not initialized");
     return std::vector<lsp::Location>{};
   }
 
@@ -91,11 +91,11 @@ auto LegacyLspBackend::GetDefinitionsForPosition(
   return temp_provider.GetDefinitionForUri(uri, position);
 }
 
-auto LegacyLspBackend::GetDocumentSymbols(std::string uri)
+auto LegacyLanguageService::GetDocumentSymbols(std::string uri)
     -> std::vector<lsp::DocumentSymbol> {
   // Check if workspace is initialized
   if (!document_manager_) {
-    logger_->error("LegacyLspBackend: Workspace not initialized");
+    logger_->error("LegacyLanguageService: Workspace not initialized");
     return std::vector<lsp::DocumentSymbol>{};
   }
 

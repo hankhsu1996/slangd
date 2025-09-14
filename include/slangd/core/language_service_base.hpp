@@ -9,17 +9,17 @@
 
 namespace slangd {
 
-// High-level business operations facade for LSP domain logic
+// High-level business operations base class for LSP domain logic
 // Replaces individual providers with unified interface
-// Enables different backend implementations (Legacy, GlobalIndex, Hybrid)
-class LspBackendFacade {
+// Enables different service implementations (Legacy, GlobalIndex, Hybrid)
+class LanguageServiceBase {
  public:
-  LspBackendFacade() = default;
-  LspBackendFacade(const LspBackendFacade &) = default;
-  LspBackendFacade(LspBackendFacade &&) = delete;
-  auto operator=(const LspBackendFacade &) -> LspBackendFacade & = default;
-  auto operator=(LspBackendFacade &&) -> LspBackendFacade & = delete;
-  virtual ~LspBackendFacade() = default;
+  LanguageServiceBase() = default;
+  LanguageServiceBase(const LanguageServiceBase &) = default;
+  LanguageServiceBase(LanguageServiceBase &&) = delete;
+  auto operator=(const LanguageServiceBase &) -> LanguageServiceBase & = default;
+  auto operator=(LanguageServiceBase &&) -> LanguageServiceBase & = delete;
+  virtual ~LanguageServiceBase() = default;
 
   // Diagnostics computation - async because may need parsing/compilation
   virtual auto ComputeDiagnostics(std::string uri, std::string content)

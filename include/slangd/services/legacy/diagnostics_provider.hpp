@@ -13,7 +13,7 @@
 
 #include "slangd/core/document_manager.hpp"
 #include "slangd/core/workspace_manager.hpp"
-#include "slangd/features/language_feature_provider.hpp"
+#include "slangd/services/legacy/language_feature_provider.hpp"
 
 namespace slangd {
 

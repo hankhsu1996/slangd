@@ -1,4 +1,4 @@
-#include "slangd/features/definition_provider.hpp"
+#include "slangd/services/legacy/definition_provider.hpp"
 
 #include <slang/ast/ASTVisitor.h>
 #include <slang/syntax/AllSyntax.h>

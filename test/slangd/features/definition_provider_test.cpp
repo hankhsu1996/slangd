@@ -5,7 +5,7 @@
 #include <slang/ast/Compilation.h>
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/text/SourceManager.h>
-#include <slangd/features/definition_provider.hpp>
+#include <slangd/services/legacy/definition_provider.hpp>
 #include <spdlog/spdlog.h>
 
 #include "include/lsp/basic.hpp"

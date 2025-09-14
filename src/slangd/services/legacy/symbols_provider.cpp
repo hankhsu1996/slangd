@@ -1,4 +1,4 @@
-#include "slangd/features/symbols_provider.hpp"
+#include "slangd/services/legacy/symbols_provider.hpp"
 
 #include <unordered_set>
 

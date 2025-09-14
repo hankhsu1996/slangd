@@ -1,4 +1,4 @@
-#include "slangd/features/diagnostics_provider.hpp"
+#include "slangd/services/legacy/diagnostics_provider.hpp"
 
 #include <string>
 

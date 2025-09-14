@@ -9,12 +9,12 @@
 
 #include "app/app_setup.hpp"
 #include "app/crash_handler.hpp"
-#include "slangd/core/legacy_lsp_backend.hpp"
+#include "slangd/services/legacy/legacy_language_service.hpp"
 #include "slangd/core/slangd_lsp_server.hpp"
 
 using jsonrpc::endpoint::RpcEndpoint;
 using jsonrpc::transport::FramedPipeTransport;
-using slangd::LegacyLspBackend;
+using slangd::LegacyLanguageService;
 using slangd::SlangdLspServer;
 
 auto main(int argc, char* argv[]) -> int {
@@ -45,11 +45,11 @@ auto main(int argc, char* argv[]) -> int {
   auto endpoint = std::make_unique<RpcEndpoint>(
       executor, std::move(transport), loggers["jsonrpc"]);
 
-  // Create the backend and LSP server with dependency injection
-  auto backend =
-      std::make_shared<LegacyLspBackend>(executor, loggers["slangd"]);
+  // Create the language service and LSP server with dependency injection
+  auto language_service =
+      std::make_shared<LegacyLanguageService>(executor, loggers["slangd"]);
   auto server = std::make_unique<SlangdLspServer>(
-      executor, std::move(endpoint), backend, loggers["slangd"]);
+      executor, std::move(endpoint), language_service, loggers["slangd"]);
 
   // Start the server asynchronously
   asio::co_spawn(

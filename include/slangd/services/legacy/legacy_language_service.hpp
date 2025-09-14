@@ -7,25 +7,25 @@
 
 #include "slangd/core/config_manager.hpp"
 #include "slangd/core/document_manager.hpp"
-#include "slangd/core/lsp_backend_facade.hpp"
+#include "slangd/core/language_service_base.hpp"
 #include "slangd/core/workspace_manager.hpp"
 
 namespace slangd {
 
-// Legacy backend implementation that wraps current
+// Legacy service implementation that wraps current
 // DocumentManager/WorkspaceManager Maintains exact same behavior as individual
-// providers Provides foundation for future GlobalIndex and Hybrid backends
-class LegacyLspBackend : public LspBackendFacade {
+// providers Provides foundation for future GlobalIndex and Hybrid services
+class LegacyLanguageService : public LanguageServiceBase {
  public:
   // Constructor for late initialization (workspace set up later)
-  explicit LegacyLspBackend(
+  explicit LegacyLanguageService(
       asio::any_io_executor executor,
       std::shared_ptr<spdlog::logger> logger = nullptr);
 
   // Initialize with workspace folder (called during LSP initialize)
   auto InitializeWorkspace(std::string workspace_uri) -> asio::awaitable<void>;
 
-  // LspBackendFacade implementation
+  // LanguageServiceBase implementation
   auto ComputeDiagnostics(std::string uri, std::string content)
       -> asio::awaitable<std::vector<lsp::Diagnostic>> override;
 

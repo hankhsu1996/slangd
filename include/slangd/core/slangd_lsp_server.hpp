@@ -11,7 +11,7 @@
 
 #include "lsp/lifecycle.hpp"
 #include "lsp/lsp_server.hpp"
-#include "slangd/core/lsp_backend_facade.hpp"
+#include "slangd/core/language_service_base.hpp"
 
 namespace slangd {
 
@@ -20,7 +20,7 @@ class SlangdLspServer : public lsp::LspServer {
   SlangdLspServer(
       asio::any_io_executor executor,
       std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint,
-      std::shared_ptr<LspBackendFacade> backend,
+      std::shared_ptr<LanguageServiceBase> language_service,
       std::shared_ptr<spdlog::logger> logger = nullptr);
 
  private:
@@ -37,8 +37,8 @@ class SlangdLspServer : public lsp::LspServer {
   // Strand for thread safety
   asio::strand<asio::any_io_executor> strand_;
 
-  // Backend facade - unified interface for all domain operations
-  std::shared_ptr<LspBackendFacade> backend_{nullptr};
+  // Language service - unified interface for all domain operations
+  std::shared_ptr<LanguageServiceBase> language_service_{nullptr};
 
   // Diagnostics debouncing - moved from DiagnosticsProvider (protocol concerns
   // belong here)
