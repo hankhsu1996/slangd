@@ -1,6 +1,7 @@
 #include "slangd/core/global_catalog.hpp"
 
 #include <slang/ast/Compilation.h>
+#include <slang/ast/SemanticFacts.h>
 #include <slang/ast/symbols/CompilationUnitSymbols.h>
 #include <slang/parsing/Preprocessor.h>
 #include <slang/syntax/SyntaxTree.h>
@@ -125,8 +126,39 @@ auto GlobalCatalog::BuildFromLayout(
         file_path_str);
   }
 
-  // For MVP, interfaces remain empty
+  // Extract interface metadata using safe Slang API
+  auto definitions = global_compilation_->getDefinitions();
+  logger_->debug(
+      "GlobalCatalog: Extracting interfaces from {} definitions",
+      definitions.size());
+
   interfaces_.clear();
+  interfaces_.reserve(definitions.size());  // Upper bound estimate
+
+  for (const auto* symbol : definitions) {
+    if (symbol == nullptr) {
+      continue;
+    }
+
+    // Check if this symbol is a DefinitionSymbol and if it's an interface
+    if (symbol->kind == slang::ast::SymbolKind::Definition) {
+      const auto& definition = symbol->as<slang::ast::DefinitionSymbol>();
+
+      if (definition.definitionKind == slang::ast::DefinitionKind::Interface) {
+        std::string interface_name = std::string(definition.name);
+        auto file_path_str = source_manager_->getFileName(definition.location);
+        CanonicalPath interface_file_path(file_path_str);
+
+        interfaces_.push_back(
+            {.name = std::move(interface_name),
+             .file_path = std::move(interface_file_path)});
+
+        logger_->debug(
+            "GlobalCatalog: Found interface '{}' in file: {}", definition.name,
+            file_path_str);
+      }
+    }
+  }
 
   logger_->debug(
       "GlobalCatalog: Build complete - {} packages, {} interfaces",

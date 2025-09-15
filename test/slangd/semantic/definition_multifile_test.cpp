@@ -378,3 +378,45 @@ TEST_CASE(
     co_return;
   });
 }
+
+TEST_CASE("Interface discovery in GlobalCatalog", "[definition][multifile]") {
+  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    MultiFileTestFixture fixture;
+    auto workspace_root = fixture.GetTempDir();
+
+    // Create an interface file
+    fixture.CreateFile("test_interface.sv", R"(
+      interface test_interface;
+        logic [7:0] data;
+        logic valid;
+        modport producer (output data, valid);
+        modport consumer (input data, valid);
+      endinterface
+    )");
+
+    // Create project layout service
+    auto layout_service = slangd::ProjectLayoutService::Create(
+        executor, workspace_root, spdlog::default_logger());
+
+    // Create GlobalCatalog
+    auto catalog = slangd::GlobalCatalog::CreateFromProjectLayout(
+        layout_service, spdlog::default_logger());
+
+    REQUIRE(catalog != nullptr);
+    REQUIRE(catalog->GetVersion() == 1);
+
+    // Verify interface was discovered
+    const auto& interfaces = catalog->GetInterfaces();
+    bool found_test_interface = false;
+    for (const auto& iface : interfaces) {
+      if (iface.name == "test_interface") {
+        found_test_interface = true;
+        REQUIRE(iface.file_path.Path().filename() == "test_interface.sv");
+        break;
+      }
+    }
+    REQUIRE(found_test_interface);
+
+    co_return;
+  });
+}
