@@ -18,7 +18,7 @@ auto DefinitionProvider::GetDefinitionForUri(
   auto compilation = document_manager->GetCompilation(uri);
   auto syntax_tree = document_manager->GetSyntaxTree(uri);
   auto source_manager = document_manager->GetSourceManager(uri);
-  auto symbol_index = document_manager->GetSymbolIndex(uri);
+  auto symbol_index = document_manager->GetDefinitionIndex(uri);
 
   if (!compilation || !syntax_tree || !source_manager) {
     logger->error("Failed to get compilation, syntax tree, or source manager");
@@ -35,11 +35,11 @@ auto DefinitionProvider::GetDefinitionForUri(
 
   // Convert LSP position to Slang source location using our utility
   auto location =
-      ConvertLspPositionToSlangLocation(position, buffer, source_manager);
+      ConvertLspPositionToSlangLocation(position, buffer, *source_manager);
 
   // First try using document-specific symbol index
   if (symbol_index) {
-    auto locations = ResolveDefinitionFromSymbolIndex(
+    auto locations = ResolveDefinitionFromDefinitionIndex(
         *symbol_index, source_manager, location);
     if (!locations.empty()) {
       logger->debug(
@@ -70,12 +70,12 @@ auto DefinitionProvider::GetDefinitionForUri(
 
 auto DefinitionProvider::GetDefinitionFromWorkspace(
     std::string uri, lsp::Position position) -> std::vector<lsp::Location> {
-  auto workspace_symbol_index = workspace_manager->GetSymbolIndex();
+  auto workspace_symbol_index = workspace_manager->GetDefinitionIndex();
   auto source_manager = workspace_manager->GetSourceManager();
   auto path = CanonicalPath::FromUri(uri);
   auto buffer_id = workspace_manager->GetBufferIdFromPath(path);
   slang::SourceLocation location =
-      ConvertLspPositionToSlangLocation(position, buffer_id, source_manager);
+      ConvertLspPositionToSlangLocation(position, buffer_id, *source_manager);
 
   if (!workspace_symbol_index) {
     logger->error("DefinitionProvider cannot get workspace symbol index");
@@ -90,12 +90,12 @@ auto DefinitionProvider::GetDefinitionFromWorkspace(
   logger->debug(
       "DefinitionProvider looking up definition in workspace symbol index");
 
-  return ResolveDefinitionFromSymbolIndex(
+  return ResolveDefinitionFromDefinitionIndex(
       *workspace_symbol_index, source_manager, location);
 }
 
-auto DefinitionProvider::ResolveDefinitionFromSymbolIndex(
-    const semantic::SymbolIndex& index,
+auto DefinitionProvider::ResolveDefinitionFromDefinitionIndex(
+    const semantic::DefinitionIndex& index,
     const std::shared_ptr<slang::SourceManager>& source_manager,
     slang::SourceLocation lookup_location) -> std::vector<lsp::Location> {
   // Look up the definition using the symbol index

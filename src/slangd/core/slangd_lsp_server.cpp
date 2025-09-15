@@ -6,7 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include "lsp/document_features.hpp"
-#include "slangd/services/legacy/legacy_language_service.hpp"
+#include "slangd/utils/canonical_path.hpp"
 #include "slangd/utils/path_utils.hpp"
 
 namespace slangd {
@@ -41,13 +41,8 @@ auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
 
     const auto& workspace_folder = workspace_folders_opt->front();
 
-    // Initialize language service with workspace - need to cast to
-    // LegacyLanguageService to access InitializeWorkspace
-    if (auto legacy_service =
-            std::dynamic_pointer_cast<slangd::LegacyLanguageService>(
-                language_service_)) {
-      co_await legacy_service->InitializeWorkspace(workspace_folder.uri);
-    }
+    // Initialize language service with workspace via facade interface
+    co_await language_service_->InitializeWorkspace(workspace_folder.uri);
   }
 
   lsp::TextDocumentSyncOptions sync_options{
@@ -148,7 +143,7 @@ auto SlangdLspServer::OnDidOpenTextDocument(
 
         // Use facade to compute diagnostics
         auto diagnostics =
-            co_await language_service_->ComputeDiagnostics(uri, text);
+            co_await language_service_->ComputeDiagnostics(uri, text, version);
 
         Logger()->debug(
             "SlangdLspServer publishing {} diagnostics for document: {}",
@@ -230,15 +225,36 @@ auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
   Logger()->debug("SlangdLspServer OnDocumentSymbols");
 
   co_await asio::post(strand_, asio::use_awaitable);
-  co_return language_service_->GetDocumentSymbols(params.textDocument.uri);
+
+  // Get the tracked document to access content and version
+  auto file_opt = GetOpenFile(params.textDocument.uri);
+  if (!file_opt) {
+    Logger()->debug(
+        "OnDocumentSymbols: File not open: {}", params.textDocument.uri);
+    co_return std::vector<lsp::DocumentSymbol>{};
+  }
+
+  const auto& file = file_opt->get();
+  co_return language_service_->GetDocumentSymbols(
+      params.textDocument.uri, file.content, file.version);
 }
 
 auto SlangdLspServer::OnGotoDefinition(lsp::DefinitionParams params)
     -> asio::awaitable<std::expected<lsp::DefinitionResult, lsp::LspError>> {
   Logger()->debug("SlangdLspServer OnGotoDefinition");
 
+  // Get the tracked document to access content and version
+  auto file_opt = GetOpenFile(params.textDocument.uri);
+  if (!file_opt) {
+    Logger()->debug(
+        "OnGotoDefinition: File not open: {}", params.textDocument.uri);
+    co_return std::vector<lsp::Location>{};
+  }
+
+  const auto& file = file_opt->get();
   co_return language_service_->GetDefinitionsForPosition(
-      std::string(params.textDocument.uri), params.position);
+      std::string(params.textDocument.uri), params.position, file.content,
+      file.version);
 }
 
 auto SlangdLspServer::OnDidChangeWatchedFiles(
@@ -330,8 +346,8 @@ auto SlangdLspServer::ProcessDiagnosticsForUri(std::string uri)
   Logger()->debug("Processing diagnostics for: {}", uri);
 
   // Use facade to compute diagnostics
-  auto diagnostics =
-      co_await language_service_->ComputeDiagnostics(uri, file.content);
+  auto diagnostics = co_await language_service_->ComputeDiagnostics(
+      uri, file.content, file.version);
 
   Logger()->debug("Publishing {} diagnostics for: {}", diagnostics.size(), uri);
 

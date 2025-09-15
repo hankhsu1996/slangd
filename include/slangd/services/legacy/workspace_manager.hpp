@@ -15,7 +15,7 @@
 #include "lsp/workspace.hpp"
 #include "slangd/core/project_layout.hpp"
 #include "slangd/core/project_layout_service.hpp"
-#include "slangd/semantic/symbol_index.hpp"
+#include "slangd/semantic/definition_index.hpp"
 #include "slangd/utils/canonical_path.hpp"
 
 namespace slangd {
@@ -43,7 +43,7 @@ class WorkspaceManager {
       -> asio::awaitable<void>;
 
   // Rebuild the symbol index
-  void RebuildSymbolIndex();
+  void RebuildDefinitionIndex();
 
   // Get the compilation for this workspace
   [[nodiscard]] auto GetCompilation() const
@@ -74,7 +74,8 @@ class WorkspaceManager {
   }
 
   // Get the workspace symbol index
-  auto GetSymbolIndex() const -> std::shared_ptr<semantic::SymbolIndex> {
+  auto GetDefinitionIndex() const
+      -> std::shared_ptr<semantic::DefinitionIndex> {
     return symbol_index_;
   }
 
@@ -137,7 +138,7 @@ class WorkspaceManager {
   std::shared_ptr<ProjectLayoutService> layout_service_;
 
   // Workspace symbol index
-  std::shared_ptr<semantic::SymbolIndex> symbol_index_{nullptr};
+  std::shared_ptr<semantic::DefinitionIndex> symbol_index_{nullptr};
 
   // Track open buffers
   std::unordered_set<slang::BufferID> open_buffers_;

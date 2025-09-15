@@ -1,7 +1,5 @@
 #pragma once
 
-#include <memory>
-
 #include <slang/text/SourceLocation.h>
 #include <slang/text/SourceManager.h>
 
@@ -12,31 +10,28 @@ namespace slangd {
 // Convert a Slang source location to a zero-length LSP range at that point
 auto ConvertSlangLocationToLspRange(
     const slang::SourceLocation& location,
-    const std::shared_ptr<slang::SourceManager>& source_manager) -> lsp::Range;
+    const slang::SourceManager& source_manager) -> lsp::Range;
 
 // Convert a Slang source range to an LSP range
 auto ConvertSlangRangeToLspRange(
-    const slang::SourceRange& range,
-    const std::shared_ptr<slang::SourceManager>& source_manager) -> lsp::Range;
+    const slang::SourceRange& range, const slang::SourceManager& source_manager)
+    -> lsp::Range;
 
 // Convert an LSP position to a Slang source location
 auto ConvertLspPositionToSlangLocation(
     const lsp::Position& position, const slang::BufferID& buffer_id,
-    const std::shared_ptr<slang::SourceManager>& source_manager)
-    -> slang::SourceLocation;
+    const slang::SourceManager& source_manager) -> slang::SourceLocation;
 
 // Convert a Slang source location to an LSP location (with URI and a
 // zero-length range)
 auto ConvertSlangLocationToLspLocation(
     const slang::SourceLocation& location,
-    const std::shared_ptr<slang::SourceManager>& source_manager)
-    -> lsp::Location;
+    const slang::SourceManager& source_manager) -> lsp::Location;
 
 // Convert a Slang source location to an LSP position
 auto ConvertSlangLocationToLspPosition(
     const slang::SourceLocation& location,
-    const std::shared_ptr<slang::SourceManager>& source_manager)
-    -> lsp::Position;
+    const slang::SourceManager& source_manager) -> lsp::Position;
 
 // convert const std::optional<nlohmann::json>& json to LSP strong type
 template <typename T>
