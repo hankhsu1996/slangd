@@ -1,4 +1,4 @@
-#include "slangd/services/new/overlay_session.hpp"
+#include "slangd/services/overlay_session.hpp"
 
 #include <slang/ast/Compilation.h>
 #include <slang/parsing/Preprocessor.h>
@@ -7,7 +7,7 @@
 
 #include "slangd/utils/canonical_path.hpp"
 
-namespace slangd::services::overlay {
+namespace slangd::services {
 
 auto OverlaySession::Create(
     std::string uri, std::string content,
@@ -172,4 +172,4 @@ auto OverlaySession::BuildCompilation(
   return std::make_tuple(std::move(source_manager), std::move(compilation));
 }
 
-}  // namespace slangd::services::overlay
+}  // namespace slangd::services

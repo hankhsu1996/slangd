@@ -9,12 +9,12 @@
 #include <asio.hpp>
 #include <spdlog/spdlog.h>
 
-#include "slangd/core/global_catalog.hpp"
 #include "slangd/core/language_service_base.hpp"
 #include "slangd/core/project_layout_service.hpp"
-#include "slangd/services/new/overlay_session.hpp"
+#include "slangd/services/global_catalog.hpp"
+#include "slangd/services/overlay_session.hpp"
 
-namespace slangd::services::new_service {
+namespace slangd::services {
 
 // Cache key for overlay sessions
 struct OverlayCacheKey {
@@ -43,15 +43,15 @@ struct OverlayCacheKey {
 // New service implementation using overlay sessions
 // Creates fresh Compilation + DefinitionIndex per LSP request
 // Designed for GlobalCatalog integration (Phase 2)
-class NewLanguageService : public LanguageServiceBase {
+class LanguageService : public LanguageServiceBase {
  public:
   // Constructor for late initialization (workspace set up later)
-  explicit NewLanguageService(
+  explicit LanguageService(
       asio::any_io_executor executor,
       std::shared_ptr<spdlog::logger> logger = nullptr);
 
   // Initialize with workspace folder (called during LSP initialize)
-  // Same pattern as LegacyLanguageService for compatibility
+  // Initialize workspace for LSP operations
   auto InitializeWorkspace(std::string workspace_uri)
       -> asio::awaitable<void> override;
 
@@ -74,25 +74,25 @@ class NewLanguageService : public LanguageServiceBase {
   // Cache entry for overlay sessions
   struct CacheEntry {
     OverlayCacheKey key;
-    std::shared_ptr<overlay::OverlaySession> session;
+    std::shared_ptr<OverlaySession> session;
     std::chrono::steady_clock::time_point last_access;
   };
 
   // Create overlay session for the given URI and content
   auto CreateOverlaySession(std::string uri, std::string content)
-      -> std::shared_ptr<overlay::OverlaySession>;
+      -> std::shared_ptr<OverlaySession>;
 
   // Get or create overlay session from cache
   auto GetOrCreateOverlay(
       const OverlayCacheKey& key, const std::string& content)
-      -> std::shared_ptr<overlay::OverlaySession>;
+      -> std::shared_ptr<OverlaySession>;
 
   // Clear cache when catalog version changes
   auto ClearCache() -> void;
 
   // Core dependencies
   std::shared_ptr<ProjectLayoutService> layout_service_;
-  std::shared_ptr<const GlobalCatalog> global_catalog_;  // nullptr for Phase 1a
+  std::shared_ptr<const GlobalCatalog> global_catalog_;
   std::shared_ptr<spdlog::logger> logger_;
   asio::any_io_executor executor_;
 
@@ -101,4 +101,4 @@ class NewLanguageService : public LanguageServiceBase {
   static constexpr size_t kMaxCacheSize = 8;
 };
 
-}  // namespace slangd::services::new_service
+}  // namespace slangd::services

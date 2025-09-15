@@ -7,9 +7,9 @@
 #include <catch2/catch_all.hpp>
 #include <spdlog/spdlog.h>
 
-#include "slangd/core/global_catalog.hpp"
 #include "slangd/core/project_layout_service.hpp"
-#include "slangd/services/new/overlay_session.hpp"
+#include "slangd/services/global_catalog.hpp"
+#include "slangd/services/overlay_session.hpp"
 #include "slangd/utils/canonical_path.hpp"
 #include "slangd/utils/conversion.hpp"
 
@@ -179,7 +179,7 @@ TEST_CASE(
         executor, workspace_root, spdlog::default_logger());
 
     // Create GlobalCatalog
-    auto catalog = slangd::GlobalCatalog::CreateFromProjectLayout(
+    auto catalog = slangd::services::GlobalCatalog::CreateFromProjectLayout(
         layout_service, spdlog::default_logger());
 
     REQUIRE(catalog != nullptr);
@@ -225,12 +225,12 @@ TEST_CASE("Definition lookup for package imports", "[definition][multifile]") {
     // Create project layout and catalog
     auto layout_service = slangd::ProjectLayoutService::Create(
         executor, workspace_root, spdlog::default_logger());
-    auto catalog = slangd::GlobalCatalog::CreateFromProjectLayout(
+    auto catalog = slangd::services::GlobalCatalog::CreateFromProjectLayout(
         layout_service, spdlog::default_logger());
     REQUIRE(catalog != nullptr);
 
     // Create overlay session with module content and catalog
-    auto session = slangd::services::overlay::OverlaySession::Create(
+    auto session = slangd::services::OverlaySession::Create(
         "file:///test_module.sv", module_content, layout_service, catalog,
         spdlog::default_logger());
     REQUIRE(session != nullptr);
@@ -292,7 +292,7 @@ TEST_CASE(
     // Create project layout and catalog
     auto layout_service = slangd::ProjectLayoutService::Create(
         executor, workspace_root, spdlog::default_logger());
-    auto catalog = slangd::GlobalCatalog::CreateFromProjectLayout(
+    auto catalog = slangd::services::GlobalCatalog::CreateFromProjectLayout(
         layout_service, spdlog::default_logger());
     REQUIRE(catalog != nullptr);
 
@@ -308,7 +308,7 @@ TEST_CASE(
     REQUIRE(found_math_pkg);
 
     // Create overlay session
-    auto session = slangd::services::overlay::OverlaySession::Create(
+    auto session = slangd::services::OverlaySession::Create(
         "file:///bus_controller.sv", module_content, layout_service, catalog,
         spdlog::default_logger());
     REQUIRE(session != nullptr);
@@ -359,7 +359,7 @@ TEST_CASE(
     )";
 
     // Create overlay session without catalog (nullptr)
-    auto session = slangd::services::overlay::OverlaySession::Create(
+    auto session = slangd::services::OverlaySession::Create(
         "file:///simple_test.sv", module_content, layout_service, nullptr,
         spdlog::default_logger());
 
@@ -374,48 +374,6 @@ TEST_CASE(
     bool can_locate_in_single_file = counter_location.valid();
     CAPTURE(can_locate_in_single_file);
     REQUIRE(can_locate_in_single_file);
-
-    co_return;
-  });
-}
-
-TEST_CASE("Interface discovery in GlobalCatalog", "[definition][multifile]") {
-  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
-    MultiFileTestFixture fixture;
-    auto workspace_root = fixture.GetTempDir();
-
-    // Create an interface file
-    fixture.CreateFile("test_interface.sv", R"(
-      interface test_interface;
-        logic [7:0] data;
-        logic valid;
-        modport producer (output data, valid);
-        modport consumer (input data, valid);
-      endinterface
-    )");
-
-    // Create project layout service
-    auto layout_service = slangd::ProjectLayoutService::Create(
-        executor, workspace_root, spdlog::default_logger());
-
-    // Create GlobalCatalog
-    auto catalog = slangd::GlobalCatalog::CreateFromProjectLayout(
-        layout_service, spdlog::default_logger());
-
-    REQUIRE(catalog != nullptr);
-    REQUIRE(catalog->GetVersion() == 1);
-
-    // Verify interface was discovered
-    const auto& interfaces = catalog->GetInterfaces();
-    bool found_test_interface = false;
-    for (const auto& iface : interfaces) {
-      if (iface.name == "test_interface") {
-        found_test_interface = true;
-        REQUIRE(iface.file_path.Path().filename() == "test_interface.sv");
-        break;
-      }
-    }
-    REQUIRE(found_test_interface);
 
     co_return;
   });

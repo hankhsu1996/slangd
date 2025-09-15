@@ -1,4 +1,4 @@
-#include "slangd/core/global_catalog.hpp"
+#include "slangd/services/global_catalog.hpp"
 
 #include <slang/ast/Compilation.h>
 #include <slang/ast/SemanticFacts.h>
@@ -9,7 +9,7 @@
 
 #include "slangd/core/project_layout_service.hpp"
 
-namespace slangd {
+namespace slangd::services {
 
 auto GlobalCatalog::CreateFromProjectLayout(
     std::shared_ptr<ProjectLayoutService> layout_service,
@@ -186,4 +186,4 @@ auto GlobalCatalog::GetVersion() const -> uint64_t {
   return version_;
 }
 
-}  // namespace slangd
+}  // namespace slangd::services

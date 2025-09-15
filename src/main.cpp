@@ -10,12 +10,12 @@
 #include "app/app_setup.hpp"
 #include "app/crash_handler.hpp"
 #include "slangd/core/slangd_lsp_server.hpp"
-#include "slangd/services/new/new_language_service.hpp"
+#include "slangd/services/language_service.hpp"
 
 using jsonrpc::endpoint::RpcEndpoint;
 using jsonrpc::transport::FramedPipeTransport;
 using slangd::SlangdLspServer;
-using slangd::services::new_service::NewLanguageService;
+using slangd::services::LanguageService;
 
 auto main(int argc, char* argv[]) -> int {
   // Initialize debugging features
@@ -47,7 +47,7 @@ auto main(int argc, char* argv[]) -> int {
 
   // Create the language service and LSP server with dependency injection
   auto language_service =
-      std::make_shared<NewLanguageService>(executor, loggers["slangd"]);
+      std::make_shared<LanguageService>(executor, loggers["slangd"]);
   auto server = std::make_unique<SlangdLspServer>(
       executor, std::move(endpoint), language_service, loggers["slangd"]);
 

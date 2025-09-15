@@ -6,6 +6,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include "slangd/core/project_layout_service.hpp"
 #include "slangd/utils/canonical_path.hpp"
 
 // Forward declarations
@@ -16,10 +17,7 @@ class Compilation;
 class SourceManager;
 }  // namespace slang
 
-namespace slangd {
-
-// Forward declaration
-class ProjectLayoutService;
+namespace slangd::services {
 
 // Package metadata extracted from global compilation
 struct PackageInfo {
@@ -89,4 +87,4 @@ class GlobalCatalog {
   std::shared_ptr<spdlog::logger> logger_;
 };
 
-}  // namespace slangd
+}  // namespace slangd::services

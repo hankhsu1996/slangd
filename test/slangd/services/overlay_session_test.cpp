@@ -1,4 +1,4 @@
-#include "slangd/services/new/overlay_session.hpp"
+#include "slangd/services/overlay_session.hpp"
 
 #include <string>
 
@@ -66,7 +66,7 @@ TEST_CASE(
     const std::string uri = "file:///test.sv";
 
     // Create overlay session
-    auto session = slangd::services::overlay::OverlaySession::Create(
+    auto session = slangd::services::OverlaySession::Create(
         uri, test_content, layout_service);
 
     REQUIRE(session != nullptr);
@@ -107,7 +107,7 @@ TEST_CASE("OverlaySession works without GlobalCatalog", "[overlay_session]") {
     const std::string uri = "file:///simple.sv";
 
     // Create session with explicit nullptr catalog (single-file mode)
-    auto session = slangd::services::overlay::OverlaySession::Create(
+    auto session = slangd::services::OverlaySession::Create(
         uri, test_content, layout_service, nullptr);
 
     REQUIRE(session != nullptr);
@@ -140,7 +140,7 @@ TEST_CASE(
     const std::string uri = "file:///broken.sv";
 
     // Should create session even with syntax errors
-    auto session = slangd::services::overlay::OverlaySession::Create(
+    auto session = slangd::services::OverlaySession::Create(
         uri, invalid_content, layout_service);
 
     REQUIRE(session != nullptr);

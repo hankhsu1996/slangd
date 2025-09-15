@@ -37,7 +37,20 @@ cc_test(
     name = "overlay_session_test",
     timeout = "short",
     srcs = [
-        "services/new/overlay_session_test.cpp",
+        "services/overlay_session_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "global_catalog_test",
+    timeout = "short",
+    srcs = [
+        "services/global_catalog_test.cpp",
     ],
     deps = [
         "//:slangd_core",
