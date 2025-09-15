@@ -7,6 +7,7 @@
 
 #include "lsp/document_features.hpp"
 #include "slangd/services/legacy/legacy_language_service.hpp"
+#include "slangd/utils/path_utils.hpp"
 
 namespace slangd {
 
@@ -248,16 +249,34 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
   asio::co_spawn(
       strand_,
       [this, params]() -> asio::awaitable<void> {
+        bool has_config_change = false;
+        bool has_sv_file_change = false;
+
         // Process each file change
         for (const auto& change : params.changes) {
           auto path = CanonicalPath::FromUri(change.uri);
           Logger()->debug("SlangdLspServer detected file change: {}", path);
 
-          // TODO(hankhsu): Language service should handle workspace file
-          // changes For now, just log the changes - future language service
-          // implementations will handle config file changes and workspace
-          // rescanning
+          // Check if this is a config file change
+          if (IsConfigFile(change.uri)) {
+            has_config_change = true;
+          }
+          // Check if this is a SystemVerilog file change
+          else if (IsSystemVerilogFile(path.Path())) {
+            has_sv_file_change = true;
+          }
         }
+
+        // Handle config changes immediately (highest priority)
+        if (has_config_change) {
+          language_service_->HandleConfigChange();
+        }
+        // Handle SystemVerilog file changes (language service decides if
+        // rebuild needed)
+        else if (has_sv_file_change) {
+          language_service_->HandleSourceFileChange();
+        }
+
         co_return;
       },
       asio::detached);

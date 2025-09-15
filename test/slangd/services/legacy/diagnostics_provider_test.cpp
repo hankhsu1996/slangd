@@ -8,7 +8,7 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
-int main(int argc, char* argv[]) {
+auto main(int argc, char* argv[]) -> int {
   spdlog::set_level(spdlog::level::debug);
   spdlog::set_pattern("[%l] %v");
   return Catch::Session().run(argc, argv);
@@ -52,13 +52,13 @@ auto ExtractDiagnosticsFromString(
     -> asio::awaitable<std::vector<lsp::Diagnostic>> {
   auto workspace_root = slangd::CanonicalPath::CurrentPath();
   const std::string uri = "file:///test.sv";
-  auto config_manager =
-      std::make_shared<slangd::ConfigManager>(executor, workspace_root);
+  auto layout_service =
+      slangd::ProjectLayoutService::Create(executor, workspace_root);
   auto document_manager =
-      std::make_shared<slangd::DocumentManager>(executor, config_manager);
+      std::make_shared<slangd::DocumentManager>(executor, layout_service);
   co_await document_manager->ParseWithCompilation(uri, source);
   auto workspace_manager = std::make_shared<slangd::WorkspaceManager>(
-      executor, workspace_root, config_manager);
+      executor, workspace_root, layout_service);
   auto diagnostics_provider =
       slangd::DiagnosticsProvider(document_manager, workspace_manager);
 

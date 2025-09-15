@@ -5,8 +5,8 @@
 #include <asio.hpp>
 #include <spdlog/spdlog.h>
 
-#include "slangd/core/config_manager.hpp"
 #include "slangd/core/language_service_base.hpp"
+#include "slangd/core/project_layout_service.hpp"
 #include "slangd/services/legacy/document_manager.hpp"
 #include "slangd/services/legacy/workspace_manager.hpp"
 
@@ -35,9 +35,13 @@ class LegacyLanguageService : public LanguageServiceBase {
   auto GetDocumentSymbols(std::string uri)
       -> std::vector<lsp::DocumentSymbol> override;
 
+  auto HandleConfigChange() -> void override;
+
+  auto HandleSourceFileChange() -> void override;
+
  private:
   // Core managers - same as current architecture
-  std::shared_ptr<ConfigManager> config_manager_;
+  std::shared_ptr<ProjectLayoutService> layout_service_;
   std::shared_ptr<DocumentManager> document_manager_;
   std::shared_ptr<WorkspaceManager> workspace_manager_;
   std::shared_ptr<spdlog::logger> logger_;

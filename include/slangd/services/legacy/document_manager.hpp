@@ -10,7 +10,8 @@
 #include <slang/syntax/SyntaxTree.h>
 #include <spdlog/spdlog.h>
 
-#include "slangd/core/config_manager.hpp"
+#include "slangd/core/project_layout.hpp"
+#include "slangd/core/project_layout_service.hpp"
 #include "slangd/semantic/symbol_index.hpp"
 
 namespace slangd {
@@ -19,7 +20,7 @@ class DocumentManager {
  public:
   explicit DocumentManager(
       asio::any_io_executor executor,
-      std::shared_ptr<ConfigManager> config_manager,
+      std::shared_ptr<ProjectLayoutService> config_manager,
       std::shared_ptr<spdlog::logger> logger = nullptr);
 
   // Parse a document with compilation (fast)
@@ -46,6 +47,9 @@ class DocumentManager {
   auto GetSymbolIndex(std::string uri)
       -> std::shared_ptr<semantic::SymbolIndex>;
 
+  // Check layout version and rebuild document settings if changed
+  auto MaybeRebuildIfLayoutChanged() -> asio::awaitable<void>;
+
  private:
   // Executor
   asio::any_io_executor executor_;
@@ -54,7 +58,7 @@ class DocumentManager {
   std::shared_ptr<spdlog::logger> logger_;
 
   // Configuration manager
-  std::shared_ptr<ConfigManager> config_manager_;
+  std::shared_ptr<ProjectLayoutService> layout_service_;
 
   // Maps document URIs to their syntax trees
   std::unordered_map<CanonicalPath, std::shared_ptr<slang::syntax::SyntaxTree>>
@@ -71,6 +75,10 @@ class DocumentManager {
   // Maps document URIs to their symbol indices
   std::unordered_map<CanonicalPath, std::shared_ptr<semantic::SymbolIndex>>
       symbol_indices_;
+
+  // Version tracking for efficient layout changes
+  uint64_t cached_layout_version_ = 0;
+  std::shared_ptr<const ProjectLayout> cached_layout_;
 };
 
 }  // namespace slangd

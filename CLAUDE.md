@@ -14,6 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## CRITICAL: Always Format Before Commit
 
 **MANDATORY**: Run formatter before EVERY commit to avoid CI failures:
+
 ```bash
 find src include test -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i
 ```
@@ -81,6 +82,7 @@ The architecture enables future language servers (e.g. VHDL) to reuse the generi
 Use these prefixes for branch names:
 
 - `feature/` - for new features
+- `refactor/` - for code restructuring
 - `bugfix/` - for bug fixes
 - `docs/` - for documentation changes
 - `chore/` - for maintenance tasks
@@ -140,6 +142,28 @@ Short summary under 72 chars
 - Always include Summary
 - Add other sections only when they add value
 - Keep it concise and relevant to the specific change
+
+## Current Development Focus
+
+**Next Task: SourceExplorer Refactor**
+
+The `SourceExplorer` is a foundational service that provides file discovery and configuration reading for the new architecture. It's orthogonal to compilation and will be shared by both Global Index Service and Overlay Session Service.
+
+**Key Responsibilities:**
+
+- Config file reading (`.slangd` files, defines, include paths)
+- File discovery with repository scanning and ignore rules
+- Supply file sets to compilation services
+- Handle configuration changes and file system events
+
+**Architecture Position:**
+
+```
+SourceExplorer → supplies file lists and config → GlobalIndexService
+SourceExplorer → supplies file lists and config → OverlaySessionService
+```
+
+This refactor prepares the foundation for Phase 1 (Global Index Service) and Phase 2 (Overlay Session Service).
 
 ## Configuration Notes
 

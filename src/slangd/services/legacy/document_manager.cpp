@@ -21,27 +21,41 @@ namespace slangd {
 
 DocumentManager::DocumentManager(
     asio::any_io_executor executor,
-    std::shared_ptr<ConfigManager> config_manager,
+    std::shared_ptr<ProjectLayoutService> config_manager,
     std::shared_ptr<spdlog::logger> logger)
     : executor_(std::move(executor)),
       logger_(logger ? logger : spdlog::default_logger()),
-      config_manager_(std::move(config_manager)) {
+      layout_service_(std::move(config_manager)) {
 }
 
 auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
     -> asio::awaitable<void> {
+  // Ensure we have the latest layout
+  co_await MaybeRebuildIfLayoutChanged();
+
   auto path = CanonicalPath::FromUri(uri);
   source_managers_[path] = std::make_shared<slang::SourceManager>();
   auto& source_manager = *source_managers_[path];
 
-  // Prepare preprocessor options
+  // Prepare preprocessor options using cached layout
   slang::Bag options;
   slang::parsing::PreprocessorOptions pp_options;
-  for (const auto& define : config_manager_->GetDefines()) {
-    pp_options.predefines.push_back(define);
-  }
-  for (const auto& include_dir : config_manager_->GetIncludeDirectories()) {
-    pp_options.additionalIncludePaths.emplace_back(include_dir.Path());
+
+  if (cached_layout_) {
+    for (const auto& define : cached_layout_->GetDefines()) {
+      pp_options.predefines.push_back(define);
+    }
+    for (const auto& include_dir : cached_layout_->GetIncludeDirs()) {
+      pp_options.additionalIncludePaths.emplace_back(include_dir.Path());
+    }
+  } else {
+    // Fallback to direct calls if layout not cached yet
+    for (const auto& define : layout_service_->GetDefines()) {
+      pp_options.predefines.push_back(define);
+    }
+    for (const auto& include_dir : layout_service_->GetIncludeDirectories()) {
+      pp_options.additionalIncludePaths.emplace_back(include_dir.Path());
+    }
   }
   options.set(pp_options);
 
@@ -135,6 +149,23 @@ auto DocumentManager::GetSourceManager(std::string uri)
     return it->second;
   }
   return nullptr;
+}
+
+auto DocumentManager::MaybeRebuildIfLayoutChanged() -> asio::awaitable<void> {
+  auto snapshot = layout_service_->GetLayoutSnapshot();
+  if (snapshot.version > cached_layout_version_) {
+    logger_->debug(
+        "DocumentManager: Layout version changed from {} to {}, updating "
+        "cached layout",
+        cached_layout_version_, snapshot.version);
+
+    cached_layout_version_ = snapshot.version;
+    cached_layout_ = snapshot.layout;
+
+    // Note: DocumentManager doesn't rebuild all documents automatically
+    // Individual parse methods will use the new layout when called
+  }
+  co_return;
 }
 
 auto DocumentManager::GetSymbolIndex(std::string uri)

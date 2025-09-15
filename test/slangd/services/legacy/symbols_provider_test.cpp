@@ -56,13 +56,13 @@ auto ExtractSymbolsFromString(
     -> asio::awaitable<std::vector<lsp::DocumentSymbol>> {
   auto workspace_root = slangd::CanonicalPath::CurrentPath();
   const std::string uri = "file:///test.sv";
-  auto config_manager =
-      std::make_shared<slangd::ConfigManager>(executor, workspace_root);
+  auto layout_service =
+      slangd::ProjectLayoutService::Create(executor, workspace_root);
   auto doc_manager =
-      std::make_shared<slangd::DocumentManager>(executor, config_manager);
+      std::make_shared<slangd::DocumentManager>(executor, layout_service);
   co_await doc_manager->ParseWithCompilation(uri, source);
   auto workspace_manager = std::make_shared<slangd::WorkspaceManager>(
-      executor, workspace_root, config_manager);
+      executor, workspace_root, layout_service);
   auto symbols_provider =
       slangd::SymbolsProvider(doc_manager, workspace_manager);
 

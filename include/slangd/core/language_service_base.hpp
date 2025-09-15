@@ -34,6 +34,12 @@ class LanguageServiceBase {
   // Document symbols - sync because operates on existing compiled data
   virtual auto GetDocumentSymbols(std::string uri)
       -> std::vector<lsp::DocumentSymbol> = 0;
+
+  // Config change handling - notifies service of configuration file changes
+  virtual auto HandleConfigChange() -> void = 0;
+
+  // Source file change handling - notifies service of source file changes
+  virtual auto HandleSourceFileChange() -> void = 0;
 };
 
 }  // namespace slangd

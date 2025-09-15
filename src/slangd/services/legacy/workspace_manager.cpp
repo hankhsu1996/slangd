@@ -7,7 +7,7 @@
 #include <slang/parsing/Lexer.h>
 #include <slang/parsing/Preprocessor.h>
 #include <slang/util/Bag.h>
-#include <slangd/core/config_manager.hpp>
+#include <slangd/core/project_layout_service.hpp>
 #include <spdlog/spdlog.h>
 
 #include "slangd/utils/path_utils.hpp"
@@ -17,12 +17,12 @@ namespace slangd {
 
 WorkspaceManager::WorkspaceManager(
     asio::any_io_executor executor, CanonicalPath workspace_folder,
-    std::shared_ptr<ConfigManager> config_manager,
+    std::shared_ptr<ProjectLayoutService> layout_service,
     std::shared_ptr<spdlog::logger> logger)
     : logger_(logger ? logger : spdlog::default_logger()),
       workspace_folder_(std::move(workspace_folder)),
       source_manager_(std::make_shared<slang::SourceManager>()),
-      config_manager_(std::move(config_manager)),
+      layout_service_(std::move(layout_service)),
       executor_(executor),
       strand_(asio::make_strand(executor)) {
 }
@@ -34,9 +34,12 @@ auto WorkspaceManager::CreateForTesting(
     std::shared_ptr<spdlog::logger> logger)
     -> std::shared_ptr<WorkspaceManager> {
   auto workspace_root = CanonicalPath::CurrentPath();
+
+  // Create ProjectLayoutBuilder dependencies
+  auto layout_service =
+      ProjectLayoutService::Create(executor, workspace_root, logger);
   auto workspace_manager = std::make_shared<WorkspaceManager>(
-      executor, workspace_root,
-      std::make_shared<ConfigManager>(executor, workspace_root), logger);
+      executor, workspace_root, layout_service, logger);
 
   auto source_manager = workspace_manager->GetSourceManager();
   auto compilation = std::make_shared<slang::ast::Compilation>();
@@ -77,6 +80,28 @@ auto WorkspaceManager::AddOpenFile(CanonicalPath path)
     logger_->warn(
         "WorkspaceManager attempted to open file without registered buffer: {}",
         path);
+  }
+}
+
+// Check layout version and rebuild workspace if changed
+auto WorkspaceManager::MaybeRebuildIfLayoutChanged() -> asio::awaitable<void> {
+  co_await asio::post(strand_, asio::use_awaitable);
+
+  auto snapshot = layout_service_->GetLayoutSnapshot();
+  if (snapshot.version > cached_layout_version_) {
+    logger_->debug(
+        "WorkspaceManager: Layout version changed from {} to {}, rebuilding "
+        "workspace",
+        cached_layout_version_, snapshot.version);
+
+    cached_layout_version_ = snapshot.version;
+    cached_layout_ = snapshot.layout;
+
+    // Trigger workspace rebuild with new layout
+    LoadAndCompileFiles(cached_layout_->GetFiles());
+
+    // Rebuild symbol index after new compilation
+    RebuildSymbolIndex();
   }
 }
 
@@ -133,11 +158,8 @@ auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
       "WorkspaceManager starting workspace scan for SystemVerilog files");
   co_await asio::post(strand_, asio::use_awaitable);
 
-  // Get source files based on config or auto-discovery
-  auto all_files = config_manager_->GetSourceFiles();
-
-  // Process all collected files together
-  LoadAndCompileFiles(all_files);
+  // Check if layout has changed and rebuild if necessary
+  co_await MaybeRebuildIfLayoutChanged();
 
   // Ensure the workspace symbol index is built
   if (!symbol_index_) {
@@ -270,10 +292,17 @@ auto WorkspaceManager::HandleFileCreated(CanonicalPath path)
     co_return;
   }
 
-  // If using config, check if this file is part of the config
-  if (config_manager_ && config_manager_->HasValidConfig()) {
+  // If using config, check if this file is part of the cached layout
+  if (layout_service_ && layout_service_->HasValidConfig()) {
+    // Ensure we have the latest layout
+    if (!cached_layout_) {
+      auto snapshot = layout_service_->GetLayoutSnapshot();
+      cached_layout_version_ = snapshot.version;
+      cached_layout_ = snapshot.layout;
+    }
+
     bool in_config = false;
-    auto all_files = config_manager_->GetSourceFiles();
+    const auto& all_files = cached_layout_->GetFiles();
     for (const auto& config_file : all_files) {
       if (config_file == path) {
         in_config = true;

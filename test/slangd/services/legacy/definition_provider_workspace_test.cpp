@@ -56,10 +56,10 @@ auto ExtractDefinitionFromFiles(
     lsp::Position position) -> asio::awaitable<std::vector<lsp::Location>> {
   auto current_path = slangd::CanonicalPath::FromUri(current_uri);
   auto workspace_root = slangd::CanonicalPath::CurrentPath();
-  auto config_manager =
-      std::make_shared<slangd::ConfigManager>(executor, workspace_root);
+  auto layout_service =
+      slangd::ProjectLayoutService::Create(executor, workspace_root);
   auto doc_manager =
-      std::make_shared<slangd::DocumentManager>(executor, config_manager);
+      std::make_shared<slangd::DocumentManager>(executor, layout_service);
   co_await doc_manager->ParseWithCompilation(
       current_uri, source_map[current_uri]);
 
