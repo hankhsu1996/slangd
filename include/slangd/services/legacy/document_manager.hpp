@@ -12,7 +12,7 @@
 
 #include "slangd/core/project_layout.hpp"
 #include "slangd/core/project_layout_service.hpp"
-#include "slangd/semantic/symbol_index.hpp"
+#include "slangd/semantic/definition_index.hpp"
 
 namespace slangd {
 
@@ -44,8 +44,8 @@ class DocumentManager {
       -> std::shared_ptr<slang::SourceManager>;
 
   // Get the symbol index for a document
-  auto GetSymbolIndex(std::string uri)
-      -> std::shared_ptr<semantic::SymbolIndex>;
+  auto GetDefinitionIndex(std::string uri)
+      -> std::shared_ptr<semantic::DefinitionIndex>;
 
   // Check layout version and rebuild document settings if changed
   auto MaybeRebuildIfLayoutChanged() -> asio::awaitable<void>;
@@ -73,7 +73,7 @@ class DocumentManager {
       source_managers_;
 
   // Maps document URIs to their symbol indices
-  std::unordered_map<CanonicalPath, std::shared_ptr<semantic::SymbolIndex>>
+  std::unordered_map<CanonicalPath, std::shared_ptr<semantic::DefinitionIndex>>
       symbol_indices_;
 
   // Version tracking for efficient layout changes

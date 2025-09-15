@@ -39,10 +39,10 @@ cc_test(
 )
 
 cc_test(
-    name = "symbol_index_test",
+    name = "definition_index_test",
     timeout = "short",
     srcs = [
-        "semantic/symbol_index_test.cpp",
+        "semantic/definition_index_test.cpp",
     ],
     deps = [
         "//:slangd_core",
@@ -108,6 +108,19 @@ cc_test(
     timeout = "short",
     srcs = [
         "services/new/overlay_session_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "symbol_index_test",
+    timeout = "short",
+    srcs = [
+        "semantic/symbol_index_test.cpp",
     ],
     deps = [
         "//:slangd_core",

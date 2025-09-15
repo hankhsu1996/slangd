@@ -88,8 +88,8 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
   compilation.addSyntaxTree(syntax_trees_[path]);
 
   // Build a basic symbol index (definitions only) for quick navigation
-  symbol_indices_[path] = std::make_shared<semantic::SymbolIndex>(
-      semantic::SymbolIndex::FromCompilation(
+  symbol_indices_[path] = std::make_shared<semantic::DefinitionIndex>(
+      semantic::DefinitionIndex::FromCompilation(
           compilation, {buffer.id}, logger_));
 
   logger_->debug("DocumentManager compilation completed for document: {}", uri);
@@ -168,8 +168,8 @@ auto DocumentManager::MaybeRebuildIfLayoutChanged() -> asio::awaitable<void> {
   co_return;
 }
 
-auto DocumentManager::GetSymbolIndex(std::string uri)
-    -> std::shared_ptr<semantic::SymbolIndex> {
+auto DocumentManager::GetDefinitionIndex(std::string uri)
+    -> std::shared_ptr<semantic::DefinitionIndex> {
   auto path = CanonicalPath::FromUri(uri);
   auto it = symbol_indices_.find(path);
   if (it != symbol_indices_.end()) {

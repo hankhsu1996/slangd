@@ -1,10 +1,11 @@
 #include "slangd/services/new/new_language_service.hpp"
 
+#include <slang/ast/symbols/CompilationUnitSymbols.h>
 #include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/syntax/SyntaxTree.h>
 
-#include "slangd/services/legacy/diagnostics_provider.hpp"
 #include "slangd/utils/canonical_path.hpp"
+#include "slangd/utils/conversion.hpp"
 
 namespace slangd::services::new_service {
 
@@ -50,9 +51,8 @@ auto NewLanguageService::ComputeDiagnostics(
     co_return std::vector<lsp::Diagnostic>{};
   }
 
-  // Convert Slang diagnostics to LSP format
-  auto diagnostics = ConvertSlangDiagnosticsToLsp(
-      session->GetCompilation(), session->GetSourceManager(), uri);
+  // Get diagnostics directly from DiagnosticIndex - consistent pattern!
+  const auto& diagnostics = session->GetDiagnosticIndex().GetDiagnostics();
 
   logger_->debug(
       "NewLanguageService computed {} diagnostics for: {}", diagnostics.size(),
@@ -72,10 +72,56 @@ auto NewLanguageService::GetDefinitionsForPosition(
       "NewLanguageService getting definitions for: {} at {}:{}", uri,
       position.line, position.character);
 
-  // Phase 1a: Basic stub - will be implemented in Phase 1b
-  // TODO(hankhsu): Create overlay session and use SymbolIndex for lookups
-  logger_->debug("GetDefinitionsForPosition: Implementation pending Phase 1b");
-  return {};
+  // Create overlay session for this request
+  // Note: We need the current buffer content, but since this is sync method,
+  // we'll use empty content for now (this should be improved in the future)
+  auto session = CreateOverlaySession(uri, "");
+  if (!session) {
+    logger_->error("Failed to create overlay session for: {}", uri);
+    return {};
+  }
+
+  // Get source manager and convert position to location
+  const auto& source_manager = session->GetSourceManager();
+  auto buffers = source_manager.getAllBuffers();
+  if (buffers.empty()) {
+    logger_->error("No buffers found in source manager for: {}", uri);
+    return {};
+  }
+  auto buffer = buffers[0];
+  auto location =
+      ConvertLspPositionToSlangLocation(position, buffer, source_manager);
+
+  // Use DefinitionIndex directly - this is the new architecture!
+  auto symbol_key = session->GetDefinitionIndex().LookupSymbolAt(location);
+  if (!symbol_key) {
+    logger_->debug(
+        "No symbol found at position {}:{} in {}", position.line,
+        position.character, uri);
+    return {};
+  }
+
+  auto def_range_opt =
+      session->GetDefinitionIndex().GetDefinitionRange(*symbol_key);
+  if (!def_range_opt) {
+    logger_->debug(
+        "Definition location not found for symbol at {}:{} in {}",
+        position.line, position.character, uri);
+    return {};
+  }
+
+  // Convert to LSP location
+  auto lsp_range = ConvertSlangRangeToLspRange(*def_range_opt, source_manager);
+  lsp::Location lsp_location;
+  lsp_location.uri = uri;
+  lsp_location.range = lsp_range;
+
+  logger_->debug(
+      "Found definition at {}:{}-{}:{} in {}", lsp_location.range.start.line,
+      lsp_location.range.start.character, lsp_location.range.end.line,
+      lsp_location.range.end.character, uri);
+
+  return {lsp_location};
 }
 
 auto NewLanguageService::GetDocumentSymbols(std::string uri)
@@ -87,10 +133,15 @@ auto NewLanguageService::GetDocumentSymbols(std::string uri)
 
   logger_->debug("NewLanguageService getting document symbols for: {}", uri);
 
-  // Phase 1a: Basic stub - will be implemented in Phase 1b
-  // TODO(hankhsu): Create overlay session and extract symbols from SymbolIndex
-  logger_->debug("GetDocumentSymbols: Implementation pending Phase 1b");
-  return {};
+  // Create overlay session for this request
+  auto session = CreateOverlaySession(uri, "");
+  if (!session) {
+    logger_->error("Failed to create overlay session for: {}", uri);
+    return {};
+  }
+
+  // Use the new SymbolIndex for clean delegation
+  return session->GetSymbolIndex().GetDocumentSymbols(uri);
 }
 
 auto NewLanguageService::HandleConfigChange() -> void {
@@ -112,45 +163,6 @@ auto NewLanguageService::CreateOverlaySession(
     -> std::unique_ptr<overlay::OverlaySession> {
   return overlay::OverlaySession::Create(
       uri, content, layout_service_, global_catalog_, logger_);
-}
-
-auto NewLanguageService::ConvertSlangDiagnosticsToLsp(
-    const slang::ast::Compilation& compilation,
-    const slang::SourceManager& source_manager, const std::string& uri)
-    -> std::vector<lsp::Diagnostic> {
-  // Phase 1a: Stub implementation - basic diagnostics only
-  // Will be properly implemented in Phase 1b using existing DiagnosticsProvider
-
-  // For now, return basic syntax diagnostics by using the compilation
-  // Create shared pointers for compatibility with existing code
-  auto compilation_ptr = std::shared_ptr<slang::ast::Compilation>(
-      const_cast<slang::ast::Compilation*>(&compilation), [](auto*) {});
-  auto source_manager_ptr = std::shared_ptr<slang::SourceManager>(
-      const_cast<slang::SourceManager*>(&source_manager), [](auto*) {});
-
-  // Use existing static method from DiagnosticsProvider
-  return DiagnosticsProvider::ResolveDiagnosticsFromCompilation(
-      compilation_ptr, nullptr, source_manager_ptr, uri);
-}
-
-auto NewLanguageService::ConvertSymbolIndexToLspLocations(
-    const semantic::SymbolIndex& symbol_index,
-    const slang::SourceManager& source_manager,
-    const semantic::SymbolKey& symbol_key) -> std::vector<lsp::Location> {
-  // Phase 1a: Stub - will be implemented in Phase 1b
-  logger_->debug(
-      "ConvertSymbolIndexToLspLocations: Implementation pending Phase 1b");
-  return {};
-}
-
-auto NewLanguageService::ExtractDocumentSymbolsFromIndex(
-    const semantic::SymbolIndex& symbol_index,
-    const slang::SourceManager& source_manager, const std::string& uri)
-    -> std::vector<lsp::DocumentSymbol> {
-  // Phase 1a: Stub - will be implemented in Phase 1b
-  logger_->debug(
-      "ExtractDocumentSymbolsFromIndex: Implementation pending Phase 1b");
-  return {};
 }
 
 }  // namespace slangd::services::new_service

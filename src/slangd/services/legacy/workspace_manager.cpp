@@ -75,7 +75,7 @@ auto WorkspaceManager::AddOpenFile(CanonicalPath path)
   if (it != buffer_ids_.end()) {
     slang::BufferID buffer_id = it->second;
     open_buffers_.insert(buffer_id);
-    RebuildSymbolIndex();
+    RebuildDefinitionIndex();
   } else {
     logger_->warn(
         "WorkspaceManager attempted to open file without registered buffer: {}",
@@ -101,7 +101,7 @@ auto WorkspaceManager::MaybeRebuildIfLayoutChanged() -> asio::awaitable<void> {
     LoadAndCompileFiles(cached_layout_->GetFiles());
 
     // Rebuild symbol index after new compilation
-    RebuildSymbolIndex();
+    RebuildDefinitionIndex();
   }
 }
 
@@ -163,7 +163,7 @@ auto WorkspaceManager::ScanWorkspace() -> asio::awaitable<void> {
 
   // Ensure the workspace symbol index is built
   if (!symbol_index_) {
-    RebuildSymbolIndex();
+    RebuildDefinitionIndex();
   }
 
   logger_->debug(
@@ -215,11 +215,11 @@ auto WorkspaceManager::HandleFileChanges(std::vector<lsp::FileEvent> changes)
   co_return;
 }
 
-void WorkspaceManager::RebuildSymbolIndex() {
+void WorkspaceManager::RebuildDefinitionIndex() {
   logger_->debug("WorkspaceManager rebuilding symbol index");
   if (compilation_) {
-    symbol_index_ = std::make_shared<semantic::SymbolIndex>(
-        semantic::SymbolIndex::FromCompilation(
+    symbol_index_ = std::make_shared<semantic::DefinitionIndex>(
+        semantic::DefinitionIndex::FromCompilation(
             *compilation_, open_buffers_, logger_));
   }
 }
@@ -411,7 +411,7 @@ auto WorkspaceManager::RebuildWorkspaceCompilation() -> asio::awaitable<void> {
   compilation_ = new_compilation;
 
   // Build a workspace symbol index
-  RebuildSymbolIndex();
+  RebuildDefinitionIndex();
 
   // Validate state to ensure consistency
   if (!ValidateState()) {

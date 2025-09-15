@@ -9,6 +9,8 @@
 
 #include "slangd/core/global_catalog.hpp"
 #include "slangd/core/project_layout_service.hpp"
+#include "slangd/semantic/definition_index.hpp"
+#include "slangd/semantic/diagnostic_index.hpp"
 #include "slangd/semantic/symbol_index.hpp"
 
 namespace slangd::services::overlay {
@@ -35,11 +37,23 @@ class OverlaySession {
   ~OverlaySession() = default;
 
   // Access to symbol index for LSP queries
+  [[nodiscard]] auto GetDefinitionIndex() const
+      -> const semantic::DefinitionIndex& {
+    return *definition_index_;
+  }
+
+  // Access to diagnostic index for LSP diagnostics
+  [[nodiscard]] auto GetDiagnosticIndex() const
+      -> const semantic::DiagnosticIndex& {
+    return *diagnostic_index_;
+  }
+
+  // Access to symbol index for document symbols
   [[nodiscard]] auto GetSymbolIndex() const -> const semantic::SymbolIndex& {
     return *symbol_index_;
   }
 
-  // Access to compilation for diagnostics
+  // Access to compilation for advanced queries
   [[nodiscard]] auto GetCompilation() const -> slang::ast::Compilation& {
     return *compilation_;
   }
@@ -54,6 +68,8 @@ class OverlaySession {
   OverlaySession(
       std::shared_ptr<slang::SourceManager> source_manager,
       std::unique_ptr<slang::ast::Compilation> compilation,
+      std::unique_ptr<semantic::DefinitionIndex> definition_index,
+      std::unique_ptr<semantic::DiagnosticIndex> diagnostic_index,
       std::unique_ptr<semantic::SymbolIndex> symbol_index,
       std::shared_ptr<spdlog::logger> logger);
 
@@ -70,6 +86,8 @@ class OverlaySession {
   // Core session components
   std::shared_ptr<slang::SourceManager> source_manager_;
   std::unique_ptr<slang::ast::Compilation> compilation_;
+  std::unique_ptr<semantic::DefinitionIndex> definition_index_;
+  std::unique_ptr<semantic::DiagnosticIndex> diagnostic_index_;
   std::unique_ptr<semantic::SymbolIndex> symbol_index_;
   std::shared_ptr<spdlog::logger> logger_;
 };

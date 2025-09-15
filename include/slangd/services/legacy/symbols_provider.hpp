@@ -63,15 +63,14 @@ class SymbolsProvider : public LanguageFeatureProvider {
 
   static auto ConvertSymbolNameRangeToLsp(
       const slang::ast::Symbol& symbol,
-      const std::shared_ptr<slang::SourceManager>& source_manager)
-      -> lsp::Range;
+      const slang::SourceManager& source_manager) -> lsp::Range;
 
   // Filter and unwrap
   // Check if a symbol is physically located in the document
   static auto IsSymbolInDocument(
       const slang::ast::Symbol& symbol,
-      const std::shared_ptr<slang::SourceManager>& source_manager,
-      const std::string& uri) -> bool;
+      const slang::SourceManager& source_manager, const std::string& uri)
+      -> bool;
 
   // Check if a symbol should be included in document symbols (outline view)
   static auto IsRelevantDocumentSymbol(const slang::ast::Symbol& symbol)
@@ -81,8 +80,8 @@ class SymbolsProvider : public LanguageFeatureProvider {
   // compatibility
   static auto IsSymbolInUriDocument(
       const slang::ast::Symbol& symbol,
-      const std::shared_ptr<slang::SourceManager>& source_manager,
-      const std::string& uri) -> bool;
+      const slang::SourceManager& source_manager, const std::string& uri)
+      -> bool;
 
   static auto GetUnwrappedSymbol(const slang::ast::Symbol& symbol)
       -> const slang::ast::Symbol&;

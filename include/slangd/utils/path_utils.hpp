@@ -1,6 +1,5 @@
 #pragma once
 
-#include <memory>
 #include <string>
 #include <string_view>
 
@@ -23,7 +22,6 @@ namespace slangd {
 // TODO(hankhsu1996) find a better place for this
 [[nodiscard]] auto IsLocationInDocument(
     const slang::SourceLocation& location,
-    const std::shared_ptr<slang::SourceManager>& source_manager,
-    std::string_view uri) -> bool;
+    const slang::SourceManager& source_manager, std::string_view uri) -> bool;
 
 }  // namespace slangd

@@ -25,26 +25,42 @@ auto OverlaySession::Create(
       BuildCompilation(uri, content, layout_service, catalog, logger);
 
   // Create symbol index with empty traverse_buffers (traverse all)
-  auto symbol_index = std::make_unique<semantic::SymbolIndex>(
-      semantic::SymbolIndex::FromCompilation(*compilation, {}, logger));
+  auto definition_index = std::make_unique<semantic::DefinitionIndex>(
+      semantic::DefinitionIndex::FromCompilation(*compilation, {}, logger));
+
+  // Create diagnostic index for the current URI
+  auto diagnostic_index = std::make_unique<semantic::DiagnosticIndex>(
+      semantic::DiagnosticIndex::FromCompilation(
+          *compilation, *source_manager, uri, logger));
+
+  // Create symbol index for document symbols
+  auto symbol_index = semantic::SymbolIndex::FromCompilation(
+      *compilation, *source_manager, logger);
 
   logger->debug(
-      "Overlay session created with {} definitions, {} references",
-      symbol_index->GetDefinitionRanges().size(),
-      symbol_index->GetReferenceMap().size());
+      "Overlay session created with {} definitions, {} references, {} "
+      "diagnostics",
+      definition_index->GetDefinitionRanges().size(),
+      definition_index->GetReferenceMap().size(),
+      diagnostic_index->GetDiagnostics().size());
 
   return std::unique_ptr<OverlaySession>(new OverlaySession(
       std::move(source_manager), std::move(compilation),
+      std::move(definition_index), std::move(diagnostic_index),
       std::move(symbol_index), logger));
 }
 
 OverlaySession::OverlaySession(
     std::shared_ptr<slang::SourceManager> source_manager,
     std::unique_ptr<slang::ast::Compilation> compilation,
+    std::unique_ptr<semantic::DefinitionIndex> definition_index,
+    std::unique_ptr<semantic::DiagnosticIndex> diagnostic_index,
     std::unique_ptr<semantic::SymbolIndex> symbol_index,
     std::shared_ptr<spdlog::logger> logger)
     : source_manager_(std::move(source_manager)),
       compilation_(std::move(compilation)),
+      definition_index_(std::move(definition_index)),
+      diagnostic_index_(std::move(diagnostic_index)),
       symbol_index_(std::move(symbol_index)),
       logger_(std::move(logger)) {
 }

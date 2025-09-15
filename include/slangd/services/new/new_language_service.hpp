@@ -13,7 +13,7 @@
 namespace slangd::services::new_service {
 
 // New service implementation using overlay sessions
-// Creates fresh Compilation + SymbolIndex per LSP request
+// Creates fresh Compilation + DefinitionIndex per LSP request
 // Designed for GlobalCatalog integration (Phase 2)
 class NewLanguageService : public LanguageServiceBase {
  public:
@@ -24,7 +24,8 @@ class NewLanguageService : public LanguageServiceBase {
 
   // Initialize with workspace folder (called during LSP initialize)
   // Same pattern as LegacyLanguageService for compatibility
-  auto InitializeWorkspace(std::string workspace_uri) -> asio::awaitable<void>;
+  auto InitializeWorkspace(std::string workspace_uri)
+      -> asio::awaitable<void> override;
 
   // LanguageServiceBase implementation using overlay sessions
   auto ComputeDiagnostics(std::string uri, std::string content)
@@ -44,24 +45,6 @@ class NewLanguageService : public LanguageServiceBase {
   // Create overlay session for the given URI and content
   auto CreateOverlaySession(std::string uri, std::string content)
       -> std::unique_ptr<overlay::OverlaySession>;
-
-  // Convert Slang diagnostics to LSP diagnostics
-  auto ConvertSlangDiagnosticsToLsp(
-      const slang::ast::Compilation& compilation,
-      const slang::SourceManager& source_manager, const std::string& uri)
-      -> std::vector<lsp::Diagnostic>;
-
-  // Convert SymbolIndex results to LSP locations
-  auto ConvertSymbolIndexToLspLocations(
-      const semantic::SymbolIndex& symbol_index,
-      const slang::SourceManager& source_manager,
-      const semantic::SymbolKey& symbol_key) -> std::vector<lsp::Location>;
-
-  // Extract document symbols from SymbolIndex
-  auto ExtractDocumentSymbolsFromIndex(
-      const semantic::SymbolIndex& symbol_index,
-      const slang::SourceManager& source_manager, const std::string& uri)
-      -> std::vector<lsp::DocumentSymbol>;
 
   // Core dependencies
   std::shared_ptr<ProjectLayoutService> layout_service_;

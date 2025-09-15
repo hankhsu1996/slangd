@@ -31,8 +31,8 @@ class DefinitionProvider : public LanguageFeatureProvider {
       -> std::vector<lsp::Location>;
 
   // Core resolvers
-  static auto ResolveDefinitionFromSymbolIndex(
-      const semantic::SymbolIndex& index,
+  static auto ResolveDefinitionFromDefinitionIndex(
+      const semantic::DefinitionIndex& index,
       const std::shared_ptr<slang::SourceManager>& source_manager,
       slang::SourceLocation location) -> std::vector<lsp::Location>;
 };

@@ -64,7 +64,7 @@ void SymbolsProvider::BuildSymbolHierarchy(
     const std::string& uri, std::unordered_set<std::string>& seen_names,
     slang::ast::Compilation& compilation) {
   // Only include symbols from the current document and with relevant kinds
-  if (!IsSymbolInUriDocument(symbol, source_manager, uri)) {
+  if (!IsSymbolInUriDocument(symbol, *source_manager, uri)) {
     return;
   }
 
@@ -83,9 +83,9 @@ void SymbolsProvider::BuildSymbolHierarchy(
   // Get the symbol's location range
   if (symbol.location) {
     doc_symbol.range =
-        ConvertSlangLocationToLspRange(symbol.location, source_manager);
+        ConvertSlangLocationToLspRange(symbol.location, *source_manager);
     doc_symbol.selectionRange =
-        ConvertSymbolNameRangeToLsp(symbol, source_manager);
+        ConvertSymbolNameRangeToLsp(symbol, *source_manager);
   }
 
   // Add this symbol name to seen names in current scope to prevent duplicates
@@ -140,7 +140,7 @@ void SymbolsProvider::BuildSymbolChildren(
         // Only check if the enum value is in the current document
         // (we only check location, not symbol kind since we know it's an enum
         // value)
-        if (IsSymbolInDocument(enum_value, source_manager, uri)) {
+        if (IsSymbolInDocument(enum_value, *source_manager, uri)) {
           // Create a document symbol for this enum value
           lsp::DocumentSymbol enum_value_symbol;
           enum_value_symbol.name = std::string(enum_value.name);
@@ -148,9 +148,9 @@ void SymbolsProvider::BuildSymbolChildren(
 
           if (enum_value.location) {
             enum_value_symbol.range = ConvertSlangLocationToLspRange(
-                enum_value.location, source_manager);
+                enum_value.location, *source_manager);
             enum_value_symbol.selectionRange =
-                ConvertSymbolNameRangeToLsp(enum_value, source_manager);
+                ConvertSymbolNameRangeToLsp(enum_value, *source_manager);
           }
 
           // Add empty children vector
@@ -329,15 +329,15 @@ auto SymbolsProvider::ConvertSymbolKindToLsp(const slang::ast::Symbol& symbol)
 
 auto SymbolsProvider::ConvertSymbolNameRangeToLsp(
     const slang::ast::Symbol& symbol,
-    const std::shared_ptr<slang::SourceManager>& source_manager) -> lsp::Range {
+    const slang::SourceManager& source_manager) -> lsp::Range {
   // Just use the symbol's declaration location
   return ConvertSlangLocationToLspRange(symbol.location, source_manager);
 }
 
 auto SymbolsProvider::IsSymbolInDocument(
     const slang::ast::Symbol& symbol,
-    const std::shared_ptr<slang::SourceManager>& source_manager,
-    const std::string& uri) -> bool {
+    const slang::SourceManager& source_manager, const std::string& uri)
+    -> bool {
   // Skip symbols without a valid location
   if (!symbol.location) {
     return false;
@@ -349,7 +349,7 @@ auto SymbolsProvider::IsSymbolInDocument(
   }
 
   // Skip symbols that are compiler-generated (no source location)
-  if (source_manager->isPreprocessedLoc(symbol.location)) {
+  if (source_manager.isPreprocessedLoc(symbol.location)) {
     return false;
   }
 
@@ -416,8 +416,8 @@ auto SymbolsProvider::IsRelevantDocumentSymbol(const slang::ast::Symbol& symbol)
 
 auto SymbolsProvider::IsSymbolInUriDocument(
     const slang::ast::Symbol& symbol,
-    const std::shared_ptr<slang::SourceManager>& source_manager,
-    const std::string& uri) -> bool {
+    const slang::SourceManager& source_manager, const std::string& uri)
+    -> bool {
   // Combine both checks
   return IsSymbolInDocument(symbol, source_manager, uri) &&
          IsRelevantDocumentSymbol(symbol);

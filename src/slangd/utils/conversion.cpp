@@ -4,13 +4,13 @@ namespace slangd {
 
 auto ConvertSlangLocationToLspRange(
     const slang::SourceLocation& location,
-    const std::shared_ptr<slang::SourceManager>& source_manager) -> lsp::Range {
+    const slang::SourceManager& source_manager) -> lsp::Range {
   if (!location) {
     return lsp::Range{};
   }
 
-  auto line = source_manager->getLineNumber(location);
-  auto column = source_manager->getColumnNumber(location);
+  auto line = source_manager.getLineNumber(location);
+  auto column = source_manager.getColumnNumber(location);
 
   // Convert to single-point LSP position (0-based)
   auto position = lsp::Position{
@@ -22,22 +22,22 @@ auto ConvertSlangLocationToLspRange(
 }
 
 auto ConvertSlangRangeToLspRange(
-    const slang::SourceRange& range,
-    const std::shared_ptr<slang::SourceManager>& source_manager) -> lsp::Range {
+    const slang::SourceRange& range, const slang::SourceManager& source_manager)
+    -> lsp::Range {
   if (!range.start() || !range.end()) {
     return lsp::Range{};
   }
 
   // Convert start position
-  auto start_line = source_manager->getLineNumber(range.start());
-  auto start_column = source_manager->getColumnNumber(range.start());
+  auto start_line = source_manager.getLineNumber(range.start());
+  auto start_column = source_manager.getColumnNumber(range.start());
   lsp::Position start_pos{
       .line = static_cast<int>(start_line - 1),
       .character = static_cast<int>(start_column - 1)};
 
   // Convert end position
-  auto end_line = source_manager->getLineNumber(range.end());
-  auto end_column = source_manager->getColumnNumber(range.end());
+  auto end_line = source_manager.getLineNumber(range.end());
+  auto end_column = source_manager.getColumnNumber(range.end());
   lsp::Position end_pos{
       .line = static_cast<int>(end_line - 1),
       .character = static_cast<int>(end_column - 1)};
@@ -47,14 +47,9 @@ auto ConvertSlangRangeToLspRange(
 
 auto ConvertLspPositionToSlangLocation(
     const lsp::Position& position, const slang::BufferID& buffer_id,
-    const std::shared_ptr<slang::SourceManager>& source_manager)
-    -> slang::SourceLocation {
-  if (!source_manager) {
-    return {};
-  }
-
+    const slang::SourceManager& source_manager) -> slang::SourceLocation {
   // Get the text content for this buffer
-  std::string_view text = source_manager->getSourceText(buffer_id);
+  std::string_view text = source_manager.getSourceText(buffer_id);
   if (text.empty()) {
     return {};
   }
@@ -100,14 +95,13 @@ auto ConvertLspPositionToSlangLocation(
 
 auto ConvertSlangLocationToLspLocation(
     const slang::SourceLocation& location,
-    const std::shared_ptr<slang::SourceManager>& source_manager)
-    -> lsp::Location {
-  if (!location || !source_manager) {
+    const slang::SourceManager& source_manager) -> lsp::Location {
+  if (!location) {
     return lsp::Location{};
   }
 
   // Get the file name from the buffer
-  auto file_name = source_manager->getFileName(location);
+  auto file_name = source_manager.getFileName(location);
 
   // Create a range at this position
   auto range = ConvertSlangLocationToLspRange(location, source_manager);
@@ -118,16 +112,15 @@ auto ConvertSlangLocationToLspLocation(
 
 auto ConvertSlangLocationToLspPosition(
     const slang::SourceLocation& location,
-    const std::shared_ptr<slang::SourceManager>& source_manager)
-    -> lsp::Position {
-  if (!location || !source_manager) {
+    const slang::SourceManager& source_manager) -> lsp::Position {
+  if (!location) {
     return {};
   }
 
   // Extract line and column information from Slang source location
   // Note: Slang line/column are 1-based but LSP expects 0-based positions
-  auto line = source_manager->getLineNumber(location);
-  auto column = source_manager->getColumnNumber(location);
+  auto line = source_manager.getLineNumber(location);
+  auto column = source_manager.getColumnNumber(location);
 
   // Convert to LSP position (0-based line and column)
   return lsp::Position{

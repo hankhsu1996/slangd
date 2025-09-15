@@ -100,15 +100,14 @@ auto NormalizePath(std::filesystem::path path) -> std::filesystem::path {
 
 auto IsLocationInDocument(
     const slang::SourceLocation& location,
-    const std::shared_ptr<slang::SourceManager>& source_manager,
-    std::string_view uri) -> bool {
-  if (!location || !source_manager) {
+    const slang::SourceManager& source_manager, std::string_view uri) -> bool {
+  if (!location) {
     return false;
   }
 
   std::string document_path = UriToPath(uri);
   std::filesystem::path location_path =
-      source_manager->getFullPath(location.buffer());
+      source_manager.getFullPath(location.buffer());
 
   return NormalizePath(document_path) == NormalizePath(location_path);
 }
