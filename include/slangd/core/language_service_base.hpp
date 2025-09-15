@@ -35,6 +35,10 @@ class LanguageServiceBase {
   virtual auto GetDocumentSymbols(std::string uri)
       -> std::vector<lsp::DocumentSymbol> = 0;
 
+  // Workspace initialization - called during LSP initialize
+  virtual auto InitializeWorkspace(std::string workspace_uri)
+      -> asio::awaitable<void> = 0;
+
   // Config change handling - notifies service of configuration file changes
   virtual auto HandleConfigChange() -> void = 0;
 

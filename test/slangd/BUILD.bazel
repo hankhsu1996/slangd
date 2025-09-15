@@ -102,3 +102,16 @@ cc_test(
         "@slang",
     ],
 )
+
+cc_test(
+    name = "overlay_session_test",
+    timeout = "short",
+    srcs = [
+        "services/new/overlay_session_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)

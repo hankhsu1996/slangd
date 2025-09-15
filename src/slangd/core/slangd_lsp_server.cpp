@@ -6,7 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include "lsp/document_features.hpp"
-#include "slangd/services/legacy/legacy_language_service.hpp"
+#include "slangd/utils/canonical_path.hpp"
 #include "slangd/utils/path_utils.hpp"
 
 namespace slangd {
@@ -41,13 +41,8 @@ auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
 
     const auto& workspace_folder = workspace_folders_opt->front();
 
-    // Initialize language service with workspace - need to cast to
-    // LegacyLanguageService to access InitializeWorkspace
-    if (auto legacy_service =
-            std::dynamic_pointer_cast<slangd::LegacyLanguageService>(
-                language_service_)) {
-      co_await legacy_service->InitializeWorkspace(workspace_folder.uri);
-    }
+    // Initialize language service with workspace via facade interface
+    co_await language_service_->InitializeWorkspace(workspace_folder.uri);
   }
 
   lsp::TextDocumentSyncOptions sync_options{
