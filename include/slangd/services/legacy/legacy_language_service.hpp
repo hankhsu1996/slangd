@@ -37,6 +37,8 @@ class LegacyLanguageService : public LanguageServiceBase {
 
   auto HandleConfigChange() -> void override;
 
+  auto HandleSourceFileChange() -> void override;
+
  private:
   // Core managers - same as current architecture
   std::shared_ptr<ProjectLayoutService> layout_service_;

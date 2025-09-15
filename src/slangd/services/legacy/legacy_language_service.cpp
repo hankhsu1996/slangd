@@ -110,4 +110,8 @@ auto LegacyLanguageService::HandleConfigChange() -> void {
   layout_service_->RebuildLayout();
 }
 
+auto LegacyLanguageService::HandleSourceFileChange() -> void {
+  layout_service_->ScheduleDebouncedRebuild();
+}
+
 }  // namespace slangd

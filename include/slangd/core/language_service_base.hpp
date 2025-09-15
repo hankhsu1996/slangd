@@ -37,6 +37,9 @@ class LanguageServiceBase {
 
   // Config change handling - notifies service of configuration file changes
   virtual auto HandleConfigChange() -> void = 0;
+
+  // Source file change handling - notifies service of source file changes
+  virtual auto HandleSourceFileChange() -> void = 0;
 };
 
 }  // namespace slangd

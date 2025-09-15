@@ -153,4 +153,41 @@ auto ProjectLayoutService::GetLayoutSnapshot() -> LayoutSnapshot {
   return *cached_layout_;
 }
 
+auto ProjectLayoutService::ScheduleDebouncedRebuild() -> void {
+  // Check if we're in auto-discovery mode
+  if (!IsInAutoDiscoveryMode()) {
+    logger_->debug(
+        "ProjectLayoutService: In config mode, ignoring file system changes");
+    return;
+  }
+
+  logger_->debug(
+      "ProjectLayoutService: In auto-discovery mode, scheduling debounced "
+      "rebuild");
+
+  // Cancel existing timer if any
+  if (debounce_timer_) {
+    debounce_timer_->cancel();
+  }
+
+  // Create new timer
+  debounce_timer_ = asio::steady_timer(executor_, kDebounceDelay);
+  debounce_timer_->async_wait([this](std::error_code ec) {
+    if (!ec) {
+      logger_->debug(
+          "ProjectLayoutService: Debounce timer expired, performing rebuild");
+      RebuildLayout();
+      debounce_timer_.reset();
+    } else if (ec != asio::error::operation_aborted) {
+      logger_->warn(
+          "ProjectLayoutService: Debounce timer error: {}", ec.message());
+    }
+  });
+}
+
+auto ProjectLayoutService::IsInAutoDiscoveryMode() const -> bool {
+  // Auto-discovery mode when no config OR config has no file sources
+  return !config_.has_value() || !config_->HasFileSources();
+}
+
 }  // namespace slangd

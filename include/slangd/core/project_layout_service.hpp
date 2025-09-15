@@ -62,6 +62,9 @@ class ProjectLayoutService {
   // Rebuild the cached ProjectLayout (triggers config file re-reading)
   auto RebuildLayout() -> void;
 
+  // Schedule a debounced rebuild for auto-discovery mode
+  auto ScheduleDebouncedRebuild() -> void;
+
   // Get current layout version for testing
   [[nodiscard]] auto GetLayoutVersion() -> uint64_t;
 
@@ -71,6 +74,9 @@ class ProjectLayoutService {
  private:
   // Get the current ProjectLayout (rebuilding if needed)
   auto GetCurrentLayout() -> const ProjectLayout&;
+
+  // Check if we're in auto-discovery mode (no config or no file sources)
+  [[nodiscard]] auto IsInAutoDiscoveryMode() const -> bool;
 
   // Logger instance
   std::shared_ptr<spdlog::logger> logger_;
@@ -89,6 +95,10 @@ class ProjectLayoutService {
   std::shared_ptr<ProjectLayoutBuilder> layout_builder_;
   std::optional<LayoutSnapshot> cached_layout_;
   uint64_t layout_version_ = 0;
+
+  // Debouncing timer for auto-discovery mode
+  std::optional<asio::steady_timer> debounce_timer_;
+  static constexpr auto kDebounceDelay = std::chrono::milliseconds(500);
 };
 
 }  // namespace slangd
