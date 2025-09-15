@@ -23,16 +23,18 @@ class LegacyLanguageService : public LanguageServiceBase {
       std::shared_ptr<spdlog::logger> logger = nullptr);
 
   // Initialize with workspace folder (called during LSP initialize)
-  auto InitializeWorkspace(std::string workspace_uri) -> asio::awaitable<void>;
+  auto InitializeWorkspace(std::string workspace_uri)
+      -> asio::awaitable<void> override;
 
   // LanguageServiceBase implementation
-  auto ComputeDiagnostics(std::string uri, std::string content)
+  auto ComputeDiagnostics(std::string uri, std::string content, int version)
       -> asio::awaitable<std::vector<lsp::Diagnostic>> override;
 
-  auto GetDefinitionsForPosition(std::string uri, lsp::Position position)
+  auto GetDefinitionsForPosition(
+      std::string uri, lsp::Position position, std::string content, int version)
       -> std::vector<lsp::Location> override;
 
-  auto GetDocumentSymbols(std::string uri)
+  auto GetDocumentSymbols(std::string uri, std::string content, int version)
       -> std::vector<lsp::DocumentSymbol> override;
 
   auto HandleConfigChange() -> void override;

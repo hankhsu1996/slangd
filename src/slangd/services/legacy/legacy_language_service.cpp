@@ -41,7 +41,7 @@ auto LegacyLanguageService::InitializeWorkspace(std::string workspace_uri)
 }
 
 auto LegacyLanguageService::ComputeDiagnostics(
-    std::string uri, std::string content)
+    std::string uri, std::string content, int version)
     -> asio::awaitable<std::vector<lsp::Diagnostic>> {
   // Check if workspace is initialized
   if (!document_manager_) {
@@ -80,7 +80,9 @@ auto LegacyLanguageService::ComputeDiagnostics(
 }
 
 auto LegacyLanguageService::GetDefinitionsForPosition(
-    std::string uri, lsp::Position position) -> std::vector<lsp::Location> {
+    std::string uri, lsp::Position position,
+    [[maybe_unused]] std::string content, [[maybe_unused]] int version)
+    -> std::vector<lsp::Location> {
   // Check if workspace is initialized
   if (!document_manager_) {
     logger_->error("LegacyLanguageService: Workspace not initialized");
@@ -93,8 +95,9 @@ auto LegacyLanguageService::GetDefinitionsForPosition(
   return temp_provider.GetDefinitionForUri(uri, position);
 }
 
-auto LegacyLanguageService::GetDocumentSymbols(std::string uri)
-    -> std::vector<lsp::DocumentSymbol> {
+auto LegacyLanguageService::GetDocumentSymbols(
+    std::string uri, [[maybe_unused]] std::string content,
+    [[maybe_unused]] int version) -> std::vector<lsp::DocumentSymbol> {
   // Check if workspace is initialized
   if (!document_manager_) {
     logger_->error("LegacyLanguageService: Workspace not initialized");

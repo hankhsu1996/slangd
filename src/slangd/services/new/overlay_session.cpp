@@ -13,7 +13,7 @@ auto OverlaySession::Create(
     std::string uri, std::string content,
     std::shared_ptr<ProjectLayoutService> layout_service,
     std::shared_ptr<const GlobalCatalog> catalog,
-    std::shared_ptr<spdlog::logger> logger) -> std::unique_ptr<OverlaySession> {
+    std::shared_ptr<spdlog::logger> logger) -> std::shared_ptr<OverlaySession> {
   if (!logger) {
     logger = spdlog::default_logger();
   }
@@ -44,7 +44,7 @@ auto OverlaySession::Create(
       definition_index->GetReferenceMap().size(),
       diagnostic_index->GetDiagnostics().size());
 
-  return std::unique_ptr<OverlaySession>(new OverlaySession(
+  return std::shared_ptr<OverlaySession>(new OverlaySession(
       std::move(source_manager), std::move(compilation),
       std::move(definition_index), std::move(diagnostic_index),
       std::move(symbol_index), logger));

@@ -27,7 +27,7 @@ class OverlaySession {
       std::shared_ptr<ProjectLayoutService> layout_service,
       std::shared_ptr<const GlobalCatalog> catalog = nullptr,
       std::shared_ptr<spdlog::logger> logger = nullptr)
-      -> std::unique_ptr<OverlaySession>;
+      -> std::shared_ptr<OverlaySession>;
 
   // Move-only type for performance
   OverlaySession(const OverlaySession&) = delete;

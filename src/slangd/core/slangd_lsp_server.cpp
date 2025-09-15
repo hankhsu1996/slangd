@@ -143,7 +143,7 @@ auto SlangdLspServer::OnDidOpenTextDocument(
 
         // Use facade to compute diagnostics
         auto diagnostics =
-            co_await language_service_->ComputeDiagnostics(uri, text);
+            co_await language_service_->ComputeDiagnostics(uri, text, version);
 
         Logger()->debug(
             "SlangdLspServer publishing {} diagnostics for document: {}",
@@ -225,15 +225,36 @@ auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
   Logger()->debug("SlangdLspServer OnDocumentSymbols");
 
   co_await asio::post(strand_, asio::use_awaitable);
-  co_return language_service_->GetDocumentSymbols(params.textDocument.uri);
+
+  // Get the tracked document to access content and version
+  auto file_opt = GetOpenFile(params.textDocument.uri);
+  if (!file_opt) {
+    Logger()->debug(
+        "OnDocumentSymbols: File not open: {}", params.textDocument.uri);
+    co_return std::vector<lsp::DocumentSymbol>{};
+  }
+
+  const auto& file = file_opt->get();
+  co_return language_service_->GetDocumentSymbols(
+      params.textDocument.uri, file.content, file.version);
 }
 
 auto SlangdLspServer::OnGotoDefinition(lsp::DefinitionParams params)
     -> asio::awaitable<std::expected<lsp::DefinitionResult, lsp::LspError>> {
   Logger()->debug("SlangdLspServer OnGotoDefinition");
 
+  // Get the tracked document to access content and version
+  auto file_opt = GetOpenFile(params.textDocument.uri);
+  if (!file_opt) {
+    Logger()->debug(
+        "OnGotoDefinition: File not open: {}", params.textDocument.uri);
+    co_return std::vector<lsp::Location>{};
+  }
+
+  const auto& file = file_opt->get();
   co_return language_service_->GetDefinitionsForPosition(
-      std::string(params.textDocument.uri), params.position);
+      std::string(params.textDocument.uri), params.position, file.content,
+      file.version);
 }
 
 auto SlangdLspServer::OnDidChangeWatchedFiles(
@@ -325,8 +346,8 @@ auto SlangdLspServer::ProcessDiagnosticsForUri(std::string uri)
   Logger()->debug("Processing diagnostics for: {}", uri);
 
   // Use facade to compute diagnostics
-  auto diagnostics =
-      co_await language_service_->ComputeDiagnostics(uri, file.content);
+  auto diagnostics = co_await language_service_->ComputeDiagnostics(
+      uri, file.content, file.version);
 
   Logger()->debug("Publishing {} diagnostics for: {}", diagnostics.size(), uri);
 
