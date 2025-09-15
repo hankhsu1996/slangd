@@ -101,6 +101,9 @@ Use these prefixes for branch names:
 2. **Body**: Use bullet points with `-` for multiple changes/reasons
    - Wrap lines at 72 characters
    - Explain what and why, not how
+3. **Focus on changes**: Describe what is changed, not project phases or steps
+   - Avoid mentioning "Phase 1A", "Step 2", etc.
+   - Focus on concrete technical changes and their purpose
 
 **Example format:**
 
