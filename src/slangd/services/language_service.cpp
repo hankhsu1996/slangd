@@ -1,4 +1,4 @@
-#include "slangd/services/new/new_language_service.hpp"
+#include "slangd/services/language_service.hpp"
 
 #include <algorithm>
 
@@ -6,23 +6,23 @@
 #include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/syntax/SyntaxTree.h>
 
+#include "slangd/services/global_catalog.hpp"
 #include "slangd/utils/canonical_path.hpp"
 #include "slangd/utils/conversion.hpp"
 
-namespace slangd::services::new_service {
+namespace slangd::services {
 
-NewLanguageService::NewLanguageService(
+LanguageService::LanguageService(
     asio::any_io_executor executor, std::shared_ptr<spdlog::logger> logger)
-    : global_catalog_(nullptr),  // Phase 1a: no catalog yet
+    : global_catalog_(nullptr),
       logger_(logger ? logger : spdlog::default_logger()),
       executor_(std::move(executor)) {
-  logger_->debug("NewLanguageService created");
+  logger_->debug("LanguageService created");
 }
 
-auto NewLanguageService::InitializeWorkspace(std::string workspace_uri)
+auto LanguageService::InitializeWorkspace(std::string workspace_uri)
     -> asio::awaitable<void> {
-  logger_->debug(
-      "NewLanguageService initializing workspace: {}", workspace_uri);
+  logger_->debug("LanguageService initializing workspace: {}", workspace_uri);
 
   // Create project layout service
   auto workspace_path = CanonicalPath::FromUri(workspace_uri);
@@ -30,21 +30,30 @@ auto NewLanguageService::InitializeWorkspace(std::string workspace_uri)
       ProjectLayoutService::Create(executor_, workspace_path, logger_);
   co_await layout_service_->LoadConfig(workspace_path);
 
-  // Phase 1a: global_catalog_ remains nullptr
-  // Phase 2 will initialize GlobalCatalog here
+  // Phase 2: Create GlobalCatalog from ProjectLayoutService
+  global_catalog_ =
+      GlobalCatalog::CreateFromProjectLayout(layout_service_, logger_);
 
-  logger_->debug("NewLanguageService workspace initialized: {}", workspace_uri);
+  if (global_catalog_) {
+    logger_->debug(
+        "LanguageService created GlobalCatalog with {} packages, version {}",
+        global_catalog_->GetPackages().size(), global_catalog_->GetVersion());
+  } else {
+    logger_->error("LanguageService failed to create GlobalCatalog");
+  }
+
+  logger_->debug("LanguageService workspace initialized: {}", workspace_uri);
 }
 
-auto NewLanguageService::ComputeDiagnostics(
+auto LanguageService::ComputeDiagnostics(
     std::string uri, std::string content, int version)
     -> asio::awaitable<std::vector<lsp::Diagnostic>> {
   if (!layout_service_) {
-    logger_->error("NewLanguageService: Workspace not initialized");
+    logger_->error("LanguageService: Workspace not initialized");
     co_return std::vector<lsp::Diagnostic>{};
   }
 
-  logger_->debug("NewLanguageService computing diagnostics for: {}", uri);
+  logger_->debug("LanguageService computing diagnostics for: {}", uri);
 
   // Create cache key with catalog version
   uint64_t catalog_version =
@@ -65,22 +74,22 @@ auto NewLanguageService::ComputeDiagnostics(
   const auto& diagnostics = session->GetDiagnosticIndex().GetDiagnostics();
 
   logger_->debug(
-      "NewLanguageService computed {} diagnostics for: {}", diagnostics.size(),
+      "LanguageService computed {} diagnostics for: {}", diagnostics.size(),
       uri);
 
   co_return diagnostics;
 }
 
-auto NewLanguageService::GetDefinitionsForPosition(
+auto LanguageService::GetDefinitionsForPosition(
     std::string uri, lsp::Position position, std::string content, int version)
     -> std::vector<lsp::Location> {
   if (!layout_service_) {
-    logger_->error("NewLanguageService: Workspace not initialized");
+    logger_->error("LanguageService: Workspace not initialized");
     return {};
   }
 
   logger_->debug(
-      "NewLanguageService getting definitions for: {} at {}:{}", uri,
+      "LanguageService getting definitions for: {} at {}:{}", uri,
       position.line, position.character);
 
   // Create cache key with catalog version
@@ -141,15 +150,15 @@ auto NewLanguageService::GetDefinitionsForPosition(
   return {lsp_location};
 }
 
-auto NewLanguageService::GetDocumentSymbols(
+auto LanguageService::GetDocumentSymbols(
     std::string uri, std::string content, int version)
     -> std::vector<lsp::DocumentSymbol> {
   if (!layout_service_) {
-    logger_->error("NewLanguageService: Workspace not initialized");
+    logger_->error("LanguageService: Workspace not initialized");
     return {};
   }
 
-  logger_->debug("NewLanguageService getting document symbols for: {}", uri);
+  logger_->debug("LanguageService getting document symbols for: {}", uri);
 
   // Create cache key with catalog version
   uint64_t catalog_version =
@@ -170,34 +179,33 @@ auto NewLanguageService::GetDocumentSymbols(
   return session->GetSymbolIndex().GetDocumentSymbols(uri);
 }
 
-auto NewLanguageService::HandleConfigChange() -> void {
+auto LanguageService::HandleConfigChange() -> void {
   if (layout_service_) {
     layout_service_->RebuildLayout();
     // Clear cache when layout changes (catalog version will change)
     ClearCache();
-    logger_->debug("NewLanguageService handled config change");
+    logger_->debug("LanguageService handled config change");
   }
 }
 
-auto NewLanguageService::HandleSourceFileChange() -> void {
+auto LanguageService::HandleSourceFileChange() -> void {
   if (layout_service_) {
     layout_service_->ScheduleDebouncedRebuild();
     // Clear cache when layout changes (catalog version will change)
     ClearCache();
-    logger_->debug("NewLanguageService handled source file change");
+    logger_->debug("LanguageService handled source file change");
   }
 }
 
-auto NewLanguageService::CreateOverlaySession(
-    std::string uri, std::string content)
-    -> std::shared_ptr<overlay::OverlaySession> {
-  return overlay::OverlaySession::Create(
+auto LanguageService::CreateOverlaySession(std::string uri, std::string content)
+    -> std::shared_ptr<OverlaySession> {
+  return OverlaySession::Create(
       uri, content, layout_service_, global_catalog_, logger_);
 }
 
-auto NewLanguageService::GetOrCreateOverlay(
+auto LanguageService::GetOrCreateOverlay(
     const OverlayCacheKey& key, const std::string& content)
-    -> std::shared_ptr<overlay::OverlaySession> {
+    -> std::shared_ptr<OverlaySession> {
   auto now = std::chrono::steady_clock::now();
 
   // Check if we already have this overlay in cache
@@ -252,9 +260,9 @@ auto NewLanguageService::GetOrCreateOverlay(
   return shared_session;
 }
 
-auto NewLanguageService::ClearCache() -> void {
+auto LanguageService::ClearCache() -> void {
   logger_->debug("Clearing overlay cache ({} entries)", overlay_cache_.size());
   overlay_cache_.clear();
 }
 
-}  // namespace slangd::services::new_service
+}  // namespace slangd::services

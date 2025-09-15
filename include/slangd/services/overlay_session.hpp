@@ -7,13 +7,13 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
-#include "slangd/core/global_catalog.hpp"
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/semantic/definition_index.hpp"
 #include "slangd/semantic/diagnostic_index.hpp"
 #include "slangd/semantic/symbol_index.hpp"
+#include "slangd/services/global_catalog.hpp"
 
-namespace slangd::services::overlay {
+namespace slangd::services {
 
 // Per-request compilation session for LSP queries
 // Creates fresh Slang compilation with current buffer + optional catalog files
@@ -92,4 +92,4 @@ class OverlaySession {
   std::shared_ptr<spdlog::logger> logger_;
 };
 
-}  // namespace slangd::services::overlay
+}  // namespace slangd::services

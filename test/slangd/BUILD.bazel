@@ -8,24 +8,6 @@ filegroup(
 )
 
 cc_test(
-    name = "document_manager_test",
-    timeout = "short",
-    srcs = [
-        "core/document_manager_test.cpp",
-        "utils/fixture_utils.hpp",
-    ],
-    data = [
-        ":fixtures",
-    ],
-    deps = [
-        "//:slangd_core",
-        "@bazel_tools//tools/cpp/runfiles",
-        "@catch2",
-        "@slang",
-    ],
-)
-
-cc_test(
     name = "project_layout_service_test",
     timeout = "short",
     srcs = [
@@ -52,62 +34,23 @@ cc_test(
 )
 
 cc_test(
-    name = "symbols_provider_test",
-    timeout = "short",
-    srcs = [
-        "services/legacy/symbols_provider_test.cpp",
-    ],
-    deps = [
-        "//:slangd_core",
-        "@catch2",
-        "@slang",
-    ],
-)
-
-cc_test(
-    name = "diagnostics_provider_test",
-    timeout = "short",
-    srcs = [
-        "services/legacy/diagnostics_provider_test.cpp",
-    ],
-    deps = [
-        "//:slangd_core",
-        "@catch2",
-        "@slang",
-    ],
-)
-
-cc_test(
-    name = "definition_provider_test",
-    timeout = "short",
-    srcs = [
-        "services/legacy/definition_provider_test.cpp",
-    ],
-    deps = [
-        "//:slangd_core",
-        "@catch2",
-        "@slang",
-    ],
-)
-
-cc_test(
-    name = "definition_provider_workspace_test",
-    timeout = "short",
-    srcs = [
-        "services/legacy/definition_provider_workspace_test.cpp",
-    ],
-    deps = [
-        "//:slangd_core",
-        "@catch2",
-        "@slang",
-    ],
-)
-
-cc_test(
     name = "overlay_session_test",
     timeout = "short",
     srcs = [
-        "services/new/overlay_session_test.cpp",
+        "services/overlay_session_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "global_catalog_test",
+    timeout = "short",
+    srcs = [
+        "services/global_catalog_test.cpp",
     ],
     deps = [
         "//:slangd_core",
@@ -121,6 +64,19 @@ cc_test(
     timeout = "short",
     srcs = [
         "semantic/symbol_index_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "definition_multifile_test",
+    timeout = "short",
+    srcs = [
+        "semantic/definition_multifile_test.cpp",
     ],
     deps = [
         "//:slangd_core",

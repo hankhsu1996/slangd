@@ -31,7 +31,7 @@ class DefinitionIndexFixture {
     compilation_ = std::make_unique<slang::ast::Compilation>();
     compilation_->addSyntaxTree(tree);
 
-    return DefinitionIndex::FromCompilation(*compilation_, {buffer_id_});
+    return DefinitionIndex::FromCompilation(*compilation_);
   }
 
   auto MakeKey(const std::string& source, const std::string& symbol)
