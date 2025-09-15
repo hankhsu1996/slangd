@@ -6,6 +6,7 @@
 #include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/syntax/SyntaxTree.h>
 
+#include "slangd/core/global_catalog.hpp"
 #include "slangd/utils/canonical_path.hpp"
 #include "slangd/utils/conversion.hpp"
 
@@ -30,8 +31,17 @@ auto NewLanguageService::InitializeWorkspace(std::string workspace_uri)
       ProjectLayoutService::Create(executor_, workspace_path, logger_);
   co_await layout_service_->LoadConfig(workspace_path);
 
-  // Phase 1a: global_catalog_ remains nullptr
-  // Phase 2 will initialize GlobalCatalog here
+  // Phase 2: Create GlobalCatalog from ProjectLayoutService
+  global_catalog_ =
+      GlobalCatalog::CreateFromProjectLayout(layout_service_, logger_);
+
+  if (global_catalog_) {
+    logger_->debug(
+        "NewLanguageService created GlobalCatalog with {} packages, version {}",
+        global_catalog_->GetPackages().size(), global_catalog_->GetVersion());
+  } else {
+    logger_->error("NewLanguageService failed to create GlobalCatalog");
+  }
 
   logger_->debug("NewLanguageService workspace initialized: {}", workspace_uri);
 }

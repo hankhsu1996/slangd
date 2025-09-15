@@ -89,8 +89,7 @@ auto DocumentManager::ParseWithCompilation(std::string uri, std::string content)
 
   // Build a basic symbol index (definitions only) for quick navigation
   symbol_indices_[path] = std::make_shared<semantic::DefinitionIndex>(
-      semantic::DefinitionIndex::FromCompilation(
-          compilation, {buffer.id}, logger_));
+      semantic::DefinitionIndex::FromCompilation(compilation, logger_));
 
   logger_->debug("DocumentManager compilation completed for document: {}", uri);
   co_return;

@@ -219,8 +219,7 @@ void WorkspaceManager::RebuildDefinitionIndex() {
   logger_->debug("WorkspaceManager rebuilding symbol index");
   if (compilation_) {
     symbol_index_ = std::make_shared<semantic::DefinitionIndex>(
-        semantic::DefinitionIndex::FromCompilation(
-            *compilation_, open_buffers_, logger_));
+        semantic::DefinitionIndex::FromCompilation(*compilation_, logger_));
   }
 }
 

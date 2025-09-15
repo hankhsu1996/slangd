@@ -1,67 +1,92 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 
+#include <spdlog/spdlog.h>
+
 #include "slangd/utils/canonical_path.hpp"
+
+// Forward declarations
+namespace slang {
+namespace ast {
+class Compilation;
+}
+class SourceManager;
+}  // namespace slang
 
 namespace slangd {
 
-// Forward declaration of package/interface metadata structures
-// These will be implemented in Phase 2 when GlobalCatalog is populated
+// Forward declaration
+class ProjectLayoutService;
+
+// Package metadata extracted from global compilation
 struct PackageInfo {
   std::string name;
   CanonicalPath file_path;
-  // Future: additional metadata
+  // Future: additional metadata like exported symbols
 };
 
+// Interface metadata for future implementation
 struct InterfaceInfo {
   std::string name;
   CanonicalPath file_path;
-  // Future: additional metadata
+  // Future: additional metadata like modports
 };
 
-// Empty interface for Global Catalog - designed for future implementation
-// Phase 2 will populate this with actual compilation metadata
-// For now, OverlaySession can accept nullptr and work in single-file mode
+// GlobalCatalog: Immutable snapshot of package/interface metadata from global
+// compilation. Use CreateFromProjectLayout() factory method for convenience.
 class GlobalCatalog {
  public:
+  // Default constructor
   GlobalCatalog() = default;
+
+  // Factory method - convenient way to create and initialize a GlobalCatalog
+  // Creates a global compilation from all project files and extracts metadata
+  [[nodiscard]] static auto CreateFromProjectLayout(
+      std::shared_ptr<ProjectLayoutService> layout_service,
+      std::shared_ptr<spdlog::logger> logger = nullptr)
+      -> std::shared_ptr<GlobalCatalog>;
+
+  // Non-copyable, non-movable
   GlobalCatalog(const GlobalCatalog&) = delete;
   GlobalCatalog(GlobalCatalog&&) = delete;
   auto operator=(const GlobalCatalog&) -> GlobalCatalog& = delete;
   auto operator=(GlobalCatalog&&) -> GlobalCatalog& = delete;
-  virtual ~GlobalCatalog() = default;
+  ~GlobalCatalog() = default;
 
-  // Future Phase 2 interface - for now returns empty
-  [[nodiscard]] virtual auto GetPackages() const
-      -> const std::vector<PackageInfo>& {
-    static const std::vector<PackageInfo> kEmpty;
-    return kEmpty;
-  }
+  // Accessors for catalog data
+  [[nodiscard]] auto GetPackages() const -> const std::vector<PackageInfo>&;
+  [[nodiscard]] auto GetInterfaces() const -> const std::vector<InterfaceInfo>&;
 
-  [[nodiscard]] virtual auto GetInterfaces() const
-      -> const std::vector<InterfaceInfo>& {
-    static const std::vector<InterfaceInfo> kEmpty;
-    return kEmpty;
-  }
+  // Include directories and defines from ProjectLayoutService
+  [[nodiscard]] auto GetIncludeDirectories() const
+      -> const std::vector<CanonicalPath>&;
+  [[nodiscard]] auto GetDefines() const -> const std::vector<std::string>&;
 
-  [[nodiscard]] virtual auto GetIncludeDirectories() const
-      -> const std::vector<CanonicalPath>& {
-    static const std::vector<CanonicalPath> kEmpty;
-    return kEmpty;
-  }
+  // Version tracking for cache invalidation
+  [[nodiscard]] auto GetVersion() const -> uint64_t;
 
-  [[nodiscard]] virtual auto GetDefines() const
-      -> const std::vector<std::string>& {
-    static const std::vector<std::string> kEmpty;
-    return kEmpty;
-  }
+  // Build catalog from ProjectLayoutService - public method
+  auto BuildFromLayout(
+      std::shared_ptr<ProjectLayoutService> layout_service,
+      std::shared_ptr<spdlog::logger> logger) -> void;
 
-  // Version tracking for future atomic snapshots
-  [[nodiscard]] virtual auto GetVersion() const -> uint64_t {
-    return 0;
-  }
+ private:
+  // Catalog data
+  std::vector<PackageInfo> packages_;
+  std::vector<InterfaceInfo> interfaces_;  // Empty for MVP
+  std::vector<CanonicalPath> include_directories_;
+  std::vector<std::string> defines_;
+  uint64_t version_ = 1;
+
+  // Global compilation objects
+  std::shared_ptr<slang::ast::Compilation> global_compilation_;
+  std::shared_ptr<slang::SourceManager> source_manager_;
+
+  // Logger
+  std::shared_ptr<spdlog::logger> logger_;
 };
 
 }  // namespace slangd

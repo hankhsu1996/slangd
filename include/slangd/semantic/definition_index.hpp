@@ -2,7 +2,6 @@
 
 #include <optional>
 #include <unordered_map>
-#include <unordered_set>
 
 #include <spdlog/spdlog.h>
 
@@ -48,7 +47,6 @@ class DefinitionIndex {
   // Create a definition index from a compilation
   static auto FromCompilation(
       slang::ast::Compilation& compilation,
-      const std::unordered_set<slang::BufferID>& traverse_buffers = {},
       std::shared_ptr<spdlog::logger> logger = nullptr) -> DefinitionIndex;
 
   // Looks up a symbol at the given location

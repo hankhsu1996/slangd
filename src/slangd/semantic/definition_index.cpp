@@ -262,7 +262,6 @@ namespace {
 
 auto DefinitionIndex::FromCompilation(
     slang::ast::Compilation& compilation,
-    const std::unordered_set<slang::BufferID>& traverse_buffers,
     std::shared_ptr<spdlog::logger> logger) -> DefinitionIndex {
   DefinitionIndex index(compilation, logger);
   auto visitor = slang::ast::makeVisitor(
@@ -282,14 +281,9 @@ auto DefinitionIndex::FromCompilation(
       [&](auto& self, const slang::ast::DefinitionSymbol& def) {
         IndexDefinition(def, index, compilation);
 
-        // Check if we should traverse the instance body
-        auto def_buffer = def.location.buffer();
-        auto should_traverse =
-            traverse_buffers.find(def_buffer) != traverse_buffers.end();
-
-        if (should_traverse &&
-            (def.definitionKind == slang::ast::DefinitionKind::Module ||
-             def.definitionKind == slang::ast::DefinitionKind::Interface)) {
+        // Always traverse module and interface bodies in the new architecture
+        if (def.definitionKind == slang::ast::DefinitionKind::Module ||
+            def.definitionKind == slang::ast::DefinitionKind::Interface) {
           auto& instance =
               slang::ast::InstanceSymbol::createInvalid(compilation, def);
 

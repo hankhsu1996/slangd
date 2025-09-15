@@ -24,9 +24,8 @@ auto OverlaySession::Create(
   auto [source_manager, compilation] =
       BuildCompilation(uri, content, layout_service, catalog, logger);
 
-  // Create symbol index with empty traverse_buffers (traverse all)
   auto definition_index = std::make_unique<semantic::DefinitionIndex>(
-      semantic::DefinitionIndex::FromCompilation(*compilation, {}, logger));
+      semantic::DefinitionIndex::FromCompilation(*compilation, logger));
 
   // Create diagnostic index for the current URI
   auto diagnostic_index = std::make_unique<semantic::DiagnosticIndex>(

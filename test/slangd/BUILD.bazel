@@ -128,3 +128,16 @@ cc_test(
         "@slang",
     ],
 )
+
+cc_test(
+    name = "definition_multifile_test",
+    timeout = "short",
+    srcs = [
+        "semantic/definition_multifile_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)
