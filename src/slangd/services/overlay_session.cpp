@@ -6,6 +6,7 @@
 #include <slang/util/Bag.h>
 
 #include "slangd/utils/canonical_path.hpp"
+#include "slangd/utils/scoped_timer.hpp"
 
 namespace slangd::services {
 
@@ -18,6 +19,7 @@ auto OverlaySession::Create(
     logger = spdlog::default_logger();
   }
 
+  utils::ScopedTimer timer("OverlaySession creation", logger);
   logger->debug("Creating overlay session for: {}", uri);
 
   // Build fresh compilation with current buffer and optional catalog files
@@ -36,12 +38,14 @@ auto OverlaySession::Create(
   auto symbol_index = semantic::SymbolIndex::FromCompilation(
       *compilation, *source_manager, logger);
 
+  auto elapsed = timer.GetElapsed();
   logger->debug(
       "Overlay session created with {} definitions, {} references, {} "
-      "diagnostics",
+      "diagnostics ({})",
       definition_index->GetDefinitionRanges().size(),
       definition_index->GetReferenceMap().size(),
-      diagnostic_index->GetDiagnostics().size());
+      diagnostic_index->GetDiagnostics().size(),
+      utils::ScopedTimer::FormatDuration(elapsed));
 
   return std::shared_ptr<OverlaySession>(new OverlaySession(
       std::move(source_manager), std::move(compilation),

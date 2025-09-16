@@ -8,6 +8,7 @@
 #include <slang/util/Bag.h>
 
 #include "slangd/core/project_layout_service.hpp"
+#include "slangd/utils/scoped_timer.hpp"
 
 namespace slangd::services {
 
@@ -42,6 +43,7 @@ auto GlobalCatalog::BuildFromLayout(
     std::shared_ptr<ProjectLayoutService> layout_service,
     std::shared_ptr<spdlog::logger> logger) -> void {
   logger_ = logger;
+  utils::ScopedTimer timer("GlobalCatalog build", logger_);
   logger_->debug("GlobalCatalog: Building from layout service");
 
   // Create fresh source manager for global compilation
@@ -149,9 +151,11 @@ auto GlobalCatalog::BuildFromLayout(
     }
   }
 
+  auto elapsed = timer.GetElapsed();
   logger_->info(
-      "GlobalCatalog: Build complete - {} packages, {} interfaces",
-      packages_.size(), interfaces_.size());
+      "GlobalCatalog: Build complete - {} packages, {} interfaces ({})",
+      packages_.size(), interfaces_.size(),
+      utils::ScopedTimer::FormatDuration(elapsed));
 }
 
 auto GlobalCatalog::GetPackages() const -> const std::vector<PackageInfo>& {
