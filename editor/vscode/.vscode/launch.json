@@ -7,6 +7,14 @@
       "request": "launch",
       "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
       "outFiles": ["${workspaceFolder}/out/**/*.js"],
+      "preLaunchTask": "Prepare Extension"
+    },
+    {
+      "name": "Run Extension (Debug LSP)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
+      "outFiles": ["${workspaceFolder}/out/**/*.js"],
       "preLaunchTask": "Prepare Extension",
       "env": {
         "WAIT_FOR_GDB": "1"
