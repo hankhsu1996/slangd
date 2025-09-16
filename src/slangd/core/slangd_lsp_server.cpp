@@ -257,9 +257,6 @@ auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
                            ? saved_version_it->second
                            : file.version;
 
-  Logger()->debug(
-      "OnDocumentSymbols using stable version v{} (current: v{})",
-      version_to_use, file.version);
 
   co_return language_service_->GetDocumentSymbols(
       params.textDocument.uri, file.content, version_to_use);
@@ -286,9 +283,6 @@ auto SlangdLspServer::OnGotoDefinition(lsp::DefinitionParams params)
                            ? saved_version_it->second
                            : file.version;
 
-  Logger()->debug(
-      "OnGotoDefinition using stable version v{} (current: v{})",
-      version_to_use, file.version);
 
   co_return language_service_->GetDefinitionsForPosition(
       std::string(params.textDocument.uri), params.position, file.content,

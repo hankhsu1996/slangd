@@ -214,16 +214,11 @@ auto LanguageService::GetOrCreateOverlay(
     if (entry.key == key) {
       // Cache hit! Update access time and return
       entry.last_access = now;
-      logger_->debug(
-          "Overlay cache hit for {}:v{}", key.doc_uri, key.doc_version);
       return entry.session;
     }
   }
 
   // Cache miss - create new overlay session
-  logger_->debug(
-      "Overlay cache miss for {}:v{} - creating new session", key.doc_uri,
-      key.doc_version);
 
   auto shared_session = CreateOverlaySession(key.doc_uri, content);
   if (!shared_session) {

@@ -113,7 +113,6 @@ auto OverlaySession::BuildCompilation(
 
   if (buffer_tree) {
     compilation->addSyntaxTree(buffer_tree);
-    logger->debug("Added current buffer: {}", file_path.Path().string());
   } else {
     logger->error(
         "Failed to create syntax tree for buffer: {}",
@@ -156,9 +155,6 @@ auto OverlaySession::BuildCompilation(
       }
     }
 
-    logger->debug(
-        "Added {} packages, {} interfaces from catalog",
-        catalog->GetPackages().size(), catalog->GetInterfaces().size());
   } else {
     logger->debug("No catalog provided - single-file mode");
   }
