@@ -50,7 +50,6 @@ auto ProjectLayoutService::LoadConfig(CanonicalPath workspace_root)
     logger_->info(
         "ConfigManager loaded .slangd config file from {}", config_path);
 
-
     RebuildLayout();
     co_return true;
   } else {
@@ -82,7 +81,6 @@ auto ProjectLayoutService::HandleConfigFileChange(CanonicalPath config_path)
     // Update the configuration
     config_ = std::move(loaded_config.value());
     logger_->info("ConfigManager successfully reloaded configuration");
-
 
     RebuildLayout();
     co_return true;
