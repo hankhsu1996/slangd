@@ -149,7 +149,7 @@ auto GlobalCatalog::BuildFromLayout(
     }
   }
 
-  logger_->debug(
+  logger_->info(
       "GlobalCatalog: Build complete - {} packages, {} interfaces",
       packages_.size(), interfaces_.size());
 }

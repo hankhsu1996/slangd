@@ -42,7 +42,7 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
     logger_->error("LanguageService failed to create GlobalCatalog");
   }
 
-  logger_->debug("LanguageService workspace initialized: {}", workspace_uri);
+  logger_->info("LanguageService workspace initialized: {}", workspace_uri);
 }
 
 auto LanguageService::ComputeDiagnostics(
