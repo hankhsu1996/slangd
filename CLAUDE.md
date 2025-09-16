@@ -72,12 +72,14 @@ Follow Google C++ Style Guide with these specifics:
 ### Current LSP Features
 
 **Core Functionality (Production Ready):**
+
 - **Diagnostics**: Syntax and semantic errors with cross-file context
 - **Go-to-Definition**: Symbol navigation across packages and interfaces
 - **Document Symbols**: Hierarchical outline of SystemVerilog modules, packages, and interfaces
 - **Cross-File Support**: Package imports and interface references work correctly
 
 **Architecture Benefits:**
+
 - **Performance**: 1-5ms response times with bounded memory usage
 - **Reliability**: Always-correct single-file features with robust cross-file support
 - **Maintainability**: Clean service architecture ready for future enhancements
@@ -180,3 +182,8 @@ This refactor prepares the foundation for Phase 1 (Global Index Service) and Pha
 ## Configuration Notes
 
 - Use `CLAUDE.local.md` for local development notes and debugging details
+
+## Documentation Guidelines
+
+- **Avoid special characters**: Don't use emoji or special Unicode characters (✅❌🔮) in documentation files as they may not render correctly in all markdown engines
+- Use standard markdown formatting with regular bullets (-) and numbered lists (1.)

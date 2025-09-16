@@ -9,6 +9,7 @@
 #include "slangd/services/global_catalog.hpp"
 #include "slangd/utils/canonical_path.hpp"
 #include "slangd/utils/conversion.hpp"
+#include "slangd/utils/scoped_timer.hpp"
 
 namespace slangd::services {
 
@@ -22,6 +23,7 @@ LanguageService::LanguageService(
 
 auto LanguageService::InitializeWorkspace(std::string workspace_uri)
     -> asio::awaitable<void> {
+  utils::ScopedTimer timer("Workspace initialization", logger_);
   logger_->debug("LanguageService initializing workspace: {}", workspace_uri);
 
   // Create project layout service
@@ -42,7 +44,10 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
     logger_->error("LanguageService failed to create GlobalCatalog");
   }
 
-  logger_->info("LanguageService workspace initialized: {}", workspace_uri);
+  auto elapsed = timer.GetElapsed();
+  logger_->info(
+      "LanguageService workspace initialized: {} ({})", workspace_uri,
+      utils::ScopedTimer::FormatDuration(elapsed));
 }
 
 auto LanguageService::ComputeDiagnostics(
