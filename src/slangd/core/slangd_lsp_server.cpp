@@ -185,8 +185,7 @@ auto SlangdLspServer::OnDidChangeTextDocument(
       file.content = text;
       file.version = version;
 
-      // Schedule diagnostics with debouncing (moved from DiagnosticsProvider)
-      ScheduleDiagnosticsWithDebounce(uri, text, version);
+      // Note: Diagnostics are only computed on save to avoid expensive overlay rebuilds
     }
   }
 
