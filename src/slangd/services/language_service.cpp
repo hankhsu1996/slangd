@@ -136,11 +136,12 @@ auto LanguageService::GetDefinitionsForPosition(
     return {};
   }
 
-  // Convert to LSP location
-  auto lsp_range = ConvertSlangRangeToLspRange(*def_range_opt, source_manager);
-  lsp::Location lsp_location;
-  lsp_location.uri = uri;
-  lsp_location.range = lsp_range;
+  // Convert to LSP location with correct file URI
+  auto lsp_location =
+      ConvertSlangLocationToLspLocation(def_range_opt->start(), source_manager);
+  // Update range to use the full definition range
+  lsp_location.range =
+      ConvertSlangRangeToLspRange(*def_range_opt, source_manager);
 
   logger_->debug(
       "Found definition at {}:{}-{}:{} in {}", lsp_location.range.start.line,

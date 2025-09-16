@@ -1,5 +1,7 @@
 #include "slangd/utils/conversion.hpp"
 
+#include "slangd/utils/canonical_path.hpp"
+
 namespace slangd {
 
 auto ConvertSlangLocationToLspRange(
@@ -100,14 +102,16 @@ auto ConvertSlangLocationToLspLocation(
     return lsp::Location{};
   }
 
-  // Get the file name from the buffer
+  // Get the file name from the buffer and convert to proper URI
   auto file_name = source_manager.getFileName(location);
+  auto canonical_path = CanonicalPath(std::filesystem::path(file_name));
+  auto uri = canonical_path.ToUri();
 
   // Create a range at this position
   auto range = ConvertSlangLocationToLspRange(location, source_manager);
 
   // Create and return the LSP location
-  return lsp::Location{.uri = lsp::DocumentUri(file_name), .range = range};
+  return lsp::Location{.uri = lsp::DocumentUri(uri), .range = range};
 }
 
 auto ConvertSlangLocationToLspPosition(

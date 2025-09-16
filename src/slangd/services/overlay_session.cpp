@@ -156,9 +156,6 @@ auto OverlaySession::BuildCompilation(
           interface_info.file_path.Path().string(), *source_manager, options);
       if (interface_tree_result) {
         compilation->addSyntaxTree(interface_tree_result.value());
-        logger->debug(
-            "Added interface from catalog: {}",
-            interface_info.file_path.Path().string());
       }
     }
 

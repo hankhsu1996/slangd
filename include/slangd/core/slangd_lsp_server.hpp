@@ -52,7 +52,8 @@ class SlangdLspServer : public lsp::LspServer {
       pending_diagnostics_;
   std::chrono::milliseconds debounce_delay_{500};
 
-  // Track last saved version for each URI to avoid rebuilding symbols on every keystroke
+  // Track last saved version for each URI to avoid rebuilding symbols on every
+  // keystroke
   std::unordered_map<std::string, int> saved_versions_;
 
   // Helper methods for diagnostics orchestration
