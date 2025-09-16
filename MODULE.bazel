@@ -16,7 +16,7 @@ bazel_dep(name = "slang", version = "9.0.0")
 git_override(
     module_name = "slang",
     remote = "https://github.com/hankhsu1996/slang.git",
-    commit = "2d2ba7aa4c868410667d7d6c258cb086ddd956e0",  # Latest with LanguageServerMode flag
+    commit = "ce9dfffb",  # Latest with MissingTimeScale fix for LSP
 )
 # local_path_override(
 #     module_name = "slang",
@@ -28,7 +28,7 @@ bazel_dep(name = "jsonrpc", version = "0.0.0")
 git_override(
     module_name = "jsonrpc",
     remote = "https://github.com/hankhsu1996/jsonrpc-cpp-lib.git",
-    commit = "b809429f1b8aab7de31a61ae74d4fa6947676821",
+    commit = "c89a586",
 )
 
 # LLVM

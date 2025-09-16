@@ -66,7 +66,19 @@ auto SlangdConfigFile::LoadFromFile(
     // Parse Defines section
     if (yaml["Defines"]) {
       for (const auto& define : yaml["Defines"]) {
-        config.defines_.push_back(define.as<std::string>());
+        if (define.IsMap()) {
+          // Handle key-value pairs: AHC_INST_ON: 1 -> "AHC_INST_ON=1"
+          for (const auto& kv : define) {
+            auto key = kv.first.as<std::string>();
+            auto value = kv.second.as<std::string>();
+            auto define_str = key + "=" + value;
+            config.defines_.push_back(define_str);
+          }
+        } else {
+          // Handle simple strings: "DEBUG" -> "DEBUG"
+          auto define_str = define.as<std::string>();
+          config.defines_.push_back(define_str);
+        }
       }
     }
 

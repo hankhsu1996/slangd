@@ -42,7 +42,7 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
     logger_->error("LanguageService failed to create GlobalCatalog");
   }
 
-  logger_->debug("LanguageService workspace initialized: {}", workspace_uri);
+  logger_->info("LanguageService workspace initialized: {}", workspace_uri);
 }
 
 auto LanguageService::ComputeDiagnostics(
@@ -136,11 +136,12 @@ auto LanguageService::GetDefinitionsForPosition(
     return {};
   }
 
-  // Convert to LSP location
-  auto lsp_range = ConvertSlangRangeToLspRange(*def_range_opt, source_manager);
-  lsp::Location lsp_location;
-  lsp_location.uri = uri;
-  lsp_location.range = lsp_range;
+  // Convert to LSP location with correct file URI
+  auto lsp_location =
+      ConvertSlangLocationToLspLocation(def_range_opt->start(), source_manager);
+  // Update range to use the full definition range
+  lsp_location.range =
+      ConvertSlangRangeToLspRange(*def_range_opt, source_manager);
 
   logger_->debug(
       "Found definition at {}:{}-{}:{} in {}", lsp_location.range.start.line,
@@ -213,16 +214,11 @@ auto LanguageService::GetOrCreateOverlay(
     if (entry.key == key) {
       // Cache hit! Update access time and return
       entry.last_access = now;
-      logger_->debug(
-          "Overlay cache hit for {}:v{}", key.doc_uri, key.doc_version);
       return entry.session;
     }
   }
 
   // Cache miss - create new overlay session
-  logger_->debug(
-      "Overlay cache miss for {}:v{} - creating new session", key.doc_uri,
-      key.doc_version);
 
   auto shared_session = CreateOverlaySession(key.doc_uri, content);
   if (!shared_session) {

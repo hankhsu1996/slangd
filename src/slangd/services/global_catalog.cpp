@@ -92,9 +92,6 @@ auto GlobalCatalog::BuildFromLayout(
 
     if (tree_result) {
       global_compilation_->addSyntaxTree(tree_result.value());
-      logger_->debug(
-          "GlobalCatalog: Added file to compilation: {}",
-          file_path.Path().string());
     } else {
       logger_->warn(
           "GlobalCatalog: Failed to parse file: {}", file_path.Path().string());
@@ -120,10 +117,6 @@ auto GlobalCatalog::BuildFromLayout(
     packages_.push_back(
         {.name = std::move(package_name),
          .file_path = std::move(package_file_path)});
-
-    logger_->debug(
-        "GlobalCatalog: Found package '{}' in file: {}", package->name,
-        file_path_str);
   }
 
   // Extract interface metadata using safe Slang API
@@ -152,15 +145,11 @@ auto GlobalCatalog::BuildFromLayout(
         interfaces_.push_back(
             {.name = std::move(interface_name),
              .file_path = std::move(interface_file_path)});
-
-        logger_->debug(
-            "GlobalCatalog: Found interface '{}' in file: {}", definition.name,
-            file_path_str);
       }
     }
   }
 
-  logger_->debug(
+  logger_->info(
       "GlobalCatalog: Build complete - {} packages, {} interfaces",
       packages_.size(), interfaces_.size());
 }

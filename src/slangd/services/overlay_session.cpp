@@ -113,7 +113,6 @@ auto OverlaySession::BuildCompilation(
 
   if (buffer_tree) {
     compilation->addSyntaxTree(buffer_tree);
-    logger->debug("Added current buffer: {}", file_path.Path().string());
   } else {
     logger->error(
         "Failed to create syntax tree for buffer: {}",
@@ -136,9 +135,6 @@ auto OverlaySession::BuildCompilation(
           package_info.file_path.Path().string(), *source_manager, options);
       if (package_tree_result) {
         compilation->addSyntaxTree(package_tree_result.value());
-        logger->debug(
-            "Added package from catalog: {}",
-            package_info.file_path.Path().string());
       }
     }
 
@@ -156,15 +152,9 @@ auto OverlaySession::BuildCompilation(
           interface_info.file_path.Path().string(), *source_manager, options);
       if (interface_tree_result) {
         compilation->addSyntaxTree(interface_tree_result.value());
-        logger->debug(
-            "Added interface from catalog: {}",
-            interface_info.file_path.Path().string());
       }
     }
 
-    logger->debug(
-        "Added {} packages, {} interfaces from catalog",
-        catalog->GetPackages().size(), catalog->GetInterfaces().size());
   } else {
     logger->debug("No catalog provided - single-file mode");
   }

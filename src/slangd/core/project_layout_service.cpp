@@ -50,13 +50,6 @@ auto ProjectLayoutService::LoadConfig(CanonicalPath workspace_root)
     logger_->info(
         "ConfigManager loaded .slangd config file from {}", config_path);
 
-    // Log the configuration details
-    logger_->debug(
-        "  Include directories: {}", config_->GetIncludeDirs().size());
-    logger_->debug("  Defines: {}", config_->GetDefines().size());
-    logger_->debug("  Source files: {}", config_->GetFiles().size());
-    logger_->debug("  File lists: {}", config_->GetFileLists().paths.size());
-
     RebuildLayout();
     co_return true;
   } else {
@@ -88,13 +81,6 @@ auto ProjectLayoutService::HandleConfigFileChange(CanonicalPath config_path)
     // Update the configuration
     config_ = std::move(loaded_config.value());
     logger_->info("ConfigManager successfully reloaded configuration");
-
-    // Log the updated configuration details
-    logger_->debug(
-        "  Include directories: {}", config_->GetIncludeDirs().size());
-    logger_->debug("  Defines: {}", config_->GetDefines().size());
-    logger_->debug("  Source files: {}", config_->GetFiles().size());
-    logger_->debug("  File lists: {}", config_->GetFileLists().paths.size());
 
     RebuildLayout();
     co_return true;

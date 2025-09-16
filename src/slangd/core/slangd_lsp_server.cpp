@@ -135,6 +135,9 @@ auto SlangdLspServer::OnDidOpenTextDocument(
 
   AddOpenFile(uri, text, language_id, version);
 
+  // Initialize saved version for stable caching
+  saved_versions_[uri] = version;
+
   // Compute and publish initial diagnostics via facade
   asio::co_spawn(
       strand_,
@@ -185,8 +188,8 @@ auto SlangdLspServer::OnDidChangeTextDocument(
       file.content = text;
       file.version = version;
 
-      // Schedule diagnostics with debouncing (moved from DiagnosticsProvider)
-      ScheduleDiagnosticsWithDebounce(uri, text, version);
+      // Note: Diagnostics are only computed on save to avoid expensive overlay
+      // rebuilds
     }
   }
 
@@ -200,6 +203,14 @@ auto SlangdLspServer::OnDidSaveTextDocument(
 
   const auto& text_doc = params.textDocument;
   const auto& uri = text_doc.uri;
+
+  // Update saved version for stable caching
+  auto file_opt = GetOpenFile(uri);
+  if (file_opt) {
+    saved_versions_[uri] = file_opt->get().version;
+    Logger()->debug(
+        "Updated saved version for {}: v{}", uri, saved_versions_[uri]);
+  }
 
   // Process diagnostics immediately on save (no debounce)
   co_await ProcessDiagnosticsForUri(uri);
@@ -215,6 +226,9 @@ auto SlangdLspServer::OnDidCloseTextDocument(
   const auto& uri = params.textDocument.uri;
 
   RemoveOpenFile(uri);
+
+  // Clean up saved version
+  saved_versions_.erase(uri);
 
   co_return Ok();
 }
@@ -235,8 +249,16 @@ auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
   }
 
   const auto& file = file_opt->get();
+
+  // Use saved version for stable caching (symbols don't change much during
+  // typing)
+  auto saved_version_it = saved_versions_.find(params.textDocument.uri);
+  int version_to_use = saved_version_it != saved_versions_.end()
+                           ? saved_version_it->second
+                           : file.version;
+
   co_return language_service_->GetDocumentSymbols(
-      params.textDocument.uri, file.content, file.version);
+      params.textDocument.uri, file.content, version_to_use);
 }
 
 auto SlangdLspServer::OnGotoDefinition(lsp::DefinitionParams params)
@@ -252,9 +274,17 @@ auto SlangdLspServer::OnGotoDefinition(lsp::DefinitionParams params)
   }
 
   const auto& file = file_opt->get();
+
+  // Use saved version for stable caching (definitions don't change much during
+  // typing)
+  auto saved_version_it = saved_versions_.find(params.textDocument.uri);
+  int version_to_use = saved_version_it != saved_versions_.end()
+                           ? saved_version_it->second
+                           : file.version;
+
   co_return language_service_->GetDefinitionsForPosition(
       std::string(params.textDocument.uri), params.position, file.content,
-      file.version);
+      version_to_use);
 }
 
 auto SlangdLspServer::OnDidChangeWatchedFiles(
