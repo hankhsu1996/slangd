@@ -136,9 +136,6 @@ auto OverlaySession::BuildCompilation(
           package_info.file_path.Path().string(), *source_manager, options);
       if (package_tree_result) {
         compilation->addSyntaxTree(package_tree_result.value());
-        logger->debug(
-            "Added package from catalog: {}",
-            package_info.file_path.Path().string());
       }
     }
 
