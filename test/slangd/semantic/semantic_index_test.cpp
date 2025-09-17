@@ -1,16 +1,11 @@
 #include "slangd/semantic/semantic_index.hpp"
+#include "test_fixtures.hpp"
 
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
 #include <catch2/catch_all.hpp>
-#include <fmt/format.h>
-#include <slang/ast/Compilation.h>
-#include <slang/syntax/SyntaxTree.h>
-#include <slang/text/SourceManager.h>
-#include <slang/util/Bag.h>
 
 auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
@@ -18,101 +13,7 @@ auto main(int argc, char* argv[]) -> int {
 
 namespace slangd::semantic {
 
-// Test fixture for SemanticIndex similar to DefinitionIndexFixture
-class SemanticIndexFixture {
-  using SemanticIndex = slangd::semantic::SemanticIndex;
-  using SymbolKey = slangd::semantic::SymbolKey;
-
- public:
-  auto BuildIndexFromSource(const std::string& source)
-      -> std::unique_ptr<SemanticIndex> {
-    std::string path = "test.sv";
-    sourceManager_ = std::make_shared<slang::SourceManager>();
-    auto buffer = sourceManager_->assignText(path, source);
-    buffer_id_ = buffer.id;
-    auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *sourceManager_);
-
-    slang::Bag options;
-    compilation_ = std::make_unique<slang::ast::Compilation>(options);
-    compilation_->addSyntaxTree(tree);
-
-    return SemanticIndex::FromCompilation(*compilation_, *sourceManager_);
-  }
-
-  auto MakeKey(const std::string& source, const std::string& symbol)
-      -> SymbolKey {
-    size_t offset = source.find(symbol);
-
-    if (offset == std::string::npos) {
-      throw std::runtime_error(
-          fmt::format("MakeKey: Symbol '{}' not found in source", symbol));
-    }
-
-    // Detect ambiguous symbol names early
-    size_t second_occurrence = source.find(symbol, offset + 1);
-    if (second_occurrence != std::string::npos) {
-      throw std::runtime_error(fmt::format(
-          "MakeKey: Ambiguous symbol '{}' found at multiple locations. "
-          "Use unique descriptive names (e.g., 'test_signal' not 'signal') "
-          "or use MakeKeyAt({}) for specific occurrence.",
-          symbol, offset));
-    }
-
-    return SymbolKey{.bufferId = buffer_id_.getId(), .offset = offset};
-  }
-
-  // Alternative method for cases where multiple occurrences are expected
-  auto MakeKeyAt(
-      const std::string& source, const std::string& symbol,
-      size_t occurrence = 0) -> SymbolKey {
-    size_t offset = 0;
-    for (size_t i = 0; i <= occurrence; ++i) {
-      offset = source.find(symbol, offset);
-      if (offset == std::string::npos) {
-        throw std::runtime_error(fmt::format(
-            "MakeKeyAt: Symbol '{}' occurrence {} not found in source", symbol,
-            occurrence));
-      }
-      if (i < occurrence) {
-        offset += symbol.length();
-      }
-    }
-    return SymbolKey{.bufferId = buffer_id_.getId(), .offset = offset};
-  }
-
-  auto MakeRange(
-      const std::string& source, const std::string& search_string,
-      size_t symbol_size) -> slang::SourceRange {
-    size_t offset = source.find(search_string);
-    auto start = slang::SourceLocation{buffer_id_, offset};
-    auto end = slang::SourceLocation{buffer_id_, offset + symbol_size};
-    return slang::SourceRange{start, end};
-  }
-
-  auto FindLocation(const std::string& source, const std::string& text)
-      -> slang::SourceLocation {
-    size_t offset = source.find(text);
-    if (offset == std::string::npos) {
-      return {};
-    }
-    return slang::SourceLocation{buffer_id_, offset};
-  }
-
-  [[nodiscard]] auto GetBufferId() const -> uint32_t {
-    return buffer_id_.getId();
-  }
-  [[nodiscard]] auto GetSourceManager() const -> slang::SourceManager* {
-    return sourceManager_.get();
-  }
-  [[nodiscard]] auto GetCompilation() const -> slang::ast::Compilation* {
-    return compilation_.get();
-  }
-
- private:
-  std::shared_ptr<slang::SourceManager> sourceManager_;
-  std::unique_ptr<slang::ast::Compilation> compilation_;
-  slang::BufferID buffer_id_;
-};
+using SemanticTestFixture = slangd::semantic::test::SemanticTestFixture;
 
 TEST_CASE(
     "SemanticIndex processes symbols via preVisit hook", "[semantic_index]") {
@@ -561,7 +462,7 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex basic definition tracking with fixture",
     "[semantic_index]") {
-  SemanticIndexFixture fixture;
+  SemanticTestFixture fixture;
 
   SECTION("single variable declaration") {
     const std::string source = R"(
@@ -585,7 +486,7 @@ TEST_CASE(
 
 TEST_CASE(
     "SemanticIndex handles interface ports without crash", "[semantic_index]") {
-  SemanticIndexFixture fixture;
+  SemanticTestFixture fixture;
 
   SECTION("basic interface port with member access") {
     const std::string source = R"(
@@ -696,7 +597,7 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex handles complex SystemVerilog patterns",
     "[semantic_index]") {
-  SemanticIndexFixture fixture;
+  SemanticTestFixture fixture;
 
   SECTION("nested scope definitions") {
     const std::string source = R"(

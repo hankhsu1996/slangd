@@ -67,8 +67,22 @@ _Make SemanticIndex drop-in compatible with current separate indexes_
   - [x] Test module body traversal via preVisit hook
   - [x] Verify comprehensive coverage (103 assertions passing, found 1 bug)
 
-- [ ] **Step 5: Multifile Testing Infrastructure**
-  - [ ] Create async test infrastructure like definition_multifile_test.cpp
+- [x] **Step 5: Test Infrastructure Refactoring**
+  - [x] Create test_fixtures.hpp with shared SemanticTestFixture infrastructure
+  - [x] Add MultiFileSemanticFixture for multifile test support
+  - [x] Update semantic_index_test.cpp to use new shared fixtures
+  - [x] Update BUILD.bazel to include test_fixtures.hpp
+  - [x] Verify all existing tests still pass
+
+- [ ] **Step 6: Test File Organization**
+  - [ ] Rename semantic_index_test.cpp to semantic_index_basic_test.cpp
+  - [ ] Extract complex patterns to semantic_index_patterns_test.cpp
+  - [ ] Keep basic functionality tests (5 test cases, ~400 lines)
+  - [ ] Move complex SystemVerilog patterns (6 test cases, ~500 lines)
+  - [ ] Verify all 11 test cases still pass after split
+
+- [ ] **Step 7: Multifile Testing Implementation**
+  - [ ] Create semantic_index_multifile_test.cpp with async infrastructure
   - [ ] Test cross-package symbol resolution
   - [ ] Test GlobalCatalog integration with SemanticIndex
   - [ ] Test qualified package references (pkg::symbol patterns)

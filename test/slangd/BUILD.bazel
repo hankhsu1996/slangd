@@ -90,6 +90,7 @@ cc_test(
     timeout = "short",
     srcs = [
         "semantic/semantic_index_test.cpp",
+        "semantic/test_fixtures.hpp",
     ],
     deps = [
         "//:slangd_core",
