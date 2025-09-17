@@ -194,12 +194,28 @@ auto LanguageService::HandleConfigChange() -> void {
   }
 }
 
-auto LanguageService::HandleSourceFileChange() -> void {
-  if (layout_service_) {
-    layout_service_->ScheduleDebouncedRebuild();
-    // Clear cache when layout changes (catalog version will change)
-    ClearCache();
-    logger_->debug("LanguageService handled source file change");
+auto LanguageService::HandleSourceFileChange(
+    std::string uri, lsp::FileChangeType change_type) -> void {
+  if (!layout_service_) {
+    return;
+  }
+
+  switch (change_type) {
+    case lsp::FileChangeType::kCreated:
+    case lsp::FileChangeType::kDeleted:
+      // Structural changes require layout rebuild
+      layout_service_->ScheduleDebouncedRebuild();
+      ClearCache();  // Clear all cache since catalog will change
+      logger_->debug(
+          "LanguageService handled structural change: {} ({})", uri,
+          static_cast<int>(change_type));
+      break;
+
+    case lsp::FileChangeType::kChanged:
+      // Content changes only require clearing cache for this file
+      ClearCacheForFile(uri);
+      logger_->debug("LanguageService handled content change: {}", uri);
+      break;
   }
 }
 
@@ -264,6 +280,18 @@ auto LanguageService::GetOrCreateOverlay(
 auto LanguageService::ClearCache() -> void {
   logger_->debug("Clearing overlay cache ({} entries)", overlay_cache_.size());
   overlay_cache_.clear();
+}
+
+auto LanguageService::ClearCacheForFile(const std::string& uri) -> void {
+  auto it = std::remove_if(
+      overlay_cache_.begin(), overlay_cache_.end(),
+      [&uri](const CacheEntry& entry) -> bool { return entry.key.doc_uri == uri; });
+
+  size_t removed_count = std::distance(it, overlay_cache_.end());
+  overlay_cache_.erase(it, overlay_cache_.end());
+
+  logger_->debug(
+      "Cleared {} overlay cache entries for file: {}", removed_count, uri);
 }
 
 }  // namespace slangd::services

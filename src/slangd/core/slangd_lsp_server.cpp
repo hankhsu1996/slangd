@@ -319,8 +319,14 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
         }
         // Handle SystemVerilog file changes (language service decides if
         // rebuild needed)
-        else if (has_sv_file_change) {
-          language_service_->HandleSourceFileChange();
+        if (has_sv_file_change) {
+          for (const auto& change : params.changes) {
+            auto path = CanonicalPath::FromUri(change.uri);
+            if (IsSystemVerilogFile(path.Path())) {
+              language_service_->HandleSourceFileChange(
+                  change.uri, change.type);
+            }
+          }
         }
 
         co_return;
