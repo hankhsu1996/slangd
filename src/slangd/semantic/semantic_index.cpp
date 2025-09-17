@@ -496,6 +496,28 @@ void SemanticIndex::IndexVisitor::handle(
   this->visitDefault(expr);
 }
 
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::VariableSymbol& symbol) {
+  // Track type references in variable declarations (e.g., data_t my_data;)
+  const auto& declared_type = symbol.getDeclaredType();
+  if (const auto& type_syntax = declared_type->getTypeSyntax()) {
+    if (type_syntax->kind == slang::syntax::SyntaxKind::NamedType) {
+      const auto& named_type =
+          type_syntax->as<slang::syntax::NamedTypeSyntax>();
+      const auto& resolved_type = symbol.getType();
+
+      if (resolved_type.location.valid()) {
+        SymbolKey type_key =
+            SymbolKey::FromSourceLocation(resolved_type.location);
+        index_->reference_map_[named_type.name->sourceRange()] = type_key;
+      }
+    }
+  }
+
+  // Continue traversal
+  this->visitDefault(symbol);
+}
+
 auto SemanticIndex::GetDefinitionRange(const SymbolKey& key) const
     -> std::optional<slang::SourceRange> {
   auto it = definition_ranges_.find(key);

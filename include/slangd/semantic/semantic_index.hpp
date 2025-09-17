@@ -126,6 +126,9 @@ class SemanticIndex {
     // Reference tracking for NamedValueExpression
     void handle(const slang::ast::NamedValueExpression& expr);
 
+    // Reference tracking for VariableSymbol (type references)
+    void handle(const slang::ast::VariableSymbol& symbol);
+
     // Default traversal
     template <typename T>
     void handle(const T& node) {

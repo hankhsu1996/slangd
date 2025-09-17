@@ -5,6 +5,7 @@
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/util/Bag.h>
 
+#include "slangd/semantic/semantic_index.hpp"
 #include "slangd/utils/canonical_path.hpp"
 #include "slangd/utils/scoped_timer.hpp"
 
@@ -26,45 +27,40 @@ auto OverlaySession::Create(
   auto [source_manager, compilation] =
       BuildCompilation(uri, content, layout_service, catalog, logger);
 
-  auto definition_index = std::make_unique<semantic::DefinitionIndex>(
-      semantic::DefinitionIndex::FromCompilation(*compilation, logger));
+  // Create unified semantic index (replaces DefinitionIndex + SymbolIndex)
+  auto semantic_index = semantic::SemanticIndex::FromCompilation(
+      *compilation, *source_manager);
 
-  // Create diagnostic index for the current URI
+  // Create diagnostic index for the current URI (kept separate)
   auto diagnostic_index = std::make_unique<semantic::DiagnosticIndex>(
       semantic::DiagnosticIndex::FromCompilation(
           *compilation, *source_manager, uri, logger));
 
-  // Create symbol index for document symbols
-  auto symbol_index = semantic::SymbolIndex::FromCompilation(
-      *compilation, *source_manager, logger);
-
   auto elapsed = timer.GetElapsed();
   logger->debug(
-      "Overlay session created with {} definitions, {} references, {} "
+      "Overlay session created with {} symbols, {} definitions, {} references, {} "
       "diagnostics ({})",
-      definition_index->GetDefinitionRanges().size(),
-      definition_index->GetReferenceMap().size(),
+      semantic_index->GetSymbolCount(),
+      semantic_index->GetDefinitionRanges().size(),
+      semantic_index->GetReferenceMap().size(),
       diagnostic_index->GetDiagnostics().size(),
       utils::ScopedTimer::FormatDuration(elapsed));
 
   return std::shared_ptr<OverlaySession>(new OverlaySession(
       std::move(source_manager), std::move(compilation),
-      std::move(definition_index), std::move(diagnostic_index),
-      std::move(symbol_index), logger));
+      std::move(semantic_index), std::move(diagnostic_index), logger));
 }
 
 OverlaySession::OverlaySession(
     std::shared_ptr<slang::SourceManager> source_manager,
     std::unique_ptr<slang::ast::Compilation> compilation,
-    std::unique_ptr<semantic::DefinitionIndex> definition_index,
+    std::unique_ptr<semantic::SemanticIndex> semantic_index,
     std::unique_ptr<semantic::DiagnosticIndex> diagnostic_index,
-    std::unique_ptr<semantic::SymbolIndex> symbol_index,
     std::shared_ptr<spdlog::logger> logger)
     : source_manager_(std::move(source_manager)),
       compilation_(std::move(compilation)),
-      definition_index_(std::move(definition_index)),
+      semantic_index_(std::move(semantic_index)),
       diagnostic_index_(std::move(diagnostic_index)),
-      symbol_index_(std::move(symbol_index)),
       logger_(std::move(logger)) {
 }
 
