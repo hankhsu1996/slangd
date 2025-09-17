@@ -8,6 +8,7 @@
 #include <slang/ast/symbols/ParameterSymbols.h>
 #include <slang/ast/symbols/VariableSymbols.h>
 #include <slang/ast/types/AllTypes.h>
+#include <slang/syntax/AllSyntax.h>
 
 #include "slangd/utils/conversion.hpp"
 
@@ -32,16 +33,36 @@ auto SemanticIndex::FromCompilation(
     // Unwrap symbol to handle TransparentMember recursion
     const auto& unwrapped = UnwrapSymbol(symbol);
 
+    // Extract precise definition range from syntax node
+    slang::SourceRange definition_range;
+    bool is_definition = false;
+    if (const auto* syntax = unwrapped.getSyntax()) {
+      definition_range = ExtractDefinitionRange(unwrapped, *syntax);
+      is_definition = true;
+    } else {
+      // Fallback to symbol location for symbols without syntax
+      definition_range = slang::SourceRange{unwrapped.location, unwrapped.location};
+      is_definition = false;
+    }
+
     // Create SymbolInfo with cached LSP data
     SymbolInfo info{
         .symbol = &unwrapped,
         .location = unwrapped.location,
         .lsp_kind = ConvertToLspKind(unwrapped),
         .range = ComputeLspRange(unwrapped, source_manager),
-        .parent = unwrapped.getParentScope()};
+        .parent = unwrapped.getParentScope(),
+        .is_definition = is_definition,
+        .definition_range = definition_range};
 
     // Store in flat map for O(1) lookup
     index->symbols_[unwrapped.location] = info;
+
+    // Store definition range for go-to-definition API
+    if (is_definition) {
+      SymbolKey key = SymbolKey::FromSourceLocation(unwrapped.location);
+      index->definition_ranges_[key] = definition_range;
+    }
   });
 
   // Single traversal from root captures ALL symbols
@@ -393,6 +414,63 @@ auto SemanticIndex::HandleEnumTypeAlias(
     enum_value_symbol.children = std::vector<lsp::DocumentSymbol>();
     enum_doc_symbol.children->push_back(std::move(enum_value_symbol));
   }
+}
+
+auto SemanticIndex::ExtractDefinitionRange(
+    const slang::ast::Symbol& symbol,
+    const slang::syntax::SyntaxNode& syntax) -> slang::SourceRange {
+  using SK = slang::ast::SymbolKind;
+  using SyntaxKind = slang::syntax::SyntaxKind;
+
+  // Extract precise name range based on symbol and syntax type
+  // This is adapted from the patterns in legacy definition_index.cpp
+
+  switch (symbol.kind) {
+    case SK::Package:
+      if (syntax.kind == SyntaxKind::PackageDeclaration) {
+        const auto& pkg_syntax = syntax.as<slang::syntax::ModuleDeclarationSyntax>();
+        return pkg_syntax.header->name.range();
+      }
+      break;
+
+    case SK::Definition: {
+      if (syntax.kind == SyntaxKind::ModuleDeclaration) {
+        const auto& mod_syntax = syntax.as<slang::syntax::ModuleDeclarationSyntax>();
+        return mod_syntax.header->name.range();
+      }
+      break;
+    }
+
+    case SK::TypeAlias:
+      if (syntax.kind == SyntaxKind::TypedefDeclaration) {
+        const auto& typedef_syntax = syntax.as<slang::syntax::TypedefDeclarationSyntax>();
+        return typedef_syntax.name.range();
+      }
+      break;
+
+    case SK::Variable:
+    case SK::Parameter:
+      // For variables and parameters, use the entire syntax range as name range
+      return syntax.sourceRange();
+
+    case SK::StatementBlock: {
+      if (syntax.kind == SyntaxKind::SequentialBlockStatement ||
+          syntax.kind == SyntaxKind::ParallelBlockStatement) {
+        const auto& block_syntax = syntax.as<slang::syntax::BlockStatementSyntax>();
+        if (block_syntax.blockName != nullptr) {
+          return block_syntax.blockName->name.range();
+        }
+      }
+      break;
+    }
+
+    default:
+      // For most symbol types, use the syntax source range
+      break;
+  }
+
+  // Default fallback: use the syntax node's source range
+  return syntax.sourceRange();
 }
 
 }  // namespace slangd::semantic

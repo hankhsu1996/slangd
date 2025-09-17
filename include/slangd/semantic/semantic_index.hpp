@@ -13,6 +13,36 @@
 
 namespace slangd::semantic {
 
+// Uniquely identifies a symbol by its declaration location
+struct SymbolKey {
+  uint32_t bufferId;
+  size_t offset;
+
+  auto operator==(const SymbolKey&) const -> bool = default;
+
+  // Factory method to create from SourceLocation
+  static auto FromSourceLocation(const slang::SourceLocation& loc)
+      -> SymbolKey {
+    return SymbolKey{.bufferId = loc.buffer().getId(), .offset = loc.offset()};
+  }
+};
+
+}  // namespace slangd::semantic
+
+namespace std {
+template <>
+struct hash<slangd::semantic::SymbolKey> {
+  auto operator()(const slangd::semantic::SymbolKey& key) const -> size_t {
+    size_t hash = std::hash<uint32_t>()(key.bufferId);
+    hash ^= std::hash<size_t>()(key.offset) + 0x9e3779b9 + (hash << 6) +
+            (hash >> 2);
+    return hash;
+  }
+};
+}  // namespace std
+
+namespace slangd::semantic {
+
 // SemanticIndex replaces separate DefinitionIndex and SymbolIndex with a single
 // system that processes ALL symbol types for complete LSP coverage
 class SemanticIndex {
@@ -23,6 +53,8 @@ class SemanticIndex {
     lsp::SymbolKind lsp_kind{};
     lsp::Range range{};
     const slang::ast::Scope* parent{};
+    bool is_definition{false};
+    slang::SourceRange definition_range;
   };
 
   static auto FromCompilation(
@@ -50,6 +82,10 @@ class SemanticIndex {
 
   // Core data storage
   std::unordered_map<slang::SourceLocation, SymbolInfo> symbols_;
+
+  // Definition indexing data structures
+  std::unordered_map<SymbolKey, slang::SourceRange> definition_ranges_;
+  std::unordered_map<slang::SourceRange, SymbolKey> reference_map_;
 
   // Store source manager reference for symbol processing
   const slang::SourceManager* source_manager_ = nullptr;
@@ -92,6 +128,11 @@ class SemanticIndex {
       const slang::SourceManager& source_manager) -> lsp::Range;
 
   static auto ShouldIndex(const slang::ast::Symbol& symbol) -> bool;
+
+  // Definition range extraction from syntax nodes
+  static auto ExtractDefinitionRange(
+      const slang::ast::Symbol& symbol,
+      const slang::syntax::SyntaxNode& syntax) -> slang::SourceRange;
 
   // Helper methods for document symbol building
   auto BuildDocumentSymbolTree() const -> std::vector<lsp::DocumentSymbol>;

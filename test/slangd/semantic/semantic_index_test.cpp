@@ -282,4 +282,66 @@ TEST_CASE(
   REQUIRE(found_module);
 }
 
+TEST_CASE("SemanticIndex collects definition ranges correctly", "[semantic_index]") {
+  std::string code = R"(
+    module test_module;
+      logic signal;
+      typedef logic [7:0] byte_t;
+
+      initial begin : init_block
+        signal = 1'b0;
+      end
+    endmodule
+  )";
+
+  auto source_manager = std::make_shared<slang::SourceManager>();
+  slang::Bag options;
+  auto compilation = std::make_unique<slang::ast::Compilation>(options);
+
+  auto buffer = source_manager->assignText("test.sv", code);
+  auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
+  if (tree) {
+    compilation->addSyntaxTree(tree);
+  }
+
+  auto index = SemanticIndex::FromCompilation(*compilation, *source_manager);
+
+  // Verify symbols have definition ranges and is_definition flags set
+  const auto& all_symbols = index->GetAllSymbols();
+  REQUIRE(!all_symbols.empty());
+
+  bool found_module = false;
+  bool found_signal = false;
+  bool found_typedef = false;
+  bool found_block = false;
+
+  for (const auto& [location, info] : all_symbols) {
+    std::string name(info.symbol->name);
+
+    if (name == "test_module") {
+      found_module = true;
+      REQUIRE(info.is_definition);
+      REQUIRE(info.definition_range.start().valid());
+      REQUIRE(info.definition_range.end().valid());
+    } else if (name == "signal") {
+      found_signal = true;
+      REQUIRE(info.is_definition);
+      REQUIRE(info.definition_range.start().valid());
+    } else if (name == "byte_t") {
+      found_typedef = true;
+      REQUIRE(info.is_definition);
+      REQUIRE(info.definition_range.start().valid());
+    } else if (name == "init_block") {
+      found_block = true;
+      REQUIRE(info.is_definition);
+      REQUIRE(info.definition_range.start().valid());
+    }
+  }
+
+  REQUIRE(found_module);
+  REQUIRE(found_signal);
+  REQUIRE(found_typedef);
+  REQUIRE(found_block);
+}
+
 }  // namespace slangd::semantic

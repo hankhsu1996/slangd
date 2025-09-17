@@ -4,22 +4,46 @@
 
 _Make SemanticIndex drop-in compatible with current separate indexes_
 
-- [ ] **Add SymbolIndex-compatible API to SemanticIndex**
+- [x] **Add SymbolIndex-compatible API to SemanticIndex**
 
-  - [ ] Add `GetDocumentSymbols(const std::string& uri) -> std::vector<lsp::DocumentSymbol>`
-  - [ ] Implement document symbol hierarchy building from flat symbol map
-  - [ ] Add URI filtering logic to match current SymbolIndex behavior
+  - [x] Add `GetDocumentSymbols(const std::string& uri) -> std::vector<lsp::DocumentSymbol>`
+  - [x] Implement document symbol hierarchy building from flat symbol map
+  - [x] Add URI filtering logic to match current SymbolIndex behavior
 
-- [ ] **Add DefinitionIndex-compatible API to SemanticIndex**
+- [x] **Add core definition data structures**
+
+  - [x] Copy `SymbolKey` struct to semantic_index.hpp
+  - [x] Add `definition_ranges_` map (SymbolKey -> SourceRange)
+  - [x] Add `reference_map_` map (SourceRange -> SymbolKey)
+  - [x] Add `is_definition` and `definition_range` to SymbolInfo
+  - [x] Build and test - existing tests should pass
+
+- [x] **Collect definition ranges in preVisit**
+
+  - [x] Extract precise name ranges from syntax nodes
+  - [x] Store in definition*ranges* map for ALL symbols
+  - [x] Set is_definition flag in SymbolInfo
+  - [x] Test definition ranges are collected correctly
+
+- [ ] **Add reference tracking**
+
+  - [ ] Add `handle(NamedValueExpression)` to IndexVisitor
+  - [ ] Store symbol references in reference*map*
+  - [ ] Test references are tracked correctly
+
+- [ ] **Add DefinitionIndex-compatible API**
 
   - [ ] Add `LookupSymbolAt(slang::SourceLocation) -> std::optional<SymbolKey>`
   - [ ] Add `GetDefinitionRange(const SymbolKey&) -> std::optional<slang::SourceRange>`
   - [ ] Add `GetDefinitionRanges() -> const std::unordered_map<SymbolKey, slang::SourceRange>&`
   - [ ] Add `GetReferenceMap() -> const std::unordered_map<slang::SourceRange, SymbolKey>&`
+  - [ ] Port definition_index tests to verify compatibility
 
-- [ ] **Build and test API compatibility**
-  - [ ] Create unit tests for new API methods
-  - [ ] Verify API matches current index behavior exactly
+- [ ] **Evaluate module/interface special handling**
+  - [ ] Test current implementation with complex modules/interfaces
+  - [ ] Check if preVisit naturally traverses module bodies
+  - [ ] Add createInvalid() pattern only if gaps found
+  - [ ] Compare coverage with legacy definition index
 
 ## Phase 2: Service Integration ⏳
 
