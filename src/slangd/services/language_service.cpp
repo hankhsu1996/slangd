@@ -285,7 +285,9 @@ auto LanguageService::ClearCache() -> void {
 auto LanguageService::ClearCacheForFile(const std::string& uri) -> void {
   auto it = std::remove_if(
       overlay_cache_.begin(), overlay_cache_.end(),
-      [&uri](const CacheEntry& entry) -> bool { return entry.key.doc_uri == uri; });
+      [&uri](const CacheEntry& entry) -> bool {
+        return entry.key.doc_uri == uri;
+      });
 
   size_t removed_count = std::distance(it, overlay_cache_.end());
   overlay_cache_.erase(it, overlay_cache_.end());
