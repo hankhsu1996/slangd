@@ -86,10 +86,25 @@ cc_test(
 )
 
 cc_test(
-    name = "semantic_index_test",
+    name = "semantic_index_basic_test",
     timeout = "short",
     srcs = [
-        "semantic/semantic_index_test.cpp",
+        "semantic/semantic_index_basic_test.cpp",
+        "semantic/test_fixtures.hpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@fmt",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "semantic_index_patterns_test",
+    timeout = "short",
+    srcs = [
+        "semantic/semantic_index_patterns_test.cpp",
         "semantic/test_fixtures.hpp",
     ],
     deps = [
