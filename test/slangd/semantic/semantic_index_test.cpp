@@ -543,4 +543,113 @@ TEST_CASE("SemanticIndex basic definition tracking with fixture", "[semantic_ind
   }
 }
 
+TEST_CASE("SemanticIndex handles interface ports without crash", "[semantic_index]") {
+  SemanticIndexFixture fixture;
+
+  SECTION("basic interface port with member access") {
+    const std::string source = R"(
+      interface cpu_if;
+        logic [31:0] addr;
+        logic [31:0] data;
+      endinterface
+
+      module cpu_core(cpu_if.master bus);
+        assign bus.addr = 32'h1000;
+        assign bus.data = 32'hDEAD;
+        logic internal_var;
+      endmodule
+    )";
+
+    // Primary goal: This should not crash during symbol indexing
+    auto index = fixture.BuildIndexFromSource(source);
+    REQUIRE(index != nullptr);
+
+    // Secondary goal: Basic sanity check that indexing still works
+    REQUIRE(index->GetSymbolCount() > 0);
+
+    // Just verify that SOME symbols are indexed (crash prevention is the main
+    // goal) Interface definitions may not be indexed the same way as variables
+    auto key = fixture.MakeKey(source, "internal_var");
+    auto def_range = index->GetDefinitionRange(key);
+    REQUIRE(def_range.has_value());
+  }
+
+  SECTION("undefined interface - single file resilience") {
+    const std::string source = R"(
+      // No interface definition - testing LSP resilience
+      module processor(undefined_if bus);
+        assign bus.signal = 1'b1;    // Interface doesn't exist
+        assign bus.data = 32'hDEAD;  // Member doesn't exist
+
+        // Regular symbols should still be indexed
+        logic internal_state;
+        logic [7:0] counter;
+      endmodule
+    )";
+
+    // Primary: Should not crash even with undefined interface
+    auto index = fixture.BuildIndexFromSource(source);
+    REQUIRE(index != nullptr);
+
+    // Secondary: Regular symbols still indexed despite interface errors
+    REQUIRE(index->GetSymbolCount() > 0);
+
+    auto key1 = fixture.MakeKey(source, "internal_state");
+    auto def_range1 = index->GetDefinitionRange(key1);
+    REQUIRE(def_range1.has_value());
+
+    auto key2 = fixture.MakeKey(source, "counter");
+    auto def_range2 = index->GetDefinitionRange(key2);
+    REQUIRE(def_range2.has_value());
+
+    // The undefined interface references (bus.signal, bus.data) are gracefully
+    // handled
+  }
+
+  SECTION("interface in always_comb conditions and RHS") {
+    const std::string source = R"(
+      // Pattern that triggers Expression::tryBindInterfaceRef in procedural blocks
+      module generic_module(generic_if iface);
+        logic state;
+        logic [7:0] counter;
+        logic enable;
+
+        always_comb begin
+          if (enable & ~iface.ready) begin      // Interface in condition
+            state = 1'b0;
+          end else if (enable & iface.ready) begin
+            if (iface.mode == 1'b1) begin      // Interface in comparison
+              state = 1'b1;
+            end else begin
+              counter = iface.data;            // Interface in RHS assignment
+            end
+          end
+        end
+      endmodule
+    )";
+
+    // Primary: Should not crash with interface expressions in always_comb
+    auto index = fixture.BuildIndexFromSource(source);
+    REQUIRE(index != nullptr);
+
+    // Secondary: Regular symbols still indexed despite interface usage
+    REQUIRE(index->GetSymbolCount() > 0);
+
+    auto key1 = fixture.MakeKey(source, "state");
+    auto def_range1 = index->GetDefinitionRange(key1);
+    REQUIRE(def_range1.has_value());
+
+    auto key2 = fixture.MakeKey(source, "counter");
+    auto def_range2 = index->GetDefinitionRange(key2);
+    REQUIRE(def_range2.has_value());
+
+    auto key3 = fixture.MakeKey(source, "enable");
+    auto def_range3 = index->GetDefinitionRange(key3);
+    REQUIRE(def_range3.has_value());
+
+    // This test targets Expression::tryBindInterfaceRef code path
+    // that differs from simple continuous assignments
+  }
+}
+
 }  // namespace slangd::semantic

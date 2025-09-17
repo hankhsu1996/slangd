@@ -46,12 +46,12 @@ _Make SemanticIndex drop-in compatible with current separate indexes_
   - [x] Add better compilation and source management helpers
   - [x] Test one basic scenario first, then incrementally add assertions
 
-- [ ] **Step 2: Crash Resilience Testing**
-  - [ ] Port interface crash scenarios from definition_index_test.cpp
-  - [ ] Test interface ports with member access (bus.addr patterns)
-  - [ ] Test undefined interfaces for LSP single-file resilience
-  - [ ] Test interface expressions in always_comb conditions
-  - [ ] Test complex module/interface scenarios with createInvalid() patterns
+- [x] **Step 2: Crash Resilience Testing**
+  - [x] Port interface crash scenarios from definition_index_test.cpp
+  - [x] Test interface ports with member access (bus.addr patterns)
+  - [x] Test undefined interfaces for LSP single-file resilience
+  - [x] Test interface expressions in always_comb conditions
+  - [x] Test complex module/interface scenarios with createInvalid() patterns
 
 - [ ] **Step 3: API Compatibility Testing**
   - [ ] Compare SemanticIndex vs legacy DefinitionIndex behavior
