@@ -16,7 +16,7 @@ bazel_dep(name = "slang", version = "9.0.0")
 git_override(
     module_name = "slang",
     remote = "https://github.com/hankhsu1996/slang.git",
-    commit = "ce9dfffb",  # Latest with MissingTimeScale fix for LSP
+    commit = "2c06ae22",  # Latest with preVisit hook for semantic indexing
 )
 # local_path_override(
 #     module_name = "slang",
