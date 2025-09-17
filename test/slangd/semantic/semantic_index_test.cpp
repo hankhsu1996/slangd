@@ -196,4 +196,90 @@ TEST_CASE("SemanticIndex handles enum and struct types", "[semantic_index]") {
   REQUIRE(index->GetSymbolCount() > 10);
 }
 
+TEST_CASE(
+    "SemanticIndex GetDocumentSymbols with enum hierarchy",
+    "[semantic_index]") {
+  std::string code = R"(
+    module test_module;
+      typedef enum logic [1:0] {
+        IDLE,
+        ACTIVE,
+        DONE
+      } state_t;
+
+      state_t state;
+      logic signal;
+    endmodule
+  )";
+
+  auto source_manager = std::make_shared<slang::SourceManager>();
+  slang::Bag options;
+  auto compilation = std::make_unique<slang::ast::Compilation>(options);
+
+  auto buffer = source_manager->assignText("test.sv", code);
+  auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
+  if (tree) {
+    compilation->addSyntaxTree(tree);
+  }
+
+  auto index = SemanticIndex::FromCompilation(*compilation, *source_manager);
+
+  // Test the new GetDocumentSymbols API
+  auto document_symbols = index->GetDocumentSymbols("test.sv");
+
+  REQUIRE(!document_symbols.empty());
+
+  // Should find test_module as a root symbol
+  bool found_module = false;
+  for (const auto& symbol : document_symbols) {
+    if (symbol.name == "test_module") {
+      found_module = true;
+      REQUIRE(symbol.kind == lsp::SymbolKind::kClass);
+
+      // The module should have children
+      REQUIRE(symbol.children.has_value());
+      REQUIRE(!symbol.children->empty());
+
+      // Look for state_t enum and its children
+      bool found_enum = false;
+      bool found_signal = false;
+      bool found_state_var = false;
+
+      for (const auto& child : *symbol.children) {
+        if (child.name == "state_t") {
+          found_enum = true;
+          REQUIRE(child.kind == lsp::SymbolKind::kEnum);
+
+          // The enum should have enum member children
+          REQUIRE(child.children.has_value());
+          REQUIRE(child.children->size() >= 3);  // IDLE, ACTIVE, DONE
+
+          // Verify enum members
+          int enum_members_found = 0;
+          for (const auto& enum_child : *child.children) {
+            if (enum_child.kind == lsp::SymbolKind::kEnumMember) {
+              enum_members_found++;
+            }
+          }
+          REQUIRE(enum_members_found >= 3);
+        }
+        if (child.name == "signal") {
+          found_signal = true;
+          REQUIRE(child.kind == lsp::SymbolKind::kVariable);
+        }
+        if (child.name == "state") {
+          found_state_var = true;
+          REQUIRE(child.kind == lsp::SymbolKind::kVariable);
+        }
+      }
+
+      REQUIRE(found_enum);
+      REQUIRE(found_signal);
+      REQUIRE(found_state_var);
+    }
+  }
+
+  REQUIRE(found_module);
+}
+
 }  // namespace slangd::semantic

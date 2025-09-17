@@ -41,11 +41,18 @@ class SemanticIndex {
   auto GetAllSymbols() const
       -> const std::unordered_map<slang::SourceLocation, SymbolInfo>&;
 
+  // SymbolIndex-compatible API
+  auto GetDocumentSymbols(const std::string& uri) const
+      -> std::vector<lsp::DocumentSymbol>;
+
  private:
   explicit SemanticIndex() = default;
 
   // Core data storage
   std::unordered_map<slang::SourceLocation, SymbolInfo> symbols_;
+
+  // Store source manager reference for symbol processing
+  const slang::SourceManager* source_manager_ = nullptr;
 
   // Visitor for symbol collection (moved from separate file)
   template <typename TCallback>
@@ -85,6 +92,19 @@ class SemanticIndex {
       const slang::SourceManager& source_manager) -> lsp::Range;
 
   static auto ShouldIndex(const slang::ast::Symbol& symbol) -> bool;
+
+  // Helper methods for document symbol building
+  auto BuildDocumentSymbolTree() const -> std::vector<lsp::DocumentSymbol>;
+  static auto CreateDocumentSymbol(const SymbolInfo& info)
+      -> lsp::DocumentSymbol;
+  auto AttachChildrenToSymbol(
+      lsp::DocumentSymbol& parent, const slang::ast::Scope* parent_scope,
+      const std::unordered_map<
+          const slang::ast::Scope*, std::vector<const SymbolInfo*>>&
+          children_map) const -> void;
+  auto HandleEnumTypeAlias(
+      lsp::DocumentSymbol& enum_doc_symbol,
+      const slang::ast::Symbol* type_alias_symbol) const -> void;
 };
 
 }  // namespace slangd::semantic

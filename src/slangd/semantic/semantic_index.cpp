@@ -19,6 +19,9 @@ auto SemanticIndex::FromCompilation(
     -> std::unique_ptr<SemanticIndex> {
   auto index = std::unique_ptr<SemanticIndex>(new SemanticIndex());
 
+  // Store source manager reference for document symbol processing
+  index->source_manager_ = &source_manager;
+
   // Create visitor for comprehensive symbol collection
   auto visitor = IndexVisitor([&](const slang::ast::Symbol& symbol) {
     // Only index symbols that meet basic criteria
@@ -58,6 +61,13 @@ auto SemanticIndex::GetSymbolAt(slang::SourceLocation location) const
 auto SemanticIndex::GetAllSymbols() const
     -> const std::unordered_map<slang::SourceLocation, SymbolInfo>& {
   return symbols_;
+}
+
+auto SemanticIndex::GetDocumentSymbols(const std::string& /*uri*/) const
+    -> std::vector<lsp::DocumentSymbol> {
+  // For now, ignore URI since OverlaySession is single-file scoped
+  // May need to filter imported symbols later if needed
+  return BuildDocumentSymbolTree();
 }
 
 // Utility method implementations
@@ -230,6 +240,159 @@ auto SemanticIndex::ShouldIndex(const slang::ast::Symbol& symbol) -> bool {
   }
 
   return true;
+}
+
+auto SemanticIndex::BuildDocumentSymbolTree() const
+    -> std::vector<lsp::DocumentSymbol> {
+  // Build parent-to-children map from flat symbols_
+  std::unordered_map<const slang::ast::Scope*, std::vector<const SymbolInfo*>>
+      children_map;
+  std::vector<const SymbolInfo*> roots;
+
+  // Group symbols by their parent
+  for (const auto& [location, info] : symbols_) {
+    // Skip EnumValue symbols at root level - they'll be added as children
+    if (info.symbol->kind == slang::ast::SymbolKind::EnumValue) {
+      continue;
+    }
+
+    // For now, treat symbols with different parent values as potentially root
+    // We'll refine this logic based on what we see
+    if (info.parent == nullptr) {
+      roots.push_back(&info);
+    } else {
+      // Check if parent has very few members (likely compilation root)
+      // This is a heuristic - we might need to improve this
+      children_map[info.parent].push_back(&info);
+    }
+  }
+
+  // Debug: If no roots found, check what parents we have
+  if (roots.empty()) {
+    // Find symbols that might be top-level based on context
+    for (const auto& [location, info] : symbols_) {
+      if (info.symbol->kind == slang::ast::SymbolKind::EnumValue) {
+        continue;
+      }
+      // For modules/interfaces (InstanceBody), treat as root even with parent
+      if (info.symbol->kind == slang::ast::SymbolKind::InstanceBody) {
+        roots.push_back(&info);
+      }
+    }
+  }
+
+  // Recursively build DocumentSymbol tree from roots
+  std::vector<lsp::DocumentSymbol> result;
+  for (const auto* root_info : roots) {
+    auto doc_symbol = CreateDocumentSymbol(*root_info);
+
+    // For symbols, we need to check if the symbol itself is a scope
+    const slang::ast::Scope* symbol_as_scope = nullptr;
+    if (root_info->symbol->isScope()) {
+      symbol_as_scope = &root_info->symbol->as<slang::ast::Scope>();
+    }
+    AttachChildrenToSymbol(doc_symbol, symbol_as_scope, children_map);
+
+    // Special handling for enum type aliases
+    if (root_info->symbol->kind == slang::ast::SymbolKind::TypeAlias) {
+      HandleEnumTypeAlias(doc_symbol, root_info->symbol);
+    }
+
+    result.push_back(std::move(doc_symbol));
+  }
+
+  return result;
+}
+
+auto SemanticIndex::CreateDocumentSymbol(const SymbolInfo& info)
+    -> lsp::DocumentSymbol {
+  lsp::DocumentSymbol doc_symbol;
+  doc_symbol.name = std::string(info.symbol->name);
+  doc_symbol.kind = info.lsp_kind;
+  doc_symbol.range = info.range;
+  doc_symbol.selectionRange = info.range;  // Use same range for now
+  doc_symbol.children = std::vector<lsp::DocumentSymbol>();
+  return doc_symbol;
+}
+
+auto SemanticIndex::AttachChildrenToSymbol(
+    lsp::DocumentSymbol& parent, const slang::ast::Scope* parent_scope,
+    const std::unordered_map<
+        const slang::ast::Scope*, std::vector<const SymbolInfo*>>& children_map)
+    const -> void {
+  if (parent_scope == nullptr) {
+    return;  // No scope to check for children
+  }
+
+  auto children_it = children_map.find(parent_scope);
+  if (children_it == children_map.end()) {
+    return;  // No children
+  }
+
+  for (const auto* child_info : children_it->second) {
+    auto child_doc_symbol = CreateDocumentSymbol(*child_info);
+
+    // For child symbols, check if they are scopes themselves
+    const slang::ast::Scope* child_as_scope = nullptr;
+    if (child_info->symbol->isScope()) {
+      child_as_scope = &child_info->symbol->as<slang::ast::Scope>();
+    }
+    AttachChildrenToSymbol(child_doc_symbol, child_as_scope, children_map);
+
+    // Special handling for enum type aliases in children too
+    if (child_info->symbol->kind == slang::ast::SymbolKind::TypeAlias) {
+      HandleEnumTypeAlias(child_doc_symbol, child_info->symbol);
+    }
+
+    parent.children->push_back(std::move(child_doc_symbol));
+  }
+}
+
+auto SemanticIndex::HandleEnumTypeAlias(
+    lsp::DocumentSymbol& enum_doc_symbol,
+    const slang::ast::Symbol* type_alias_symbol) const -> void {
+  using SK = slang::ast::SymbolKind;
+
+  // Check if this is a TypeAlias of an enum
+  if (type_alias_symbol->kind != SK::TypeAlias) {
+    return;
+  }
+
+  const auto& type_alias = type_alias_symbol->as<slang::ast::TypeAliasType>();
+  const auto& canonical_type = type_alias.getCanonicalType();
+
+  if (canonical_type.kind != SK::EnumType) {
+    return;  // Not an enum
+  }
+
+  // Get the enum type to access its values directly
+  const auto& enum_type = canonical_type.as<slang::ast::EnumType>();
+
+  // Use the enum type's values() method to get all enum values
+  // This is more reliable than trying to match by scope
+  for (const auto& enum_value : enum_type.values()) {
+    // Create a SymbolInfo-like structure for the enum value
+    lsp::DocumentSymbol enum_value_symbol;
+    enum_value_symbol.name = std::string(enum_value.name);
+    enum_value_symbol.kind = lsp::SymbolKind::kEnumMember;
+
+    // Set range from the enum value location
+    if (enum_value.location && (source_manager_ != nullptr)) {
+      enum_value_symbol.range = ComputeLspRange(enum_value, *source_manager_);
+      enum_value_symbol.selectionRange = enum_value_symbol.range;
+    } else {
+      // Default range if no location
+      enum_value_symbol.range = {
+          .start = {.line = 0, .character = 0},
+          .end = {.line = 0, .character = 0}};
+      enum_value_symbol.selectionRange = {
+          .start = {.line = 0, .character = 0},
+          .end = {.line = 0, .character = 0}};
+    }
+
+    enum_value_symbol.children = std::vector<lsp::DocumentSymbol>();
+    enum_doc_symbol.children->push_back(std::move(enum_value_symbol));
+  }
 }
 
 }  // namespace slangd::semantic
