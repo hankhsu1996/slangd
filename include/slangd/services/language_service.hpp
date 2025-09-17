@@ -68,7 +68,8 @@ class LanguageService : public LanguageServiceBase {
 
   auto HandleConfigChange() -> void override;
 
-  auto HandleSourceFileChange() -> void override;
+  auto HandleSourceFileChange(std::string uri, lsp::FileChangeType change_type)
+      -> void override;
 
  private:
   // Cache entry for overlay sessions
@@ -89,6 +90,9 @@ class LanguageService : public LanguageServiceBase {
 
   // Clear cache when catalog version changes
   auto ClearCache() -> void;
+
+  // Clear cache entries for specific file
+  auto ClearCacheForFile(const std::string& uri) -> void;
 
   // Core dependencies
   std::shared_ptr<ProjectLayoutService> layout_service_;

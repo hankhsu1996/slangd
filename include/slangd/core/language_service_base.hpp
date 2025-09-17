@@ -6,6 +6,7 @@
 #include <asio.hpp>
 #include <lsp/basic.hpp>
 #include <lsp/document_features.hpp>
+#include <lsp/workspace.hpp>
 
 namespace slangd {
 
@@ -15,11 +16,10 @@ namespace slangd {
 class LanguageServiceBase {
  public:
   LanguageServiceBase() = default;
-  LanguageServiceBase(const LanguageServiceBase &) = default;
-  LanguageServiceBase(LanguageServiceBase &&) = delete;
-  auto operator=(const LanguageServiceBase &)
-      -> LanguageServiceBase & = default;
-  auto operator=(LanguageServiceBase &&) -> LanguageServiceBase & = delete;
+  LanguageServiceBase(const LanguageServiceBase&) = default;
+  LanguageServiceBase(LanguageServiceBase&&) = delete;
+  auto operator=(const LanguageServiceBase&) -> LanguageServiceBase& = default;
+  auto operator=(LanguageServiceBase&&) -> LanguageServiceBase& = delete;
   virtual ~LanguageServiceBase() = default;
 
   // Diagnostics computation - async because may need parsing/compilation
@@ -45,7 +45,8 @@ class LanguageServiceBase {
   virtual auto HandleConfigChange() -> void = 0;
 
   // Source file change handling - notifies service of source file changes
-  virtual auto HandleSourceFileChange() -> void = 0;
+  virtual auto HandleSourceFileChange(
+      std::string uri, lsp::FileChangeType change_type) -> void = 0;
 };
 
 }  // namespace slangd

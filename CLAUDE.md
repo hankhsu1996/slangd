@@ -2,27 +2,81 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Requirements
+
+- Bazel 7.0+ with bzlmod support
+- Clang 19+ for C++23 features
+
 ## Build and Test Commands
 
 - **Build everything**: `bazel build //...`
 - **Run all tests**: `bazel test //...`
 - **Build with configuration**: `bazel build //... --config=debug` (or `release`, `fastbuild`)
-- **Run specific test**: `bazel test //test/slangd:document_manager_test`
 - **Generate compile_commands.json**: `bazel run @hedron_compile_commands//:refresh_all`
 - **Format code**: `find src include test -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i`
 
-## CRITICAL: Always Format Before Commit
+## Development Workflow
 
-**MANDATORY**: Run formatter before EVERY commit to avoid CI failures:
+### Pre-Commit Process
 
-```bash
-find src include test -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i
+Before adding/committing changes:
+
+1. **Format code**: `find src include test -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i`
+2. **Build check**: Ensure `bazel build //...` passes
+3. **Test check**: Ensure `bazel test //...` passes
+
+### Branch Naming
+
+Use these prefixes:
+
+- `feature/` - for new features
+- `refactor/` - for code restructuring
+- `bugfix/` - for bug fixes
+- `docs/` - for documentation changes
+- `chore/` - for maintenance tasks
+
+### Git Commit Messages
+
+1. **First line**: Short summary (50-72 characters max)
+2. **Body**: Use bullet points with `-`, keep concise based on change scale
+   - Wrap lines at 72 characters
+   - Explain what and why, not how
+   - Focus on concrete technical changes and their purpose
+3. **No attribution**: Do not include Claude Code attribution in commits
+
+**Example format:**
+
+```
+Short summary under 72 chars
+
+- Primary change explained
+- Secondary change if needed
 ```
 
-## Requirements
+### Pull Request Guidelines
 
-- Bazel 7.0+ with bzlmod support
-- Clang 19+ for C++23 features
+**Title:**
+
+- Short summary (50-72 chars max)
+- Match branch naming style if helpful
+
+**Description:**
+
+```markdown
+## Summary
+
+- Brief bullet points of main changes
+- Use `-` for consistency
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+```
+
+**Guidelines:**
+
+- Always include Summary section
+- For small changes with no test modifications, keep description minimal
+- Add additional sections (Breaking Changes, Notes) only when they add value
+- Keep concise and relevant to the specific change
 
 ## Architecture
 
@@ -59,16 +113,6 @@ This is a SystemVerilog Language Server Protocol (LSP) implementation with a mod
 - **spdlog**: Structured logging
 - **yaml-cpp**: Configuration file parsing
 
-### Coding Standards
-
-Follow Google C++ Style Guide with these specifics:
-
-- Use C++23 features, avoid macros
-- ASIO coroutines with strands for synchronization (no mutexes/futures)
-- `std::expected` for error handling over exceptions
-- Trailing return types (`auto Foo() -> Type`) for clarity
-- Smart pointers and RAII for memory management
-
 ### Current LSP Features
 
 **Core Functionality (Production Ready):**
@@ -84,100 +128,17 @@ Follow Google C++ Style Guide with these specifics:
 - **Reliability**: Always-correct single-file features with robust cross-file support
 - **Maintainability**: Clean service architecture ready for future enhancements
 
-**Recent Migration (2024):** Complete architectural overhaul from legacy DocumentManager/WorkspaceManager to modern GlobalCatalog + OverlaySession design for improved performance and correctness.
-
 The modular architecture enables future language servers (e.g. VHDL) to reuse the generic `lsp` core.
 
-## Branch Naming Conventions
+## Coding Standards
 
-Use these prefixes for branch names:
+Follow Google C++ Style Guide with these specifics:
 
-- `feature/` - for new features
-- `refactor/` - for code restructuring
-- `bugfix/` - for bug fixes
-- `docs/` - for documentation changes
-- `chore/` - for maintenance tasks
-
-## Pre-Commit Requirements
-
-**IMPORTANT**: Before committing any code changes:
-
-1. **Format code**: Run `clang-format -i <modified-files>` on all changed files
-2. **Build check**: Ensure `bazel build //...` passes
-3. **Test check**: Ensure `bazel test //...` passes
-
-## Git Commit Message Rules
-
-1. **First line**: Short summary (50-72 characters max)
-2. **Body**: Use bullet points with `-` for multiple changes/reasons
-   - Wrap lines at 72 characters
-   - Explain what and why, not how
-3. **Focus on changes**: Describe what is changed, not project phases or steps
-   - Avoid mentioning "Phase 1A", "Step 2", etc.
-   - Focus on concrete technical changes and their purpose
-
-**Example format:**
-
-```
-Short summary under 72 chars
-
-- First change or reason explained
-- Second change or reason explained
-```
-
-**Note**: Claude Code attribution goes in PR descriptions, not individual commits
-
-## Pull Request Rules
-
-**Title:**
-
-- Short summary (50-72 chars max)
-- Match branch naming style if helpful
-
-**Description Structure:**
-
-```markdown
-## Summary
-
-- Brief bullet points of main changes
-- Use `-` for consistency
-
-## Additional sections as needed:
-
-- Changes (for complex PRs)
-- Breaking Changes (if applicable)
-- Notes (context, decisions, etc.)
-
-🤖 Generated with [Claude Code](https://claude.ai/code)
-```
-
-**Guidelines:**
-
-- Always include Summary
-- Add other sections only when they add value
-- Keep it concise and relevant to the specific change
-
-## Current Development Focus
-
-**Next Task: SourceExplorer Refactor**
-
-The `SourceExplorer` is a foundational service that provides file discovery and configuration reading for the new architecture. It's orthogonal to compilation and will be shared by both Global Index Service and Overlay Session Service.
-
-**Key Responsibilities:**
-
-- Config file reading (`.slangd` files, defines, include paths)
-- File discovery with repository scanning and ignore rules
-- Supply file sets to compilation services
-- Handle configuration changes and file system events
-
-**Architecture Position:**
-
-```
-SourceExplorer → supplies file lists and config → GlobalIndexService
-SourceExplorer → supplies file lists and config → OverlaySessionService
-```
-
-This refactor prepares the foundation for Phase 1 (Global Index Service) and Phase 2 (Overlay Session Service).
+- Use C++23 features, avoid macros
+- ASIO coroutines with strands for synchronization (no mutexes/futures)
+- `std::expected` for error handling over exceptions
+- Trailing return types (`auto Foo() -> Type`) for clarity
+- Smart pointers and RAII for memory management
 
 ## Configuration Notes
 
@@ -185,5 +146,5 @@ This refactor prepares the foundation for Phase 1 (Global Index Service) and Pha
 
 ## Documentation Guidelines
 
-- **Avoid special characters**: Don't use emoji or special Unicode characters (✅❌🔮) in documentation files as they may not render correctly in all markdown engines
 - Use standard markdown formatting with regular bullets (-) and numbered lists (1.)
+- Avoid special Unicode characters that may not render correctly in all markdown engines
