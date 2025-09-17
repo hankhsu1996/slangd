@@ -212,9 +212,10 @@ auto LanguageService::HandleSourceFileChange(
       break;
 
     case lsp::FileChangeType::kChanged:
-      // Content changes only require clearing cache for this file
-      ClearCacheForFile(uri);
-      logger_->debug("LanguageService handled content change: {}", uri);
+      // Use lazy invalidation strategy for content changes:
+      // - File saves: buffer already matches disk, cache stays valid
+      // - External changes: cache miss will trigger rebuild on next LSP request
+      logger_->debug("LanguageService ignoring disk content change: {}", uri);
       break;
   }
 }
