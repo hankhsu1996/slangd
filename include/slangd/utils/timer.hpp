@@ -11,10 +11,10 @@ namespace slangd {
 // Simple timer utility class for performance measurements
 class ScopedTimer {
  public:
-  ScopedTimer(const ScopedTimer &) = default;
-  ScopedTimer(ScopedTimer &&) = delete;
-  auto operator=(const ScopedTimer &) -> ScopedTimer & = default;
-  auto operator=(ScopedTimer &&) -> ScopedTimer & = delete;
+  ScopedTimer(const ScopedTimer&) = default;
+  ScopedTimer(ScopedTimer&&) = delete;
+  auto operator=(const ScopedTimer&) -> ScopedTimer& = default;
+  auto operator=(ScopedTimer&&) -> ScopedTimer& = delete;
 
   explicit ScopedTimer(
       std::string operation_name,

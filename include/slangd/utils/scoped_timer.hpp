@@ -10,10 +10,10 @@ namespace slangd::utils {
 
 class ScopedTimer {
  public:
-  ScopedTimer(const ScopedTimer &) = default;
-  ScopedTimer(ScopedTimer &&) = delete;
-  auto operator=(const ScopedTimer &) -> ScopedTimer & = default;
-  auto operator=(ScopedTimer &&) -> ScopedTimer & = delete;
+  ScopedTimer(const ScopedTimer&) = default;
+  ScopedTimer(ScopedTimer&&) = delete;
+  auto operator=(const ScopedTimer&) -> ScopedTimer& = default;
+  auto operator=(ScopedTimer&&) -> ScopedTimer& = delete;
   ScopedTimer(
       std::string operation_name, std::shared_ptr<spdlog::logger> logger);
   ~ScopedTimer();
