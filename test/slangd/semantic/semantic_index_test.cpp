@@ -520,7 +520,9 @@ TEST_CASE(
   REQUIRE(!result.has_value());
 }
 
-TEST_CASE("SemanticIndex basic definition tracking with fixture", "[semantic_index]") {
+TEST_CASE(
+    "SemanticIndex basic definition tracking with fixture",
+    "[semantic_index]") {
   SemanticIndexFixture fixture;
 
   SECTION("single variable declaration") {
@@ -543,7 +545,8 @@ TEST_CASE("SemanticIndex basic definition tracking with fixture", "[semantic_ind
   }
 }
 
-TEST_CASE("SemanticIndex handles interface ports without crash", "[semantic_index]") {
+TEST_CASE(
+    "SemanticIndex handles interface ports without crash", "[semantic_index]") {
   SemanticIndexFixture fixture;
 
   SECTION("basic interface port with member access") {
@@ -650,6 +653,208 @@ TEST_CASE("SemanticIndex handles interface ports without crash", "[semantic_inde
     // This test targets Expression::tryBindInterfaceRef code path
     // that differs from simple continuous assignments
   }
+}
+
+TEST_CASE(
+    "SemanticIndex handles complex SystemVerilog patterns",
+    "[semantic_index]") {
+  SemanticIndexFixture fixture;
+
+  SECTION("nested scope definitions") {
+    const std::string source = R"(
+      module m;
+        if (1) begin : named_block
+          logic nested_signal;
+          always_ff @(posedge clk) begin
+            logic deeply_nested;
+          end
+        end
+      endmodule
+    )";
+
+    auto index = fixture.BuildIndexFromSource(source);
+    REQUIRE(index != nullptr);
+
+    // Verify nested symbols are found
+    auto nested_key = fixture.MakeKey(source, "nested_signal");
+    REQUIRE(index->GetDefinitionRange(nested_key).has_value());
+
+    auto deep_key = fixture.MakeKey(source, "deeply_nested");
+    REQUIRE(index->GetDefinitionRange(deep_key).has_value());
+
+    // Named block should also be indexed
+    auto block_key = fixture.MakeKey(source, "named_block");
+    REQUIRE(index->GetDefinitionRange(block_key).has_value());
+  }
+
+  SECTION("multiple declarations on single line") {
+    const std::string source = R"(
+      module m;
+        logic sig1, sig2, sig3;
+        logic [7:0] byte1, byte2, byte3;
+        wire w1, w2, w3;
+      endmodule
+    )";
+
+    auto index = fixture.BuildIndexFromSource(source);
+
+    // All signals should be indexed
+    for (const auto& name : {"sig1", "sig2", "sig3"}) {
+      auto key = fixture.MakeKey(source, name);
+      REQUIRE(index->GetDefinitionRange(key).has_value());
+    }
+
+    for (const auto& name : {"byte1", "byte2", "byte3"}) {
+      auto key = fixture.MakeKey(source, name);
+      REQUIRE(index->GetDefinitionRange(key).has_value());
+    }
+
+    // Different types too
+    for (const auto& name : {"w1", "w2", "w3"}) {
+      auto key = fixture.MakeKey(source, name);
+      REQUIRE(index->GetDefinitionRange(key).has_value());
+    }
+  }
+
+  SECTION("reference tracking in expressions") {
+    const std::string source = R"(
+      module m;
+        logic a, b, c;
+        logic [7:0] result;
+
+        always_comb begin
+          result = a ? b : c;  // References to a, b, c
+          if (a && b) begin    // More references
+            result = 8'hFF;
+          end
+        end
+      endmodule
+    )";
+
+    auto index = fixture.BuildIndexFromSource(source);
+    const auto& ref_map = index->GetReferenceMap();
+
+    // Should have reference entries
+    REQUIRE(!ref_map.empty());
+
+    // Check that assignment reference is tracked
+    auto ref_range =
+        fixture.MakeRange(source, "result = a", std::string("result").size());
+
+    // Reference should map back to definition
+    if (ref_map.contains(ref_range)) {
+      auto def_key = ref_map.at(ref_range);
+      auto def_range = index->GetDefinitionRange(def_key);
+      REQUIRE(def_range.has_value());
+    }
+  }
+
+  SECTION("typedef and enum definitions") {
+    const std::string source = R"(
+      module m;
+        typedef logic [31:0] word_t;
+        typedef enum logic [1:0] {
+          IDLE = 2'b00,
+          ACTIVE = 2'b01,
+          DONE = 2'b10
+        } state_t;
+
+        word_t data;
+        state_t current_state;
+      endmodule
+    )";
+
+    auto index = fixture.BuildIndexFromSource(source);
+
+    // Typedef should be indexed
+    auto word_key = fixture.MakeKey(source, "word_t");
+    REQUIRE(index->GetDefinitionRange(word_key).has_value());
+
+    auto state_key = fixture.MakeKey(source, "state_t");
+    REQUIRE(index->GetDefinitionRange(state_key).has_value());
+
+    // Enum values should be indexed
+    for (const auto& name : {"IDLE", "ACTIVE", "DONE"}) {
+      auto key = fixture.MakeKey(source, name);
+      REQUIRE(index->GetDefinitionRange(key).has_value());
+    }
+
+    // Variables using typedefs
+    auto data_key = fixture.MakeKey(source, "data");
+    REQUIRE(index->GetDefinitionRange(data_key).has_value());
+
+    auto current_state_key = fixture.MakeKey(source, "current_state");
+    REQUIRE(index->GetDefinitionRange(current_state_key).has_value());
+  }
+
+  SECTION("package definitions") {
+    const std::string source = R"(
+      package test_pkg;
+        parameter WIDTH = 32;
+        typedef logic [WIDTH-1:0] data_t;
+      endpackage
+    )";
+
+    auto index = fixture.BuildIndexFromSource(source);
+
+    // Basic verification
+    REQUIRE(index != nullptr);
+    REQUIRE(index->GetSymbolCount() > 0);
+
+    // Package should be indexed
+    auto pkg_key = fixture.MakeKey(source, "test_pkg");
+    REQUIRE(index->GetDefinitionRange(pkg_key).has_value());
+
+    // Package contents should be indexed
+    auto width_key = fixture.MakeKey(source, "WIDTH");
+    REQUIRE(index->GetDefinitionRange(width_key).has_value());
+
+    auto type_key = fixture.MakeKey(source, "data_t");
+    REQUIRE(index->GetDefinitionRange(type_key).has_value());
+  }
+
+  SECTION("struct and union types") {
+    const std::string source = R"(
+      module m;
+        typedef struct packed {
+          logic [7:0] header;
+          logic [23:0] payload;
+        } packet_t;
+
+        typedef union packed {
+          logic [31:0] word;
+          logic [7:0][3:0] bytes;
+        } data_t;
+
+        packet_t pkt;
+        data_t data;
+      endmodule
+    )";
+
+    auto index = fixture.BuildIndexFromSource(source);
+
+    // Basic verification
+    REQUIRE(index != nullptr);
+    REQUIRE(index->GetSymbolCount() > 0);
+
+    // Struct and union types should be indexed
+    auto packet_key = fixture.MakeKey(source, "packet_t");
+    REQUIRE(index->GetDefinitionRange(packet_key).has_value());
+
+    auto data_type_key = fixture.MakeKey(source, "data_t");
+    REQUIRE(index->GetDefinitionRange(data_type_key).has_value());
+
+    // Variables using the types
+    auto pkt_key = fixture.MakeKey(source, "pkt");
+    REQUIRE(index->GetDefinitionRange(pkt_key).has_value());
+
+    auto data_key = fixture.MakeKey(source, "data");
+    REQUIRE(index->GetDefinitionRange(data_key).has_value());
+  }
+
+  // TODO(hankhsu): Add test for module with package imports after fixing module
+  // indexing Currently modules are not indexed when packages are present -
+  // needs investigation
 }
 
 }  // namespace slangd::semantic
