@@ -39,11 +39,40 @@ _Make SemanticIndex drop-in compatible with current separate indexes_
   - [x] Add `GetReferenceMap() -> const std::unordered_map<slang::SourceRange, SymbolKey>&`
   - [x] Basic tests to verify API functionality
 
-- [ ] **Evaluate module/interface special handling**
-  - [ ] Test current implementation with complex modules/interfaces
-  - [ ] Check if preVisit naturally traverses module bodies
-  - [ ] Add createInvalid() pattern only if gaps found
-  - [ ] Compare coverage with legacy definition index
+- [x] **Step 1: Enhanced Basic Testing Foundation**
+  - [x] Create SemanticIndexFixture similar to DefinitionIndexFixture
+  - [x] Add helper methods for precise SymbolKey creation
+  - [x] Add SourceRange verification utilities
+  - [x] Add better compilation and source management helpers
+  - [x] Test one basic scenario first, then incrementally add assertions
+
+- [ ] **Step 2: Crash Resilience Testing**
+  - [ ] Port interface crash scenarios from definition_index_test.cpp
+  - [ ] Test interface ports with member access (bus.addr patterns)
+  - [ ] Test undefined interfaces for LSP single-file resilience
+  - [ ] Test interface expressions in always_comb conditions
+  - [ ] Test complex module/interface scenarios with createInvalid() patterns
+
+- [ ] **Step 3: API Compatibility Testing**
+  - [ ] Compare SemanticIndex vs legacy DefinitionIndex behavior
+  - [ ] Verify same inputs produce same outputs for definition lookup
+  - [ ] Test SymbolKey generation matches legacy patterns
+  - [ ] Test reference tracking matches legacy reference_map
+  - [ ] Verify our "compatible API" actually is compatible
+
+- [ ] **Step 4: Complex SystemVerilog Patterns**
+  - [ ] Test nested scopes and multiple declarations
+  - [ ] Test parameter-dependent expressions and typedefs
+  - [ ] Test enum types with hierarchical children
+  - [ ] Test module body traversal via preVisit hook
+  - [ ] Compare coverage with legacy definition index (all 123 symbol types)
+
+- [ ] **Step 5: Multifile Testing Infrastructure**
+  - [ ] Create async test infrastructure like definition_multifile_test.cpp
+  - [ ] Test cross-package symbol resolution
+  - [ ] Test GlobalCatalog integration with SemanticIndex
+  - [ ] Test qualified package references (pkg::symbol patterns)
+  - [ ] Test OverlaySession integration
 
 ## Phase 2: Service Integration ⏳
 

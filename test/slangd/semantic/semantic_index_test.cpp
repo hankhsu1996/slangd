@@ -15,6 +15,67 @@ auto main(int argc, char* argv[]) -> int {
 
 namespace slangd::semantic {
 
+// Test fixture for SemanticIndex similar to DefinitionIndexFixture
+class SemanticIndexFixture {
+  using SemanticIndex = slangd::semantic::SemanticIndex;
+  using SymbolKey = slangd::semantic::SymbolKey;
+
+ public:
+  auto BuildIndexFromSource(const std::string& source)
+      -> std::unique_ptr<SemanticIndex> {
+    std::string path = "test.sv";
+    sourceManager_ = std::make_shared<slang::SourceManager>();
+    auto buffer = sourceManager_->assignText(path, source);
+    buffer_id_ = buffer.id;
+    auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *sourceManager_);
+
+    slang::Bag options;
+    compilation_ = std::make_unique<slang::ast::Compilation>(options);
+    compilation_->addSyntaxTree(tree);
+
+    return SemanticIndex::FromCompilation(*compilation_, *sourceManager_);
+  }
+
+  auto MakeKey(const std::string& source, const std::string& symbol)
+      -> SymbolKey {
+    size_t offset = source.find(symbol);
+    return SymbolKey{.bufferId = buffer_id_.getId(), .offset = offset};
+  }
+
+  auto MakeRange(
+      const std::string& source, const std::string& search_string,
+      size_t symbol_size) -> slang::SourceRange {
+    size_t offset = source.find(search_string);
+    auto start = slang::SourceLocation{buffer_id_, offset};
+    auto end = slang::SourceLocation{buffer_id_, offset + symbol_size};
+    return slang::SourceRange{start, end};
+  }
+
+  auto FindLocation(const std::string& source, const std::string& text)
+      -> slang::SourceLocation {
+    size_t offset = source.find(text);
+    if (offset == std::string::npos) {
+      return {};
+    }
+    return slang::SourceLocation{buffer_id_, offset};
+  }
+
+  [[nodiscard]] auto GetBufferId() const -> uint32_t {
+    return buffer_id_.getId();
+  }
+  [[nodiscard]] auto GetSourceManager() const -> slang::SourceManager* {
+    return sourceManager_.get();
+  }
+  [[nodiscard]] auto GetCompilation() const -> slang::ast::Compilation* {
+    return compilation_.get();
+  }
+
+ private:
+  std::shared_ptr<slang::SourceManager> sourceManager_;
+  std::unique_ptr<slang::ast::Compilation> compilation_;
+  slang::BufferID buffer_id_;
+};
+
 TEST_CASE(
     "SemanticIndex processes symbols via preVisit hook", "[semantic_index]") {
   std::string code = R"(
@@ -457,6 +518,29 @@ TEST_CASE(
   // Using invalid location should return nullopt
   auto result = index->LookupSymbolAt(slang::SourceLocation());
   REQUIRE(!result.has_value());
+}
+
+TEST_CASE("SemanticIndex basic definition tracking with fixture", "[semantic_index]") {
+  SemanticIndexFixture fixture;
+
+  SECTION("single variable declaration") {
+    const std::string source = R"(
+      module m;
+        logic test_signal;
+      endmodule
+    )";
+
+    auto index = fixture.BuildIndexFromSource(source);
+
+    // Step 1: Just verify it doesn't crash and basic functionality
+    REQUIRE(index != nullptr);
+    REQUIRE(index->GetSymbolCount() > 0);
+
+    // Step 2: Add precise assertion using fixture helpers
+    auto key = fixture.MakeKey(source, "test_signal");
+    auto def_range = index->GetDefinitionRange(key);
+    REQUIRE(def_range.has_value());
+  }
 }
 
 }  // namespace slangd::semantic
