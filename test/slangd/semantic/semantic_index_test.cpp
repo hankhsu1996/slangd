@@ -1,9 +1,12 @@
 #include "slangd/semantic/semantic_index.hpp"
 
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <catch2/catch_all.hpp>
+#include <fmt/format.h>
 #include <slang/ast/Compilation.h>
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/text/SourceManager.h>
@@ -39,6 +42,41 @@ class SemanticIndexFixture {
   auto MakeKey(const std::string& source, const std::string& symbol)
       -> SymbolKey {
     size_t offset = source.find(symbol);
+
+    if (offset == std::string::npos) {
+      throw std::runtime_error(
+          fmt::format("MakeKey: Symbol '{}' not found in source", symbol));
+    }
+
+    // Detect ambiguous symbol names early
+    size_t second_occurrence = source.find(symbol, offset + 1);
+    if (second_occurrence != std::string::npos) {
+      throw std::runtime_error(fmt::format(
+          "MakeKey: Ambiguous symbol '{}' found at multiple locations. "
+          "Use unique descriptive names (e.g., 'test_signal' not 'signal') "
+          "or use MakeKeyAt({}) for specific occurrence.",
+          symbol, offset));
+    }
+
+    return SymbolKey{.bufferId = buffer_id_.getId(), .offset = offset};
+  }
+
+  // Alternative method for cases where multiple occurrences are expected
+  auto MakeKeyAt(
+      const std::string& source, const std::string& symbol,
+      size_t occurrence = 0) -> SymbolKey {
+    size_t offset = 0;
+    for (size_t i = 0; i <= occurrence; ++i) {
+      offset = source.find(symbol, offset);
+      if (offset == std::string::npos) {
+        throw std::runtime_error(fmt::format(
+            "MakeKeyAt: Symbol '{}' occurrence {} not found in source", symbol,
+            occurrence));
+      }
+      if (i < occurrence) {
+        offset += symbol.length();
+      }
+    }
     return SymbolKey{.bufferId = buffer_id_.getId(), .offset = offset};
   }
 
@@ -601,7 +639,7 @@ TEST_CASE(
     auto def_range1 = index->GetDefinitionRange(key1);
     REQUIRE(def_range1.has_value());
 
-    auto key2 = fixture.MakeKey(source, "counter");
+    auto key2 = fixture.MakeKeyAt(source, "counter", 0);
     auto def_range2 = index->GetDefinitionRange(key2);
     REQUIRE(def_range2.has_value());
 
@@ -638,15 +676,15 @@ TEST_CASE(
     // Secondary: Regular symbols still indexed despite interface usage
     REQUIRE(index->GetSymbolCount() > 0);
 
-    auto key1 = fixture.MakeKey(source, "state");
+    auto key1 = fixture.MakeKeyAt(source, "state", 0);
     auto def_range1 = index->GetDefinitionRange(key1);
     REQUIRE(def_range1.has_value());
 
-    auto key2 = fixture.MakeKey(source, "counter");
+    auto key2 = fixture.MakeKeyAt(source, "counter", 0);
     auto def_range2 = index->GetDefinitionRange(key2);
     REQUIRE(def_range2.has_value());
 
-    auto key3 = fixture.MakeKey(source, "enable");
+    auto key3 = fixture.MakeKeyAt(source, "enable", 0);
     auto def_range3 = index->GetDefinitionRange(key3);
     REQUIRE(def_range3.has_value());
 
@@ -767,10 +805,10 @@ TEST_CASE(
     auto index = fixture.BuildIndexFromSource(source);
 
     // Typedef should be indexed
-    auto word_key = fixture.MakeKey(source, "word_t");
+    auto word_key = fixture.MakeKeyAt(source, "word_t", 0);
     REQUIRE(index->GetDefinitionRange(word_key).has_value());
 
-    auto state_key = fixture.MakeKey(source, "state_t");
+    auto state_key = fixture.MakeKeyAt(source, "state_t", 0);
     REQUIRE(index->GetDefinitionRange(state_key).has_value());
 
     // Enum values should be indexed
@@ -780,7 +818,7 @@ TEST_CASE(
     }
 
     // Variables using typedefs
-    auto data_key = fixture.MakeKey(source, "data");
+    auto data_key = fixture.MakeKeyAt(source, "data", 0);
     REQUIRE(index->GetDefinitionRange(data_key).has_value());
 
     auto current_state_key = fixture.MakeKey(source, "current_state");
@@ -806,7 +844,7 @@ TEST_CASE(
     REQUIRE(index->GetDefinitionRange(pkg_key).has_value());
 
     // Package contents should be indexed
-    auto width_key = fixture.MakeKey(source, "WIDTH");
+    auto width_key = fixture.MakeKeyAt(source, "WIDTH", 0);
     REQUIRE(index->GetDefinitionRange(width_key).has_value());
 
     auto type_key = fixture.MakeKey(source, "data_t");
@@ -838,23 +876,48 @@ TEST_CASE(
     REQUIRE(index->GetSymbolCount() > 0);
 
     // Struct and union types should be indexed
-    auto packet_key = fixture.MakeKey(source, "packet_t");
+    auto packet_key = fixture.MakeKeyAt(source, "packet_t", 0);
     REQUIRE(index->GetDefinitionRange(packet_key).has_value());
 
-    auto data_type_key = fixture.MakeKey(source, "data_t");
+    auto data_type_key = fixture.MakeKeyAt(source, "data_t", 0);
     REQUIRE(index->GetDefinitionRange(data_type_key).has_value());
 
     // Variables using the types
     auto pkt_key = fixture.MakeKey(source, "pkt");
     REQUIRE(index->GetDefinitionRange(pkt_key).has_value());
-
-    auto data_key = fixture.MakeKey(source, "data");
-    REQUIRE(index->GetDefinitionRange(data_key).has_value());
   }
 
-  // TODO(hankhsu): Add test for module with package imports after fixing module
-  // indexing Currently modules are not indexed when packages are present -
-  // needs investigation
+  SECTION("module with package imports") {
+    const std::string source = R"(
+      package test_pkg;
+        parameter WIDTH = 32;
+        typedef logic [WIDTH-1:0] data_t;
+      endpackage
+
+      module test_module;
+        import test_pkg::*;
+        data_t test_signal;
+      endmodule
+    )";
+
+    auto index = fixture.BuildIndexFromSource(source);
+
+    // Verify both package and module symbols are indexed
+    auto pkg_key = fixture.MakeKeyAt(source, "test_pkg", 0);
+    REQUIRE(index->GetDefinitionRange(pkg_key).has_value());
+
+    auto mod_key = fixture.MakeKey(source, "test_module");
+    REQUIRE(index->GetDefinitionRange(mod_key).has_value());
+
+    auto sig_key = fixture.MakeKey(source, "test_signal");
+    REQUIRE(index->GetDefinitionRange(sig_key).has_value());
+
+    auto width_key = fixture.MakeKeyAt(source, "WIDTH", 0);
+    REQUIRE(index->GetDefinitionRange(width_key).has_value());
+
+    auto typedef_key = fixture.MakeKeyAt(source, "data_t", 0);
+    REQUIRE(index->GetDefinitionRange(typedef_key).has_value());
+  }
 }
 
 }  // namespace slangd::semantic

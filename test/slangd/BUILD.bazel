@@ -94,6 +94,7 @@ cc_test(
     deps = [
         "//:slangd_core",
         "@catch2",
+        "@fmt",
         "@slang",
     ],
 )
