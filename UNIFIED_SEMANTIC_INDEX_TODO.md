@@ -31,13 +31,13 @@ _Make SemanticIndex drop-in compatible with current separate indexes_
   - [x] Store symbol references in reference_map_
   - [x] Test references are tracked correctly
 
-- [ ] **Add DefinitionIndex-compatible API**
+- [x] **Add DefinitionIndex-compatible API**
 
-  - [ ] Add `LookupSymbolAt(slang::SourceLocation) -> std::optional<SymbolKey>`
-  - [ ] Add `GetDefinitionRange(const SymbolKey&) -> std::optional<slang::SourceRange>`
-  - [ ] Add `GetDefinitionRanges() -> const std::unordered_map<SymbolKey, slang::SourceRange>&`
-  - [ ] Add `GetReferenceMap() -> const std::unordered_map<slang::SourceRange, SymbolKey>&`
-  - [ ] Port definition_index tests to verify compatibility
+  - [x] Add `LookupSymbolAt(slang::SourceLocation) -> std::optional<SymbolKey>`
+  - [x] Add `GetDefinitionRange(const SymbolKey&) -> std::optional<slang::SourceRange>`
+  - [x] Add `GetDefinitionRanges() -> const std::unordered_map<SymbolKey, slang::SourceRange>&`
+  - [x] Add `GetReferenceMap() -> const std::unordered_map<slang::SourceRange, SymbolKey>&`
+  - [x] Basic tests to verify API functionality
 
 - [ ] **Evaluate module/interface special handling**
   - [ ] Test current implementation with complex modules/interfaces

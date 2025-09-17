@@ -77,6 +77,23 @@ class SemanticIndex {
   auto GetDocumentSymbols(const std::string& uri) const
       -> std::vector<lsp::DocumentSymbol>;
 
+  // DefinitionIndex-compatible API
+  auto GetDefinitionRanges() const
+      -> const std::unordered_map<SymbolKey, slang::SourceRange>& {
+    return definition_ranges_;
+  }
+
+  auto GetReferenceMap() const
+      -> const std::unordered_map<slang::SourceRange, SymbolKey>& {
+    return reference_map_;
+  }
+
+  auto GetDefinitionRange(const SymbolKey& key) const
+      -> std::optional<slang::SourceRange>;
+
+  auto LookupSymbolAt(slang::SourceLocation loc) const
+      -> std::optional<SymbolKey>;
+
  private:
   explicit SemanticIndex() = default;
 

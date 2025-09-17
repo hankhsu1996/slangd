@@ -391,4 +391,72 @@ TEST_CASE("SemanticIndex tracks references correctly", "[semantic_index]") {
   // tracking when GetReferenceMap() API is implemented
 }
 
+TEST_CASE(
+    "SemanticIndex DefinitionIndex-compatible API basic functionality",
+    "[semantic_index]") {
+  std::string code = R"(
+    module test_module;
+      logic signal;
+      typedef logic [7:0] byte_t;
+    endmodule
+  )";
+
+  auto source_manager = std::make_shared<slang::SourceManager>();
+  slang::Bag options;
+  auto compilation = std::make_unique<slang::ast::Compilation>(options);
+
+  auto buffer = source_manager->assignText("test.sv", code);
+  auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
+  if (tree) {
+    compilation->addSyntaxTree(tree);
+  }
+
+  auto index = SemanticIndex::FromCompilation(*compilation, *source_manager);
+
+  // Test getter methods exist and return proper types
+  const auto& definition_ranges = index->GetDefinitionRanges();
+  const auto& reference_map = index->GetReferenceMap();
+
+  // Basic sanity checks - should have some data
+  REQUIRE(!definition_ranges.empty());
+
+  // Verify reference_map is accessible (might be empty, that's OK)
+  (void)reference_map;  // Suppress unused warning
+
+  // Test GetDefinitionRange for some symbol
+  if (!definition_ranges.empty()) {
+    const auto& [first_key, first_range] = *definition_ranges.begin();
+    auto retrieved_range = index->GetDefinitionRange(first_key);
+    REQUIRE(retrieved_range.has_value());
+    REQUIRE(retrieved_range.value() == first_range);
+  }
+}
+
+TEST_CASE(
+    "SemanticIndex LookupSymbolAt method exists and returns optional",
+    "[semantic_index]") {
+  std::string code = R"(
+    module test_module;
+      logic signal;
+    endmodule
+  )";
+
+  auto source_manager = std::make_shared<slang::SourceManager>();
+  slang::Bag options;
+  auto compilation = std::make_unique<slang::ast::Compilation>(options);
+
+  auto buffer = source_manager->assignText("test.sv", code);
+  auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
+  if (tree) {
+    compilation->addSyntaxTree(tree);
+  }
+
+  auto index = SemanticIndex::FromCompilation(*compilation, *source_manager);
+
+  // Test that LookupSymbolAt exists and returns optional type
+  // Using invalid location should return nullopt
+  auto result = index->LookupSymbolAt(slang::SourceLocation());
+  REQUIRE(!result.has_value());
+}
+
 }  // namespace slangd::semantic

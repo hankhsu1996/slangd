@@ -496,4 +496,24 @@ void SemanticIndex::IndexVisitor::handle(
   this->visitDefault(expr);
 }
 
+auto SemanticIndex::GetDefinitionRange(const SymbolKey& key) const
+    -> std::optional<slang::SourceRange> {
+  auto it = definition_ranges_.find(key);
+  if (it != definition_ranges_.end()) {
+    return it->second;
+  }
+  return std::nullopt;
+}
+
+auto SemanticIndex::LookupSymbolAt(slang::SourceLocation loc) const
+    -> std::optional<SymbolKey> {
+  // O(n) search through reference map - matches legacy DefinitionIndex behavior
+  for (const auto& [range, key] : reference_map_) {
+    if (range.contains(loc)) {
+      return key;
+    }
+  }
+  return std::nullopt;
+}
+
 }  // namespace slangd::semantic
