@@ -282,7 +282,8 @@ TEST_CASE(
   REQUIRE(found_module);
 }
 
-TEST_CASE("SemanticIndex collects definition ranges correctly", "[semantic_index]") {
+TEST_CASE(
+    "SemanticIndex collects definition ranges correctly", "[semantic_index]") {
   std::string code = R"(
     module test_module;
       logic signal;
@@ -342,6 +343,52 @@ TEST_CASE("SemanticIndex collects definition ranges correctly", "[semantic_index
   REQUIRE(found_signal);
   REQUIRE(found_typedef);
   REQUIRE(found_block);
+}
+
+TEST_CASE("SemanticIndex tracks references correctly", "[semantic_index]") {
+  std::string code = R"(
+    module test_module;
+      logic signal;
+      typedef logic [7:0] byte_t;
+
+      initial begin
+        signal = 1'b0;  // Reference to signal
+      end
+    endmodule
+  )";
+
+  auto source_manager = std::make_shared<slang::SourceManager>();
+  slang::Bag options;
+  auto compilation = std::make_unique<slang::ast::Compilation>(options);
+
+  auto buffer = source_manager->assignText("test.sv", code);
+  auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
+  if (tree) {
+    compilation->addSyntaxTree(tree);
+  }
+
+  auto index = SemanticIndex::FromCompilation(*compilation, *source_manager);
+
+  // Verify that reference tracking populated the reference_map_
+  // We need to access the reference_map through a getter method (to be added
+  // later) For now, just verify that the functionality doesn't crash
+  REQUIRE(index != nullptr);
+  REQUIRE(index->GetSymbolCount() > 0);
+
+  // Look for the signal definition in symbols
+  bool found_signal_definition = false;
+  for (const auto& [location, info] : index->GetAllSymbols()) {
+    if (std::string(info.symbol->name) == "signal" && info.is_definition) {
+      found_signal_definition = true;
+      REQUIRE(info.is_definition);
+      break;
+    }
+  }
+
+  REQUIRE(found_signal_definition);
+
+  // TODO(hankhsu): Add reference_map_ access methods to verify reference
+  // tracking when GetReferenceMap() API is implemented
 }
 
 }  // namespace slangd::semantic

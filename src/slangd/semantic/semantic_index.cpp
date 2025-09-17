@@ -2,6 +2,7 @@
 
 #include <slang/ast/Compilation.h>
 #include <slang/ast/Symbol.h>
+#include <slang/ast/expressions/MiscExpressions.h>
 #include <slang/ast/symbols/CompilationUnitSymbols.h>
 #include <slang/ast/symbols/InstanceSymbols.h>
 #include <slang/ast/symbols/MemberSymbols.h>
@@ -23,47 +24,8 @@ auto SemanticIndex::FromCompilation(
   // Store source manager reference for document symbol processing
   index->source_manager_ = &source_manager;
 
-  // Create visitor for comprehensive symbol collection
-  auto visitor = IndexVisitor([&](const slang::ast::Symbol& symbol) {
-    // Only index symbols that meet basic criteria
-    if (!ShouldIndex(symbol)) {
-      return;
-    }
-
-    // Unwrap symbol to handle TransparentMember recursion
-    const auto& unwrapped = UnwrapSymbol(symbol);
-
-    // Extract precise definition range from syntax node
-    slang::SourceRange definition_range;
-    bool is_definition = false;
-    if (const auto* syntax = unwrapped.getSyntax()) {
-      definition_range = ExtractDefinitionRange(unwrapped, *syntax);
-      is_definition = true;
-    } else {
-      // Fallback to symbol location for symbols without syntax
-      definition_range = slang::SourceRange{unwrapped.location, unwrapped.location};
-      is_definition = false;
-    }
-
-    // Create SymbolInfo with cached LSP data
-    SymbolInfo info{
-        .symbol = &unwrapped,
-        .location = unwrapped.location,
-        .lsp_kind = ConvertToLspKind(unwrapped),
-        .range = ComputeLspRange(unwrapped, source_manager),
-        .parent = unwrapped.getParentScope(),
-        .is_definition = is_definition,
-        .definition_range = definition_range};
-
-    // Store in flat map for O(1) lookup
-    index->symbols_[unwrapped.location] = info;
-
-    // Store definition range for go-to-definition API
-    if (is_definition) {
-      SymbolKey key = SymbolKey::FromSourceLocation(unwrapped.location);
-      index->definition_ranges_[key] = definition_range;
-    }
-  });
+  // Create visitor for comprehensive symbol collection and reference tracking
+  auto visitor = IndexVisitor(index.get(), &source_manager);
 
   // Single traversal from root captures ALL symbols
   compilation.getRoot().visit(visitor);
@@ -417,8 +379,8 @@ auto SemanticIndex::HandleEnumTypeAlias(
 }
 
 auto SemanticIndex::ExtractDefinitionRange(
-    const slang::ast::Symbol& symbol,
-    const slang::syntax::SyntaxNode& syntax) -> slang::SourceRange {
+    const slang::ast::Symbol& symbol, const slang::syntax::SyntaxNode& syntax)
+    -> slang::SourceRange {
   using SK = slang::ast::SymbolKind;
   using SyntaxKind = slang::syntax::SyntaxKind;
 
@@ -428,14 +390,16 @@ auto SemanticIndex::ExtractDefinitionRange(
   switch (symbol.kind) {
     case SK::Package:
       if (syntax.kind == SyntaxKind::PackageDeclaration) {
-        const auto& pkg_syntax = syntax.as<slang::syntax::ModuleDeclarationSyntax>();
+        const auto& pkg_syntax =
+            syntax.as<slang::syntax::ModuleDeclarationSyntax>();
         return pkg_syntax.header->name.range();
       }
       break;
 
     case SK::Definition: {
       if (syntax.kind == SyntaxKind::ModuleDeclaration) {
-        const auto& mod_syntax = syntax.as<slang::syntax::ModuleDeclarationSyntax>();
+        const auto& mod_syntax =
+            syntax.as<slang::syntax::ModuleDeclarationSyntax>();
         return mod_syntax.header->name.range();
       }
       break;
@@ -443,7 +407,8 @@ auto SemanticIndex::ExtractDefinitionRange(
 
     case SK::TypeAlias:
       if (syntax.kind == SyntaxKind::TypedefDeclaration) {
-        const auto& typedef_syntax = syntax.as<slang::syntax::TypedefDeclarationSyntax>();
+        const auto& typedef_syntax =
+            syntax.as<slang::syntax::TypedefDeclarationSyntax>();
         return typedef_syntax.name.range();
       }
       break;
@@ -456,7 +421,8 @@ auto SemanticIndex::ExtractDefinitionRange(
     case SK::StatementBlock: {
       if (syntax.kind == SyntaxKind::SequentialBlockStatement ||
           syntax.kind == SyntaxKind::ParallelBlockStatement) {
-        const auto& block_syntax = syntax.as<slang::syntax::BlockStatementSyntax>();
+        const auto& block_syntax =
+            syntax.as<slang::syntax::BlockStatementSyntax>();
         if (block_syntax.blockName != nullptr) {
           return block_syntax.blockName->name.range();
         }
@@ -471,6 +437,63 @@ auto SemanticIndex::ExtractDefinitionRange(
 
   // Default fallback: use the syntax node's source range
   return syntax.sourceRange();
+}
+
+// IndexVisitor implementation
+void SemanticIndex::IndexVisitor::ProcessSymbol(
+    const slang::ast::Symbol& symbol) {
+  // Only index symbols that meet basic criteria
+  if (!SemanticIndex::ShouldIndex(symbol)) {
+    return;
+  }
+
+  // Unwrap symbol to handle TransparentMember recursion
+  const auto& unwrapped = SemanticIndex::UnwrapSymbol(symbol);
+
+  // Extract precise definition range from syntax node
+  slang::SourceRange definition_range;
+  bool is_definition = false;
+  if (const auto* syntax = unwrapped.getSyntax()) {
+    definition_range =
+        SemanticIndex::ExtractDefinitionRange(unwrapped, *syntax);
+    is_definition = true;
+  } else {
+    // Fallback to symbol location for symbols without syntax
+    definition_range =
+        slang::SourceRange{unwrapped.location, unwrapped.location};
+    is_definition = false;
+  }
+
+  // Create SymbolInfo with cached LSP data
+  SymbolInfo info{
+      .symbol = &unwrapped,
+      .location = unwrapped.location,
+      .lsp_kind = SemanticIndex::ConvertToLspKind(unwrapped),
+      .range = SemanticIndex::ComputeLspRange(unwrapped, *source_manager_),
+      .parent = unwrapped.getParentScope(),
+      .is_definition = is_definition,
+      .definition_range = definition_range};
+
+  // Store in flat map for O(1) lookup
+  index_->symbols_[unwrapped.location] = info;
+
+  // Store definition range for go-to-definition API
+  if (is_definition) {
+    SymbolKey key = SymbolKey::FromSourceLocation(unwrapped.location);
+    index_->definition_ranges_[key] = definition_range;
+  }
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::NamedValueExpression& expr) {
+  // Track reference: expr.sourceRange -> expr.symbol.location
+  if (expr.symbol.location.valid()) {
+    SymbolKey key = SymbolKey::FromSourceLocation(expr.symbol.location);
+    index_->reference_map_[expr.sourceRange] = key;
+  }
+
+  // Continue traversal
+  this->visitDefault(expr);
 }
 
 }  // namespace slangd::semantic

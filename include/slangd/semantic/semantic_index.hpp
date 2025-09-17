@@ -90,21 +90,24 @@ class SemanticIndex {
   // Store source manager reference for symbol processing
   const slang::SourceManager* source_manager_ = nullptr;
 
-  // Visitor for symbol collection (moved from separate file)
-  template <typename TCallback>
-  class IndexVisitor
-      : public slang::ast::ASTVisitor<IndexVisitor<TCallback>, true, true> {
+  // Visitor for symbol collection and reference tracking
+  class IndexVisitor : public slang::ast::ASTVisitor<IndexVisitor, true, true> {
    public:
-    explicit IndexVisitor(TCallback callback) : callback_(std::move(callback)) {
+    explicit IndexVisitor(
+        SemanticIndex* index, const slang::SourceManager* source_manager)
+        : index_(index), source_manager_(source_manager) {
     }
 
     // Universal pre-visit hook for symbols
     template <typename T>
     void preVisit(const T& symbol) {
       if constexpr (std::is_base_of_v<slang::ast::Symbol, T>) {
-        callback_(symbol);
+        ProcessSymbol(symbol);
       }
     }
+
+    // Reference tracking for NamedValueExpression
+    void handle(const slang::ast::NamedValueExpression& expr);
 
     // Default traversal
     template <typename T>
@@ -113,7 +116,10 @@ class SemanticIndex {
     }
 
    private:
-    TCallback callback_;
+    SemanticIndex* index_;
+    const slang::SourceManager* source_manager_;
+
+    void ProcessSymbol(const slang::ast::Symbol& symbol);
   };
 
   // Utility methods ported from existing indexes
@@ -131,8 +137,8 @@ class SemanticIndex {
 
   // Definition range extraction from syntax nodes
   static auto ExtractDefinitionRange(
-      const slang::ast::Symbol& symbol,
-      const slang::syntax::SyntaxNode& syntax) -> slang::SourceRange;
+      const slang::ast::Symbol& symbol, const slang::syntax::SyntaxNode& syntax)
+      -> slang::SourceRange;
 
   // Helper methods for document symbol building
   auto BuildDocumentSymbolTree() const -> std::vector<lsp::DocumentSymbol>;

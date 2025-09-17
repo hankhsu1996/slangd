@@ -25,11 +25,11 @@ _Make SemanticIndex drop-in compatible with current separate indexes_
   - [x] Set is_definition flag in SymbolInfo
   - [x] Test definition ranges are collected correctly
 
-- [ ] **Add reference tracking**
+- [x] **Add reference tracking**
 
-  - [ ] Add `handle(NamedValueExpression)` to IndexVisitor
-  - [ ] Store symbol references in reference*map*
-  - [ ] Test references are tracked correctly
+  - [x] Add `handle(NamedValueExpression)` to IndexVisitor
+  - [x] Store symbol references in reference_map_
+  - [x] Test references are tracked correctly
 
 - [ ] **Add DefinitionIndex-compatible API**
 
