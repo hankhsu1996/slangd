@@ -46,14 +46,6 @@ class OverlaySession {
     return *diagnostic_index_;
   }
 
-  // Compatibility methods that delegate to SemanticIndex
-  [[nodiscard]] auto GetDefinitionIndex() const -> const semantic::SemanticIndex& {
-    return *semantic_index_;
-  }
-
-  [[nodiscard]] auto GetSymbolIndex() const -> const semantic::SemanticIndex& {
-    return *semantic_index_;
-  }
 
   // Access to compilation for advanced queries
   [[nodiscard]] auto GetCompilation() const -> slang::ast::Compilation& {

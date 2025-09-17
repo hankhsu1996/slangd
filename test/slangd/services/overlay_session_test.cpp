@@ -72,14 +72,14 @@ TEST_CASE(
     REQUIRE(session != nullptr);
 
     // Verify session has valid components
-    const auto& definition_index = session->GetDefinitionIndex();
+    const auto& semantic_index = session->GetSemanticIndex();
 
     // Basic validation - session should be functional
     // No need to check low-level Slang diagnostics here - that's tested
     // elsewhere
 
     // Should have some definitions in the symbol index
-    const auto& definitions = definition_index.GetDefinitionRanges();
+    const auto& definitions = semantic_index.GetDefinitionRanges();
     REQUIRE(definitions.size() > 0);
 
     spdlog::info(
@@ -113,8 +113,8 @@ TEST_CASE("OverlaySession works without GlobalCatalog", "[overlay_session]") {
     REQUIRE(session != nullptr);
 
     // Should work fine in single-file mode
-    const auto& definition_index = session->GetDefinitionIndex();
-    const auto& definitions = definition_index.GetDefinitionRanges();
+    const auto& semantic_index = session->GetSemanticIndex();
+    const auto& definitions = semantic_index.GetDefinitionRanges();
 
     spdlog::info(
         "Single-file overlay session: {} definitions", definitions.size());

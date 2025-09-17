@@ -73,7 +73,6 @@ auto SemanticIndex::ConvertToLspKind(const slang::ast::Symbol& symbol)
   using LK = lsp::SymbolKind;
   using DK = slang::ast::DefinitionKind;
 
-  // EXACT COPY from legacy symbol_index.cpp
   // Handle type alias first
   if (symbol.kind == SK::TypeAlias) {
     const auto& type_alias = symbol.as<slang::ast::TypeAliasType>();
