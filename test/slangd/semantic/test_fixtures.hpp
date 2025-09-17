@@ -1,8 +1,10 @@
 #pragma once
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -193,6 +195,46 @@ class MultiFileSemanticFixture : public SemanticTestFixture {
 
     return SemanticIndex::FromCompilation(
         *GetCompilation(), *GetSourceManager());
+  }
+
+  // Helper to verify cross-file reference resolution
+  auto VerifySymbolReference(const SemanticIndex& index,
+                             const std::string& source,
+                             const std::string& symbol_name) -> bool {
+    // Find the symbol usage location in source
+    auto location = FindLocation(source, symbol_name);
+    if (!location.valid()) {
+      return false;
+    }
+
+    // Look up symbol at that location
+    auto symbol_key = index.LookupSymbolAt(location);
+    if (!symbol_key.has_value()) {
+      return false;
+    }
+
+    // Verify it has a definition range
+    auto def_range = index.GetDefinitionRange(*symbol_key);
+    return def_range.has_value();
+  }
+
+  // Helper to count symbols from different buffers
+  static auto CountBuffersWithSymbols(const SemanticIndex& index) -> size_t {
+    const auto& definition_ranges = index.GetDefinitionRanges();
+    std::set<uint32_t> buffer_ids;
+    for (const auto& [key, range] : definition_ranges) {
+      buffer_ids.insert(key.bufferId);
+    }
+    return buffer_ids.size();
+  }
+
+  // Helper to check if cross-file references exist
+  static auto HasCrossFileReferences(const SemanticIndex& index) -> bool {
+    const auto& reference_map = index.GetReferenceMap();
+    return std::ranges::any_of(reference_map, [](const auto& entry) {
+      const auto& [ref_range, def_key] = entry;
+      return ref_range.start().buffer().getId() != def_key.bufferId;
+    });
   }
 
  private:

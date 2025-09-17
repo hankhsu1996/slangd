@@ -114,3 +114,18 @@ cc_test(
         "@slang",
     ],
 )
+
+cc_test(
+    name = "semantic_index_multifile_test",
+    timeout = "short",
+    srcs = [
+        "semantic/semantic_index_multifile_test.cpp",
+        "semantic/test_fixtures.hpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@fmt",
+        "@slang",
+    ],
+)

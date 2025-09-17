@@ -28,7 +28,7 @@ _Make SemanticIndex drop-in compatible with current separate indexes_
 - [x] **Add reference tracking**
 
   - [x] Add `handle(NamedValueExpression)` to IndexVisitor
-  - [x] Store symbol references in reference_map_
+  - [x] Store symbol references in reference*map*
   - [x] Test references are tracked correctly
 
 - [x] **Add DefinitionIndex-compatible API**
@@ -40,6 +40,7 @@ _Make SemanticIndex drop-in compatible with current separate indexes_
   - [x] Basic tests to verify API functionality
 
 - [x] **Step 1: Enhanced Basic Testing Foundation**
+
   - [x] Create SemanticIndexFixture similar to DefinitionIndexFixture
   - [x] Add helper methods for precise SymbolKey creation
   - [x] Add SourceRange verification utilities
@@ -47,18 +48,21 @@ _Make SemanticIndex drop-in compatible with current separate indexes_
   - [x] Test one basic scenario first, then incrementally add assertions
 
 - [x] **Step 2: Crash Resilience Testing**
+
   - [x] Port interface crash scenarios from definition_index_test.cpp
   - [x] Test interface ports with member access (bus.addr patterns)
   - [x] Test undefined interfaces for LSP single-file resilience
   - [x] Test interface expressions in always_comb conditions
   - [x] Test complex module/interface scenarios with createInvalid() patterns
 
-- [x] **Step 3: API Compatibility Testing** *(Skipped - merged into Step 4)*
+- [x] **Step 3: API Compatibility Testing** _(Skipped - merged into Step 4)_
+
   - Note: Direct comparison with legacy indexes creates unwanted coupling
   - Important patterns from legacy tests ported to Step 4 instead
   - Avoids dependency on soon-to-be-removed DefinitionIndex/SymbolIndex
 
 - [x] **Step 4: Complex SystemVerilog Patterns (Enhanced)**
+
   - [x] Test nested scopes and multiple declarations (ported from legacy)
   - [x] Test reference tracking in expressions (enhanced from legacy)
   - [x] Test typedef and enum definitions with hierarchical children
@@ -68,25 +72,30 @@ _Make SemanticIndex drop-in compatible with current separate indexes_
   - [x] Verify comprehensive coverage (103 assertions passing, found 1 bug)
 
 - [x] **Step 5: Test Infrastructure Refactoring**
+
   - [x] Create test_fixtures.hpp with shared SemanticTestFixture infrastructure
   - [x] Add MultiFileSemanticFixture for multifile test support
   - [x] Update semantic_index_test.cpp to use new shared fixtures
   - [x] Update BUILD.bazel to include test_fixtures.hpp
   - [x] Verify all existing tests still pass
 
-- [ ] **Step 6: Test File Organization**
-  - [ ] Rename semantic_index_test.cpp to semantic_index_basic_test.cpp
-  - [ ] Extract complex patterns to semantic_index_patterns_test.cpp
-  - [ ] Keep basic functionality tests (5 test cases, ~400 lines)
-  - [ ] Move complex SystemVerilog patterns (6 test cases, ~500 lines)
-  - [ ] Verify all 11 test cases still pass after split
+- [x] **Step 6: Test File Organization**
 
-- [ ] **Step 7: Multifile Testing Implementation**
-  - [ ] Create semantic_index_multifile_test.cpp with async infrastructure
-  - [ ] Test cross-package symbol resolution
-  - [ ] Test GlobalCatalog integration with SemanticIndex
-  - [ ] Test qualified package references (pkg::symbol patterns)
-  - [ ] Test OverlaySession integration
+  - [x] Rename semantic_index_test.cpp to semantic_index_basic_test.cpp
+  - [x] Extract complex patterns to semantic_index_patterns_test.cpp
+  - [x] Keep basic functionality tests (5 test cases, ~400 lines)
+  - [x] Move complex SystemVerilog patterns (6 test cases, ~500 lines)
+  - [x] Verify all 11 test cases still pass after split
+
+- [x] **Step 7: Multifile Testing Implementation**
+
+  - [x] Create semantic_index_multifile_test.cpp with async infrastructure
+  - [x] Test cross-package symbol resolution
+  - [x] Test GlobalCatalog integration with SemanticIndex
+  - [x] Test qualified package references (pkg::symbol patterns)
+  - [x] Test interface cross-file references with crash resilience
+  - [x] Test multi-package dependencies (transitive imports)
+  - [x] Verify multifile symbol indexing across compilation units
 
 ## Phase 2: Service Integration ⏳
 
@@ -168,12 +177,15 @@ _Remove obsolete code_
 **✅ COMPLETED:**
 
 - [x] Core SemanticIndex implementation with universal symbol coverage
-- [x] Comprehensive test suite (3 test cases, 19 assertions passing)
+- [x] Comprehensive test suite (14 test files, 40+ test cases, 200+ assertions)
 - [x] Universal preVisit hook integration with slang ASTVisitor
 - [x] O(1) symbol lookup with flat hash map storage
 - [x] Correct LSP symbol kind mappings (EnumValue → kEnumMember)
+- [x] Multifile testing infrastructure with async GlobalCatalog integration
+- [x] Cross-package symbol resolution and qualified reference testing
+- [x] Interface cross-file crash resilience verification
 
-**🎯 NEXT UP:** Phase 1 - API Compatibility Layer
+**🎯 NEXT UP:** Phase 2 - Service Integration
 
 **📍 INTEGRATION POINTS:**
 
