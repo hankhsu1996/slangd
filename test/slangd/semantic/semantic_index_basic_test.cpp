@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
@@ -567,6 +568,64 @@ TEST_CASE(
   }
 
   REQUIRE(found_package);
+}
+
+TEST_CASE(
+    "SemanticIndex collects symbols inside generate if blocks",
+    "[semantic_index]") {
+  std::string code = R"(
+    module test_gen;
+      generate
+        if (1) begin : gen_block
+          logic gen_signal;
+          parameter int GEN_PARAM = 42;
+        end
+      endgenerate
+    endmodule
+  )";
+
+  SemanticTestFixture fixture;
+  auto index = fixture.BuildIndexFromSource(code);
+  auto symbols = index->GetDocumentSymbols("test.sv");
+
+  // Find generate block and verify it contains both signal and parameter
+  auto gen_block = std::find_if(
+      symbols[0].children->begin(), symbols[0].children->end(),
+      [](const auto& s) { return s.name == "gen_block"; });
+
+  REQUIRE(gen_block != symbols[0].children->end());
+  REQUIRE(gen_block->children.has_value());
+  REQUIRE(gen_block->children->size() == 2);
+}
+
+TEST_CASE(
+    "SemanticIndex collects symbols inside generate for loops",
+    "[semantic_index]") {
+  std::string code = R"(
+    module test_gen_for;
+      generate
+        for (genvar i = 0; i < 4; i++) begin : gen_loop
+          logic loop_signal;
+          parameter int LOOP_PARAM = 99;
+        end
+      endgenerate
+    endmodule
+  )";
+
+  SemanticTestFixture fixture;
+  auto index = fixture.BuildIndexFromSource(code);
+  auto symbols = index->GetDocumentSymbols("test.sv");
+
+  // Find generate for loop block and verify it contains template symbols
+  auto gen_loop = std::find_if(
+      symbols[0].children->begin(), symbols[0].children->end(),
+      [](const auto& s) { return s.name == "gen_loop"; });
+
+  REQUIRE(gen_loop != symbols[0].children->end());
+  REQUIRE(gen_loop->children.has_value());
+  // Generate for loop should show template symbols once, not all iterations
+  // Expected: i, loop_signal, LOOP_PARAM (3 unique symbols)
+  REQUIRE(gen_loop->children->size() == 3);
 }
 
 }  // namespace slangd::semantic

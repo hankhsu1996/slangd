@@ -3,6 +3,7 @@
 #include <slang/ast/Compilation.h>
 #include <slang/ast/Symbol.h>
 #include <slang/ast/expressions/MiscExpressions.h>
+#include <slang/ast/symbols/BlockSymbols.h>
 #include <slang/ast/symbols/CompilationUnitSymbols.h>
 #include <slang/ast/symbols/InstanceSymbols.h>
 #include <slang/ast/symbols/MemberSymbols.h>
@@ -209,7 +210,9 @@ auto SemanticIndex::ShouldIndex(const slang::ast::Symbol& symbol) -> bool {
       case SK::CompilationUnit:
       case SK::InstanceBody:
       case SK::Instance:
-        break;  // Allow these unnamed symbols
+      case SK::GenerateBlock:       // Allow unnamed generate blocks
+      case SK::GenerateBlockArray:  // Allow unnamed generate block arrays
+        break;                      // Allow these unnamed symbols
       default:
         return false;  // Skip other unnamed symbols
     }
@@ -254,7 +257,7 @@ auto SemanticIndex::BuildDocumentSymbolTree(const std::string& uri) const
     }
   }
 
-  // Debug: If no roots found, check what parents we have
+  // If no roots found, check what parents we have
   if (roots.empty()) {
     // Find symbols that might be top-level based on context
     for (const auto& [location, info] : symbols_) {
@@ -316,6 +319,42 @@ auto SemanticIndex::AttachChildrenToSymbol(
     const -> void {
   if (parent_scope == nullptr) {
     return;  // No scope to check for children
+  }
+
+  // Special handling for GenerateBlockArraySymbol: collect unique symbols
+  // from template, not from all iterations
+  if (parent_scope->asSymbol().kind ==
+      slang::ast::SymbolKind::GenerateBlockArray) {
+    const auto& gen_array =
+        parent_scope->asSymbol().as<slang::ast::GenerateBlockArraySymbol>();
+
+    // For LSP purposes, we only need to show the template symbols once,
+    // not all iterations. Use the first entry as the representative.
+    if (!gen_array.entries.empty() && (gen_array.entries[0] != nullptr) &&
+        gen_array.entries[0]->isScope()) {
+      const auto& block_scope = gen_array.entries[0]->as<slang::ast::Scope>();
+
+      // Add all symbols from the template (first entry only)
+      for (const auto& member : block_scope.members()) {
+        if (ShouldIndex(member)) {
+          // Create SymbolInfo for the member
+          SymbolInfo member_info{
+              .symbol = &member,
+              .location = member.location,
+              .lsp_kind = ConvertToLspKind(member),
+              .range = ComputeLspRange(member, *source_manager_),
+              .parent = &block_scope,
+              .is_definition = true,
+              .definition_range =
+                  slang::SourceRange{member.location, member.location},
+              .buffer_id = member.location.buffer().getId()};
+
+          auto child_doc_symbol = CreateDocumentSymbol(member_info);
+          parent.children->push_back(std::move(child_doc_symbol));
+        }
+      }
+    }
+    return;  // Done with special handling
   }
 
   auto children_it = children_map.find(parent_scope);
@@ -506,6 +545,18 @@ auto SemanticIndex::ExtractDefinitionRange(
 // IndexVisitor implementation
 void SemanticIndex::IndexVisitor::ProcessSymbol(
     const slang::ast::Symbol& symbol) {
+  // Skip individual GenerateBlockSymbol entries when they're part of a
+  // GenerateBlockArraySymbol We'll handle these through the special template
+  // extraction logic instead
+  if (symbol.kind == slang::ast::SymbolKind::GenerateBlock) {
+    const auto* parent_scope = symbol.getParentScope();
+    if ((parent_scope != nullptr) &&
+        parent_scope->asSymbol().kind ==
+            slang::ast::SymbolKind::GenerateBlockArray) {
+      return;
+    }
+  }
+
   // Only index symbols that meet basic criteria
   if (!SemanticIndex::ShouldIndex(symbol)) {
     return;
@@ -540,7 +591,37 @@ void SemanticIndex::IndexVisitor::ProcessSymbol(
       .buffer_id = unwrapped.location.buffer().getId()};
 
   // Store in flat map for O(1) lookup
-  index_->symbols_[unwrapped.location] = info;
+  // Priority handling: prefer named symbols and GenerateBlockArray over unnamed
+  // GenerateBlocks
+  auto existing_it = index_->symbols_.find(unwrapped.location);
+  bool should_store = true;
+  if (existing_it != index_->symbols_.end()) {
+    const auto& existing_info = existing_it->second;
+
+    // Prefer named symbols over unnamed ones
+    if (!unwrapped.name.empty() && existing_info.symbol->name.empty()) {
+      // New symbol is named, existing is unnamed - replace
+      should_store = true;
+    } else if (unwrapped.name.empty() && !existing_info.symbol->name.empty()) {
+      // New symbol is unnamed, existing is named - keep existing
+      should_store = false;
+    } else if (
+        unwrapped.kind == slang::ast::SymbolKind::GenerateBlockArray &&
+        existing_info.symbol->kind == slang::ast::SymbolKind::GenerateBlock) {
+      // Prefer GenerateBlockArray over GenerateBlock
+      should_store = true;
+    } else if (
+        unwrapped.kind == slang::ast::SymbolKind::GenerateBlock &&
+        existing_info.symbol->kind ==
+            slang::ast::SymbolKind::GenerateBlockArray) {
+      // Keep existing GenerateBlockArray over new GenerateBlock
+      should_store = false;
+    }
+  }
+
+  if (should_store) {
+    index_->symbols_[unwrapped.location] = info;
+  }
 
   // Store definition range for go-to-definition API
   if (is_definition) {
