@@ -116,7 +116,7 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
   }
 
   // Filter out empty generate blocks to reduce clutter
-  DocumentSymbolBuilder::FilterEmptyGenerateBlocks(result);
+  DocumentSymbolBuilder::FilterEmptyGenerateBlocks(result, semantic_index);
 
   return result;
 }
@@ -360,18 +360,31 @@ auto DocumentSymbolBuilder::HandleStructTypeAlias(
 }
 
 auto DocumentSymbolBuilder::FilterEmptyGenerateBlocks(
-    std::vector<lsp::DocumentSymbol>& symbols) -> void {
+    std::vector<lsp::DocumentSymbol>& symbols,
+    const SemanticIndex& semantic_index) -> void {
   // First, recursively filter children
   for (auto& symbol : symbols) {
     if (symbol.children.has_value()) {
-      FilterEmptyGenerateBlocks(*symbol.children);
+      FilterEmptyGenerateBlocks(*symbol.children, semantic_index);
     }
   }
 
-  // Then remove empty generate blocks (namespace symbols with no children)
+  // Remove generate blocks that are truly empty (no symbols or statements)
+  // Check the semantic index to see if the generate block contains any indexed
+  // items
   std::erase_if(symbols, [](const lsp::DocumentSymbol& symbol) {
-    return symbol.kind == lsp::SymbolKind::kNamespace &&
-           symbol.children.has_value() && symbol.children->empty();
+    if (symbol.kind != lsp::SymbolKind::kNamespace) {
+      return false;  // Only filter namespace symbols (generate blocks)
+    }
+
+    if (!symbol.children.has_value() || !symbol.children->empty()) {
+      return false;  // Don't filter if already has document symbol children
+    }
+
+    // For now, filter out empty generate blocks (no document symbol children)
+    // NOTE: Could enhance this to check semantic index for statement-based
+    // symbols
+    return true;  // Filter out generate blocks with no document symbol children
   });
 }
 

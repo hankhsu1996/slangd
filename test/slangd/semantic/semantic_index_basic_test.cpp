@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <vector>
@@ -10,6 +11,11 @@
 #include "test_fixtures.hpp"
 
 auto main(int argc, char* argv[]) -> int {
+  // Suppress Bazel test sharding warnings
+  setenv("TEST_SHARD_INDEX", "0", 0);
+  setenv("TEST_TOTAL_SHARDS", "1", 0);
+  setenv("TEST_SHARD_STATUS_FILE", "", 0);
+
   return Catch::Session().run(argc, argv);
 }
 
@@ -481,13 +487,46 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "SemanticIndex filters out empty generate blocks", "[semantic_index]") {
+    "SemanticIndex filters out truly empty generate blocks",
+    "[semantic_index]") {
   std::string code = R"(
     module test_empty_gen;
       parameter int WIDTH = 4;
       generate
-        for (genvar i = 0; i < WIDTH; i++) begin : empty_block
-          // Only assertions, no variables or other indexed symbols
+        for (genvar i = 0; i < WIDTH; i++) begin : truly_empty_block
+          // Truly empty - no variables, assertions, or other symbols
+        end
+      endgenerate
+    endmodule
+  )";
+
+  SemanticTestFixture fixture;
+  auto index = fixture.BuildIndexFromSource(code);
+  auto symbols = index->GetDocumentSymbols("test.sv");
+
+  // Should have test_empty_gen module but no truly_empty_block namespace
+  REQUIRE(symbols.size() == 1);
+  REQUIRE(symbols[0].name == "test_empty_gen");
+
+  // The truly empty generate block should be filtered out
+  if (symbols[0].children.has_value()) {
+    for (const auto& child : *symbols[0].children) {
+      REQUIRE(child.name != "truly_empty_block");
+    }
+  }
+}
+
+TEST_CASE(
+    "SemanticIndex preserves generate blocks with assertions",
+    "[semantic_index]") {
+  std::string code = R"(
+    module test_assertion_gen;
+      parameter int WIDTH = 4;
+      logic clk;
+      logic [WIDTH-1:0] data;
+      generate
+        for (genvar i = 0; i < WIDTH; i++) begin : assertion_block
+          // Contains assertion - should not be filtered out
           check_value: assert property (@(posedge clk) data[i] >= 0)
             else $error("Value check failed at index %0d", i);
         end
@@ -499,16 +538,31 @@ TEST_CASE(
   auto index = fixture.BuildIndexFromSource(code);
   auto symbols = index->GetDocumentSymbols("test.sv");
 
-  // Should have test_empty_gen module but no empty_block namespace
+  // Should have test_assertion_gen module AND assertion_block namespace
   REQUIRE(symbols.size() == 1);
-  REQUIRE(symbols[0].name == "test_empty_gen");
+  REQUIRE(symbols[0].name == "test_assertion_gen");
 
-  // The empty generate block should be filtered out
-  if (symbols[0].children.has_value()) {
-    for (const auto& child : *symbols[0].children) {
-      REQUIRE(child.name != "empty_block");
-    }
-  }
+  // The generate block with assertions should NOT be filtered out
+  REQUIRE(symbols[0].children.has_value());
+
+  auto assertion_block = std::find_if(
+      symbols[0].children->begin(), symbols[0].children->end(),
+      [](const auto& s) { return s.name == "assertion_block"; });
+
+  REQUIRE(assertion_block != symbols[0].children->end());
+  REQUIRE(assertion_block->kind == lsp::SymbolKind::kNamespace);
+
+  // The assertion block should contain the assertion symbol
+  REQUIRE(assertion_block->children.has_value());
+
+  auto check_value = std::find_if(
+      assertion_block->children->begin(), assertion_block->children->end(),
+      [](const auto& s) { return s.name == "check_value"; });
+
+  REQUIRE(check_value != assertion_block->children->end());
+  REQUIRE(
+      check_value->kind ==
+      lsp::SymbolKind::kVariable);  // Assertions are indexed as variables
 }
 
 TEST_CASE(
@@ -717,6 +771,56 @@ TEST_CASE(
   REQUIRE(found_test_module);
   REQUIRE(found_gen_loop);
   REQUIRE(found_local_signal);
+}
+
+TEST_CASE(
+    "SemanticIndex properly handles assertion symbols in generate blocks",
+    "[semantic_index]") {
+  std::string code = R"(
+    module test_empty_gen;
+      parameter int WIDTH = 4;
+      logic clk;
+      logic [WIDTH-1:0] data;
+      generate
+        for (genvar i = 0; i < WIDTH; i++) begin : assertion_block
+          // Named assertion should be indexed as a proper symbol
+          check_value: assert property (@(posedge clk) data[i] >= 0)
+            else $error("Value check failed at index %0d", i);
+        end
+      endgenerate
+    endmodule
+  )";
+
+  SemanticTestFixture fixture;
+  auto index = fixture.BuildIndexFromSource(code);
+  auto symbols = index->GetDocumentSymbols("test.sv");
+
+  // Should have test_empty_gen module
+  REQUIRE(symbols.size() == 1);
+  REQUIRE(symbols[0].name == "test_empty_gen");
+
+  // The generate block should NOT be filtered out because it contains
+  // assertions
+  REQUIRE(symbols[0].children.has_value());
+
+  auto assertion_block = std::find_if(
+      symbols[0].children->begin(), symbols[0].children->end(),
+      [](const auto& s) { return s.name == "assertion_block"; });
+
+  REQUIRE(assertion_block != symbols[0].children->end());
+  REQUIRE(assertion_block->kind == lsp::SymbolKind::kNamespace);
+
+  // The assertion block should contain the assertion symbol
+  REQUIRE(assertion_block->children.has_value());
+
+  auto check_value = std::find_if(
+      assertion_block->children->begin(), assertion_block->children->end(),
+      [](const auto& s) { return s.name == "check_value"; });
+
+  REQUIRE(check_value != assertion_block->children->end());
+  // Assertions should be classified as variables (or similar, not 'object')
+  // NOTE: This should be kVariable or a proper assertion kind, not kObject
+  REQUIRE(check_value->kind != lsp::SymbolKind::kObject);
 }
 
 }  // namespace slangd::semantic

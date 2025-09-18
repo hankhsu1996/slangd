@@ -1,6 +1,7 @@
 #include "slangd/semantic/symbol_utils.hpp"
 
 #include <slang/ast/Scope.h>
+#include <slang/ast/symbols/BlockSymbols.h>
 #include <slang/ast/symbols/CompilationUnitSymbols.h>
 #include <slang/ast/symbols/InstanceSymbols.h>
 #include <slang/ast/symbols/MemberSymbols.h>
@@ -199,6 +200,17 @@ auto ConvertToLspKind(const slang::ast::Symbol& symbol) -> lsp::SymbolKind {
     case SK::GenerateBlockArray:
       return LK::kNamespace;
 
+    // Statement blocks - runtime controllable constructs vs scope containers
+    case SK::StatementBlock:
+      if (!symbol.name.empty()) {
+        // Named statement blocks are typically runtime controllable constructs
+        // (assertions, fork/join, etc.) that can be enabled/disabled by name
+        // Map to Variable since they represent runtime behavior
+        return LK::kVariable;
+      }
+      // Unnamed statement blocks are always namespaces/containers
+      return LK::kNamespace;
+
     // Default for other symbol kinds
     default:
       return LK::kObject;
@@ -225,6 +237,11 @@ auto ConvertToLspKindForDocuments(const slang::ast::Symbol& symbol)
     case SK::TypeAlias:
       return lsp::SymbolKind::kStruct;
     case SK::StatementBlock:
+      // Named statement blocks are typically runtime controllable constructs
+      if (!symbol.name.empty()) {
+        return lsp::SymbolKind::kVariable;
+      }
+      return lsp::SymbolKind::kNamespace;
     case SK::ProceduralBlock:
       return lsp::SymbolKind::kNamespace;
     case SK::GenerateBlock:

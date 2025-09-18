@@ -52,7 +52,8 @@ class DocumentSymbolBuilder {
 
   // Filter out empty generate blocks to reduce symbol tree clutter
   static auto FilterEmptyGenerateBlocks(
-      std::vector<lsp::DocumentSymbol>& symbols) -> void;
+      std::vector<lsp::DocumentSymbol>& symbols,
+      const SemanticIndex& semantic_index) -> void;
 };
 
 }  // namespace slangd::semantic
