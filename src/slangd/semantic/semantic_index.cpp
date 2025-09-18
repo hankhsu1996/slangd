@@ -12,6 +12,7 @@
 #include <slang/syntax/AllSyntax.h>
 
 #include "slangd/utils/conversion.hpp"
+#include "slangd/utils/path_utils.hpp"
 
 namespace slangd::semantic {
 
@@ -46,11 +47,9 @@ auto SemanticIndex::GetAllSymbols() const
   return symbols_;
 }
 
-auto SemanticIndex::GetDocumentSymbols(const std::string& /*uri*/) const
+auto SemanticIndex::GetDocumentSymbols(const std::string& uri) const
     -> std::vector<lsp::DocumentSymbol> {
-  // For now, ignore URI since OverlaySession is single-file scoped
-  // May need to filter imported symbols later if needed
-  return BuildDocumentSymbolTree();
+  return BuildDocumentSymbolTree(uri);
 }
 
 // Utility method implementations
@@ -224,27 +223,33 @@ auto SemanticIndex::ShouldIndex(const slang::ast::Symbol& symbol) -> bool {
   return true;
 }
 
-auto SemanticIndex::BuildDocumentSymbolTree() const
+auto SemanticIndex::BuildDocumentSymbolTree(const std::string& uri) const
     -> std::vector<lsp::DocumentSymbol> {
-  // Build parent-to-children map from flat symbols_
+  // Build parent-to-children map from flat symbols_, filtering by URI
   std::unordered_map<const slang::ast::Scope*, std::vector<const SymbolInfo*>>
       children_map;
   std::vector<const SymbolInfo*> roots;
 
-  // Group symbols by their parent
+  // Group symbols by their parent, filtering by URI
   for (const auto& [location, info] : symbols_) {
     // Skip EnumValue symbols at root level - they'll be added as children
     if (info.symbol->kind == slang::ast::SymbolKind::EnumValue) {
       continue;
     }
 
-    // For now, treat symbols with different parent values as potentially root
-    // We'll refine this logic based on what we see
-    if (info.parent == nullptr) {
+    // FILTER: Only include symbols from the requested document
+    if (!IsLocationInDocument(info.location, *source_manager_, uri)) {
+      continue;
+    }
+
+    // Treat top-level symbols as roots, others as children
+    // Package, Module, Interface are typically top-level even with non-null
+    // parent
+    if (info.parent == nullptr ||
+        info.symbol->kind == slang::ast::SymbolKind::Package ||
+        info.symbol->kind == slang::ast::SymbolKind::InstanceBody) {
       roots.push_back(&info);
     } else {
-      // Check if parent has very few members (likely compilation root)
-      // This is a heuristic - we might need to improve this
       children_map[info.parent].push_back(&info);
     }
   }
@@ -256,6 +261,12 @@ auto SemanticIndex::BuildDocumentSymbolTree() const
       if (info.symbol->kind == slang::ast::SymbolKind::EnumValue) {
         continue;
       }
+
+      // FILTER: Only include symbols from the requested document
+      if (!IsLocationInDocument(info.location, *source_manager_, uri)) {
+        continue;
+      }
+
       // For modules/interfaces (InstanceBody), treat as root even with parent
       if (info.symbol->kind == slang::ast::SymbolKind::InstanceBody) {
         roots.push_back(&info);
@@ -471,7 +482,8 @@ void SemanticIndex::IndexVisitor::ProcessSymbol(
       .range = SemanticIndex::ComputeLspRange(unwrapped, *source_manager_),
       .parent = unwrapped.getParentScope(),
       .is_definition = is_definition,
-      .definition_range = definition_range};
+      .definition_range = definition_range,
+      .buffer_id = unwrapped.location.buffer().getId()};
 
   // Store in flat map for O(1) lookup
   index_->symbols_[unwrapped.location] = info;

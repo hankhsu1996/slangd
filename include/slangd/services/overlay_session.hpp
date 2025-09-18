@@ -36,7 +36,8 @@ class OverlaySession {
   ~OverlaySession() = default;
 
   // Access to unified semantic index for LSP queries
-  [[nodiscard]] auto GetSemanticIndex() const -> const semantic::SemanticIndex& {
+  [[nodiscard]] auto GetSemanticIndex() const
+      -> const semantic::SemanticIndex& {
     return *semantic_index_;
   }
 
@@ -45,7 +46,6 @@ class OverlaySession {
       -> const semantic::DiagnosticIndex& {
     return *diagnostic_index_;
   }
-
 
   // Access to compilation for advanced queries
   [[nodiscard]] auto GetCompilation() const -> slang::ast::Compilation& {

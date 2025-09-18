@@ -56,6 +56,15 @@ class AsyncMultiFileFixture : public MultiFileSemanticFixture {
     return BuildIndexFromFiles(all_files);
   }
 
+  // Build index with package and module files (with file path tracking)
+  auto BuildIndexWithPackagesAndPaths(
+      const std::vector<std::string>& package_files,
+      const std::string& module_content)
+      -> MultiFileSemanticFixture::IndexWithFiles {
+    std::vector<std::string> all_files = package_files;
+    all_files.push_back(module_content);
+    return BuildIndexFromFilesWithPaths(all_files);
+  }
 
  private:
   std::shared_ptr<slangd::ProjectLayoutService> layout_service_;
@@ -365,6 +374,72 @@ TEST_CASE(
 
   // Verify multifile compilation worked
   REQUIRE(MultiFileSemanticFixture::CountBuffersWithSymbols(*index) >= 2);
+}
+
+TEST_CASE("GetDocumentSymbols filters by URI", "[semantic_index][multifile]") {
+  AsyncMultiFileFixture fixture;
+
+  const std::string package_content = R"(
+    package test_pkg;
+      parameter BUS_WIDTH = 64;
+      typedef logic [BUS_WIDTH-1:0] bus_data_t;
+    endpackage
+  )";
+
+  const std::string module_content = R"(
+    module test_module;
+      import test_pkg::*;
+      bus_data_t data_bus;
+      logic [7:0] local_counter;
+    endmodule
+  )";
+
+  // Build index and get file paths
+  auto result =
+      fixture.BuildIndexWithPackagesAndPaths({package_content}, module_content);
+  REQUIRE(result.index != nullptr);
+  REQUIRE(result.file_paths.size() == 2);
+
+  std::string package_file = result.file_paths[0];  // file_0.sv
+  std::string module_file = result.file_paths[1];   // file_1.sv
+
+  // Test module file filtering
+  auto module_symbols = result.index->GetDocumentSymbols(module_file);
+  bool found_module = false;
+  for (const auto& symbol : module_symbols) {
+    if (symbol.name == "test_module") {
+      found_module = true;
+    }
+  }
+  CHECK(found_module);  // Module filtering works
+
+  // Test package file filtering
+  auto package_symbols = result.index->GetDocumentSymbols(package_file);
+
+  bool found_package = false;
+  bool found_bus_width = false;
+  for (const auto& symbol : package_symbols) {
+    if (symbol.name == "test_pkg") {
+      found_package = true;
+    }
+    if (symbol.name == "BUS_WIDTH") {
+      found_bus_width = true;
+    }
+    if (symbol.children) {
+      for (const auto& child : *symbol.children) {
+        if (child.name == "test_pkg") {
+          found_package = true;
+        }
+        if (child.name == "BUS_WIDTH") {
+          found_bus_width = true;
+        }
+      }
+    }
+  }
+
+  // Package file should return package symbols
+  CHECK(found_package);
+  CHECK(found_bus_width);
 }
 
 }  // namespace slangd::semantic

@@ -55,6 +55,7 @@ class SemanticIndex {
     const slang::ast::Scope* parent{};
     bool is_definition{false};
     slang::SourceRange definition_range;
+    uint32_t buffer_id{};
   };
 
   static auto FromCompilation(
@@ -161,7 +162,8 @@ class SemanticIndex {
       -> slang::SourceRange;
 
   // Helper methods for document symbol building
-  auto BuildDocumentSymbolTree() const -> std::vector<lsp::DocumentSymbol>;
+  auto BuildDocumentSymbolTree(const std::string& uri) const
+      -> std::vector<lsp::DocumentSymbol>;
   static auto CreateDocumentSymbol(const SymbolInfo& info)
       -> lsp::DocumentSymbol;
   auto AttachChildrenToSymbol(

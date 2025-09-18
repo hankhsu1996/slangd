@@ -172,16 +172,26 @@ class MultiFileSemanticFixture : public SemanticTestFixture {
     return slangd::CanonicalPath(file_path);
   }
 
-  // Build index from multiple files
-  auto BuildIndexFromFiles(const std::vector<std::string>& file_contents)
-      -> std::unique_ptr<SemanticIndex> {
+  // Result struct for BuildIndexFromFiles - includes both index and file paths
+  struct IndexWithFiles {
+    std::unique_ptr<SemanticIndex> index;
+    std::vector<std::string> file_paths;  // The actual file paths created
+  };
+
+  // Build index from multiple files (improved version with file path tracking)
+  auto BuildIndexFromFilesWithPaths(
+      const std::vector<std::string>& file_contents) -> IndexWithFiles {
     SetSourceManager(std::make_shared<slang::SourceManager>());
     slang::Bag options;
     SetCompilation(std::make_unique<slang::ast::Compilation>(options));
 
+    std::vector<std::string> file_paths;
+
     // Add each file to the compilation
     for (size_t i = 0; i < file_contents.size(); ++i) {
       std::string filename = fmt::format("file_{}.sv", i);
+      file_paths.push_back(filename);  // Track the actual file path created
+
       auto buffer = GetSourceManager()->assignText(filename, file_contents[i]);
       auto tree =
           slang::syntax::SyntaxTree::fromBuffer(buffer, *GetSourceManager());
@@ -193,14 +203,24 @@ class MultiFileSemanticFixture : public SemanticTestFixture {
       }
     }
 
-    return SemanticIndex::FromCompilation(
-        *GetCompilation(), *GetSourceManager());
+    auto index =
+        SemanticIndex::FromCompilation(*GetCompilation(), *GetSourceManager());
+
+    return IndexWithFiles{
+        .index = std::move(index), .file_paths = std::move(file_paths)};
+  }
+
+  // Build index from multiple files (legacy version for backward compatibility)
+  auto BuildIndexFromFiles(const std::vector<std::string>& file_contents)
+      -> std::unique_ptr<SemanticIndex> {
+    auto result = BuildIndexFromFilesWithPaths(file_contents);
+    return std::move(result.index);
   }
 
   // Helper to verify cross-file reference resolution
-  auto VerifySymbolReference(const SemanticIndex& index,
-                             const std::string& source,
-                             const std::string& symbol_name) -> bool {
+  auto VerifySymbolReference(
+      const SemanticIndex& index, const std::string& source,
+      const std::string& symbol_name) -> bool {
     // Find the symbol usage location in source
     auto location = FindLocation(source, symbol_name);
     if (!location.valid()) {
