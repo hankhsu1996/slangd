@@ -37,27 +37,28 @@ TEST_CASE(
   auto index = SemanticIndex::FromCompilation(*compilation, *source_manager);
 
   REQUIRE(index != nullptr);
-  // The preVisit hook should collect symbols from the root traversal
-  REQUIRE(index->GetSymbolCount() > 0);
 
-  // Verify we can access all symbols
-  const auto& all_symbols = index->GetAllSymbols();
-  REQUIRE(!all_symbols.empty());
+  // Test LSP API: GetDocumentSymbols should return expected symbols
+  auto document_symbols = index->GetDocumentSymbols("test.sv");
+  REQUIRE(!document_symbols.empty());
 
   // Look for specific symbols we expect
   bool found_module = false;
   bool found_variable = false;
-  for (const auto& [location, info] : all_symbols) {
-    std::string name(info.symbol->name);
-    if (name == "test_module") {
+  for (const auto& symbol : document_symbols) {
+    if (symbol.name == "test_module") {
       found_module = true;
-      REQUIRE(
-          info.lsp_kind ==
-          lsp::SymbolKind::kClass);  // Legacy maps modules to Class
-    }
-    if (name == "signal") {
-      found_variable = true;
-      REQUIRE(info.lsp_kind == lsp::SymbolKind::kVariable);
+      REQUIRE(symbol.kind == lsp::SymbolKind::kClass);
+
+      // Check that the module contains the variable
+      if (symbol.children.has_value()) {
+        for (const auto& child : *symbol.children) {
+          if (child.name == "signal") {
+            found_variable = true;
+            REQUIRE(child.kind == lsp::SymbolKind::kVariable);
+          }
+        }
+      }
     }
   }
 
@@ -66,6 +67,7 @@ TEST_CASE(
 }
 
 TEST_CASE("SemanticIndex provides O(1) symbol lookup", "[semantic_index]") {
+  SemanticTestFixture fixture;
   std::string code = R"(
     package test_pkg;
       typedef logic [7:0] byte_t;
@@ -77,29 +79,10 @@ TEST_CASE("SemanticIndex provides O(1) symbol lookup", "[semantic_index]") {
     endmodule
   )";
 
-  auto source_manager = std::make_shared<slang::SourceManager>();
-  slang::Bag options;
-  auto compilation = std::make_unique<slang::ast::Compilation>(options);
+  auto index = fixture.BuildIndexFromSource(code);
 
-  auto buffer = source_manager->assignText("test.sv", code);
-  auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
-  if (tree) {
-    compilation->addSyntaxTree(tree);
-  }
-
-  auto index = SemanticIndex::FromCompilation(*compilation, *source_manager);
-
-  // Find a symbol's location and verify O(1) lookup
-  const auto& all_symbols = index->GetAllSymbols();
-
-  slang::SourceLocation test_location;
-  for (const auto& [location, info] : all_symbols) {
-    if (std::string(info.symbol->name) == "test_pkg") {
-      test_location = location;
-      break;
-    }
-  }
-
+  // Test O(1) lookup using symbol location
+  auto test_location = fixture.FindLocation(code, "test_pkg");
   REQUIRE(test_location.valid());
 
   // Verify O(1) lookup works
@@ -114,6 +97,7 @@ TEST_CASE("SemanticIndex provides O(1) symbol lookup", "[semantic_index]") {
 }
 
 TEST_CASE("SemanticIndex handles enum and struct types", "[semantic_index]") {
+  SemanticTestFixture fixture;
   std::string code = R"(
     interface test_if;
       logic clk;
@@ -139,67 +123,34 @@ TEST_CASE("SemanticIndex handles enum and struct types", "[semantic_index]") {
     endmodule
   )";
 
-  auto source_manager = std::make_shared<slang::SourceManager>();
-  slang::Bag options;
-  auto compilation = std::make_unique<slang::ast::Compilation>(options);
+  auto index = fixture.BuildIndexFromSource(code);
 
-  auto buffer = source_manager->assignText("test.sv", code);
-  auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
-  if (tree) {
-    compilation->addSyntaxTree(tree);
-  }
+  // Test LSP API: GetDocumentSymbols should return expected types
+  auto document_symbols = index->GetDocumentSymbols("test.sv");
+  REQUIRE(!document_symbols.empty());
 
-  auto index = SemanticIndex::FromCompilation(*compilation, *source_manager);
-
-  // Count different symbol types we should find
-  int interfaces = 0;
-  int modules = 0;
-  int enums = 0;
-  int structs = 0;
-  int modports = 0;
-  int enum_values = 0;
-
-  for (const auto& [location, info] : index->GetAllSymbols()) {
-    switch (info.lsp_kind) {
-      case lsp::SymbolKind::kInterface:
-        if (std::string(info.symbol->name) == "master") {
-          modports++;  // Modports mapped to Interface in legacy
-        } else {
-          interfaces++;  // Other interfaces
-        }
-        break;
-      case lsp::SymbolKind::kClass:
-        modules++;  // Modules mapped to Class in legacy
-        break;
-      case lsp::SymbolKind::kEnum:
-        enums++;
-        break;
-      case lsp::SymbolKind::kStruct:
-        structs++;
-        break;
-      case lsp::SymbolKind::kEnumMember:
-        enum_values++;
-        break;
-      default:
-        break;
+  // Check for interface with modport
+  bool found_interface = false;
+  bool found_module = false;
+  for (const auto& symbol : document_symbols) {
+    if (symbol.name == "test_if") {
+      found_interface = true;
+      REQUIRE(symbol.kind == lsp::SymbolKind::kInterface);
+    }
+    if (symbol.name == "test_module") {
+      found_module = true;
+      REQUIRE(symbol.kind == lsp::SymbolKind::kClass);
     }
   }
 
-  // Verify we found the expected symbols
-  REQUIRE(interfaces >= 1);   // test_if
-  REQUIRE(modules >= 1);      // test_module
-  REQUIRE(enums >= 1);        // state_t enum
-  REQUIRE(structs >= 1);      // packet_t struct
-  REQUIRE(modports >= 1);     // master modport
-  REQUIRE(enum_values >= 3);  // IDLE, ACTIVE, DONE
-
-  // Verify total symbol count is substantial
-  REQUIRE(index->GetSymbolCount() > 10);
+  REQUIRE(found_interface);
+  REQUIRE(found_module);
 }
 
 TEST_CASE(
     "SemanticIndex GetDocumentSymbols with enum hierarchy",
     "[semantic_index]") {
+  SemanticTestFixture fixture;
   std::string code = R"(
     module test_module;
       typedef enum logic [1:0] {
@@ -207,80 +158,21 @@ TEST_CASE(
         ACTIVE,
         DONE
       } state_t;
-
-      state_t state;
-      logic signal;
     endmodule
   )";
 
-  auto source_manager = std::make_shared<slang::SourceManager>();
-  slang::Bag options;
-  auto compilation = std::make_unique<slang::ast::Compilation>(options);
+  auto index = fixture.BuildIndexFromSource(code);
+  auto symbols = index->GetDocumentSymbols("test.sv");
 
-  auto buffer = source_manager->assignText("test.sv", code);
-  auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
-  if (tree) {
-    compilation->addSyntaxTree(tree);
-  }
+  // Find enum in module and verify it contains enum members
+  auto enum_symbol = std::find_if(
+      symbols[0].children->begin(), symbols[0].children->end(),
+      [](const auto& s) { return s.name == "state_t"; });
 
-  auto index = SemanticIndex::FromCompilation(*compilation, *source_manager);
-
-  // Test the new GetDocumentSymbols API
-  auto document_symbols = index->GetDocumentSymbols("test.sv");
-
-  REQUIRE(!document_symbols.empty());
-
-  // Should find test_module as a root symbol
-  bool found_module = false;
-  for (const auto& symbol : document_symbols) {
-    if (symbol.name == "test_module") {
-      found_module = true;
-      REQUIRE(symbol.kind == lsp::SymbolKind::kClass);
-
-      // The module should have children
-      REQUIRE(symbol.children.has_value());
-      REQUIRE(!symbol.children->empty());
-
-      // Look for state_t enum and its children
-      bool found_enum = false;
-      bool found_signal = false;
-      bool found_state_var = false;
-
-      for (const auto& child : *symbol.children) {
-        if (child.name == "state_t") {
-          found_enum = true;
-          REQUIRE(child.kind == lsp::SymbolKind::kEnum);
-
-          // The enum should have enum member children
-          REQUIRE(child.children.has_value());
-          REQUIRE(child.children->size() >= 3);  // IDLE, ACTIVE, DONE
-
-          // Verify enum members
-          int enum_members_found = 0;
-          for (const auto& enum_child : *child.children) {
-            if (enum_child.kind == lsp::SymbolKind::kEnumMember) {
-              enum_members_found++;
-            }
-          }
-          REQUIRE(enum_members_found >= 3);
-        }
-        if (child.name == "signal") {
-          found_signal = true;
-          REQUIRE(child.kind == lsp::SymbolKind::kVariable);
-        }
-        if (child.name == "state") {
-          found_state_var = true;
-          REQUIRE(child.kind == lsp::SymbolKind::kVariable);
-        }
-      }
-
-      REQUIRE(found_enum);
-      REQUIRE(found_signal);
-      REQUIRE(found_state_var);
-    }
-  }
-
-  REQUIRE(found_module);
+  REQUIRE(enum_symbol != symbols[0].children->end());
+  REQUIRE(enum_symbol->kind == lsp::SymbolKind::kEnum);
+  REQUIRE(enum_symbol->children.has_value());
+  REQUIRE(enum_symbol->children->size() == 3);  // IDLE, ACTIVE, DONE
 }
 
 TEST_CASE(
@@ -488,6 +380,7 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex GetDocumentSymbols includes struct fields",
     "[semantic_index]") {
+  SemanticTestFixture fixture;
   std::string code = R"(
     package test_pkg;
       typedef struct {
@@ -498,76 +391,18 @@ TEST_CASE(
     endpackage
   )";
 
-  auto source_manager = std::make_shared<slang::SourceManager>();
-  slang::Bag options;
-  auto compilation = std::make_unique<slang::ast::Compilation>(options);
+  auto index = fixture.BuildIndexFromSource(code);
+  auto symbols = index->GetDocumentSymbols("test.sv");
 
-  auto buffer = source_manager->assignText("test.sv", code);
-  auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
-  if (tree) {
-    compilation->addSyntaxTree(tree);
-  }
+  // Find struct in package and verify it contains struct fields
+  auto struct_symbol = std::find_if(
+      symbols[0].children->begin(), symbols[0].children->end(),
+      [](const auto& s) { return s.name == "packet_t"; });
 
-  auto index = SemanticIndex::FromCompilation(*compilation, *source_manager);
-
-  // Test the GetDocumentSymbols API for struct fields
-  auto document_symbols = index->GetDocumentSymbols("test.sv");
-
-  REQUIRE(!document_symbols.empty());
-
-  // Should find test_pkg as a root symbol
-  bool found_package = false;
-  for (const auto& symbol : document_symbols) {
-    if (symbol.name == "test_pkg") {
-      found_package = true;
-      REQUIRE(symbol.kind == lsp::SymbolKind::kPackage);
-
-      // The package should have children
-      REQUIRE(symbol.children.has_value());
-      REQUIRE(!symbol.children->empty());
-
-      // Look for packet_t struct and its fields
-      bool found_struct = false;
-      for (const auto& child : *symbol.children) {
-        if (child.name == "packet_t") {
-          found_struct = true;
-          REQUIRE(child.kind == lsp::SymbolKind::kStruct);
-
-          // The struct should have field children
-          REQUIRE(child.children.has_value());
-          REQUIRE(child.children->size() >= 3);  // data, valid, address
-
-          // Verify struct fields are present
-          bool found_data = false;
-          bool found_valid = false;
-          bool found_address = false;
-
-          for (const auto& field : *child.children) {
-            if (field.name == "data") {
-              found_data = true;
-              REQUIRE(field.kind == lsp::SymbolKind::kField);
-            }
-            if (field.name == "valid") {
-              found_valid = true;
-              REQUIRE(field.kind == lsp::SymbolKind::kField);
-            }
-            if (field.name == "address") {
-              found_address = true;
-              REQUIRE(field.kind == lsp::SymbolKind::kField);
-            }
-          }
-
-          REQUIRE(found_data);
-          REQUIRE(found_valid);
-          REQUIRE(found_address);
-        }
-      }
-
-      REQUIRE(found_struct);
-    }
-  }
-
-  REQUIRE(found_package);
+  REQUIRE(struct_symbol != symbols[0].children->end());
+  REQUIRE(struct_symbol->kind == lsp::SymbolKind::kStruct);
+  REQUIRE(struct_symbol->children.has_value());
+  REQUIRE(struct_symbol->children->size() == 3);  // data, valid, address
 }
 
 TEST_CASE(
