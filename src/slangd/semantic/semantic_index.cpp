@@ -286,9 +286,10 @@ auto SemanticIndex::BuildDocumentSymbolTree(const std::string& uri) const
     }
     AttachChildrenToSymbol(doc_symbol, symbol_as_scope, children_map);
 
-    // Special handling for enum type aliases
+    // Special handling for enum and struct type aliases
     if (root_info->symbol->kind == slang::ast::SymbolKind::TypeAlias) {
       HandleEnumTypeAlias(doc_symbol, root_info->symbol);
+      HandleStructTypeAlias(doc_symbol, root_info->symbol);
     }
 
     result.push_back(std::move(doc_symbol));
@@ -332,9 +333,10 @@ auto SemanticIndex::AttachChildrenToSymbol(
     }
     AttachChildrenToSymbol(child_doc_symbol, child_as_scope, children_map);
 
-    // Special handling for enum type aliases in children too
+    // Special handling for enum and struct type aliases in children too
     if (child_info->symbol->kind == slang::ast::SymbolKind::TypeAlias) {
       HandleEnumTypeAlias(child_doc_symbol, child_info->symbol);
+      HandleStructTypeAlias(child_doc_symbol, child_info->symbol);
     }
 
     parent.children->push_back(std::move(child_doc_symbol));
@@ -385,6 +387,59 @@ auto SemanticIndex::HandleEnumTypeAlias(
 
     enum_value_symbol.children = std::vector<lsp::DocumentSymbol>();
     enum_doc_symbol.children->push_back(std::move(enum_value_symbol));
+  }
+}
+
+auto SemanticIndex::HandleStructTypeAlias(
+    lsp::DocumentSymbol& struct_doc_symbol,
+    const slang::ast::Symbol* type_alias_symbol) const -> void {
+  using SK = slang::ast::SymbolKind;
+
+  // Check if this is a TypeAlias of a struct
+  if (type_alias_symbol->kind != SK::TypeAlias) {
+    return;
+  }
+
+  const auto& type_alias = type_alias_symbol->as<slang::ast::TypeAliasType>();
+  const auto& canonical_type = type_alias.getCanonicalType();
+
+  // Check if it's a struct type (packed or unpacked)
+  if (canonical_type.kind != SK::PackedStructType &&
+      canonical_type.kind != SK::UnpackedStructType) {
+    return;  // Not a struct
+  }
+
+  // Both PackedStructType and UnpackedStructType inherit from Scope
+  const auto& struct_scope = canonical_type.as<slang::ast::Scope>();
+
+  // Iterate through the struct members to find field symbols
+  for (const auto& member : struct_scope.members()) {
+    if (member.kind == SK::Field) {
+      const auto& field_symbol = member.as<slang::ast::FieldSymbol>();
+
+      // Create a DocumentSymbol for the field
+      lsp::DocumentSymbol field_doc_symbol;
+      field_doc_symbol.name = std::string(field_symbol.name);
+      field_doc_symbol.kind = lsp::SymbolKind::kField;
+
+      // Set range from the field location
+      if (field_symbol.location.valid() && (source_manager_ != nullptr)) {
+        field_doc_symbol.range =
+            ComputeLspRange(field_symbol, *source_manager_);
+        field_doc_symbol.selectionRange = field_doc_symbol.range;
+      } else {
+        // Default range if no location
+        field_doc_symbol.range = {
+            .start = {.line = 0, .character = 0},
+            .end = {.line = 0, .character = 0}};
+        field_doc_symbol.selectionRange = {
+            .start = {.line = 0, .character = 0},
+            .end = {.line = 0, .character = 0}};
+      }
+
+      field_doc_symbol.children = std::vector<lsp::DocumentSymbol>();
+      struct_doc_symbol.children->push_back(std::move(field_doc_symbol));
+    }
   }
 }
 

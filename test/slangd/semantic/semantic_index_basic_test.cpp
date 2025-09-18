@@ -484,4 +484,89 @@ TEST_CASE(
   }
 }
 
+TEST_CASE(
+    "SemanticIndex GetDocumentSymbols includes struct fields",
+    "[semantic_index]") {
+  std::string code = R"(
+    package test_pkg;
+      typedef struct {
+        logic [7:0] data;
+        logic valid;
+        logic [15:0] address;
+      } packet_t;
+    endpackage
+  )";
+
+  auto source_manager = std::make_shared<slang::SourceManager>();
+  slang::Bag options;
+  auto compilation = std::make_unique<slang::ast::Compilation>(options);
+
+  auto buffer = source_manager->assignText("test.sv", code);
+  auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
+  if (tree) {
+    compilation->addSyntaxTree(tree);
+  }
+
+  auto index = SemanticIndex::FromCompilation(*compilation, *source_manager);
+
+  // Test the GetDocumentSymbols API for struct fields
+  auto document_symbols = index->GetDocumentSymbols("test.sv");
+
+  REQUIRE(!document_symbols.empty());
+
+  // Should find test_pkg as a root symbol
+  bool found_package = false;
+  for (const auto& symbol : document_symbols) {
+    if (symbol.name == "test_pkg") {
+      found_package = true;
+      REQUIRE(symbol.kind == lsp::SymbolKind::kPackage);
+
+      // The package should have children
+      REQUIRE(symbol.children.has_value());
+      REQUIRE(!symbol.children->empty());
+
+      // Look for packet_t struct and its fields
+      bool found_struct = false;
+      for (const auto& child : *symbol.children) {
+        if (child.name == "packet_t") {
+          found_struct = true;
+          REQUIRE(child.kind == lsp::SymbolKind::kStruct);
+
+          // The struct should have field children
+          REQUIRE(child.children.has_value());
+          REQUIRE(child.children->size() >= 3);  // data, valid, address
+
+          // Verify struct fields are present
+          bool found_data = false;
+          bool found_valid = false;
+          bool found_address = false;
+
+          for (const auto& field : *child.children) {
+            if (field.name == "data") {
+              found_data = true;
+              REQUIRE(field.kind == lsp::SymbolKind::kField);
+            }
+            if (field.name == "valid") {
+              found_valid = true;
+              REQUIRE(field.kind == lsp::SymbolKind::kField);
+            }
+            if (field.name == "address") {
+              found_address = true;
+              REQUIRE(field.kind == lsp::SymbolKind::kField);
+            }
+          }
+
+          REQUIRE(found_data);
+          REQUIRE(found_valid);
+          REQUIRE(found_address);
+        }
+      }
+
+      REQUIRE(found_struct);
+    }
+  }
+
+  REQUIRE(found_package);
+}
+
 }  // namespace slangd::semantic

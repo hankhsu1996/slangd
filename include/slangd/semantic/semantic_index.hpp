@@ -174,6 +174,9 @@ class SemanticIndex {
   auto HandleEnumTypeAlias(
       lsp::DocumentSymbol& enum_doc_symbol,
       const slang::ast::Symbol* type_alias_symbol) const -> void;
+  auto HandleStructTypeAlias(
+      lsp::DocumentSymbol& struct_doc_symbol,
+      const slang::ast::Symbol* type_alias_symbol) const -> void;
 };
 
 }  // namespace slangd::semantic
