@@ -459,9 +459,56 @@ TEST_CASE(
 
   REQUIRE(gen_loop != symbols[0].children->end());
   REQUIRE(gen_loop->children.has_value());
-  // Generate for loop should show template symbols once, not all iterations
-  // Expected: i, loop_signal, LOOP_PARAM (3 unique symbols)
-  REQUIRE(gen_loop->children->size() == 3);
+  // Generate for loop should show meaningful symbols only (genvar filtered out)
+  // Expected: loop_signal and LOOP_PARAM (genvar 'i' filtered out)
+  REQUIRE(gen_loop->children->size() == 2);
+
+  // Verify we have both loop_signal and LOOP_PARAM, but not the genvar 'i'
+  std::vector<std::string> child_names;
+  for (const auto& child : *gen_loop->children) {
+    child_names.push_back(child.name);
+  }
+
+  REQUIRE(
+      std::find(child_names.begin(), child_names.end(), "loop_signal") !=
+      child_names.end());
+  REQUIRE(
+      std::find(child_names.begin(), child_names.end(), "LOOP_PARAM") !=
+      child_names.end());
+  REQUIRE(
+      std::find(child_names.begin(), child_names.end(), "i") ==
+      child_names.end());
+}
+
+TEST_CASE(
+    "SemanticIndex filters out empty generate blocks", "[semantic_index]") {
+  std::string code = R"(
+    module test_empty_gen;
+      parameter int WIDTH = 4;
+      generate
+        for (genvar i = 0; i < WIDTH; i++) begin : empty_block
+          // Only assertions, no variables or other indexed symbols
+          check_value: assert property (@(posedge clk) data[i] >= 0)
+            else $error("Value check failed at index %0d", i);
+        end
+      endgenerate
+    endmodule
+  )";
+
+  SemanticTestFixture fixture;
+  auto index = fixture.BuildIndexFromSource(code);
+  auto symbols = index->GetDocumentSymbols("test.sv");
+
+  // Should have test_empty_gen module but no empty_block namespace
+  REQUIRE(symbols.size() == 1);
+  REQUIRE(symbols[0].name == "test_empty_gen");
+
+  // The empty generate block should be filtered out
+  if (symbols[0].children.has_value()) {
+    for (const auto& child : *symbols[0].children) {
+      REQUIRE(child.name != "empty_block");
+    }
+  }
 }
 
 TEST_CASE(
@@ -598,6 +645,78 @@ TEST_CASE(
   };
 
   check_names(symbols);
+}
+
+TEST_CASE(
+    "SemanticIndex filters out genvar loop variables from document symbols",
+    "[semantic_index]") {
+  SemanticTestFixture fixture;
+  std::string code = R"(
+    module sub_module;
+    endmodule
+
+    module test_module;
+      parameter int NUM_ENTRIES = 4;
+
+      generate
+        for (genvar entry = 0; entry < NUM_ENTRIES; entry++) begin : gen_loop
+          sub_module inst();
+          logic local_signal;
+        end
+      endgenerate
+    endmodule
+  )";
+
+  auto index = fixture.BuildIndexFromSource(code);
+  auto symbols = index->GetDocumentSymbols("test.sv");
+
+  // Check that genvar 'entry' is not in document symbols anywhere
+  std::function<void(const std::vector<lsp::DocumentSymbol>&)> check_no_genvar;
+  check_no_genvar =
+      [&check_no_genvar](const std::vector<lsp::DocumentSymbol>& syms) {
+        for (const auto& symbol : syms) {
+          // The genvar 'entry' should not appear as a document symbol
+          REQUIRE(symbol.name != "entry");
+
+          if (symbol.children.has_value()) {
+            check_no_genvar(*symbol.children);
+          }
+        }
+      };
+
+  check_no_genvar(symbols);
+
+  // But verify that other meaningful symbols are still there
+  bool found_test_module = false;
+  bool found_gen_loop = false;
+  bool found_local_signal = false;
+
+  std::function<void(const std::vector<lsp::DocumentSymbol>&)>
+      check_meaningful_symbols;
+  check_meaningful_symbols = [&](const std::vector<lsp::DocumentSymbol>& syms) {
+    for (const auto& symbol : syms) {
+      if (symbol.name == "test_module") {
+        found_test_module = true;
+      }
+      if (symbol.name == "gen_loop") {
+        found_gen_loop = true;
+      }
+      if (symbol.name == "local_signal") {
+        found_local_signal = true;
+      }
+
+      if (symbol.children.has_value()) {
+        check_meaningful_symbols(*symbol.children);
+      }
+    }
+  };
+
+  check_meaningful_symbols(symbols);
+
+  // Verify meaningful symbols are present while genvar is filtered out
+  REQUIRE(found_test_module);
+  REQUIRE(found_gen_loop);
+  REQUIRE(found_local_signal);
 }
 
 }  // namespace slangd::semantic

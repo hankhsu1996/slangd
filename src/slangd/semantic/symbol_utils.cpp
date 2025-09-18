@@ -50,6 +50,12 @@ auto ShouldIndexForSemanticIndex(const slang::ast::Symbol& symbol) -> bool {
 auto ShouldIndexForDocumentSymbols(const slang::ast::Symbol& symbol) -> bool {
   using SK = slang::ast::SymbolKind;
 
+  // Filter out genvar loop variables - they're just counters, not meaningful
+  // symbols
+  if (symbol.kind == SK::Genvar) {
+    return false;
+  }
+
   // Index most symbol types for document symbols
   switch (symbol.kind) {
     case SK::Package:
@@ -187,6 +193,11 @@ auto ConvertToLspKind(const slang::ast::Symbol& symbol) -> lsp::SymbolKind {
     // Function-related (both functions and tasks)
     case SK::Subroutine:
       return LK::kFunction;
+
+    // Generate blocks are containers/namespaces
+    case SK::GenerateBlock:
+    case SK::GenerateBlockArray:
+      return LK::kNamespace;
 
     // Default for other symbol kinds
     default:

@@ -25,7 +25,8 @@ class DocumentSymbolBuilder {
       -> std::vector<lsp::DocumentSymbol>;
 
  private:
-  // Individual symbol creation from SymbolInfo - returns nullopt if name is empty
+  // Individual symbol creation from SymbolInfo - returns nullopt if name is
+  // empty
   static auto CreateDocumentSymbol(const SemanticIndex::SymbolInfo& info)
       -> std::optional<lsp::DocumentSymbol>;
 
@@ -48,6 +49,10 @@ class DocumentSymbolBuilder {
       lsp::DocumentSymbol& struct_doc_symbol,
       const slang::ast::Symbol* type_alias_symbol,
       const slang::SourceManager& source_manager) -> void;
+
+  // Filter out empty generate blocks to reduce symbol tree clutter
+  static auto FilterEmptyGenerateBlocks(
+      std::vector<lsp::DocumentSymbol>& symbols) -> void;
 };
 
 }  // namespace slangd::semantic

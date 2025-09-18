@@ -32,6 +32,12 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
       continue;
     }
 
+    // Skip genvar loop variables - they're just counters, not meaningful
+    // symbols
+    if (info.symbol->kind == slang::ast::SymbolKind::Genvar) {
+      continue;
+    }
+
     // FILTER: Only include symbols from the requested document
     if (!IsLocationInDocument(info.location, *source_manager, uri)) {
       continue;
@@ -61,6 +67,12 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
         continue;
       }
 
+      // Skip genvar loop variables - they're just counters, not meaningful
+      // symbols
+      if (info.symbol->kind == slang::ast::SymbolKind::Genvar) {
+        continue;
+      }
+
       // FILTER: Only include symbols from the requested document
       if (!IsLocationInDocument(info.location, *source_manager, uri)) {
         continue;
@@ -76,7 +88,8 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
   // Recursively build DocumentSymbol tree from roots
   std::vector<lsp::DocumentSymbol> result;
   for (const auto* root_info : roots) {
-    auto doc_symbol_opt = DocumentSymbolBuilder::CreateDocumentSymbol(*root_info);
+    auto doc_symbol_opt =
+        DocumentSymbolBuilder::CreateDocumentSymbol(*root_info);
     if (!doc_symbol_opt.has_value()) {
       continue;  // Skip symbols with empty names
     }
@@ -102,13 +115,17 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
     result.push_back(std::move(doc_symbol));
   }
 
+  // Filter out empty generate blocks to reduce clutter
+  DocumentSymbolBuilder::FilterEmptyGenerateBlocks(result);
+
   return result;
 }
 
 // Implementation of private static member functions
 
 auto DocumentSymbolBuilder::CreateDocumentSymbol(
-    const SemanticIndex::SymbolInfo& info) -> std::optional<lsp::DocumentSymbol> {
+    const SemanticIndex::SymbolInfo& info)
+    -> std::optional<lsp::DocumentSymbol> {
   // VSCode requires DocumentSymbol names to be non-empty
   // Filter out symbols with empty names
   std::string symbol_name(info.symbol->name);
@@ -121,7 +138,8 @@ auto DocumentSymbolBuilder::CreateDocumentSymbol(
   doc_symbol.kind = info.lsp_kind;
   doc_symbol.range = info.range;
   doc_symbol.selectionRange = info.range;  // Use same range for now
-  doc_symbol.children = std::vector<lsp::DocumentSymbol>();
+  doc_symbol.children =
+      std::vector<lsp::DocumentSymbol>();  // Always initialize empty vector
   return doc_symbol;
 }
 
@@ -150,6 +168,28 @@ auto DocumentSymbolBuilder::AttachChildrenToSymbol(
 
       // Add all symbols from the template (first entry only)
       for (const auto& member : block_scope.members()) {
+        // Skip genvar loop parameters (they appear as Parameters inside
+        // generate blocks) But keep legitimate user-declared localparams
+        if (member.kind == slang::ast::SymbolKind::Parameter &&
+            member.as<slang::ast::ParameterSymbol>().isLocalParam()) {
+          // Check if this local parameter has the same name as a genvar in the
+          // GenerateBlockArray If so, it's the genvar loop iteration variable
+          // and should be filtered
+          bool is_genvar_param = false;
+
+          // Check GenerateBlockArray members for matching genvar
+          for (const auto& gen_member : gen_array.members()) {
+            if (gen_member.kind == slang::ast::SymbolKind::Genvar &&
+                gen_member.name == member.name) {
+              is_genvar_param = true;
+              break;
+            }
+          }
+          if (is_genvar_param) {
+            continue;  // Skip genvar loop iteration variable
+          }
+        }
+
         if (ShouldIndexForDocumentSymbols(member)) {
           // Create SymbolInfo for the member
           SemanticIndex::SymbolInfo member_info{
@@ -317,6 +357,22 @@ auto DocumentSymbolBuilder::HandleStructTypeAlias(
       struct_doc_symbol.children->push_back(std::move(field_doc_symbol));
     }
   }
+}
+
+auto DocumentSymbolBuilder::FilterEmptyGenerateBlocks(
+    std::vector<lsp::DocumentSymbol>& symbols) -> void {
+  // First, recursively filter children
+  for (auto& symbol : symbols) {
+    if (symbol.children.has_value()) {
+      FilterEmptyGenerateBlocks(*symbol.children);
+    }
+  }
+
+  // Then remove empty generate blocks (namespace symbols with no children)
+  std::erase_if(symbols, [](const lsp::DocumentSymbol& symbol) {
+    return symbol.kind == lsp::SymbolKind::kNamespace &&
+           symbol.children.has_value() && symbol.children->empty();
+  });
 }
 
 }  // namespace slangd::semantic
