@@ -27,29 +27,29 @@
 
 ---
 
-## Phase 2: Extract Document Symbol Building 📊
+## Phase 2: Extract Document Symbol Building 📊 ✅
 
 ### Goal: Move hierarchical tree construction to separate component
 
-- [ ] Create `include/slangd/semantic/document_symbol_builder.hpp`
-  - [ ] Define `DocumentSymbolBuilder` class with static methods
-  - [ ] Move method signatures: `BuildDocumentSymbolTree`, `CreateDocumentSymbol`, etc.
+- [x] Create `include/slangd/semantic/document_symbol_builder.hpp`
+  - [x] Define `DocumentSymbolBuilder` class with static methods
+  - [x] Move method signatures: `BuildDocumentSymbolTree`, `CreateDocumentSymbol`, etc.
 
-- [ ] Create `src/slangd/semantic/document_symbol_builder.cpp`
-  - [ ] Move `BuildDocumentSymbolTree` implementation
-  - [ ] Move helper methods: `CreateDocumentSymbol`, `AttachChildrenToSymbol`
-  - [ ] Move special handlers: `HandleEnumTypeAlias`, `HandleStructTypeAlias`
-  - [ ] Add parameter for symbols map and source manager
+- [x] Create `src/slangd/semantic/document_symbol_builder.cpp`
+  - [x] Move `BuildDocumentSymbolTree` implementation
+  - [x] Move helper methods: `CreateDocumentSymbol`, `AttachChildrenToSymbol`
+  - [x] Move special handlers: `HandleEnumTypeAlias`, `HandleStructTypeAlias`
+  - [x] Add parameter for symbols map and source manager
 
-- [ ] Update `semantic_index.cpp`
-  - [ ] Add `#include "slangd/semantic/document_symbol_builder.hpp"`
-  - [ ] Replace `GetDocumentSymbols` implementation with delegation
-  - [ ] Remove moved tree construction logic
+- [x] Update `semantic_index.cpp`
+  - [x] Add `#include "slangd/semantic/document_symbol_builder.hpp"`
+  - [x] Replace `GetDocumentSymbols` implementation with delegation
+  - [x] Remove moved tree construction logic
 
-- [ ] Update `BUILD.bazel`
-  - [ ] Add `document_symbol_builder.cpp` to semantic library
+- [x] Update `BUILD.bazel`
+  - [x] Add `document_symbol_builder.cpp` to semantic library
 
-- [ ] **Verification**: Build and run all tests - ensure 100% pass rate
+- [x] **Verification**: Build and run all tests - ensure 100% pass rate
 
 ---
 
