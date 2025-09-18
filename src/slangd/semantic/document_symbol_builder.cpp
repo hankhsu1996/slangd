@@ -44,7 +44,11 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
         info.symbol->kind == slang::ast::SymbolKind::InstanceBody) {
       roots.push_back(&info);
     } else {
-      children_map[info.parent].push_back(&info);
+      // Skip symbols that are children of functions/tasks for document symbols
+      // but keep them in semantic index for go-to-definition
+      if (info.parent->asSymbol().kind != slang::ast::SymbolKind::Subroutine) {
+        children_map[info.parent].push_back(&info);
+      }
     }
   }
 

@@ -499,9 +499,74 @@ TEST_CASE(
 
   REQUIRE(function_symbol != symbols[0].children->end());
   REQUIRE(function_symbol->kind == lsp::SymbolKind::kFunction);
+  // Functions should be leaf nodes (no children shown in document symbols)
+  REQUIRE(
+      (!function_symbol->children.has_value() ||
+       function_symbol->children->empty()));
 
   REQUIRE(task_symbol != symbols[0].children->end());
   REQUIRE(task_symbol->kind == lsp::SymbolKind::kFunction);
+  // Tasks should be leaf nodes (no children shown in document symbols)
+  REQUIRE(
+      (!task_symbol->children.has_value() || task_symbol->children->empty()));
+}
+
+TEST_CASE(
+    "SemanticIndex function internals not in document symbols but available "
+    "for goto-definition",
+    "[semantic_index]") {
+  SemanticTestFixture fixture;
+  std::string code = R"(
+    module test_module;
+      function automatic logic my_function();
+        logic local_var;
+        logic [7:0] local_array;
+        local_var = 1'b1;
+        my_function = local_var;
+      endfunction
+    endmodule
+  )";
+
+  auto index = fixture.BuildIndexFromSource(code);
+
+  // Test 1: Document symbols should NOT show function internals
+  auto symbols = index->GetDocumentSymbols("test.sv");
+  REQUIRE(!symbols.empty());
+  REQUIRE(symbols[0].children.has_value());
+
+  // Find the function
+  auto function_symbol = std::find_if(
+      symbols[0].children->begin(), symbols[0].children->end(),
+      [](const auto& s) { return s.name == "my_function"; });
+
+  REQUIRE(function_symbol != symbols[0].children->end());
+  REQUIRE(function_symbol->kind == lsp::SymbolKind::kFunction);
+
+  // Function should be a leaf node - no local_var or local_array in document
+  // symbols
+  REQUIRE(
+      (!function_symbol->children.has_value() ||
+       function_symbol->children->empty()));
+
+  // Test 2: But local variables should still be in semantic index for
+  // go-to-definition
+  const auto& all_symbols = index->GetAllSymbols();
+
+  bool found_local_var = false;
+  bool found_local_array = false;
+  for (const auto& [location, info] : all_symbols) {
+    std::string name(info.symbol->name);
+    if (name == "local_var") {
+      found_local_var = true;
+    }
+    if (name == "local_array") {
+      found_local_array = true;
+    }
+  }
+
+  // Local variables should be indexed for go-to-definition functionality
+  REQUIRE(found_local_var);
+  REQUIRE(found_local_array);
 }
 
 }  // namespace slangd::semantic
