@@ -14,7 +14,7 @@
 
 #include "slangd/semantic/definition_extractor.hpp"
 #include "slangd/semantic/document_symbol_builder.hpp"
-#include "slangd/utils/conversion.hpp"
+#include "slangd/semantic/symbol_utils.hpp"
 
 namespace slangd::semantic {
 
@@ -54,179 +54,6 @@ auto SemanticIndex::GetDocumentSymbols(const std::string& uri) const
   return DocumentSymbolBuilder::BuildDocumentSymbolTree(uri, *this);
 }
 
-// Utility method implementations
-auto SemanticIndex::UnwrapSymbol(const slang::ast::Symbol& symbol)
-    -> const slang::ast::Symbol& {
-  using SK = slang::ast::SymbolKind;
-
-  // If not a TransparentMember, return directly
-  if (symbol.kind != SK::TransparentMember) {
-    return symbol;
-  }
-
-  // Recursively unwrap
-  return UnwrapSymbol(symbol.as<slang::ast::TransparentMemberSymbol>().wrapped);
-}
-
-auto SemanticIndex::ConvertToLspKind(const slang::ast::Symbol& symbol)
-    -> lsp::SymbolKind {
-  using SK = slang::ast::SymbolKind;
-  using LK = lsp::SymbolKind;
-  using DK = slang::ast::DefinitionKind;
-
-  // Handle type alias first
-  if (symbol.kind == SK::TypeAlias) {
-    const auto& type_alias = symbol.as<slang::ast::TypeAliasType>();
-    const auto& canonical_type = type_alias.getCanonicalType();
-    switch (canonical_type.kind) {
-      case SK::EnumType:
-        return LK::kEnum;
-      case SK::PackedStructType:
-      case SK::UnpackedStructType:
-      case SK::PackedUnionType:
-      case SK::UnpackedUnionType:
-        return LK::kStruct;
-      default:
-        return LK::kTypeParameter;
-    }
-  }
-
-  // Handle Definition symbols
-  if (symbol.kind == SK::Definition) {
-    const auto& definition = symbol.as<slang::ast::DefinitionSymbol>();
-    if (definition.definitionKind == DK::Module) {
-      // In SystemVerilog, a 'module' defines encapsulated hardware with ports
-      // and internal logic. However, in software terms, it behaves more like a
-      // 'class': it has state, methods (processes), and can be instantiated
-      // multiple times. It's not just a namespace or file like software
-      // modules.
-      return LK::kClass;
-    }
-    if (definition.definitionKind == DK::Interface) {
-      return LK::kInterface;
-    }
-  }
-
-  // For non-Definition symbols, use a switch on the symbol kind
-  switch (symbol.kind) {
-    // Package
-    case SK::Package:
-      return LK::kPackage;
-
-    // InstanceBody represents instantiated module/interface content
-    // For universal collection, we need to distinguish interface from module
-    // bodies
-    case SK::InstanceBody: {
-      // Check if this InstanceBody represents an interface by looking for
-      // interface indicators Interfaces typically contain modports, modules
-      // typically don't
-      const auto& instance_body = symbol.as<slang::ast::InstanceBodySymbol>();
-
-      // Look through the body members to detect interface patterns
-      if (instance_body.isScope()) {
-        const auto& scope = instance_body.as<slang::ast::Scope>();
-        for (const auto& member : scope.members()) {
-          if (member.kind == SK::Modport) {
-            // Found a modport - this is likely an interface
-            return LK::kInterface;
-          }
-        }
-      }
-
-      // If no interface indicators found, assume it's a module
-      return LK::kClass;
-    }
-
-    // Variables and data
-    case SK::Variable:
-    case SK::Net:
-    case SK::Port:
-    case SK::Instance:
-    case SK::UninstantiatedDef:
-      return LK::kVariable;
-
-    case SK::Field:
-    case SK::ClassProperty:
-      return LK::kField;
-
-    case SK::Parameter:
-      return LK::kConstant;
-
-    case SK::EnumValue:
-      return LK::kEnumMember;
-
-    case SK::TypeParameter:
-      return LK::kTypeParameter;
-
-    // Type-related
-    case SK::TypeAlias:
-    case SK::ForwardingTypedef:
-      return LK::kTypeParameter;
-
-    case SK::EnumType:
-      return LK::kEnum;
-
-    case SK::PackedStructType:
-    case SK::UnpackedStructType:
-      return LK::kStruct;
-
-    case SK::PackedUnionType:
-    case SK::UnpackedUnionType:
-      return LK::kClass;
-
-    case SK::ClassType:
-      return LK::kClass;
-
-    // Interface-related
-    case SK::Modport:
-      return LK::kInterface;
-
-    // Function-related
-    case SK::Subroutine:
-      return LK::kFunction;
-
-    // Default for other symbol kinds
-    default:
-      return LK::kObject;
-  }
-}
-
-auto SemanticIndex::ComputeLspRange(
-    const slang::ast::Symbol& symbol,
-    const slang::SourceManager& source_manager) -> lsp::Range {
-  if (symbol.location) {
-    return ConvertSlangLocationToLspRange(symbol.location, source_manager);
-  }
-  // Return zero range for symbols without location
-  return lsp::Range{
-      .start = {.line = 0, .character = 0}, .end = {.line = 0, .character = 0}};
-}
-
-auto SemanticIndex::ShouldIndex(const slang::ast::Symbol& symbol) -> bool {
-  // Skip symbols without names (except some special cases)
-  if (symbol.name.empty()) {
-    using SK = slang::ast::SymbolKind;
-    // Allow some unnamed symbols that are still useful
-    switch (symbol.kind) {
-      case SK::CompilationUnit:
-      case SK::InstanceBody:
-      case SK::Instance:
-      case SK::GenerateBlock:       // Allow unnamed generate blocks
-      case SK::GenerateBlockArray:  // Allow unnamed generate block arrays
-        break;                      // Allow these unnamed symbols
-      default:
-        return false;  // Skip other unnamed symbols
-    }
-  }
-
-  // Skip symbols without valid locations
-  if (!symbol.location.valid()) {
-    return false;
-  }
-
-  return true;
-}
-
 // IndexVisitor implementation
 void SemanticIndex::IndexVisitor::ProcessSymbol(
     const slang::ast::Symbol& symbol) {
@@ -243,12 +70,12 @@ void SemanticIndex::IndexVisitor::ProcessSymbol(
   }
 
   // Only index symbols that meet basic criteria
-  if (!SemanticIndex::ShouldIndex(symbol)) {
+  if (!ShouldIndexForSemanticIndex(symbol)) {
     return;
   }
 
   // Unwrap symbol to handle TransparentMember recursion
-  const auto& unwrapped = SemanticIndex::UnwrapSymbol(symbol);
+  const auto& unwrapped = UnwrapSymbol(symbol);
 
   // Extract precise definition range from syntax node
   slang::SourceRange definition_range;
@@ -268,8 +95,8 @@ void SemanticIndex::IndexVisitor::ProcessSymbol(
   SymbolInfo info{
       .symbol = &unwrapped,
       .location = unwrapped.location,
-      .lsp_kind = SemanticIndex::ConvertToLspKind(unwrapped),
-      .range = SemanticIndex::ComputeLspRange(unwrapped, *source_manager_),
+      .lsp_kind = ConvertToLspKind(unwrapped),
+      .range = ComputeLspRange(unwrapped, *source_manager_),
       .parent = unwrapped.getParentScope(),
       .is_definition = is_definition,
       .definition_range = definition_range,

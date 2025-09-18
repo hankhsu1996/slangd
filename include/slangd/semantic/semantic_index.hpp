@@ -147,18 +147,7 @@ class SemanticIndex {
     void ProcessSymbol(const slang::ast::Symbol& symbol);
   };
 
-  // Utility methods ported from existing indexes
-  static auto UnwrapSymbol(const slang::ast::Symbol& symbol)
-      -> const slang::ast::Symbol&;
 
-  static auto ConvertToLspKind(const slang::ast::Symbol& symbol)
-      -> lsp::SymbolKind;
-
-  static auto ComputeLspRange(
-      const slang::ast::Symbol& symbol,
-      const slang::SourceManager& source_manager) -> lsp::Range;
-
-  static auto ShouldIndex(const slang::ast::Symbol& symbol) -> bool;
 };
 
 }  // namespace slangd::semantic

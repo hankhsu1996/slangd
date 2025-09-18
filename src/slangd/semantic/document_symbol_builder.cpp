@@ -7,7 +7,7 @@
 #include <slang/syntax/AllSyntax.h>
 
 #include "slangd/semantic/semantic_index.hpp"
-#include "slangd/utils/conversion.hpp"
+#include "slangd/semantic/symbol_utils.hpp"
 #include "slangd/utils/path_utils.hpp"
 
 namespace slangd::semantic {
@@ -133,12 +133,12 @@ auto DocumentSymbolBuilder::AttachChildrenToSymbol(
 
       // Add all symbols from the template (first entry only)
       for (const auto& member : block_scope.members()) {
-        if (ShouldIndex(member)) {
+        if (ShouldIndexForDocumentSymbols(member)) {
           // Create SymbolInfo for the member
           SemanticIndex::SymbolInfo member_info{
               .symbol = &member,
               .location = member.location,
-              .lsp_kind = ConvertToLspKind(member),
+              .lsp_kind = ConvertToLspKindForDocuments(member),
               .range = ComputeLspRange(member, source_manager),
               .parent = &block_scope,
               .is_definition = true,
@@ -281,81 +281,6 @@ auto DocumentSymbolBuilder::HandleStructTypeAlias(
       struct_doc_symbol.children->push_back(std::move(field_doc_symbol));
     }
   }
-}
-
-// Utility methods - these should be shared with SemanticIndex in the future
-
-auto DocumentSymbolBuilder::ShouldIndex(const slang::ast::Symbol& symbol)
-    -> bool {
-  using SK = slang::ast::SymbolKind;
-
-  // Index most symbol types for document symbols
-  switch (symbol.kind) {
-    case SK::Package:
-    case SK::Definition:    // Modules, interfaces, programs
-    case SK::InstanceBody:  // Module/interface instance bodies
-    case SK::Variable:
-    case SK::Parameter:
-    case SK::Port:
-    case SK::TypeAlias:
-    case SK::StatementBlock:
-    case SK::ProceduralBlock:
-    case SK::GenerateBlock:
-    case SK::GenerateBlockArray:
-    case SK::Subroutine:  // Functions and tasks
-    case SK::EnumValue:
-    case SK::Field:  // Struct/union fields
-      return true;
-    default:
-      return false;
-  }
-}
-
-auto DocumentSymbolBuilder::ConvertToLspKind(const slang::ast::Symbol& symbol)
-    -> lsp::SymbolKind {
-  using SK = slang::ast::SymbolKind;
-
-  switch (symbol.kind) {
-    case SK::Package:
-      return lsp::SymbolKind::kPackage;
-    case SK::Definition:
-      return lsp::SymbolKind::kModule;
-    case SK::InstanceBody:
-      return lsp::SymbolKind::kClass;
-    case SK::Variable:
-      return lsp::SymbolKind::kVariable;
-    case SK::Parameter:
-      return lsp::SymbolKind::kConstant;
-    case SK::Port:
-      return lsp::SymbolKind::kInterface;
-    case SK::TypeAlias:
-      return lsp::SymbolKind::kStruct;
-    case SK::StatementBlock:
-    case SK::ProceduralBlock:
-      return lsp::SymbolKind::kNamespace;
-    case SK::GenerateBlock:
-    case SK::GenerateBlockArray:
-      return lsp::SymbolKind::kNamespace;
-    case SK::Subroutine:
-      return lsp::SymbolKind::kFunction;
-    case SK::EnumValue:
-      return lsp::SymbolKind::kEnumMember;
-    case SK::Field:
-      return lsp::SymbolKind::kField;
-    default:
-      return lsp::SymbolKind::kVariable;
-  }
-}
-
-auto DocumentSymbolBuilder::ComputeLspRange(
-    const slang::ast::Symbol& symbol,
-    const slang::SourceManager& source_manager) -> lsp::Range {
-  if (symbol.location) {
-    return ConvertSlangLocationToLspRange(symbol.location, source_manager);
-  }
-  // Return zero range for symbols without location
-  return lsp::Range{
-      .start = {.line = 0, .character = 0}, .end = {.line = 0, .character = 0}};
 }
 
 }  // namespace slangd::semantic

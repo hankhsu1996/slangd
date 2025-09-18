@@ -48,13 +48,6 @@ class DocumentSymbolBuilder {
       const slang::ast::Symbol* type_alias_symbol,
       const slang::SourceManager& source_manager) -> void;
 
-  // Utility methods for symbol processing
-  static auto ShouldIndex(const slang::ast::Symbol& symbol) -> bool;
-  static auto ConvertToLspKind(const slang::ast::Symbol& symbol)
-      -> lsp::SymbolKind;
-  static auto ComputeLspRange(
-      const slang::ast::Symbol& symbol,
-      const slang::SourceManager& source_manager) -> lsp::Range;
 };
 
 }  // namespace slangd::semantic
