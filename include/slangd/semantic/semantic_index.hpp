@@ -156,11 +156,6 @@ class SemanticIndex {
 
   static auto ShouldIndex(const slang::ast::Symbol& symbol) -> bool;
 
-  // Definition range extraction from syntax nodes
-  static auto ExtractDefinitionRange(
-      const slang::ast::Symbol& symbol, const slang::syntax::SyntaxNode& syntax)
-      -> slang::SourceRange;
-
   // Helper methods for document symbol building
   auto BuildDocumentSymbolTree(const std::string& uri) const
       -> std::vector<lsp::DocumentSymbol>;

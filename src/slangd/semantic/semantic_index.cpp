@@ -12,6 +12,7 @@
 #include <slang/ast/types/AllTypes.h>
 #include <slang/syntax/AllSyntax.h>
 
+#include "slangd/semantic/definition_extractor.hpp"
 #include "slangd/utils/conversion.hpp"
 #include "slangd/utils/path_utils.hpp"
 
@@ -482,66 +483,6 @@ auto SemanticIndex::HandleStructTypeAlias(
   }
 }
 
-auto SemanticIndex::ExtractDefinitionRange(
-    const slang::ast::Symbol& symbol, const slang::syntax::SyntaxNode& syntax)
-    -> slang::SourceRange {
-  using SK = slang::ast::SymbolKind;
-  using SyntaxKind = slang::syntax::SyntaxKind;
-
-  // Extract precise name range based on symbol and syntax type
-
-  switch (symbol.kind) {
-    case SK::Package:
-      if (syntax.kind == SyntaxKind::PackageDeclaration) {
-        const auto& pkg_syntax =
-            syntax.as<slang::syntax::ModuleDeclarationSyntax>();
-        return pkg_syntax.header->name.range();
-      }
-      break;
-
-    case SK::Definition: {
-      if (syntax.kind == SyntaxKind::ModuleDeclaration) {
-        const auto& mod_syntax =
-            syntax.as<slang::syntax::ModuleDeclarationSyntax>();
-        return mod_syntax.header->name.range();
-      }
-      break;
-    }
-
-    case SK::TypeAlias:
-      if (syntax.kind == SyntaxKind::TypedefDeclaration) {
-        const auto& typedef_syntax =
-            syntax.as<slang::syntax::TypedefDeclarationSyntax>();
-        return typedef_syntax.name.range();
-      }
-      break;
-
-    case SK::Variable:
-    case SK::Parameter:
-      // For variables and parameters, use the entire syntax range as name range
-      return syntax.sourceRange();
-
-    case SK::StatementBlock: {
-      if (syntax.kind == SyntaxKind::SequentialBlockStatement ||
-          syntax.kind == SyntaxKind::ParallelBlockStatement) {
-        const auto& block_syntax =
-            syntax.as<slang::syntax::BlockStatementSyntax>();
-        if (block_syntax.blockName != nullptr) {
-          return block_syntax.blockName->name.range();
-        }
-      }
-      break;
-    }
-
-    default:
-      // For most symbol types, use the syntax source range
-      break;
-  }
-
-  // Default fallback: use the syntax node's source range
-  return syntax.sourceRange();
-}
-
 // IndexVisitor implementation
 void SemanticIndex::IndexVisitor::ProcessSymbol(
     const slang::ast::Symbol& symbol) {
@@ -570,7 +511,7 @@ void SemanticIndex::IndexVisitor::ProcessSymbol(
   bool is_definition = false;
   if (const auto* syntax = unwrapped.getSyntax()) {
     definition_range =
-        SemanticIndex::ExtractDefinitionRange(unwrapped, *syntax);
+        DefinitionExtractor::ExtractDefinitionRange(unwrapped, *syntax);
     is_definition = true;
   } else {
     // Fallback to symbol location for symbols without syntax
