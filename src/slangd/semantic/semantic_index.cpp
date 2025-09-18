@@ -450,7 +450,6 @@ auto SemanticIndex::ExtractDefinitionRange(
   using SyntaxKind = slang::syntax::SyntaxKind;
 
   // Extract precise name range based on symbol and syntax type
-  // This is adapted from the patterns in legacy definition_index.cpp
 
   switch (symbol.kind) {
     case SK::Package:
