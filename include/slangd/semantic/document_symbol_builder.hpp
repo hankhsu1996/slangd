@@ -47,7 +47,6 @@ class DocumentSymbolBuilder {
       lsp::DocumentSymbol& struct_doc_symbol,
       const slang::ast::Symbol* type_alias_symbol,
       const slang::SourceManager& source_manager) -> void;
-
 };
 
 }  // namespace slangd::semantic

@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <catch2/catch_all.hpp>
+#include <slang/ast/Symbol.h>
 
 #include "slangd/semantic/semantic_index.hpp"
 #include "test_fixtures.hpp"
@@ -461,6 +462,46 @@ TEST_CASE(
   // Generate for loop should show template symbols once, not all iterations
   // Expected: i, loop_signal, LOOP_PARAM (3 unique symbols)
   REQUIRE(gen_loop->children->size() == 3);
+}
+
+TEST_CASE(
+    "SemanticIndex collects functions and tasks correctly",
+    "[semantic_index]") {
+  SemanticTestFixture fixture;
+  std::string code = R"(
+    module test_module;
+      // Function with explicit return type
+      function automatic logic simple_func();
+        simple_func = 1'b0;
+      endfunction
+
+      // Simple task
+      task automatic simple_task();
+        $display("test");
+      endtask
+    endmodule
+  )";
+
+  auto index = fixture.BuildIndexFromSource(code);
+  auto symbols = index->GetDocumentSymbols("test.sv");
+
+  REQUIRE(!symbols.empty());
+  REQUIRE(symbols[0].children.has_value());
+
+  // Find functions and tasks in module
+  auto function_symbol = std::find_if(
+      symbols[0].children->begin(), symbols[0].children->end(),
+      [](const auto& s) { return s.name == "simple_func"; });
+
+  auto task_symbol = std::find_if(
+      symbols[0].children->begin(), symbols[0].children->end(),
+      [](const auto& s) { return s.name == "simple_task"; });
+
+  REQUIRE(function_symbol != symbols[0].children->end());
+  REQUIRE(function_symbol->kind == lsp::SymbolKind::kFunction);
+
+  REQUIRE(task_symbol != symbols[0].children->end());
+  REQUIRE(task_symbol->kind == lsp::SymbolKind::kFunction);
 }
 
 }  // namespace slangd::semantic

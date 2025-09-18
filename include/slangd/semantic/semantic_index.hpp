@@ -146,8 +146,6 @@ class SemanticIndex {
 
     void ProcessSymbol(const slang::ast::Symbol& symbol);
   };
-
-
 };
 
 }  // namespace slangd::semantic

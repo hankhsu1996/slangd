@@ -118,6 +118,17 @@ void SemanticIndex::IndexVisitor::ProcessSymbol(
       // New symbol is unnamed, existing is named - keep existing
       should_store = false;
     } else if (
+        unwrapped.kind == slang::ast::SymbolKind::Subroutine &&
+        existing_info.symbol->kind == slang::ast::SymbolKind::Variable) {
+      // Prefer Subroutine over Variable for functions (both have same
+      // name/location)
+      should_store = true;
+    } else if (
+        unwrapped.kind == slang::ast::SymbolKind::Variable &&
+        existing_info.symbol->kind == slang::ast::SymbolKind::Subroutine) {
+      // Keep existing Subroutine over new Variable
+      should_store = false;
+    } else if (
         unwrapped.kind == slang::ast::SymbolKind::GenerateBlockArray &&
         existing_info.symbol->kind == slang::ast::SymbolKind::GenerateBlock) {
       // Prefer GenerateBlockArray over GenerateBlock

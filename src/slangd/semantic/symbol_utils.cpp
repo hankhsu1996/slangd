@@ -4,6 +4,7 @@
 #include <slang/ast/symbols/CompilationUnitSymbols.h>
 #include <slang/ast/symbols/InstanceSymbols.h>
 #include <slang/ast/symbols/MemberSymbols.h>
+#include <slang/ast/symbols/SubroutineSymbols.h>
 #include <slang/ast/types/AllTypes.h>
 
 #include "slangd/utils/conversion.hpp"
@@ -183,7 +184,7 @@ auto ConvertToLspKind(const slang::ast::Symbol& symbol) -> lsp::SymbolKind {
     case SK::Modport:
       return LK::kInterface;
 
-    // Function-related
+    // Function-related (both functions and tasks)
     case SK::Subroutine:
       return LK::kFunction;
 
