@@ -123,8 +123,8 @@ auto LanguageService::GetDefinitionsForPosition(
   auto location =
       ConvertLspPositionToSlangLocation(position, buffer, source_manager);
 
-  // Use DefinitionIndex directly - this is the new architecture!
-  auto symbol_key = session->GetDefinitionIndex().LookupSymbolAt(location);
+  // Use SemanticIndex for unified symbol lookup
+  auto symbol_key = session->GetSemanticIndex().LookupSymbolAt(location);
   if (!symbol_key) {
     logger_->debug(
         "No symbol found at position {}:{} in {}", position.line,
@@ -133,7 +133,7 @@ auto LanguageService::GetDefinitionsForPosition(
   }
 
   auto def_range_opt =
-      session->GetDefinitionIndex().GetDefinitionRange(*symbol_key);
+      session->GetSemanticIndex().GetDefinitionRange(*symbol_key);
   if (!def_range_opt) {
     logger_->debug(
         "Definition location not found for symbol at {}:{} in {}",
@@ -181,8 +181,8 @@ auto LanguageService::GetDocumentSymbols(
     return {};
   }
 
-  // Use the new SymbolIndex for clean delegation
-  return session->GetSymbolIndex().GetDocumentSymbols(uri);
+  // Use the unified SemanticIndex for document symbols
+  return session->GetSemanticIndex().GetDocumentSymbols(uri);
 }
 
 auto LanguageService::HandleConfigChange() -> void {

@@ -22,8 +22,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Before adding/committing changes:
 
 1. **Format code**: `find src include test -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i`
-2. **Build check**: Ensure `bazel build //...` passes
-3. **Test check**: Ensure `bazel test //...` passes
+2. **Review formatting**: Check `git diff` after formatting - fix awkward comment splits and unnatural line breaks
+3. **Build check**: Ensure `bazel build //...` passes
+4. **Test check**: Ensure `bazel test //...` passes
 
 ### Branch Naming
 

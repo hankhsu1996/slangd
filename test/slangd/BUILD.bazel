@@ -21,19 +21,6 @@ cc_test(
 )
 
 cc_test(
-    name = "definition_index_test",
-    timeout = "short",
-    srcs = [
-        "semantic/definition_index_test.cpp",
-    ],
-    deps = [
-        "//:slangd_core",
-        "@catch2",
-        "@slang",
-    ],
-)
-
-cc_test(
     name = "overlay_session_test",
     timeout = "short",
     srcs = [
@@ -60,10 +47,10 @@ cc_test(
 )
 
 cc_test(
-    name = "symbol_index_test",
+    name = "definition_multifile_test",
     timeout = "short",
     srcs = [
-        "semantic/symbol_index_test.cpp",
+        "semantic/definition_multifile_test.cpp",
     ],
     deps = [
         "//:slangd_core",
@@ -73,14 +60,46 @@ cc_test(
 )
 
 cc_test(
-    name = "definition_multifile_test",
+    name = "semantic_index_basic_test",
     timeout = "short",
     srcs = [
-        "semantic/definition_multifile_test.cpp",
+        "semantic/semantic_index_basic_test.cpp",
+        "semantic/test_fixtures.hpp",
     ],
     deps = [
         "//:slangd_core",
         "@catch2",
+        "@fmt",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "semantic_index_patterns_test",
+    timeout = "short",
+    srcs = [
+        "semantic/semantic_index_patterns_test.cpp",
+        "semantic/test_fixtures.hpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@fmt",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "semantic_index_multifile_test",
+    timeout = "short",
+    srcs = [
+        "semantic/semantic_index_multifile_test.cpp",
+        "semantic/test_fixtures.hpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@fmt",
         "@slang",
     ],
 )

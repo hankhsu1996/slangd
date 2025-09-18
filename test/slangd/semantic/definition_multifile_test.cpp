@@ -241,16 +241,13 @@ TEST_CASE("Definition lookup for package imports", "[definition][multifile]") {
     REQUIRE(location.valid());
 
     // Look up definition at that location
-    auto symbol_key = session->GetDefinitionIndex().LookupSymbolAt(location);
-    bool found_symbol = symbol_key.has_value();
-
-    // SUCCESS: Cross-package symbol resolution now works!
-    REQUIRE(found_symbol);
+    auto symbol_key = session->GetSemanticIndex().LookupSymbolAt(location);
+    REQUIRE(symbol_key.has_value());
 
     // Verify the symbol points to the correct definition
     if (symbol_key.has_value()) {
       auto def_range =
-          session->GetDefinitionIndex().GetDefinitionRange(*symbol_key);
+          session->GetSemanticIndex().GetDefinitionRange(*symbol_key);
       REQUIRE(def_range.has_value());
 
       // The definition should be in the package file (buffer 2)
@@ -313,9 +310,9 @@ TEST_CASE(
         spdlog::default_logger());
     REQUIRE(session != nullptr);
 
-    // MVP: Verify that the GlobalCatalog and OverlaySession integration works
-    // The fact that we can create the session with the catalog means the
-    // basic infrastructure is working correctly
+    // Verify that the GlobalCatalog and OverlaySession integration functions
+    // correctly The fact that we can create the session with the catalog means
+    // the basic infrastructure is working correctly
 
     // Test that we can find symbols in the module content
     auto bus_width_location =
@@ -331,7 +328,7 @@ TEST_CASE(
     CAPTURE(can_locate_symbols);
     CAPTURE(can_locate_types);
 
-    // For MVP, verify the infrastructure works
+    // Verify the infrastructure functions correctly
     REQUIRE(can_locate_symbols);
     REQUIRE(can_locate_types);
 
@@ -370,7 +367,7 @@ TEST_CASE(
     auto counter_location = MultiFileTestFixture::FindPositionAsSourceLocation(
         module_content, "counter", session->GetSourceManager());
 
-    // For MVP, verify that single-file mode works
+    // Verify that single-file mode functions correctly
     bool can_locate_in_single_file = counter_location.valid();
     CAPTURE(can_locate_in_single_file);
     REQUIRE(can_locate_in_single_file);
