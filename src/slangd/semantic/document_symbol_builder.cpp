@@ -5,6 +5,7 @@
 #include <slang/ast/symbols/InstanceSymbols.h>
 #include <slang/ast/types/AllTypes.h>
 #include <slang/syntax/AllSyntax.h>
+#include <spdlog/spdlog.h>
 
 #include "slangd/semantic/semantic_index.hpp"
 #include "slangd/semantic/symbol_utils.hpp"
@@ -75,7 +76,12 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
   // Recursively build DocumentSymbol tree from roots
   std::vector<lsp::DocumentSymbol> result;
   for (const auto* root_info : roots) {
-    auto doc_symbol = DocumentSymbolBuilder::CreateDocumentSymbol(*root_info);
+    auto doc_symbol_opt = DocumentSymbolBuilder::CreateDocumentSymbol(*root_info);
+    if (!doc_symbol_opt.has_value()) {
+      continue;  // Skip symbols with empty names
+    }
+
+    auto doc_symbol = std::move(*doc_symbol_opt);
 
     // For symbols, we need to check if the symbol itself is a scope
     const slang::ast::Scope* symbol_as_scope = nullptr;
@@ -102,9 +108,16 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
 // Implementation of private static member functions
 
 auto DocumentSymbolBuilder::CreateDocumentSymbol(
-    const SemanticIndex::SymbolInfo& info) -> lsp::DocumentSymbol {
+    const SemanticIndex::SymbolInfo& info) -> std::optional<lsp::DocumentSymbol> {
+  // VSCode requires DocumentSymbol names to be non-empty
+  // Filter out symbols with empty names
+  std::string symbol_name(info.symbol->name);
+  if (symbol_name.empty()) {
+    return std::nullopt;
+  }
+
   lsp::DocumentSymbol doc_symbol;
-  doc_symbol.name = std::string(info.symbol->name);
+  doc_symbol.name = symbol_name;
   doc_symbol.kind = info.lsp_kind;
   doc_symbol.range = info.range;
   doc_symbol.selectionRange = info.range;  // Use same range for now
@@ -150,8 +163,10 @@ auto DocumentSymbolBuilder::AttachChildrenToSymbol(
                   slang::SourceRange{member.location, member.location},
               .buffer_id = member.location.buffer().getId()};
 
-          auto child_doc_symbol = CreateDocumentSymbol(member_info);
-          parent.children->push_back(std::move(child_doc_symbol));
+          auto child_doc_symbol_opt = CreateDocumentSymbol(member_info);
+          if (child_doc_symbol_opt.has_value()) {
+            parent.children->push_back(std::move(*child_doc_symbol_opt));
+          }
         }
       }
     }
@@ -164,7 +179,12 @@ auto DocumentSymbolBuilder::AttachChildrenToSymbol(
   }
 
   for (const auto* child_info : children_it->second) {
-    auto child_doc_symbol = CreateDocumentSymbol(*child_info);
+    auto child_doc_symbol_opt = CreateDocumentSymbol(*child_info);
+    if (!child_doc_symbol_opt.has_value()) {
+      continue;  // Skip symbols with empty names
+    }
+
+    auto child_doc_symbol = std::move(*child_doc_symbol_opt);
 
     // For child symbols, check if they are scopes themselves
     const slang::ast::Scope* child_as_scope = nullptr;
@@ -210,9 +230,15 @@ auto DocumentSymbolBuilder::HandleEnumTypeAlias(
   // Use the enum type's values() method to get all enum values
   // This is more reliable than trying to match by scope
   for (const auto& enum_value : enum_type.values()) {
+    // Skip enum values with empty names
+    std::string enum_name(enum_value.name);
+    if (enum_name.empty()) {
+      continue;
+    }
+
     // Create a SymbolInfo-like structure for the enum value
     lsp::DocumentSymbol enum_value_symbol;
-    enum_value_symbol.name = std::string(enum_value.name);
+    enum_value_symbol.name = enum_name;
     enum_value_symbol.kind = lsp::SymbolKind::kEnumMember;
 
     // Set range from the enum value location
@@ -262,9 +288,15 @@ auto DocumentSymbolBuilder::HandleStructTypeAlias(
     if (member.kind == SK::Field) {
       const auto& field_symbol = member.as<slang::ast::FieldSymbol>();
 
+      // Skip fields with empty names
+      std::string field_name(field_symbol.name);
+      if (field_name.empty()) {
+        continue;
+      }
+
       // Create a DocumentSymbol for the field
       lsp::DocumentSymbol field_doc_symbol;
-      field_doc_symbol.name = std::string(field_symbol.name);
+      field_doc_symbol.name = field_name;
       field_doc_symbol.kind = lsp::SymbolKind::kField;
 
       // Set range from the field location

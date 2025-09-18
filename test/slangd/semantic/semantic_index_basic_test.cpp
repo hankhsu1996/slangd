@@ -569,4 +569,35 @@ TEST_CASE(
   REQUIRE(found_local_array);
 }
 
+TEST_CASE(
+    "SemanticIndex handles symbols with empty names for VSCode compatibility",
+    "[semantic_index]") {
+  SemanticTestFixture fixture;
+  std::string code = R"(
+    module test_module;
+      generate
+        if (1) begin
+          logic gen_signal;
+        end
+      endgenerate
+    endmodule
+  )";
+
+  auto index = fixture.BuildIndexFromSource(code);
+  auto symbols = index->GetDocumentSymbols("test.sv");
+
+  // All document symbols should have non-empty names (VSCode requirement)
+  std::function<void(const std::vector<lsp::DocumentSymbol>&)> check_names;
+  check_names = [&check_names](const std::vector<lsp::DocumentSymbol>& syms) {
+    for (const auto& symbol : syms) {
+      REQUIRE(!symbol.name.empty());  // VSCode rejects empty names
+      if (symbol.children.has_value()) {
+        check_names(*symbol.children);
+      }
+    }
+  };
+
+  check_names(symbols);
+}
+
 }  // namespace slangd::semantic

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -24,9 +25,9 @@ class DocumentSymbolBuilder {
       -> std::vector<lsp::DocumentSymbol>;
 
  private:
-  // Individual symbol creation from SymbolInfo
+  // Individual symbol creation from SymbolInfo - returns nullopt if name is empty
   static auto CreateDocumentSymbol(const SemanticIndex::SymbolInfo& info)
-      -> lsp::DocumentSymbol;
+      -> std::optional<lsp::DocumentSymbol>;
 
   // Recursive attachment of child symbols to parent DocumentSymbol
   static auto AttachChildrenToSymbol(
