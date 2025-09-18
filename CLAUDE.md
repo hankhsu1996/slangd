@@ -1,151 +1,43 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with code in this repository.
 
-## Requirements
+## Quick Reference
 
-- Bazel 7.0+ with bzlmod support
-- Clang 19+ for C++23 features
+**Build & Test:**
+- `bazel build //...` - Build everything
+- `bazel test //...` - Run all tests
+- `find src include test -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i` - Format code
 
-## Build and Test Commands
+**TDD for new SV features:**
+1. Write failing test first
+2. Add debug printing to understand AST structure
+3. Implement minimal fix
+4. Clean up and remove debug code
 
-- **Build everything**: `bazel build //...`
-- **Run all tests**: `bazel test //...`
-- **Build with configuration**: `bazel build //... --config=debug` (or `release`, `fastbuild`)
-- **Generate compile_commands.json**: `bazel run @hedron_compile_commands//:refresh_all`
-- **Format code**: `find src include test -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i`
-
-## Development Workflow
-
-### Pre-Commit Process
-
-Before adding/committing changes:
-
-1. **Format code**: `find src include test -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i`
-2. **Review formatting**: Check `git diff` after formatting - fix awkward comment splits and unnatural line breaks
-3. **Build check**: Ensure `bazel build //...` passes
-4. **Test check**: Ensure `bazel test //...` passes
-
-### Branch Naming
-
-Use these prefixes:
-
-- `feature/` - for new features
-- `refactor/` - for code restructuring
-- `bugfix/` - for bug fixes
-- `docs/` - for documentation changes
-- `chore/` - for maintenance tasks
-
-### Git Commit Messages
-
-1. **First line**: Short summary (50-72 characters max)
-2. **Body**: Use bullet points with `-`, keep concise based on change scale
-   - Wrap lines at 72 characters
-   - Explain what and why, not how
-   - Focus on concrete technical changes and their purpose
-3. **No attribution**: Do not include Claude Code attribution in commits
-
-**Example format:**
-
-```
-Short summary under 72 chars
-
-- Primary change explained
-- Secondary change if needed
-```
-
-### Pull Request Guidelines
-
-**Title:**
-
-- Short summary (50-72 chars max)
-- Match branch naming style if helpful
-
-**Description:**
-
-```markdown
-## Summary
-
-- Brief bullet points of main changes
-- Use `-` for consistency
-
-🤖 Generated with [Claude Code](https://claude.ai/code)
-```
-
-**Guidelines:**
-
-- Always include Summary section
-- For small changes with no test modifications, keep description minimal
-- Add additional sections (Breaking Changes, Notes) only when they add value
-- Keep concise and relevant to the specific change
+**Pre-commit:**
+1. Format code, check build/test pass
+2. Use `feature/`, `bugfix/`, `refactor/` branch prefixes
+3. Commit messages: Short summary + bullet points, no Claude attribution
 
 ## Architecture
 
-This is a SystemVerilog Language Server Protocol (LSP) implementation with a modular design separating generic LSP functionality from language-specific features.
+SystemVerilog LSP server with modular design:
+- **`lsp/`**: Generic LSP protocol implementation (JSON-RPC, ASIO coroutines)
+- **`slangd/`**: SystemVerilog server using Slang library
+- **GlobalCatalog + OverlaySession**: 1-5ms response times with cross-file support
+- **Current features**: Diagnostics, go-to-definition, document symbols
 
-### Core Components
+## Development Tips
 
-**LSP Core Library (`lsp/`)**
+**Coding Standards:**
+- C++23, ASIO coroutines, `std::expected`, trailing return types
+- Use `toString(symbol.kind)` for Slang enum printing
 
-- Language-agnostic LSP protocol implementation built on JSON-RPC
-- Base `LspServer` class with virtual handlers for LSP lifecycle and features
-- Document management and ASIO coroutine-based async operations
-
-**Slangd Server (`slangd/`)**
-
-- SystemVerilog LSP server extending the generic `LspServer`
-- Uses Slang library for SystemVerilog parsing and semantic analysis
-- Built on GlobalCatalog + OverlaySession architecture for performance and correctness
-- Clean service-oriented design with semantic indexing
-
-### Core Architecture
-
-- **LanguageService**: Main LSP service coordinating catalog and overlay sessions
-- **GlobalCatalog**: Long-lived compilation extracting packages and interfaces from disk files
-- **OverlaySession**: Per-request compilation (1-5ms) combining current buffer with catalog metadata
-- **ProjectLayoutService**: Configuration management and intelligent file discovery
-- **Semantic Indexes**: DefinitionIndex, DiagnosticIndex, and SymbolIndex for LSP queries
-
-### Dependencies
-
-- **Slang**: SystemVerilog compiler frontend for parsing and semantics
-- **jsonrpc**: Custom JSON-RPC library with ASIO integration
-- **ASIO**: Asynchronous I/O with C++20 coroutines
-- **spdlog**: Structured logging
-- **yaml-cpp**: Configuration file parsing
-
-### Current LSP Features
-
-**Core Functionality (Production Ready):**
-
-- **Diagnostics**: Syntax and semantic errors with cross-file context
-- **Go-to-Definition**: Symbol navigation across packages and interfaces
-- **Document Symbols**: Hierarchical outline of SystemVerilog modules, packages, and interfaces
-- **Cross-File Support**: Package imports and interface references work correctly
-
-**Architecture Benefits:**
-
-- **Performance**: 1-5ms response times with bounded memory usage
-- **Reliability**: Always-correct single-file features with robust cross-file support
-- **Maintainability**: Clean service architecture ready for future enhancements
-
-The modular architecture enables future language servers (e.g. VHDL) to reuse the generic `lsp` core.
-
-## Coding Standards
-
-Follow Google C++ Style Guide with these specifics:
-
-- Use C++23 features, avoid macros
-- ASIO coroutines with strands for synchronization (no mutexes/futures)
-- `std::expected` for error handling over exceptions
-- Trailing return types (`auto Foo() -> Type`) for clarity
-- Smart pointers and RAII for memory management
-
-## Configuration Notes
-
-- Use `CLAUDE.local.md` for local development notes and debugging details
-
-## Documentation Guidelines
-
-- Use standard markdown formatting with regular bullets (-) and numbered lists (1.)
-- Avoid special Unicode characters that may not render correctly in all markdown engines
+**AST Debugging:**
+```bash
+# Use debug/ directory (gitignored) for AST investigation
+echo 'module test; function logic f(); endfunction; endmodule' > debug/test.sv
+slang debug/test.sv --ast-json debug/test.json
+```
+Keep test files minimal - JSON output is extremely large.

@@ -41,7 +41,7 @@ struct OverlayCacheKey {
 };
 
 // New service implementation using overlay sessions
-// Creates fresh Compilation + DefinitionIndex per LSP request
+// Creates fresh Compilation + SemanticIndex per LSP request
 // Designed for GlobalCatalog integration (Phase 2)
 class LanguageService : public LanguageServiceBase {
  public:

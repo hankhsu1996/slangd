@@ -74,6 +74,10 @@ class SemanticIndex {
   auto GetAllSymbols() const
       -> const std::unordered_map<slang::SourceLocation, SymbolInfo>&;
 
+  auto GetSourceManager() const -> const slang::SourceManager* {
+    return source_manager_;
+  }
+
   // SymbolIndex-compatible API
   auto GetDocumentSymbols(const std::string& uri) const
       -> std::vector<lsp::DocumentSymbol>;
@@ -142,41 +146,6 @@ class SemanticIndex {
 
     void ProcessSymbol(const slang::ast::Symbol& symbol);
   };
-
-  // Utility methods ported from existing indexes
-  static auto UnwrapSymbol(const slang::ast::Symbol& symbol)
-      -> const slang::ast::Symbol&;
-
-  static auto ConvertToLspKind(const slang::ast::Symbol& symbol)
-      -> lsp::SymbolKind;
-
-  static auto ComputeLspRange(
-      const slang::ast::Symbol& symbol,
-      const slang::SourceManager& source_manager) -> lsp::Range;
-
-  static auto ShouldIndex(const slang::ast::Symbol& symbol) -> bool;
-
-  // Definition range extraction from syntax nodes
-  static auto ExtractDefinitionRange(
-      const slang::ast::Symbol& symbol, const slang::syntax::SyntaxNode& syntax)
-      -> slang::SourceRange;
-
-  // Helper methods for document symbol building
-  auto BuildDocumentSymbolTree(const std::string& uri) const
-      -> std::vector<lsp::DocumentSymbol>;
-  static auto CreateDocumentSymbol(const SymbolInfo& info)
-      -> lsp::DocumentSymbol;
-  auto AttachChildrenToSymbol(
-      lsp::DocumentSymbol& parent, const slang::ast::Scope* parent_scope,
-      const std::unordered_map<
-          const slang::ast::Scope*, std::vector<const SymbolInfo*>>&
-          children_map) const -> void;
-  auto HandleEnumTypeAlias(
-      lsp::DocumentSymbol& enum_doc_symbol,
-      const slang::ast::Symbol* type_alias_symbol) const -> void;
-  auto HandleStructTypeAlias(
-      lsp::DocumentSymbol& struct_doc_symbol,
-      const slang::ast::Symbol* type_alias_symbol) const -> void;
 };
 
 }  // namespace slangd::semantic
