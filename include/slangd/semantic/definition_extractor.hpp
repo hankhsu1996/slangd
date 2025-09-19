@@ -26,6 +26,8 @@ class DefinitionExtractor {
       -> slang::SourceRange;
   static auto ExtractVariableRange(const slang::syntax::SyntaxNode& syntax)
       -> slang::SourceRange;
+  static auto ExtractParameterRange(const slang::syntax::SyntaxNode& syntax)
+      -> slang::SourceRange;
   static auto ExtractStatementBlockRange(
       const slang::syntax::SyntaxNode& syntax) -> slang::SourceRange;
 };

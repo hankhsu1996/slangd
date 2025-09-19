@@ -103,3 +103,18 @@ cc_test(
         "@slang",
     ],
 )
+
+cc_test(
+    name = "definition_extractor_test",
+    timeout = "short",
+    srcs = [
+        "semantic/definition_extractor_test.cpp",
+        "semantic/test_fixtures.hpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@fmt",
+        "@slang",
+    ],
+)

@@ -32,8 +32,10 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       break;
 
     case SK::Variable:
-    case SK::Parameter:
       return ExtractVariableRange(syntax);
+
+    case SK::Parameter:
+      return ExtractParameterRange(syntax);
 
     case SK::StatementBlock: {
       if (syntax.kind == SyntaxKind::SequentialBlockStatement ||
@@ -73,7 +75,29 @@ auto DefinitionExtractor::ExtractTypedefRange(
 
 auto DefinitionExtractor::ExtractVariableRange(
     const slang::syntax::SyntaxNode& syntax) -> slang::SourceRange {
-  // For variables and parameters, use the entire syntax range as name range
+  // For variables, use the entire syntax range as name range
+  return syntax.sourceRange();
+}
+
+auto DefinitionExtractor::ExtractParameterRange(
+    const slang::syntax::SyntaxNode& syntax) -> slang::SourceRange {
+  using SyntaxKind = slang::syntax::SyntaxKind;
+
+  // Handle parameter declarations specifically
+  if (syntax.kind == SyntaxKind::ParameterDeclarationStatement) {
+    const auto& param_stmt =
+        syntax.as<slang::syntax::ParameterDeclarationStatementSyntax>();
+    if (param_stmt.parameter->kind == SyntaxKind::ParameterDeclaration) {
+      const auto& param_decl =
+          param_stmt.parameter->as<slang::syntax::ParameterDeclarationSyntax>();
+      // Extract the first declarator's name
+      if (!param_decl.declarators.empty()) {
+        return param_decl.declarators[0]->name.range();
+      }
+    }
+  }
+
+  // Fallback to entire syntax range
   return syntax.sourceRange();
 }
 
