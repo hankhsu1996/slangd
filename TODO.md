@@ -42,7 +42,7 @@ if (auto* level = std::getenv("SPDLOG_LEVEL")) {
 
 **Goal:** Provide lightweight alternative to overengineered SemanticTestFixture
 
-- [ ] **Step 2.1:** Create `test/slangd/common/simple_fixture.hpp`
+- [x] **Step 2.1:** Create `test/slangd/common/simple_fixture.hpp`
 
 ```cpp
 #pragma once
@@ -75,8 +75,8 @@ private:
 } // namespace slangd::test
 ```
 
-- [ ] **Step 2.2:** Implement `test/slangd/common/simple_fixture.cpp`
-- [ ] **Step 2.3:** Add to `test/slangd/BUILD.bazel`:
+- [x] **Step 2.2:** Implement `test/slangd/common/simple_fixture.cpp`
+- [x] **Step 2.3:** Add to `test/slangd/BUILD.bazel`:
 
 ```python
 cc_library(
@@ -90,8 +90,8 @@ cc_library(
 )
 ```
 
-- [ ] **Step 2.4:** Convert `definition_extractor_test.cpp` to use SimpleTestFixture
-- [ ] **Step 2.5:** Verify test passes: `bazel test //test/slangd:definition_extractor_test`
+- [x] **Step 2.4:** Convert `definition_extractor_test.cpp` to use SimpleTestFixture
+- [x] **Step 2.5:** Verify test passes: `bazel test //test/slangd:definition_extractor_test`
 
 ## Phase 3: Split semantic_index_basic_test.cpp (875 lines → 4 focused files)
 

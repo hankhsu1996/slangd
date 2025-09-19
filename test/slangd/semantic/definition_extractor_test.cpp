@@ -3,7 +3,7 @@
 #include <catch2/catch_all.hpp>
 #include <spdlog/spdlog.h>
 
-#include "test_fixtures.hpp"
+#include "../common/simple_fixture.hpp"
 
 auto main(int argc, char* argv[]) -> int {
   if (auto* level = std::getenv("SPDLOG_LEVEL")) {
@@ -21,18 +21,12 @@ auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
 }
 
-using slangd::semantic::test::SemanticTestFixture;
-
-// Helper function to get consistent test URI (same as
-// semantic_index_basic_test)
-inline auto GetTestUri() -> std::string {
-  return "file:///test.sv";
-}
+using slangd::test::SimpleTestFixture;
 
 TEST_CASE(
     "Parameter definition range should be name only, not full declaration",
     "[definition_extractor]") {
-  SemanticTestFixture fixture;
+  SimpleTestFixture fixture;
 
   std::string code = R"(
     module test;
@@ -40,14 +34,15 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.BuildIndexFromSource(code);
+  auto index = fixture.CompileSource(code);
 
   // Find the parameter location in the source by searching for the name
-  auto param_location = fixture.FindLocation(code, "WIDTH");
+  auto param_location = fixture.FindSymbol(code, "WIDTH");
   REQUIRE(param_location.valid());
 
   // Lookup the definition range
-  auto result = index->LookupDefinitionAt(param_location);
+  auto result =
+      SimpleTestFixture::GetDefinitionRange(index.get(), param_location);
 
   REQUIRE(result.has_value());
 

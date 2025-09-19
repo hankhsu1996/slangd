@@ -21,7 +21,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 1. Format code, check build/test pass
 2. Use `feature/`, `bugfix/`, `refactor/` branch prefixes
-3. Commit messages: Short summary + bullet points using '-' in details, no Claude attribution
+3. Commit messages: Short summary + bullet points using '-' in details, no Claude attribution, focus on 'what' changed not process/phase/step
 
 ## Architecture
 
