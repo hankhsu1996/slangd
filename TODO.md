@@ -152,28 +152,28 @@ cc_library(
 
 **Fill gaps in test coverage for untested source files**
 
-- [ ] **Step 4.1:** Create `test/slangd/semantic/diagnostic_index_test.cpp`
+- [x] **Step 4.1:** Create `test/slangd/semantic/diagnostic_index_test.cpp`
 
   Tests for `src/slangd/semantic/diagnostic_index.cpp`:
 
-  - [ ] Basic diagnostic collection and indexing
-  - [ ] Diagnostic range extraction
-  - [ ] Error/warning filtering
+  - [x] Basic diagnostic collection and indexing
+  - [x] Diagnostic range extraction
+  - [x] Error/warning filtering
 
   Target size: ~100 lines
 
-- [ ] **Step 4.2:** Create `test/slangd/semantic/symbol_utils_test.cpp`
+- [x] **Step 4.2:** Create `test/slangd/semantic/symbol_utils_test.cpp`
 
   Tests for `src/slangd/semantic/symbol_utils.cpp`:
 
-  - [ ] Symbol kind conversion utilities
-  - [ ] Symbol name extraction
-  - [ ] Location utilities
+  - [x] Symbol kind conversion utilities
+  - [x] Symbol name extraction
+  - [x] Location utilities
 
   Target size: ~100 lines
 
-- [ ] **Step 4.3:** Update BUILD.bazel with new test targets
-- [ ] **Step 4.4:** Verify tests pass: `bazel test //test/slangd/semantic:diagnostic_index_test //test/slangd/semantic:symbol_utils_test`
+- [x] **Step 4.3:** Update BUILD.bazel with new test targets
+- [x] **Step 4.4:** Verify tests pass: `bazel test //test/slangd/semantic:diagnostic_index_test //test/slangd/semantic:symbol_utils_test`
 
 ## Phase 5: Organize Integration Tests
 
