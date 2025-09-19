@@ -1,5 +1,7 @@
 #include "slangd/semantic/semantic_index.hpp"
 
+#include <filesystem>
+
 #include <slang/ast/Compilation.h>
 #include <slang/ast/Symbol.h>
 #include <slang/ast/expressions/MiscExpressions.h>
@@ -11,10 +13,13 @@
 #include <slang/ast/symbols/VariableSymbols.h>
 #include <slang/ast/types/AllTypes.h>
 #include <slang/syntax/AllSyntax.h>
+#include <slang/util/Enum.h>
+#include <spdlog/spdlog.h>
 
 #include "slangd/semantic/definition_extractor.hpp"
 #include "slangd/semantic/document_symbol_builder.hpp"
 #include "slangd/semantic/symbol_utils.hpp"
+#include "slangd/utils/conversion.hpp"
 
 namespace slangd::semantic {
 
@@ -30,9 +35,102 @@ auto SemanticIndex::FromCompilation(
   // Create visitor for comprehensive symbol collection and reference tracking
   auto visitor = IndexVisitor(index.get(), &source_manager, current_file_uri);
 
-  // Single traversal from root captures ALL symbols - no filtering here!
-  // DocumentSymbolBuilder handles filtering at display time for performance
-  compilation.getRoot().visit(visitor);
+  const auto& root = compilation.getRoot();
+
+  // OPTIMIZATION: Find and visit ALL compilation units from current file
+  std::vector<const slang::ast::Symbol*> target_units;
+
+  // Normalize URIs for comparison - handle relative paths from Slang
+  auto normalize_uri = [](const std::string& uri) -> std::string {
+    if (uri.starts_with("file://")) {
+      try {
+        auto path = std::filesystem::path(uri.substr(7));  // Remove "file://"
+        auto canonical = std::filesystem::weakly_canonical(path);
+        return "file://" + canonical.string();
+      } catch (...) {
+        return uri;  // Return original if normalization fails
+      }
+    }
+    return uri;
+  };
+
+  auto normalized_target = normalize_uri(current_file_uri);
+
+  for (const auto& member : root.members()) {
+    bool should_visit = false;
+
+    if (member.location.valid()) {
+      auto member_uri = std::string(
+          ConvertSlangLocationToLspLocation(member.location, source_manager)
+              .uri);
+
+      auto normalized_member = normalize_uri(member_uri);
+
+      if (normalized_member == normalized_target) {
+        should_visit = true;
+      }
+    } else if (member.kind == slang::ast::SymbolKind::CompilationUnit) {
+      // Visit CompilationUnits that might contain symbols from current file
+      // Check if any of the CompilationUnit's members are from the target file
+      bool contains_target_symbols = false;
+
+      if (member.isScope()) {
+        const auto& scope = member.as<slang::ast::Scope>();
+        for (const auto& child : scope.members()) {
+          if (child.location.valid()) {
+            auto child_uri = std::string(ConvertSlangLocationToLspLocation(
+                                             child.location, source_manager)
+                                             .uri);
+            if (normalize_uri(child_uri) == normalized_target) {
+              contains_target_symbols = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (contains_target_symbols) {
+        should_visit = true;
+      }
+    }
+
+    if (should_visit) {
+      target_units.push_back(&member);
+    }
+  }
+
+  // Also look for Definition symbols (interfaces, modules) using
+  // compilation.getDefinitions()
+  std::vector<const slang::ast::Symbol*> target_definitions;
+  auto definitions = compilation.getDefinitions();
+  for (const auto* def : definitions) {
+    if (def->location.valid()) {
+      auto def_uri = std::string(
+          ConvertSlangLocationToLspLocation(def->location, source_manager).uri);
+      auto normalized_def = normalize_uri(def_uri);
+
+      if (normalized_def == normalized_target) {
+        target_definitions.push_back(def);
+      }
+    }
+  }
+
+  if (!target_units.empty()) {
+    for (const auto* unit : target_units) {
+      unit->visit(visitor);
+    }
+  }
+
+  if (!target_definitions.empty()) {
+    for (const auto* def : target_definitions) {
+      def->visit(visitor);
+    }
+  }
+
+  if (target_units.empty() && target_definitions.empty()) {
+    // Don't visit anything - return empty index for performance
+    // This is expected behavior when no matching symbols are found
+  }
 
   return index;
 }
@@ -113,10 +211,10 @@ void SemanticIndex::IndexVisitor::ProcessSymbol(
 
     // Prefer named symbols over unnamed ones
     if (!unwrapped.name.empty() && existing_info.symbol->name.empty()) {
-      // New symbol is named, existing is unnamed - replace
+      // Named symbol takes precedence over unnamed symbol
       should_store = true;
     } else if (unwrapped.name.empty() && !existing_info.symbol->name.empty()) {
-      // New symbol is unnamed, existing is named - keep existing
+      // Keep named symbol over unnamed symbol
       should_store = false;
     } else if (
         unwrapped.kind == slang::ast::SymbolKind::Subroutine &&
@@ -127,7 +225,7 @@ void SemanticIndex::IndexVisitor::ProcessSymbol(
     } else if (
         unwrapped.kind == slang::ast::SymbolKind::Variable &&
         existing_info.symbol->kind == slang::ast::SymbolKind::Subroutine) {
-      // Keep existing Subroutine over new Variable
+      // Subroutine takes precedence over Variable
       should_store = false;
     } else if (
         unwrapped.kind == slang::ast::SymbolKind::GenerateBlockArray &&
@@ -138,7 +236,7 @@ void SemanticIndex::IndexVisitor::ProcessSymbol(
         unwrapped.kind == slang::ast::SymbolKind::GenerateBlock &&
         existing_info.symbol->kind ==
             slang::ast::SymbolKind::GenerateBlockArray) {
-      // Keep existing GenerateBlockArray over new GenerateBlock
+      // GenerateBlockArray takes precedence over GenerateBlock
       should_store = false;
     }
   }
@@ -147,19 +245,27 @@ void SemanticIndex::IndexVisitor::ProcessSymbol(
     index_->symbols_[unwrapped.location] = info;
   }
 
-  // Store definition range for go-to-definition API
-  if (is_definition) {
-    SymbolKey key = SymbolKey::FromSourceLocation(unwrapped.location);
-    index_->definition_ranges_[key] = definition_range;
-  }
+  // Definition ranges are now stored in references_ vector when references are
+  // collected
 }
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::NamedValueExpression& expr) {
-  // Track reference: expr.sourceRange -> expr.symbol.location
+  // Store reference with embedded definition information
   if (expr.symbol.location.valid()) {
-    SymbolKey key = SymbolKey::FromSourceLocation(expr.symbol.location);
-    index_->reference_map_[expr.sourceRange] = key;
+    if (const auto* syntax = expr.symbol.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(expr.symbol, *syntax);
+
+      // Unified references_ storage with embedded definition range
+      ReferenceEntry ref_entry{
+          .source_range = expr.sourceRange,
+          .target_loc = expr.symbol.location,
+          .target_range = definition_range,
+          .symbol_kind = ConvertToLspKind(expr.symbol),
+          .symbol_name = std::string(expr.symbol.name)};
+      index_->references_.push_back(ref_entry);
+    }
   }
 
   // Continue traversal
@@ -177,9 +283,20 @@ void SemanticIndex::IndexVisitor::handle(
       const auto& resolved_type = symbol.getType();
 
       if (resolved_type.location.valid()) {
-        SymbolKey type_key =
-            SymbolKey::FromSourceLocation(resolved_type.location);
-        index_->reference_map_[named_type.name->sourceRange()] = type_key;
+        // Store type reference with embedded definition range
+        if (const auto* syntax = resolved_type.getSyntax()) {
+          auto definition_range = DefinitionExtractor::ExtractDefinitionRange(
+              resolved_type, *syntax);
+
+          // Unified references_ storage for type references
+          ReferenceEntry ref_entry{
+              .source_range = named_type.name->sourceRange(),
+              .target_loc = resolved_type.location,
+              .target_range = definition_range,
+              .symbol_kind = ConvertToLspKind(resolved_type),
+              .symbol_name = std::string(resolved_type.name)};
+          index_->references_.push_back(ref_entry);
+        }
       }
     }
   }
@@ -188,23 +305,51 @@ void SemanticIndex::IndexVisitor::handle(
   this->visitDefault(symbol);
 }
 
-auto SemanticIndex::GetDefinitionRange(const SymbolKey& key) const
-    -> std::optional<slang::SourceRange> {
-  auto it = definition_ranges_.find(key);
-  if (it != definition_ranges_.end()) {
-    return it->second;
-  }
-  return std::nullopt;
-}
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::WildcardImportSymbol& import_symbol) {
+  // Track reference: import statement -> package location
+  const auto* package = import_symbol.getPackage();
+  if (package != nullptr && package->location.valid()) {
+    // The import symbol itself doesn't have a meaningful source range for the
+    // package name. We need to extract the package name reference from the
+    // syntax. For now, use the import symbol's location as the reference
+    // location.
+    // TODO(hankhsu): Extract precise package name location from import syntax
+    slang::SourceRange import_range{
+        import_symbol.location, import_symbol.location};
 
-auto SemanticIndex::LookupSymbolAt(slang::SourceLocation loc) const
-    -> std::optional<SymbolKey> {
-  // O(n) search through reference map - matches legacy DefinitionIndex behavior
-  for (const auto& [range, key] : reference_map_) {
-    if (range.contains(loc)) {
-      return key;
+    // Store import reference with embedded definition range
+    if (const auto* pkg_syntax = package->getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(*package, *pkg_syntax);
+
+      // Unified references_ storage for import references
+      ReferenceEntry ref_entry{
+          .source_range = import_range,
+          .target_loc = package->location,
+          .target_range = definition_range,
+          .symbol_kind = ConvertToLspKind(*package),
+          .symbol_name = std::string(package->name)};
+      index_->references_.push_back(ref_entry);
     }
   }
+
+  // Continue traversal
+  this->visitDefault(import_symbol);
+}
+
+// Go-to-definition implementation
+
+auto SemanticIndex::LookupDefinitionAt(slang::SourceLocation loc) const
+    -> std::optional<slang::SourceRange> {
+  // Direct lookup using unified reference storage
+  // Linear search through references for position containment
+  for (const auto& ref_entry : references_) {
+    if (ref_entry.source_range.contains(loc)) {
+      return ref_entry.target_range;
+    }
+  }
+
   return std::nullopt;
 }
 

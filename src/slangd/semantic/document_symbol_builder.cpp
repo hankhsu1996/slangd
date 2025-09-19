@@ -48,6 +48,7 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
     // parent
     if (info.parent == nullptr ||
         info.symbol->kind == slang::ast::SymbolKind::Package ||
+        info.symbol->kind == slang::ast::SymbolKind::Definition ||
         info.symbol->kind == slang::ast::SymbolKind::InstanceBody) {
       roots.push_back(&info);
     } else {
@@ -101,8 +102,57 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
     if (root_info->symbol->isScope()) {
       symbol_as_scope = &root_info->symbol->as<slang::ast::Scope>();
     }
-    DocumentSymbolBuilder::AttachChildrenToSymbol(
-        doc_symbol, symbol_as_scope, children_map, *source_manager);
+
+    // Special handling for Definition symbols (modules/interfaces)
+    // The interface/package fix changed modules to be found as Definition
+    // symbols but children are stored with Definition as parent, not as Scope
+    if (root_info->symbol->kind == slang::ast::SymbolKind::Definition) {
+      // Find children by iterating through children_map and checking parent
+      // symbols
+      for (const auto& [parent_scope, children_list] : children_map) {
+        if (parent_scope != nullptr) {
+          // Compare by name since the parent might be an InstanceBody but we
+          // want Definition
+          if (parent_scope->asSymbol().name == root_info->symbol->name &&
+              !parent_scope->asSymbol().name.empty()) {
+            // Found children for this Definition symbol
+            for (const auto* child_info : children_list) {
+              auto child_doc_symbol_opt = CreateDocumentSymbol(*child_info);
+              if (!child_doc_symbol_opt.has_value()) {
+                continue;  // Skip symbols with empty names
+              }
+              // Apply TypeAlias handling here too!
+              auto child_doc_symbol = std::move(*child_doc_symbol_opt);
+              if (child_info->symbol->kind ==
+                  slang::ast::SymbolKind::TypeAlias) {
+                HandleEnumTypeAlias(
+                    child_doc_symbol, child_info->symbol, *source_manager);
+                HandleStructTypeAlias(
+                    child_doc_symbol, child_info->symbol, *source_manager);
+              }
+
+              // CRITICAL FIX: Recursively attach children to this child symbol
+              // too! For example, if this child is a GenerateBlock, it needs
+              // its own children
+              const slang::ast::Scope* child_as_scope = nullptr;
+              if (child_info->symbol->isScope()) {
+                child_as_scope = &child_info->symbol->as<slang::ast::Scope>();
+              }
+              AttachChildrenToSymbol(
+                  child_doc_symbol, child_as_scope, children_map,
+                  *source_manager);
+
+              doc_symbol.children->push_back(std::move(child_doc_symbol));
+            }
+            break;
+          }
+        }
+      }
+    } else {
+      // Normal scope-based lookup
+      DocumentSymbolBuilder::AttachChildrenToSymbol(
+          doc_symbol, symbol_as_scope, children_map, *source_manager);
+    }
 
     // Special handling for enum and struct type aliases
     if (root_info->symbol->kind == slang::ast::SymbolKind::TypeAlias) {

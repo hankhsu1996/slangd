@@ -126,21 +126,12 @@ auto LanguageService::GetDefinitionsForPosition(
   auto location =
       ConvertLspPositionToSlangLocation(position, buffer, source_manager);
 
-  // Use SemanticIndex for unified symbol lookup
-  auto symbol_key = session->GetSemanticIndex().LookupSymbolAt(location);
-  if (!symbol_key) {
-    logger_->debug(
-        "No symbol found at position {}:{} in {}", position.line,
-        position.character, uri);
-    return {};
-  }
-
-  auto def_range_opt =
-      session->GetSemanticIndex().GetDefinitionRange(*symbol_key);
+  // Look up definition using semantic index
+  auto def_range_opt = session->GetSemanticIndex().LookupDefinitionAt(location);
   if (!def_range_opt) {
     logger_->debug(
-        "Definition location not found for symbol at {}:{} in {}",
-        position.line, position.character, uri);
+        "No definition found at position {}:{} in {}", position.line,
+        position.character, uri);
     return {};
   }
 

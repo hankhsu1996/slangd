@@ -241,19 +241,12 @@ TEST_CASE("Definition lookup for package imports", "[definition][multifile]") {
     REQUIRE(location.valid());
 
     // Look up definition at that location
-    auto symbol_key = session->GetSemanticIndex().LookupSymbolAt(location);
-    REQUIRE(symbol_key.has_value());
+    auto def_range = session->GetSemanticIndex().LookupDefinitionAt(location);
+    REQUIRE(def_range.has_value());
 
-    // Verify the symbol points to the correct definition
-    if (symbol_key.has_value()) {
-      auto def_range =
-          session->GetSemanticIndex().GetDefinitionRange(*symbol_key);
-      REQUIRE(def_range.has_value());
-
-      // The definition should be in the package file (buffer 2)
-      // and should be the "data_t" typedef
-      REQUIRE(def_range->start().buffer().getId() == 2);
-    }
+    // The definition should be in the package file (buffer 2)
+    // and should be the "data_t" typedef
+    REQUIRE(def_range->start().buffer().getId() == 2);
 
     co_return;
   });

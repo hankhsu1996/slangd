@@ -92,7 +92,12 @@ auto PathToUri(std::filesystem::path path) -> std::string {
 
 auto NormalizePath(std::filesystem::path path) -> std::filesystem::path {
   try {
-    return std::filesystem::canonical(path);
+    // Only canonicalize if the file actually exists
+    // For synthetic/test files, just return the path as-is
+    if (std::filesystem::exists(path)) {
+      return std::filesystem::canonical(path);
+    }
+    return path;
   } catch (const std::exception&) {
     return path;
   }
