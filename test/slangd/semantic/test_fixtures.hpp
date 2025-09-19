@@ -30,9 +30,14 @@ class SemanticTestFixture {
   using SymbolKey = slangd::semantic::SymbolKey;
   auto BuildIndexFromSource(const std::string& source)
       -> std::unique_ptr<SemanticIndex> {
-    std::string path = "test.sv";
+    constexpr std::string_view kTestFilename = "test.sv";
+
+    // Use consistent URI/path format
+    std::string test_uri = "file:///" + std::string(kTestFilename);
+    std::string test_path = "/" + std::string(kTestFilename);
+
     SetSourceManager(std::make_shared<slang::SourceManager>());
-    auto buffer = GetSourceManager()->assignText(path, source);
+    auto buffer = GetSourceManager()->assignText(test_path, source);
     SetBufferId(buffer.id);
     auto tree =
         slang::syntax::SyntaxTree::fromBuffer(buffer, *GetSourceManager());
@@ -42,7 +47,7 @@ class SemanticTestFixture {
     GetCompilation()->addSyntaxTree(tree);
 
     return SemanticIndex::FromCompilation(
-        *GetCompilation(), *GetSourceManager());
+        *GetCompilation(), *GetSourceManager(), test_uri);
   }
 
   auto MakeKey(const std::string& source, const std::string& symbol)
@@ -178,6 +183,98 @@ class MultiFileSemanticFixture : public SemanticTestFixture {
     std::vector<std::string> file_paths;  // The actual file paths created
   };
 
+  // Role-based multifile test setup for clear LSP scenarios
+  // Prevents confusion about which file is being indexed from
+  enum class FileRole {
+    kCurrentFile,  // The file being edited (indexed from) - LSP active file
+    kOpenedFile,   // Another opened file in workspace
+    kUnopendFile   // Dependency file not currently opened
+  };
+
+  struct FileSpec {
+    std::string content;
+    FileRole role;
+    std::string
+        logical_name;  // For debugging/clarity (e.g., "module", "package")
+
+    FileSpec(std::string content, FileRole role, std::string logical_name = "")
+        : content(std::move(content)),
+          role(role),
+          logical_name(std::move(logical_name)) {
+    }
+  };
+
+  // Result struct for role-based builds
+  struct IndexWithRoles {
+    std::unique_ptr<SemanticIndex> index;
+    std::vector<std::string> file_paths;
+    std::string current_file_uri;  // The URI used for indexing
+  };
+
+  // Build index with explicit file roles for testing LSP scenarios
+  auto BuildIndexWithRoles(const std::vector<FileSpec>& files)
+      -> IndexWithRoles {
+    SetSourceManager(std::make_shared<slang::SourceManager>());
+    slang::Bag options;
+    SetCompilation(std::make_unique<slang::ast::Compilation>(options));
+
+    std::vector<std::string> file_paths;
+    std::string current_file_uri;
+    int current_file_index = -1;
+
+    // First pass: find the current file and assign indices
+    for (size_t i = 0; i < files.size(); ++i) {
+      if (files[i].role == FileRole::kCurrentFile) {
+        if (current_file_index != -1) {
+          throw std::runtime_error(
+              "Multiple kCurrentFile roles specified - only one allowed");
+        }
+        current_file_index = static_cast<int>(i);
+      }
+    }
+
+    if (current_file_index == -1) {
+      throw std::runtime_error(
+          "No kCurrentFile role specified - exactly one required");
+    }
+
+    // Second pass: add files to compilation in order, tracking the current
+    // file's index
+    for (size_t i = 0; i < files.size(); ++i) {
+      const auto& file_spec = files[i];
+      std::string filename = fmt::format("file_{}.sv", i);
+
+      // Track which file becomes the indexing target
+      if (static_cast<int>(i) == current_file_index) {
+        current_file_uri = "file:///" + filename;
+      }
+
+      // Use consistent URI/path format
+      std::string file_path = "/" + filename;
+      file_paths.push_back(file_path);
+
+      auto buffer =
+          GetSourceManager()->assignText(file_path, file_spec.content);
+      auto tree =
+          slang::syntax::SyntaxTree::fromBuffer(buffer, *GetSourceManager());
+      GetCompilation()->addSyntaxTree(tree);
+
+      // Store the first buffer ID for key creation compatibility
+      if (i == 0) {
+        SetBufferId(buffer.id);
+      }
+    }
+
+    // Build index from the current file's perspective
+    auto index = SemanticIndex::FromCompilation(
+        *GetCompilation(), *GetSourceManager(), current_file_uri);
+
+    return IndexWithRoles{
+        .index = std::move(index),
+        .file_paths = std::move(file_paths),
+        .current_file_uri = current_file_uri};
+  }
+
   // Build index from multiple files (improved version with file path tracking)
   auto BuildIndexFromFilesWithPaths(
       const std::vector<std::string>& file_contents) -> IndexWithFiles {
@@ -190,9 +287,14 @@ class MultiFileSemanticFixture : public SemanticTestFixture {
     // Add each file to the compilation
     for (size_t i = 0; i < file_contents.size(); ++i) {
       std::string filename = fmt::format("file_{}.sv", i);
-      file_paths.push_back(filename);  // Track the actual file path created
 
-      auto buffer = GetSourceManager()->assignText(filename, file_contents[i]);
+      // Use consistent URI/path format
+      std::string file_uri = "file:///" + filename;
+      std::string file_path = "/" + filename;
+
+      file_paths.push_back(file_path);  // Track the actual file path created
+
+      auto buffer = GetSourceManager()->assignText(file_path, file_contents[i]);
       auto tree =
           slang::syntax::SyntaxTree::fromBuffer(buffer, *GetSourceManager());
       GetCompilation()->addSyntaxTree(tree);
@@ -203,18 +305,66 @@ class MultiFileSemanticFixture : public SemanticTestFixture {
       }
     }
 
-    auto index =
-        SemanticIndex::FromCompilation(*GetCompilation(), *GetSourceManager());
+    // Use the first file URI for the index
+    std::string first_file_uri = "file:///file_0.sv";
+    auto index = SemanticIndex::FromCompilation(
+        *GetCompilation(), *GetSourceManager(), first_file_uri);
 
     return IndexWithFiles{
         .index = std::move(index), .file_paths = std::move(file_paths)};
   }
 
-  // Build index from multiple files (legacy version for backward compatibility)
+  // Build index from multiple files (simplified interface)
   auto BuildIndexFromFiles(const std::vector<std::string>& file_contents)
       -> std::unique_ptr<SemanticIndex> {
     auto result = BuildIndexFromFilesWithPaths(file_contents);
     return std::move(result.index);
+  }
+
+  // Builder pattern for even clearer LSP scenario construction
+  class IndexBuilder {
+   public:
+    explicit IndexBuilder(MultiFileSemanticFixture* fixture)
+        : fixture_(fixture) {
+    }
+
+    auto SetCurrentFile(std::string content, std::string name = "current")
+        -> IndexBuilder& {
+      files_.emplace_back(
+          std::move(content), FileRole::kCurrentFile, std::move(name));
+      return *this;
+    }
+
+    auto AddUnopendFile(std::string content, std::string name = "dependency")
+        -> IndexBuilder& {
+      files_.emplace_back(
+          std::move(content), FileRole::kUnopendFile, std::move(name));
+      return *this;
+    }
+
+    auto AddOpenedFile(std::string content, std::string name = "opened")
+        -> IndexBuilder& {
+      files_.emplace_back(
+          std::move(content), FileRole::kOpenedFile, std::move(name));
+      return *this;
+    }
+
+    auto Build() -> IndexWithRoles {
+      return fixture_->BuildIndexWithRoles(files_);
+    }
+
+    auto BuildSimple() -> std::unique_ptr<SemanticIndex> {
+      auto result = Build();
+      return std::move(result.index);
+    }
+
+   private:
+    MultiFileSemanticFixture* fixture_;
+    std::vector<FileSpec> files_;
+  };
+
+  auto CreateBuilder() -> IndexBuilder {
+    return IndexBuilder(this);
   }
 
   // Helper to verify cross-file reference resolution
@@ -227,33 +377,29 @@ class MultiFileSemanticFixture : public SemanticTestFixture {
       return false;
     }
 
-    // Look up symbol at that location
-    auto symbol_key = index.LookupSymbolAt(location);
-    if (!symbol_key.has_value()) {
-      return false;
-    }
-
-    // Verify it has a definition range
-    auto def_range = index.GetDefinitionRange(*symbol_key);
+    // Use LookupDefinitionAt API
+    auto def_range = index.LookupDefinitionAt(location);
     return def_range.has_value();
   }
 
-  // Helper to count symbols from different buffers
+  // Helper to count symbols from different buffers using symbol info
   static auto CountBuffersWithSymbols(const SemanticIndex& index) -> size_t {
-    const auto& definition_ranges = index.GetDefinitionRanges();
+    const auto& all_symbols = index.GetAllSymbols();
     std::set<uint32_t> buffer_ids;
-    for (const auto& [key, range] : definition_ranges) {
-      buffer_ids.insert(key.bufferId);
+    for (const auto& [loc, info] : all_symbols) {
+      if (info.symbol->location.valid()) {
+        buffer_ids.insert(info.buffer_id);
+      }
     }
     return buffer_ids.size();
   }
 
   // Helper to check if cross-file references exist
   static auto HasCrossFileReferences(const SemanticIndex& index) -> bool {
-    const auto& reference_map = index.GetReferenceMap();
-    return std::ranges::any_of(reference_map, [](const auto& entry) {
-      const auto& [ref_range, def_key] = entry;
-      return ref_range.start().buffer().getId() != def_key.bufferId;
+    const auto& references = index.GetReferences();
+    return std::ranges::any_of(references, [](const ReferenceEntry& entry) {
+      return entry.source_range.start().buffer().getId() !=
+             entry.target_range.start().buffer().getId();
     });
   }
 

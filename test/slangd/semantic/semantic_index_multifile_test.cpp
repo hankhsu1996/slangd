@@ -6,6 +6,7 @@
 
 #include <asio.hpp>
 #include <catch2/catch_all.hpp>
+#include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
 #include "slangd/core/project_layout_service.hpp"
@@ -47,23 +48,48 @@ class AsyncMultiFileFixture : public MultiFileSemanticFixture {
     co_return catalog;
   }
 
-  // Build index with package and module files
-  auto BuildIndexWithPackages(
+  // Package + Module scenario from module perspective
+  auto BuildIndexFromModulePerspective(
       const std::vector<std::string>& package_files,
-      const std::string& module_content) -> std::unique_ptr<SemanticIndex> {
-    std::vector<std::string> all_files = package_files;
-    all_files.push_back(module_content);
-    return BuildIndexFromFiles(all_files);
+      const std::string& module_content,
+      const std::string& module_name = "test_module") -> IndexWithRoles {
+    std::vector<FileSpec> files;
+
+    // Module is the current file (being edited)
+    files.emplace_back(module_content, FileRole::kCurrentFile, module_name);
+
+    // Packages are unopened dependencies
+    for (size_t i = 0; i < package_files.size(); ++i) {
+      std::string pkg_name = fmt::format("package_{}", i);
+      files.emplace_back(package_files[i], FileRole::kUnopendFile, pkg_name);
+    }
+
+    return BuildIndexWithRoles(files);
   }
 
-  // Build index with package and module files (with file path tracking)
-  auto BuildIndexWithPackagesAndPaths(
+  // Package + Module scenario from package perspective
+  auto BuildIndexFromPackagePerspective(
       const std::vector<std::string>& package_files,
-      const std::string& module_content)
-      -> MultiFileSemanticFixture::IndexWithFiles {
-    std::vector<std::string> all_files = package_files;
-    all_files.push_back(module_content);
-    return BuildIndexFromFilesWithPaths(all_files);
+      const std::string& module_content,
+      const std::string& package_name = "test_package") -> IndexWithRoles {
+    std::vector<FileSpec> files;
+
+    // First package is the current file (being edited)
+    if (!package_files.empty()) {
+      files.emplace_back(
+          package_files[0], FileRole::kCurrentFile, package_name);
+
+      // Remaining packages are unopened dependencies
+      for (size_t i = 1; i < package_files.size(); ++i) {
+        std::string pkg_name = fmt::format("package_{}", i);
+        files.emplace_back(package_files[i], FileRole::kUnopendFile, pkg_name);
+      }
+    }
+
+    // Module is unopened dependency
+    files.emplace_back(module_content, FileRole::kUnopendFile, "module");
+
+    return BuildIndexWithRoles(files);
   }
 
  private:
@@ -128,40 +154,40 @@ TEST_CASE(
     endmodule
   )";
 
-  // Build SemanticIndex with both files
-  auto index =
-      fixture.BuildIndexWithPackages({package_content}, module_content);
+  // Build SemanticIndex using EXPLICIT builder pattern (clearest approach)
+  // Explicitly state: module = current file, package = unopened dependency
+  auto result = fixture.CreateBuilder()
+                    .SetCurrentFile(module_content, "test_module")
+                    .AddUnopendFile(package_content, "test_pkg")
+                    .Build();
+  auto& index = result.index;
   REQUIRE(index != nullptr);
   REQUIRE(index->GetSymbolCount() > 0);
 
-  // Verify we have symbols from multiple buffers
-  REQUIRE(MultiFileSemanticFixture::CountBuffersWithSymbols(*index) >= 2);
+  // Verify we have symbols (file-scoped indexing is correct behavior)
+  REQUIRE(MultiFileSemanticFixture::CountBuffersWithSymbols(*index) >= 1);
 
-  // Test that package symbols are indexed
+  // Test that symbols from the target file are indexed (file-scoped behavior)
   const auto& all_symbols = index->GetAllSymbols();
-  bool found_package = false;
-  bool found_typedef = false;
   bool found_module = false;
+  bool found_local_signal = false;
 
   for (const auto& [location, info] : all_symbols) {
     std::string name(info.symbol->name);
-    if (name == "test_pkg") {
-      found_package = true;
-      REQUIRE(info.lsp_kind == lsp::SymbolKind::kPackage);
-    }
-    if (name == "data_t") {
-      found_typedef = true;
-      REQUIRE(info.lsp_kind == lsp::SymbolKind::kTypeParameter);
-    }
     if (name == "test_module") {
       found_module = true;
       REQUIRE(info.lsp_kind == lsp::SymbolKind::kClass);
     }
+    if (name == "local_signal") {
+      found_local_signal = true;
+      REQUIRE(info.lsp_kind == lsp::SymbolKind::kVariable);
+    }
   }
 
-  REQUIRE(found_package);
-  REQUIRE(found_typedef);
+  // With file-scoped indexing, we should find symbols from the target file
   REQUIRE(found_module);
+  // local_signal should be indexed as it's defined in the module file
+  REQUIRE(found_local_signal);
 }
 
 TEST_CASE(
@@ -190,42 +216,47 @@ TEST_CASE(
     endmodule
   )";
 
-  // Build SemanticIndex with both files
-  auto index =
-      fixture.BuildIndexWithPackages({package_content}, module_content);
+  // Build SemanticIndex using EXPLICIT builder pattern (clearest approach)
+  // Explicitly state: module = current file, package = unopened dependency
+  auto result = fixture.CreateBuilder()
+                    .SetCurrentFile(module_content, "bus_controller")
+                    .AddUnopendFile(package_content, "math_pkg")
+                    .Build();
+  auto& index = result.index;
   REQUIRE(index != nullptr);
   REQUIRE(index->GetSymbolCount() > 0);
 
-  // Verify we have symbols from multiple buffers
-  REQUIRE(MultiFileSemanticFixture::CountBuffersWithSymbols(*index) >= 2);
+  // Verify we have symbols (file-scoped indexing is correct behavior)
+  REQUIRE(MultiFileSemanticFixture::CountBuffersWithSymbols(*index) >= 1);
 
-  // Test that struct and parameters are indexed
+  // Test that symbols from the target file are indexed (file-scoped behavior)
   const auto& all_symbols = index->GetAllSymbols();
-  bool found_package = false;
-  bool found_struct = false;
-  bool found_bus_width = false;
-  bool found_addr_width = false;
+  bool found_module = false;
+  bool found_data_bus = false;
+  bool found_transaction = false;
+  bool found_address = false;
 
   for (const auto& [location, info] : all_symbols) {
     std::string name(info.symbol->name);
-    if (name == "math_pkg") {
-      found_package = true;
+    if (name == "bus_controller") {
+      found_module = true;
     }
-    if (name == "transaction_t") {
-      found_struct = true;
+    if (name == "data_bus") {
+      found_data_bus = true;
     }
-    if (name == "BUS_WIDTH") {
-      found_bus_width = true;
+    if (name == "transaction") {
+      found_transaction = true;
     }
-    if (name == "ADDR_WIDTH") {
-      found_addr_width = true;
+    if (name == "address") {
+      found_address = true;
     }
   }
 
-  REQUIRE(found_package);
-  REQUIRE(found_struct);
-  REQUIRE(found_bus_width);
-  REQUIRE(found_addr_width);
+  // With file-scoped indexing, we should find symbols from the target file
+  REQUIRE(found_module);
+  REQUIRE(found_data_bus);
+  REQUIRE(found_transaction);
+  REQUIRE(found_address);
 
   // Check that we have cross-file references (may not be detected for qualified
   // refs) This is a known limitation - qualified package references like
@@ -267,47 +298,47 @@ TEST_CASE(
     endmodule
   )";
 
-  // Build SemanticIndex with all three files
-  auto index = fixture.BuildIndexWithPackages(
-      {base_package, derived_package}, module_content);
+  // Build SemanticIndex using EXPLICIT builder pattern (clearest approach)
+  // Explicitly state: module = current file, packages = unopened dependencies
+  auto result = fixture.CreateBuilder()
+                    .SetCurrentFile(module_content, "processor")
+                    .AddUnopendFile(base_package, "base_pkg")
+                    .AddUnopendFile(derived_package, "derived_pkg")
+                    .Build();
+  auto& index = result.index;
   REQUIRE(index != nullptr);
   REQUIRE(index->GetSymbolCount() > 0);
 
-  // Verify we have symbols from all three compilation units
-  REQUIRE(MultiFileSemanticFixture::CountBuffersWithSymbols(*index) >= 3);
+  // Verify we have symbols (file-scoped indexing is correct behavior)
+  REQUIRE(MultiFileSemanticFixture::CountBuffersWithSymbols(*index) >= 1);
 
-  // Test that all key symbols are indexed
+  // Test that symbols from current file (processor module) are indexed
+  // With file-scoped indexing, only current file symbols are indexed
   const auto& all_symbols = index->GetAllSymbols();
-  bool found_base_pkg = false;
-  bool found_derived_pkg = false;
-  bool found_word_t = false;
-  bool found_packet_t = false;
   bool found_processor = false;
+  bool found_input_packet = false;
+  bool found_data_word = false;
 
   for (const auto& [location, info] : all_symbols) {
     std::string name(info.symbol->name);
-    if (name == "base_pkg") {
-      found_base_pkg = true;
-    }
-    if (name == "derived_pkg") {
-      found_derived_pkg = true;
-    }
-    if (name == "word_t") {
-      found_word_t = true;
-    }
-    if (name == "packet_t") {
-      found_packet_t = true;
-    }
     if (name == "processor") {
       found_processor = true;
     }
+    if (name == "input_packet") {
+      found_input_packet = true;
+    }
+    if (name == "data_word") {
+      found_data_word = true;
+    }
   }
 
-  REQUIRE(found_base_pkg);
-  REQUIRE(found_derived_pkg);
-  REQUIRE(found_word_t);
-  REQUIRE(found_packet_t);
+  // Only expect symbols from the current file (processor module)
   REQUIRE(found_processor);
+  REQUIRE(found_input_packet);
+  REQUIRE(found_data_word);
+
+  // Package symbols are not indexed since they're in dependency files
+  // This is the expected behavior with file-scoped indexing
 }
 
 TEST_CASE(
@@ -338,26 +369,26 @@ TEST_CASE(
     endmodule
   )";
 
-  // Build SemanticIndex with both files
-  auto index =
-      fixture.BuildIndexWithPackages({interface_content}, module_content);
+  // Build SemanticIndex using EXPLICIT builder pattern (clearest approach)
+  // Explicitly state: module = current file, interface = unopened dependency
+  auto result = fixture.CreateBuilder()
+                    .SetCurrentFile(module_content, "cpu_core")
+                    .AddUnopendFile(interface_content, "cpu_if")
+                    .Build();
+  auto& index = result.index;
   REQUIRE(index != nullptr);
 
   // Primary goal: Should not crash with interface cross-file usage
   REQUIRE(index->GetSymbolCount() > 0);
 
-  // Verify both interface and module symbols are indexed
+  // Verify current file (cpu_core module) symbols are indexed
+  // With file-scoped indexing, only current file symbols are indexed
   const auto& all_symbols = index->GetAllSymbols();
-  bool found_interface = false;
   bool found_module = false;
   bool found_internal = false;
 
   for (const auto& [location, info] : all_symbols) {
     std::string name(info.symbol->name);
-    if (name == "cpu_if") {
-      found_interface = true;
-      REQUIRE(info.lsp_kind == lsp::SymbolKind::kInterface);
-    }
     if (name == "cpu_core") {
       found_module = true;
       REQUIRE(info.lsp_kind == lsp::SymbolKind::kClass);
@@ -368,12 +399,15 @@ TEST_CASE(
     }
   }
 
-  REQUIRE(found_interface);
+  // Only expect symbols from the current file (cpu_core module)
   REQUIRE(found_module);
   REQUIRE(found_internal);
 
+  // Interface symbols are not indexed since they're in dependency files
+  // This is the expected behavior with file-scoped indexing
+
   // Verify multifile compilation worked
-  REQUIRE(MultiFileSemanticFixture::CountBuffersWithSymbols(*index) >= 2);
+  REQUIRE(MultiFileSemanticFixture::CountBuffersWithSymbols(*index) >= 1);
 }
 
 TEST_CASE("GetDocumentSymbols filters by URI", "[semantic_index][multifile]") {
@@ -394,14 +428,17 @@ TEST_CASE("GetDocumentSymbols filters by URI", "[semantic_index][multifile]") {
     endmodule
   )";
 
-  // Build index and get file paths
-  auto result =
-      fixture.BuildIndexWithPackagesAndPaths({package_content}, module_content);
+  // Build SemanticIndex using EXPLICIT builder pattern (clearest approach)
+  // Explicitly state: module = current file, package = unopened dependency
+  auto result = fixture.CreateBuilder()
+                    .SetCurrentFile(module_content, "test_module")
+                    .AddUnopendFile(package_content, "test_pkg")
+                    .Build();
   REQUIRE(result.index != nullptr);
   REQUIRE(result.file_paths.size() == 2);
 
-  std::string package_file = result.file_paths[0];  // file_0.sv
-  std::string module_file = result.file_paths[1];   // file_1.sv
+  std::string module_file = result.file_paths[0];   // file_0.sv (current file)
+  std::string package_file = result.file_paths[1];  // file_1.sv (dependency)
 
   // Test module file filtering
   auto module_symbols = result.index->GetDocumentSymbols(module_file);
@@ -416,30 +453,12 @@ TEST_CASE("GetDocumentSymbols filters by URI", "[semantic_index][multifile]") {
   // Test package file filtering
   auto package_symbols = result.index->GetDocumentSymbols(package_file);
 
-  bool found_package = false;
-  bool found_bus_width = false;
-  for (const auto& symbol : package_symbols) {
-    if (symbol.name == "test_pkg") {
-      found_package = true;
-    }
-    if (symbol.name == "BUS_WIDTH") {
-      found_bus_width = true;
-    }
-    if (symbol.children) {
-      for (const auto& child : *symbol.children) {
-        if (child.name == "test_pkg") {
-          found_package = true;
-        }
-        if (child.name == "BUS_WIDTH") {
-          found_bus_width = true;
-        }
-      }
-    }
-  }
+  // With file-scoped indexing, dependency files are not indexed
+  // So GetDocumentSymbols for dependency files should return empty
+  CHECK(package_symbols.empty());
 
-  // Package file should return package symbols
-  CHECK(found_package);
-  CHECK(found_bus_width);
+  // Verify that only the current file (module) has symbols
+  CHECK(module_symbols.size() > 0);
 }
 
 }  // namespace slangd::semantic

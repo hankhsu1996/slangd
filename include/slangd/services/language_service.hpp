@@ -19,17 +19,17 @@ namespace slangd::services {
 // Cache key for overlay sessions
 struct OverlayCacheKey {
   std::string doc_uri;
-  int doc_version;
+  size_t content_hash;
   uint64_t catalog_version;
 
   auto operator==(const OverlayCacheKey& other) const -> bool {
-    return doc_uri == other.doc_uri && doc_version == other.doc_version &&
+    return doc_uri == other.doc_uri && content_hash == other.content_hash &&
            catalog_version == other.catalog_version;
   }
 
   [[nodiscard]] auto Hash() const -> size_t {
     size_t h1 = std::hash<std::string>{}(doc_uri);
-    size_t h2 = std::hash<int>{}(doc_version);
+    size_t h2 = content_hash;
     size_t h3 = std::hash<uint64_t>{}(catalog_version);
 
     // Combine hashes using boost-style hash combination
@@ -40,9 +40,9 @@ struct OverlayCacheKey {
   }
 };
 
-// New service implementation using overlay sessions
+// Service implementation using overlay sessions
 // Creates fresh Compilation + SemanticIndex per LSP request
-// Designed for GlobalCatalog integration (Phase 2)
+// Supports GlobalCatalog integration for cross-file functionality
 class LanguageService : public LanguageServiceBase {
  public:
   // Constructor for late initialization (workspace set up later)
@@ -56,14 +56,14 @@ class LanguageService : public LanguageServiceBase {
       -> asio::awaitable<void> override;
 
   // LanguageServiceBase implementation using overlay sessions
-  auto ComputeDiagnostics(std::string uri, std::string content, int version)
+  auto ComputeDiagnostics(std::string uri, std::string content)
       -> asio::awaitable<std::vector<lsp::Diagnostic>> override;
 
   auto GetDefinitionsForPosition(
-      std::string uri, lsp::Position position, std::string content, int version)
+      std::string uri, lsp::Position position, std::string content)
       -> std::vector<lsp::Location> override;
 
-  auto GetDocumentSymbols(std::string uri, std::string content, int version)
+  auto GetDocumentSymbols(std::string uri, std::string content)
       -> std::vector<lsp::DocumentSymbol> override;
 
   auto HandleConfigChange() -> void override;
@@ -102,7 +102,7 @@ class LanguageService : public LanguageServiceBase {
 
   // LRU cache for overlay sessions
   std::vector<CacheEntry> overlay_cache_;
-  static constexpr size_t kMaxCacheSize = 8;
+  static constexpr size_t kMaxCacheSize = 16;
 };
 
 }  // namespace slangd::services

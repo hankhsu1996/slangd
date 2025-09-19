@@ -28,8 +28,8 @@ auto OverlaySession::Create(
       BuildCompilation(uri, content, layout_service, catalog, logger);
 
   // Create unified semantic index (replaces DefinitionIndex + SymbolIndex)
-  auto semantic_index =
-      semantic::SemanticIndex::FromCompilation(*compilation, *source_manager);
+  auto semantic_index = semantic::SemanticIndex::FromCompilation(
+      *compilation, *source_manager, uri);
 
   // Create diagnostic index for the current URI (kept separate)
   auto diagnostic_index = std::make_unique<semantic::DiagnosticIndex>(
@@ -38,11 +38,9 @@ auto OverlaySession::Create(
 
   auto elapsed = timer.GetElapsed();
   logger->debug(
-      "Overlay session created with {} symbols, {} definitions, {} references, "
-      "{} diagnostics ({})",
-      semantic_index->GetSymbolCount(),
-      semantic_index->GetDefinitionRanges().size(),
-      semantic_index->GetReferenceMap().size(),
+      "Overlay session created with {} symbols, {} references, {} diagnostics "
+      "({})",
+      semantic_index->GetSymbolCount(), semantic_index->GetReferences().size(),
       diagnostic_index->GetDiagnostics().size(),
       utils::ScopedTimer::FormatDuration(elapsed));
 

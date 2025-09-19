@@ -3,6 +3,8 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include <lsp/document_features.hpp>
 #include <slang/ast/ASTVisitor.h>
@@ -25,6 +27,16 @@ struct SymbolKey {
       -> SymbolKey {
     return SymbolKey{.bufferId = loc.buffer().getId(), .offset = loc.offset()};
   }
+};
+
+// Unified storage for references with embedded definition information
+// Combines reference location and definition range for efficient lookups
+struct ReferenceEntry {
+  slang::SourceRange source_range;   // Where reference appears in source
+  slang::SourceLocation target_loc;  // Target symbol location (for dedup)
+  slang::SourceRange target_range;   // Definition range (captured immediately!)
+  lsp::SymbolKind symbol_kind;       // For rich LSP responses
+  std::string symbol_name;           // For debugging/logging
 };
 
 }  // namespace slangd::semantic
@@ -60,8 +72,8 @@ class SemanticIndex {
 
   static auto FromCompilation(
       slang::ast::Compilation& compilation,
-      const slang::SourceManager& source_manager)
-      -> std::unique_ptr<SemanticIndex>;
+      const slang::SourceManager& source_manager,
+      const std::string& current_file_uri) -> std::unique_ptr<SemanticIndex>;
 
   // Query methods
   auto GetSymbolCount() const -> size_t {
@@ -82,22 +94,14 @@ class SemanticIndex {
   auto GetDocumentSymbols(const std::string& uri) const
       -> std::vector<lsp::DocumentSymbol>;
 
-  // DefinitionIndex-compatible API
-  auto GetDefinitionRanges() const
-      -> const std::unordered_map<SymbolKey, slang::SourceRange>& {
-    return definition_ranges_;
+  // Reference access for testing and debugging
+  auto GetReferences() const -> const std::vector<ReferenceEntry>& {
+    return references_;
   }
 
-  auto GetReferenceMap() const
-      -> const std::unordered_map<slang::SourceRange, SymbolKey>& {
-    return reference_map_;
-  }
-
-  auto GetDefinitionRange(const SymbolKey& key) const
+  // Find definition range for the symbol at the given location
+  auto LookupDefinitionAt(slang::SourceLocation loc) const
       -> std::optional<slang::SourceRange>;
-
-  auto LookupSymbolAt(slang::SourceLocation loc) const
-      -> std::optional<SymbolKey>;
 
  private:
   explicit SemanticIndex() = default;
@@ -105,9 +109,8 @@ class SemanticIndex {
   // Core data storage
   std::unordered_map<slang::SourceLocation, SymbolInfo> symbols_;
 
-  // Definition indexing data structures
-  std::unordered_map<SymbolKey, slang::SourceRange> definition_ranges_;
-  std::unordered_map<slang::SourceRange, SymbolKey> reference_map_;
+  // Unified reference+definition storage for go-to-definition functionality
+  std::vector<ReferenceEntry> references_;
 
   // Store source manager reference for symbol processing
   const slang::SourceManager* source_manager_ = nullptr;
@@ -116,8 +119,11 @@ class SemanticIndex {
   class IndexVisitor : public slang::ast::ASTVisitor<IndexVisitor, true, true> {
    public:
     explicit IndexVisitor(
-        SemanticIndex* index, const slang::SourceManager* source_manager)
-        : index_(index), source_manager_(source_manager) {
+        SemanticIndex* index, const slang::SourceManager* source_manager,
+        std::string current_file_uri)
+        : index_(index),
+          source_manager_(source_manager),
+          current_file_uri_(std::move(current_file_uri)) {
     }
 
     // Universal pre-visit hook for symbols
@@ -134,6 +140,9 @@ class SemanticIndex {
     // Reference tracking for VariableSymbol (type references)
     void handle(const slang::ast::VariableSymbol& symbol);
 
+    // Reference tracking for WildcardImportSymbol (package references)
+    void handle(const slang::ast::WildcardImportSymbol& import_symbol);
+
     // Default traversal
     template <typename T>
     void handle(const T& node) {
@@ -143,6 +152,7 @@ class SemanticIndex {
    private:
     SemanticIndex* index_;
     const slang::SourceManager* source_manager_;
+    std::string current_file_uri_;
 
     void ProcessSymbol(const slang::ast::Symbol& symbol);
   };

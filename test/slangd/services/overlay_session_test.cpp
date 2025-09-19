@@ -78,13 +78,9 @@ TEST_CASE(
     // No need to check low-level Slang diagnostics here - that's tested
     // elsewhere
 
-    // Should have some definitions in the symbol index
-    const auto& definitions = semantic_index.GetDefinitionRanges();
-    REQUIRE(definitions.size() > 0);
-
-    spdlog::info(
-        "OverlaySession created successfully with {} definitions",
-        definitions.size());
+    // Should have some symbols in the symbol index
+    const auto& symbols = semantic_index.GetAllSymbols();
+    REQUIRE(symbols.size() > 0);
 
     co_return;
   });
@@ -113,11 +109,8 @@ TEST_CASE("OverlaySession works without GlobalCatalog", "[overlay_session]") {
     REQUIRE(session != nullptr);
 
     // Should work fine in single-file mode
-    const auto& semantic_index = session->GetSemanticIndex();
-    const auto& definitions = semantic_index.GetDefinitionRanges();
-
-    spdlog::info(
-        "Single-file overlay session: {} definitions", definitions.size());
+    // Basic validation - session should be functional with valid semantic index
+    (void)session->GetSemanticIndex();  // Ensure semantic index is accessible
 
     co_return;
   });
@@ -147,8 +140,6 @@ TEST_CASE(
 
     // Session should be created even with syntax errors
     // Actual diagnostic validation is handled by ConvertSlangDiagnosticsToLsp
-
-    spdlog::info("OverlaySession handled syntax errors correctly");
 
     co_return;
   });

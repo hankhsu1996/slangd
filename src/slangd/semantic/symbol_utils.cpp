@@ -24,9 +24,15 @@ auto ComputeLspRange(
 }
 
 auto ShouldIndexForSemanticIndex(const slang::ast::Symbol& symbol) -> bool {
+  using SK = slang::ast::SymbolKind;
+
+  // Always index packages - they're important for go-to-definition
+  if (symbol.kind == SK::Package) {
+    return symbol.location.valid();
+  }
+
   // Skip symbols without names (except some special cases)
   if (symbol.name.empty()) {
-    using SK = slang::ast::SymbolKind;
     // Allow some unnamed symbols that are still useful
     switch (symbol.kind) {
       case SK::CompilationUnit:
