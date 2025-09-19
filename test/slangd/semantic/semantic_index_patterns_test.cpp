@@ -1,14 +1,28 @@
 #include <algorithm>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include <catch2/catch_all.hpp>
+#include <spdlog/spdlog.h>
 
 #include "slangd/semantic/semantic_index.hpp"
 #include "test_fixtures.hpp"
 
 auto main(int argc, char* argv[]) -> int {
+  if (auto* level = std::getenv("SPDLOG_LEVEL")) {
+    spdlog::set_level(spdlog::level::from_str(level));
+  } else {
+    spdlog::set_level(spdlog::level::warn);
+  }
+  spdlog::set_pattern("[%l] %v");
+
+  // Suppress Bazel test sharding warnings
+  setenv("TEST_SHARD_INDEX", "0", 0);
+  setenv("TEST_TOTAL_SHARDS", "1", 0);
+  setenv("TEST_SHARD_STATUS_FILE", "", 0);
+
   return Catch::Session().run(argc, argv);
 }
 

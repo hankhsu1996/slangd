@@ -245,6 +245,18 @@ void SemanticIndex::IndexVisitor::ProcessSymbol(
     index_->symbols_[unwrapped.location] = info;
   }
 
+  // Create self-reference entries for parameter definitions to support
+  // go-to-definition
+  if (unwrapped.kind == slang::ast::SymbolKind::Parameter && is_definition) {
+    ReferenceEntry ref_entry{
+        .source_range = definition_range,  // Same as target for self-reference
+        .target_loc = unwrapped.location,
+        .target_range = definition_range,
+        .symbol_kind = ConvertToLspKind(unwrapped),
+        .symbol_name = std::string(unwrapped.name)};
+    index_->references_.push_back(ref_entry);
+  }
+
   // Definition ranges are now stored in references_ vector when references are
   // collected
 }

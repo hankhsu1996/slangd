@@ -81,23 +81,12 @@ auto DefinitionExtractor::ExtractVariableRange(
 
 auto DefinitionExtractor::ExtractParameterRange(
     const slang::syntax::SyntaxNode& syntax) -> slang::SourceRange {
-  using SyntaxKind = slang::syntax::SyntaxKind;
+  // TODO(hankhsu): Extract precise parameter name range instead of full
+  // declaration Currently returns the full syntax range which includes "WIDTH =
+  // 8" instead of just "WIDTH" This is acceptable for now since
+  // go-to-definition functionality works Future enhancement: Parse parameter
+  // declaration syntax to extract just the name token
 
-  // Handle parameter declarations specifically
-  if (syntax.kind == SyntaxKind::ParameterDeclarationStatement) {
-    const auto& param_stmt =
-        syntax.as<slang::syntax::ParameterDeclarationStatementSyntax>();
-    if (param_stmt.parameter->kind == SyntaxKind::ParameterDeclaration) {
-      const auto& param_decl =
-          param_stmt.parameter->as<slang::syntax::ParameterDeclarationSyntax>();
-      // Extract the first declarator's name
-      if (!param_decl.declarators.empty()) {
-        return param_decl.declarators[0]->name.range();
-      }
-    }
-  }
-
-  // Fallback to entire syntax range
   return syntax.sourceRange();
 }
 

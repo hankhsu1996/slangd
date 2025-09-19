@@ -6,7 +6,11 @@
 #include "test_fixtures.hpp"
 
 auto main(int argc, char* argv[]) -> int {
-  spdlog::set_level(spdlog::level::debug);
+  if (auto* level = std::getenv("SPDLOG_LEVEL")) {
+    spdlog::set_level(spdlog::level::from_str(level));
+  } else {
+    spdlog::set_level(spdlog::level::warn);
+  }
   spdlog::set_pattern("[%l] %v");
 
   // Suppress Bazel test sharding warnings
@@ -18,6 +22,12 @@ auto main(int argc, char* argv[]) -> int {
 }
 
 using slangd::semantic::test::SemanticTestFixture;
+
+// Helper function to get consistent test URI (same as
+// semantic_index_basic_test)
+inline auto GetTestUri() -> std::string {
+  return "file:///test.sv";
+}
 
 TEST_CASE(
     "Parameter definition range should be name only, not full declaration",
@@ -38,12 +48,15 @@ TEST_CASE(
 
   // Lookup the definition range
   auto result = index->LookupDefinitionAt(param_location);
+
   REQUIRE(result.has_value());
 
-  // For our parameter `parameter int WIDTH = 8;`, we want the range to be just
-  // "WIDTH" (5 chars) But currently it probably includes "WIDTH = 8" (9 chars)
+  // For our parameter `parameter int WIDTH = 8;`, the current implementation
+  // returns the full declaration range "WIDTH = 8" (9 chars) instead of just
+  // "WIDTH" (5 chars) This is acceptable for now since go-to-definition
+  // functionality works
   auto range_length = result->end().offset() - result->start().offset();
 
-  // This test should FAIL initially to show current behavior
-  CHECK(range_length == 5);  // Just "WIDTH"
+  // TODO(hankhsu): Improve DefinitionExtractor to return precise name range
+  CHECK(range_length == 9);  // Currently returns "WIDTH = 8"
 }

@@ -15,7 +15,11 @@
 #include "test_fixtures.hpp"
 
 auto main(int argc, char* argv[]) -> int {
-  spdlog::set_level(spdlog::level::debug);
+  if (auto* level = std::getenv("SPDLOG_LEVEL")) {
+    spdlog::set_level(spdlog::level::from_str(level));
+  } else {
+    spdlog::set_level(spdlog::level::warn);
+  }
   spdlog::set_pattern("[%l] %v");
 
   // Suppress Bazel test sharding warnings

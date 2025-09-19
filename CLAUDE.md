@@ -42,6 +42,12 @@ SystemVerilog LSP server with modular design:
 - C++23, ASIO coroutines, `std::expected`, trailing return types
 - Use `toString(symbol.kind) -> std::string_view` for Slang enum printing
 
+**General Debugging:**
+
+- We are not using GDB, because it's harder to do batch debugging.
+- We use spdlog for logging when needed.
+- For testing, we can use `env SPDLOG_LEVEL=debug bazel test //...` to see debug logs.
+
 **AST Debugging:**
 
 ```bash

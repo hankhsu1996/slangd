@@ -1,5 +1,6 @@
 #include "slangd/services/overlay_session.hpp"
 
+#include <cstdlib>
 #include <string>
 
 #include <asio.hpp>
@@ -10,8 +11,18 @@
 #include "slangd/utils/canonical_path.hpp"
 
 auto main(int argc, char* argv[]) -> int {
-  spdlog::set_level(spdlog::level::debug);
+  if (auto* level = std::getenv("SPDLOG_LEVEL")) {
+    spdlog::set_level(spdlog::level::from_str(level));
+  } else {
+    spdlog::set_level(spdlog::level::warn);
+  }
   spdlog::set_pattern("[%l] %v");
+
+  // Suppress Bazel test sharding warnings
+  setenv("TEST_SHARD_INDEX", "0", 0);
+  setenv("TEST_TOTAL_SHARDS", "1", 0);
+  setenv("TEST_SHARD_STATUS_FILE", "", 0);
+
   return Catch::Session().run(argc, argv);
 }
 
