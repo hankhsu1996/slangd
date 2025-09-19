@@ -97,56 +97,56 @@ cc_library(
 
 **Current file has 19 test cases covering too many concerns**
 
-- [ ] **Step 3.1:** Create `test/slangd/semantic/semantic_index_test.cpp` (core functionality)
+- [x] **Step 3.1:** Create `test/slangd/semantic/semantic_index_test.cpp` (core functionality)
 
   Move these test cases from `semantic_index_basic_test.cpp`:
 
-  - [ ] "SemanticIndex processes symbols via preVisit hook"
-  - [ ] "SemanticIndex provides O(1) symbol lookup"
-  - [ ] "SemanticIndex tracks references correctly"
-  - [ ] "SemanticIndex basic definition tracking with fixture"
-  - [ ] "SemanticIndex LookupDefinitionAt method exists and returns optional"
+  - [x] "SemanticIndex processes symbols via preVisit hook"
+  - [x] "SemanticIndex provides O(1) symbol lookup"
+  - [x] "SemanticIndex tracks references correctly"
+  - [x] "SemanticIndex basic definition tracking with fixture"
+  - [x] "SemanticIndex LookupDefinitionAt method exists and returns optional"
 
   Target size: ~150 lines
 
-- [ ] **Step 3.2:** Create `test/slangd/semantic/document_symbol_builder_test.cpp` (document symbols)
+- [x] **Step 3.2:** Create `test/slangd/semantic/document_symbol_builder_test.cpp` (document symbols)
 
   Move these test cases:
 
-  - [ ] "SemanticIndex GetDocumentSymbols with enum hierarchy"
-  - [ ] "SemanticIndex GetDocumentSymbols includes struct fields"
-  - [ ] "SemanticIndex handles symbols with empty names for VSCode compatibility"
-  - [ ] "SemanticIndex filters out genvar loop variables from document symbols"
-  - [ ] "SemanticIndex function internals not in document symbols but available for definition lookup"
+  - [x] "SemanticIndex GetDocumentSymbols with enum hierarchy"
+  - [x] "SemanticIndex GetDocumentSymbols includes struct fields"
+  - [x] "SemanticIndex handles symbols with empty names for VSCode compatibility"
+  - [x] "SemanticIndex filters out genvar loop variables from document symbols"
+  - [x] "SemanticIndex function internals not in document symbols but available for definition lookup"
 
   Target size: ~200 lines
 
-- [ ] **Step 3.3:** Create `test/slangd/semantic/generate_block_test.cpp` (SystemVerilog generate constructs)
+- [x] **Step 3.3:** Create `test/slangd/semantic/generate_block_test.cpp` (SystemVerilog generate constructs)
 
   Move these test cases:
 
-  - [ ] "SemanticIndex collects symbols inside generate if blocks"
-  - [ ] "SemanticIndex collects symbols inside generate for loops"
-  - [ ] "SemanticIndex filters out truly empty generate blocks"
-  - [ ] "SemanticIndex preserves generate blocks with assertions"
-  - [ ] "SemanticIndex properly handles assertion symbols in generate blocks"
+  - [x] "SemanticIndex collects symbols inside generate if blocks"
+  - [x] "SemanticIndex collects symbols inside generate for loops"
+  - [x] "SemanticIndex filters out truly empty generate blocks"
+  - [x] "SemanticIndex preserves generate blocks with assertions"
+  - [x] "SemanticIndex properly handles assertion symbols in generate blocks"
 
   Target size: ~200 lines
 
-- [ ] **Step 3.4:** Create `test/slangd/semantic/type_handling_test.cpp` (enum/struct/typedef handling)
+- [x] **Step 3.4:** Create `test/slangd/semantic/type_handling_test.cpp` (enum/struct/typedef handling)
 
   Move these test cases:
 
-  - [ ] "SemanticIndex handles enum and struct types"
-  - [ ] "SemanticIndex collects definition ranges correctly"
-  - [ ] "SemanticIndex DefinitionIndex-compatible API basic functionality"
-  - [ ] "SemanticIndex collects functions and tasks correctly"
+  - [x] "SemanticIndex handles enum and struct types"
+  - [x] "SemanticIndex collects definition ranges correctly"
+  - [x] "SemanticIndex DefinitionIndex-compatible API basic functionality"
+  - [x] "SemanticIndex collects functions and tasks correctly"
 
   Target size: ~150 lines
 
-- [ ] **Step 3.5:** Update `test/slangd/BUILD.bazel` with new test targets
-- [ ] **Step 3.6:** Delete `test/slangd/semantic/semantic_index_basic_test.cpp`
-- [ ] **Step 3.7:** Verify all tests pass: `bazel test //test/slangd/semantic:all`
+- [x] **Step 3.5:** Update `test/slangd/BUILD.bazel` with new test targets
+- [x] **Step 3.6:** Delete `test/slangd/semantic/semantic_index_basic_test.cpp`
+- [x] **Step 3.7:** Verify all tests pass: `bazel test //test/slangd/semantic:all`
 
 ## Phase 4: Create Missing Unit Tests
 

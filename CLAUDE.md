@@ -17,6 +17,9 @@ This file provides guidance to Claude Code when working with code in this reposi
 3. Implement minimal fix
 4. Clean up and remove debug code
 
+- **Unit test files**: <300 lines total
+- **Individual test cases**: <50 lines each
+
 **Pre-commit:**
 
 1. Format code, check build/test pass
