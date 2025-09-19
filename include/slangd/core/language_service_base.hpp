@@ -23,18 +23,16 @@ class LanguageServiceBase {
   virtual ~LanguageServiceBase() = default;
 
   // Diagnostics computation - async because may need parsing/compilation
-  virtual auto ComputeDiagnostics(
-      std::string uri, std::string content, int version)
+  virtual auto ComputeDiagnostics(std::string uri, std::string content)
       -> asio::awaitable<std::vector<lsp::Diagnostic>> = 0;
 
   // Definition lookup - sync because operates on existing compiled data
   virtual auto GetDefinitionsForPosition(
-      std::string uri, lsp::Position position, std::string content, int version)
+      std::string uri, lsp::Position position, std::string content)
       -> std::vector<lsp::Location> = 0;
 
   // Document symbols - sync because operates on existing compiled data
-  virtual auto GetDocumentSymbols(
-      std::string uri, std::string content, int version)
+  virtual auto GetDocumentSymbols(std::string uri, std::string content)
       -> std::vector<lsp::DocumentSymbol> = 0;
 
   // Workspace initialization - called during LSP initialize

@@ -50,8 +50,7 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
       utils::ScopedTimer::FormatDuration(elapsed));
 }
 
-auto LanguageService::ComputeDiagnostics(
-    std::string uri, std::string content, int version)
+auto LanguageService::ComputeDiagnostics(std::string uri, std::string content)
     -> asio::awaitable<std::vector<lsp::Diagnostic>> {
   if (!layout_service_) {
     logger_->error("LanguageService: Workspace not initialized");
@@ -60,12 +59,13 @@ auto LanguageService::ComputeDiagnostics(
 
   logger_->debug("LanguageService computing diagnostics for: {}", uri);
 
-  // Create cache key with catalog version
+  // Create cache key with catalog version and content hash
   uint64_t catalog_version =
       global_catalog_ ? global_catalog_->GetVersion() : 0;
+  size_t content_hash = std::hash<std::string>{}(content);
   OverlayCacheKey cache_key{
       .doc_uri = uri,
-      .doc_version = version,
+      .content_hash = content_hash,
       .catalog_version = catalog_version};
 
   // Get or create overlay session from cache
@@ -86,7 +86,7 @@ auto LanguageService::ComputeDiagnostics(
 }
 
 auto LanguageService::GetDefinitionsForPosition(
-    std::string uri, lsp::Position position, std::string content, int version)
+    std::string uri, lsp::Position position, std::string content)
     -> std::vector<lsp::Location> {
   if (!layout_service_) {
     logger_->error("LanguageService: Workspace not initialized");
@@ -97,12 +97,13 @@ auto LanguageService::GetDefinitionsForPosition(
       "LanguageService getting definitions for: {} at {}:{}", uri,
       position.line, position.character);
 
-  // Create cache key with catalog version
+  // Create cache key with catalog version and content hash
   uint64_t catalog_version =
       global_catalog_ ? global_catalog_->GetVersion() : 0;
+  size_t content_hash = std::hash<std::string>{}(content);
   OverlayCacheKey cache_key{
       .doc_uri = uri,
-      .doc_version = version,
+      .content_hash = content_hash,
       .catalog_version = catalog_version};
 
   // Get or create overlay session from cache
@@ -151,13 +152,12 @@ auto LanguageService::GetDefinitionsForPosition(
   logger_->debug(
       "Found definition at {}:{}-{}:{} in {}", lsp_location.range.start.line,
       lsp_location.range.start.character, lsp_location.range.end.line,
-      lsp_location.range.end.character, uri);
+      lsp_location.range.end.character, lsp_location.uri);
 
   return {lsp_location};
 }
 
-auto LanguageService::GetDocumentSymbols(
-    std::string uri, std::string content, int version)
+auto LanguageService::GetDocumentSymbols(std::string uri, std::string content)
     -> std::vector<lsp::DocumentSymbol> {
   if (!layout_service_) {
     logger_->error("LanguageService: Workspace not initialized");
@@ -166,12 +166,13 @@ auto LanguageService::GetDocumentSymbols(
 
   logger_->debug("LanguageService getting document symbols for: {}", uri);
 
-  // Create cache key with catalog version
+  // Create cache key with catalog version and content hash
   uint64_t catalog_version =
       global_catalog_ ? global_catalog_->GetVersion() : 0;
+  size_t content_hash = std::hash<std::string>{}(content);
   OverlayCacheKey cache_key{
       .doc_uri = uri,
-      .doc_version = version,
+      .content_hash = content_hash,
       .catalog_version = catalog_version};
 
   // Get or create overlay session from cache
@@ -245,8 +246,8 @@ auto LanguageService::GetOrCreateOverlay(
   auto shared_session = CreateOverlaySession(key.doc_uri, content);
   if (!shared_session) {
     logger_->error(
-        "Failed to create overlay session for {}:v{}", key.doc_uri,
-        key.doc_version);
+        "Failed to create overlay session for {}:hash{}", key.doc_uri,
+        key.content_hash);
     return nullptr;
   }
 
@@ -264,8 +265,8 @@ auto LanguageService::GetOrCreateOverlay(
 
     if (oldest_it != overlay_cache_.end()) {
       logger_->debug(
-          "Evicting oldest overlay from cache: {}:v{}", oldest_it->key.doc_uri,
-          oldest_it->key.doc_version);
+          "Evicting oldest overlay from cache: {}:hash{}",
+          oldest_it->key.doc_uri, oldest_it->key.content_hash);
       *oldest_it = std::move(entry);
     }
   } else {
@@ -273,8 +274,8 @@ auto LanguageService::GetOrCreateOverlay(
   }
 
   logger_->debug(
-      "Added overlay to cache for {}:v{} (cache size: {})", key.doc_uri,
-      key.doc_version, overlay_cache_.size());
+      "Added overlay to cache for {}:hash{} (cache size: {})", key.doc_uri,
+      key.content_hash, overlay_cache_.size());
   return shared_session;
 }
 
