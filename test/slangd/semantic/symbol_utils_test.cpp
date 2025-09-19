@@ -10,7 +10,7 @@
 #include <slang/syntax/SyntaxTree.h>
 #include <spdlog/spdlog.h>
 
-#include "test_fixtures.hpp"
+#include "../common/simple_fixture.hpp"
 
 auto main(int argc, char* argv[]) -> int {
   if (auto* level = std::getenv("SPDLOG_LEVEL")) {
@@ -30,12 +30,12 @@ auto main(int argc, char* argv[]) -> int {
 
 namespace slangd::semantic {
 
-using SemanticTestFixture = slangd::semantic::test::SemanticTestFixture;
+using slangd::test::SimpleTestFixture;
 
 TEST_CASE(
     "ShouldIndexForDocumentSymbols filters genvar correctly",
     "[symbol_utils]") {
-  SemanticTestFixture fixture;
+  SimpleTestFixture fixture;
   std::string code = R"(
     module test_module;
       logic signal;
@@ -47,7 +47,7 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.BuildIndexFromSource(code);
+  auto index = fixture.CompileSource(code);
 
   // The most important test: genvar filtering
   // This is critical for VSCode compatibility and document symbol quality
@@ -79,7 +79,7 @@ TEST_CASE(
 }
 
 TEST_CASE("ConvertToLspKind handles complex type aliases", "[symbol_utils]") {
-  SemanticTestFixture fixture;
+  SimpleTestFixture fixture;
   std::string code = R"(
     module test_module;
       typedef enum logic [1:0] {
@@ -93,7 +93,7 @@ TEST_CASE("ConvertToLspKind handles complex type aliases", "[symbol_utils]") {
     endmodule
   )";
 
-  auto index = fixture.BuildIndexFromSource(code);
+  auto index = fixture.CompileSource(code);
   auto symbols = index->GetDocumentSymbols("file:///test.sv");
 
   // Find enum and struct typedefs and verify correct LSP kinds

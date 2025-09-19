@@ -9,8 +9,8 @@
 #include <slang/util/Enum.h>
 #include <spdlog/spdlog.h>
 
+#include "../common/simple_fixture.hpp"
 #include "slangd/semantic/semantic_index.hpp"
-#include "test_fixtures.hpp"
 
 auto main(int argc, char* argv[]) -> int {
   if (auto* level = std::getenv("SPDLOG_LEVEL")) {
@@ -30,7 +30,7 @@ auto main(int argc, char* argv[]) -> int {
 
 namespace slangd::semantic {
 
-using SemanticTestFixture = slangd::semantic::test::SemanticTestFixture;
+using slangd::test::SimpleTestFixture;
 
 // Helper function to get consistent test URI
 inline auto GetTestUri() -> std::string {
@@ -38,7 +38,7 @@ inline auto GetTestUri() -> std::string {
 }
 
 TEST_CASE("SemanticIndex handles enum and struct types", "[type_handling]") {
-  SemanticTestFixture fixture;
+  SimpleTestFixture fixture;
   std::string code = R"(
     interface test_if;
       logic clk;
@@ -64,7 +64,7 @@ TEST_CASE("SemanticIndex handles enum and struct types", "[type_handling]") {
     endmodule
   )";
 
-  auto index = fixture.BuildIndexFromSource(code);
+  auto index = fixture.CompileSource(code);
 
   // Test LSP API: GetDocumentSymbols should return expected types
   auto document_symbols = index->GetDocumentSymbols(GetTestUri());
@@ -90,6 +90,7 @@ TEST_CASE("SemanticIndex handles enum and struct types", "[type_handling]") {
 
 TEST_CASE(
     "SemanticIndex collects definition ranges correctly", "[type_handling]") {
+  SimpleTestFixture fixture;
   std::string code = R"(
     module test_module;
       logic signal;
@@ -101,23 +102,7 @@ TEST_CASE(
     endmodule
   )";
 
-  auto source_manager = std::make_shared<slang::SourceManager>();
-  slang::Bag options;
-  auto compilation = std::make_unique<slang::ast::Compilation>(options);
-
-  // Use consistent test path format
-  constexpr std::string_view kTestFilename = "test.sv";
-  std::string test_uri = "file:///" + std::string(kTestFilename);
-  std::string test_path = "/" + std::string(kTestFilename);
-
-  auto buffer = source_manager->assignText(test_path, code);
-  auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
-  if (tree) {
-    compilation->addSyntaxTree(tree);
-  }
-
-  auto index =
-      SemanticIndex::FromCompilation(*compilation, *source_manager, test_uri);
+  auto index = fixture.CompileSource(code);
 
   // Verify symbols have definition ranges and is_definition flags set
   const auto& all_symbols = index->GetAllSymbols();
@@ -160,6 +145,7 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex DefinitionIndex-compatible API basic functionality",
     "[type_handling]") {
+  SimpleTestFixture fixture;
   std::string code = R"(
     module test_module;
       logic signal;
@@ -167,23 +153,7 @@ TEST_CASE(
     endmodule
   )";
 
-  auto source_manager = std::make_shared<slang::SourceManager>();
-  slang::Bag options;
-  auto compilation = std::make_unique<slang::ast::Compilation>(options);
-
-  // Use consistent test path format
-  constexpr std::string_view kTestFilename = "test.sv";
-  std::string test_uri = "file:///" + std::string(kTestFilename);
-  std::string test_path = "/" + std::string(kTestFilename);
-
-  auto buffer = source_manager->assignText(test_path, code);
-  auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
-  if (tree) {
-    compilation->addSyntaxTree(tree);
-  }
-
-  auto index =
-      SemanticIndex::FromCompilation(*compilation, *source_manager, test_uri);
+  auto index = fixture.CompileSource(code);
 
   // Test reference storage API
   const auto& references = index->GetReferences();
@@ -210,7 +180,7 @@ TEST_CASE(
 
 TEST_CASE(
     "SemanticIndex collects functions and tasks correctly", "[type_handling]") {
-  SemanticTestFixture fixture;
+  SimpleTestFixture fixture;
   std::string code = R"(
     module test_module;
       // Function with explicit return type
@@ -225,7 +195,7 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.BuildIndexFromSource(code);
+  auto index = fixture.CompileSource(code);
   auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   REQUIRE(!symbols.empty());

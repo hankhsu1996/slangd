@@ -9,7 +9,7 @@
 #include <slang/ast/Symbol.h>
 #include <spdlog/spdlog.h>
 
-#include "test_fixtures.hpp"
+#include "../common/simple_fixture.hpp"
 
 auto main(int argc, char* argv[]) -> int {
   if (auto* level = std::getenv("SPDLOG_LEVEL")) {
@@ -29,7 +29,7 @@ auto main(int argc, char* argv[]) -> int {
 
 namespace slangd::semantic {
 
-using SemanticTestFixture = slangd::semantic::test::SemanticTestFixture;
+using slangd::test::SimpleTestFixture;
 
 // Helper function to get consistent test URI
 inline auto GetTestUri() -> std::string {

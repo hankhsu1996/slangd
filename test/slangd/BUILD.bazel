@@ -75,12 +75,11 @@ cc_test(
     timeout = "short",
     srcs = [
         "semantic/semantic_index_patterns_test.cpp",
-        "semantic/test_fixtures.hpp",
     ],
     deps = [
+        ":simple_fixture",
         "//:slangd_core",
         "@catch2",
-        "@fmt",
         "@slang",
     ],
 )
@@ -119,12 +118,11 @@ cc_test(
     timeout = "short",
     srcs = [
         "semantic/semantic_index_test.cpp",
-        "semantic/test_fixtures.hpp",
     ],
     deps = [
+        ":simple_fixture",
         "//:slangd_core",
         "@catch2",
-        "@fmt",
         "@slang",
     ],
 )
@@ -134,12 +132,11 @@ cc_test(
     timeout = "short",
     srcs = [
         "semantic/document_symbol_builder_test.cpp",
-        "semantic/test_fixtures.hpp",
     ],
     deps = [
+        ":simple_fixture",
         "//:slangd_core",
         "@catch2",
-        "@fmt",
         "@slang",
     ],
 )
@@ -149,12 +146,11 @@ cc_test(
     timeout = "short",
     srcs = [
         "semantic/generate_block_test.cpp",
-        "semantic/test_fixtures.hpp",
     ],
     deps = [
+        ":simple_fixture",
         "//:slangd_core",
         "@catch2",
-        "@fmt",
         "@slang",
     ],
 )
@@ -163,10 +159,10 @@ cc_test(
     name = "type_handling_test",
     timeout = "short",
     srcs = [
-        "semantic/test_fixtures.hpp",
         "semantic/type_handling_test.cpp",
     ],
     deps = [
+        ":simple_fixture",
         "//:slangd_core",
         "@catch2",
         "@fmt",
@@ -179,12 +175,11 @@ cc_test(
     timeout = "short",
     srcs = [
         "semantic/diagnostic_index_test.cpp",
-        "semantic/test_fixtures.hpp",
     ],
     deps = [
+        ":simple_fixture",
         "//:slangd_core",
         "@catch2",
-        "@fmt",
         "@slang",
     ],
 )
@@ -194,12 +189,11 @@ cc_test(
     timeout = "short",
     srcs = [
         "semantic/symbol_utils_test.cpp",
-        "semantic/test_fixtures.hpp",
     ],
     deps = [
+        ":simple_fixture",
         "//:slangd_core",
         "@catch2",
-        "@fmt",
         "@slang",
     ],
 )

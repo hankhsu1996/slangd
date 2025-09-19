@@ -10,8 +10,8 @@
 #include <slang/util/Enum.h>
 #include <spdlog/spdlog.h>
 
+#include "../common/simple_fixture.hpp"
 #include "slangd/semantic/semantic_index.hpp"
-#include "test_fixtures.hpp"
 
 auto main(int argc, char* argv[]) -> int {
   if (auto* level = std::getenv("SPDLOG_LEVEL")) {
@@ -31,7 +31,7 @@ auto main(int argc, char* argv[]) -> int {
 
 namespace slangd::semantic {
 
-using SemanticTestFixture = slangd::semantic::test::SemanticTestFixture;
+using slangd::test::SimpleTestFixture;
 
 // Helper function to get consistent test URI
 inline auto GetTestUri() -> std::string {
@@ -41,7 +41,7 @@ inline auto GetTestUri() -> std::string {
 TEST_CASE(
     "SemanticIndex GetDocumentSymbols with enum hierarchy",
     "[document_symbols]") {
-  SemanticTestFixture fixture;
+  SimpleTestFixture fixture;
   std::string code = R"(
     module test_module;
       typedef enum logic [1:0] {
@@ -52,7 +52,7 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.BuildIndexFromSource(code);
+  auto index = fixture.CompileSource(code);
   auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Find enum in module and verify it contains enum members
@@ -69,7 +69,7 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex GetDocumentSymbols includes struct fields",
     "[document_symbols]") {
-  SemanticTestFixture fixture;
+  SimpleTestFixture fixture;
   std::string code = R"(
     package test_pkg;
       typedef struct {
@@ -80,7 +80,7 @@ TEST_CASE(
     endpackage
   )";
 
-  auto index = fixture.BuildIndexFromSource(code);
+  auto index = fixture.CompileSource(code);
   auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Find struct in package and verify it contains struct fields
@@ -97,7 +97,7 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex handles symbols with empty names for VSCode compatibility",
     "[document_symbols]") {
-  SemanticTestFixture fixture;
+  SimpleTestFixture fixture;
   std::string code = R"(
     module test_module;
       generate
@@ -108,7 +108,7 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.BuildIndexFromSource(code);
+  auto index = fixture.CompileSource(code);
   auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // All document symbols should have non-empty names (VSCode requirement)
@@ -128,7 +128,7 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex filters out genvar loop variables from document symbols",
     "[document_symbols]") {
-  SemanticTestFixture fixture;
+  SimpleTestFixture fixture;
   std::string code = R"(
     module sub_module;
     endmodule
@@ -145,7 +145,7 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.BuildIndexFromSource(code);
+  auto index = fixture.CompileSource(code);
   auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Check that genvar 'entry' is not in document symbols anywhere
@@ -201,7 +201,7 @@ TEST_CASE(
     "SemanticIndex function internals not in document symbols but available "
     "for goto-definition",
     "[document_symbols]") {
-  SemanticTestFixture fixture;
+  SimpleTestFixture fixture;
   std::string code = R"(
     module test_module;
       function automatic logic my_function();
@@ -213,7 +213,7 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.BuildIndexFromSource(code);
+  auto index = fixture.CompileSource(code);
 
   // Test 1: Document symbols should NOT show function internals
   auto symbols = index->GetDocumentSymbols(GetTestUri());

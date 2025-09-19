@@ -10,7 +10,7 @@
 #include <slang/util/Enum.h>
 #include <spdlog/spdlog.h>
 
-#include "test_fixtures.hpp"
+#include "../common/simple_fixture.hpp"
 
 auto main(int argc, char* argv[]) -> int {
   if (auto* level = std::getenv("SPDLOG_LEVEL")) {
@@ -30,7 +30,7 @@ auto main(int argc, char* argv[]) -> int {
 
 namespace slangd::semantic {
 
-using SemanticTestFixture = slangd::semantic::test::SemanticTestFixture;
+using slangd::test::SimpleTestFixture;
 
 // Helper function to get consistent test URI
 inline auto GetTestUri() -> std::string {
@@ -39,29 +39,14 @@ inline auto GetTestUri() -> std::string {
 
 TEST_CASE(
     "SemanticIndex processes symbols via preVisit hook", "[semantic_index]") {
+  SimpleTestFixture fixture;
   std::string code = R"(
     module test_module;
       logic signal;
     endmodule
   )";
 
-  auto source_manager = std::make_shared<slang::SourceManager>();
-  slang::Bag options;
-  auto compilation = std::make_unique<slang::ast::Compilation>(options);
-
-  // Use consistent test path format
-  constexpr std::string_view kTestFilename = "test.sv";
-  std::string test_uri = "file:///" + std::string(kTestFilename);
-  std::string test_path = "/" + std::string(kTestFilename);
-
-  auto buffer = source_manager->assignText(test_path, code);
-  auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
-  if (tree) {
-    compilation->addSyntaxTree(tree);
-  }
-
-  auto index =
-      SemanticIndex::FromCompilation(*compilation, *source_manager, test_uri);
+  auto index = fixture.CompileSource(code);
 
   REQUIRE(index != nullptr);
 
@@ -94,29 +79,25 @@ TEST_CASE(
 }
 
 TEST_CASE("SemanticIndex provides O(1) symbol lookup", "[semantic_index]") {
-  SemanticTestFixture fixture;
+  SimpleTestFixture fixture;
   std::string code = R"(
-    package test_pkg;
-      typedef logic [7:0] byte_t;
-    endpackage
-
     module test_module;
-      import test_pkg::*;
-      byte_t data;
+      logic test_signal;
+      typedef logic [7:0] byte_t;
     endmodule
   )";
 
-  auto index = fixture.BuildIndexFromSource(code);
+  auto index = fixture.CompileSource(code);
 
   // Test O(1) lookup using symbol location
-  auto test_location = fixture.FindLocation(code, "test_pkg");
+  auto test_location = fixture.FindSymbol(code, "test_signal");
   REQUIRE(test_location.valid());
 
   // Verify O(1) lookup works
   auto found_symbol = index->GetSymbolAt(test_location);
   REQUIRE(found_symbol.has_value());
-  REQUIRE(std::string(found_symbol->symbol->name) == "test_pkg");
-  REQUIRE(found_symbol->lsp_kind == lsp::SymbolKind::kPackage);
+  REQUIRE(std::string(found_symbol->symbol->name) == "test_signal");
+  REQUIRE(found_symbol->lsp_kind == lsp::SymbolKind::kVariable);
 
   // Verify lookup with invalid location returns nullopt
   auto invalid_lookup = index->GetSymbolAt(slang::SourceLocation());
@@ -124,6 +105,7 @@ TEST_CASE("SemanticIndex provides O(1) symbol lookup", "[semantic_index]") {
 }
 
 TEST_CASE("SemanticIndex tracks references correctly", "[semantic_index]") {
+  SimpleTestFixture fixture;
   std::string code = R"(
     module test_module;
       logic signal;
@@ -135,23 +117,7 @@ TEST_CASE("SemanticIndex tracks references correctly", "[semantic_index]") {
     endmodule
   )";
 
-  auto source_manager = std::make_shared<slang::SourceManager>();
-  slang::Bag options;
-  auto compilation = std::make_unique<slang::ast::Compilation>(options);
-
-  // Use consistent test path format
-  constexpr std::string_view kTestFilename = "test.sv";
-  std::string test_uri = "file:///" + std::string(kTestFilename);
-  std::string test_path = "/" + std::string(kTestFilename);
-
-  auto buffer = source_manager->assignText(test_path, code);
-  auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
-  if (tree) {
-    compilation->addSyntaxTree(tree);
-  }
-
-  auto index =
-      SemanticIndex::FromCompilation(*compilation, *source_manager, test_uri);
+  auto index = fixture.CompileSource(code);
 
   // Verify that reference tracking populated the reference_map_
   // We need to access the reference_map through a getter method (to be added
@@ -177,7 +143,7 @@ TEST_CASE("SemanticIndex tracks references correctly", "[semantic_index]") {
 TEST_CASE(
     "SemanticIndex basic definition tracking with fixture",
     "[semantic_index]") {
-  SemanticTestFixture fixture;
+  SimpleTestFixture fixture;
 
   SECTION("single variable declaration") {
     const std::string source = R"(
@@ -186,7 +152,7 @@ TEST_CASE(
       endmodule
     )";
 
-    auto index = fixture.BuildIndexFromSource(source);
+    auto index = fixture.CompileSource(source);
 
     // Step 1: Just verify it doesn't crash and basic functionality
     REQUIRE(index != nullptr);
@@ -208,29 +174,14 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex LookupDefinitionAt method exists and returns optional",
     "[semantic_index]") {
+  SimpleTestFixture fixture;
   std::string code = R"(
     module test_module;
       logic signal;
     endmodule
   )";
 
-  auto source_manager = std::make_shared<slang::SourceManager>();
-  slang::Bag options;
-  auto compilation = std::make_unique<slang::ast::Compilation>(options);
-
-  // Use consistent test path format
-  constexpr std::string_view kTestFilename = "test.sv";
-  std::string test_uri = "file:///" + std::string(kTestFilename);
-  std::string test_path = "/" + std::string(kTestFilename);
-
-  auto buffer = source_manager->assignText(test_path, code);
-  auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
-  if (tree) {
-    compilation->addSyntaxTree(tree);
-  }
-
-  auto index =
-      SemanticIndex::FromCompilation(*compilation, *source_manager, test_uri);
+  auto index = fixture.CompileSource(code);
 
   // Test that LookupDefinitionAt exists and returns optional type
   // Using invalid location should return nullopt

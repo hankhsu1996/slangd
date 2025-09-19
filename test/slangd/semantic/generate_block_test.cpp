@@ -9,8 +9,8 @@
 #include <slang/util/Enum.h>
 #include <spdlog/spdlog.h>
 
+#include "../common/simple_fixture.hpp"
 #include "slangd/semantic/semantic_index.hpp"
-#include "test_fixtures.hpp"
 
 auto main(int argc, char* argv[]) -> int {
   if (auto* level = std::getenv("SPDLOG_LEVEL")) {
@@ -30,7 +30,7 @@ auto main(int argc, char* argv[]) -> int {
 
 namespace slangd::semantic {
 
-using SemanticTestFixture = slangd::semantic::test::SemanticTestFixture;
+using slangd::test::SimpleTestFixture;
 
 // Helper function to get consistent test URI
 inline auto GetTestUri() -> std::string {
@@ -51,8 +51,8 @@ TEST_CASE(
     endmodule
   )";
 
-  SemanticTestFixture fixture;
-  auto index = fixture.BuildIndexFromSource(code);
+  SimpleTestFixture fixture;
+  auto index = fixture.CompileSource(code);
   auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Find generate block and verify it contains both signal and parameter
@@ -79,8 +79,8 @@ TEST_CASE(
     endmodule
   )";
 
-  SemanticTestFixture fixture;
-  auto index = fixture.BuildIndexFromSource(code);
+  SimpleTestFixture fixture;
+  auto index = fixture.CompileSource(code);
   auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Find generate for loop block and verify it contains template symbols
@@ -125,8 +125,8 @@ TEST_CASE(
     endmodule
   )";
 
-  SemanticTestFixture fixture;
-  auto index = fixture.BuildIndexFromSource(code);
+  SimpleTestFixture fixture;
+  auto index = fixture.CompileSource(code);
   auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Should have test_empty_gen module but no truly_empty_block namespace
@@ -159,8 +159,8 @@ TEST_CASE(
     endmodule
   )";
 
-  SemanticTestFixture fixture;
-  auto index = fixture.BuildIndexFromSource(code);
+  SimpleTestFixture fixture;
+  auto index = fixture.CompileSource(code);
   auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Should have test_assertion_gen module AND assertion_block namespace
@@ -208,8 +208,8 @@ TEST_CASE(
     endmodule
   )";
 
-  SemanticTestFixture fixture;
-  auto index = fixture.BuildIndexFromSource(code);
+  SimpleTestFixture fixture;
+  auto index = fixture.CompileSource(code);
   auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Should have test_empty_gen module
