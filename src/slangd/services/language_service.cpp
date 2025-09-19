@@ -88,6 +88,8 @@ auto LanguageService::ComputeDiagnostics(std::string uri, std::string content)
 auto LanguageService::GetDefinitionsForPosition(
     std::string uri, lsp::Position position, std::string content)
     -> std::vector<lsp::Location> {
+  utils::ScopedTimer timer("GetDefinitionsForPosition", logger_);
+
   if (!layout_service_) {
     logger_->error("LanguageService: Workspace not initialized");
     return {};
@@ -159,6 +161,8 @@ auto LanguageService::GetDefinitionsForPosition(
 
 auto LanguageService::GetDocumentSymbols(std::string uri, std::string content)
     -> std::vector<lsp::DocumentSymbol> {
+  utils::ScopedTimer timer("GetDocumentSymbols", logger_);
+
   if (!layout_service_) {
     logger_->error("LanguageService: Workspace not initialized");
     return {};

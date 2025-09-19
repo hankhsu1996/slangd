@@ -23,6 +23,11 @@ namespace slangd::semantic {
 
 using SemanticTestFixture = slangd::semantic::test::SemanticTestFixture;
 
+// Helper function to get consistent test URI
+inline auto GetTestUri() -> std::string {
+  return "file:///test.sv";
+}
+
 TEST_CASE(
     "SemanticIndex processes symbols via preVisit hook", "[semantic_index]") {
   std::string code = R"(
@@ -35,18 +40,24 @@ TEST_CASE(
   slang::Bag options;
   auto compilation = std::make_unique<slang::ast::Compilation>(options);
 
-  auto buffer = source_manager->assignText("test.sv", code);
+  // Use consistent test path format
+  constexpr std::string_view kTestFilename = "test.sv";
+  std::string test_uri = "file:///" + std::string(kTestFilename);
+  std::string test_path = "/" + std::string(kTestFilename);
+
+  auto buffer = source_manager->assignText(test_path, code);
   auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
   if (tree) {
     compilation->addSyntaxTree(tree);
   }
 
-  auto index = SemanticIndex::FromCompilation(*compilation, *source_manager);
+  auto index =
+      SemanticIndex::FromCompilation(*compilation, *source_manager, test_uri);
 
   REQUIRE(index != nullptr);
 
   // Test LSP API: GetDocumentSymbols should return expected symbols
-  auto document_symbols = index->GetDocumentSymbols("test.sv");
+  auto document_symbols = index->GetDocumentSymbols(GetTestUri());
   REQUIRE(!document_symbols.empty());
 
   // Look for specific symbols we expect
@@ -133,7 +144,7 @@ TEST_CASE("SemanticIndex handles enum and struct types", "[semantic_index]") {
   auto index = fixture.BuildIndexFromSource(code);
 
   // Test LSP API: GetDocumentSymbols should return expected types
-  auto document_symbols = index->GetDocumentSymbols("test.sv");
+  auto document_symbols = index->GetDocumentSymbols(GetTestUri());
   REQUIRE(!document_symbols.empty());
 
   // Check for interface with modport
@@ -169,7 +180,7 @@ TEST_CASE(
   )";
 
   auto index = fixture.BuildIndexFromSource(code);
-  auto symbols = index->GetDocumentSymbols("test.sv");
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Find enum in module and verify it contains enum members
   auto enum_symbol = std::find_if(
@@ -199,13 +210,19 @@ TEST_CASE(
   slang::Bag options;
   auto compilation = std::make_unique<slang::ast::Compilation>(options);
 
-  auto buffer = source_manager->assignText("test.sv", code);
+  // Use consistent test path format
+  constexpr std::string_view kTestFilename = "test.sv";
+  std::string test_uri = "file:///" + std::string(kTestFilename);
+  std::string test_path = "/" + std::string(kTestFilename);
+
+  auto buffer = source_manager->assignText(test_path, code);
   auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
   if (tree) {
     compilation->addSyntaxTree(tree);
   }
 
-  auto index = SemanticIndex::FromCompilation(*compilation, *source_manager);
+  auto index =
+      SemanticIndex::FromCompilation(*compilation, *source_manager, test_uri);
 
   // Verify symbols have definition ranges and is_definition flags set
   const auto& all_symbols = index->GetAllSymbols();
@@ -261,13 +278,19 @@ TEST_CASE("SemanticIndex tracks references correctly", "[semantic_index]") {
   slang::Bag options;
   auto compilation = std::make_unique<slang::ast::Compilation>(options);
 
-  auto buffer = source_manager->assignText("test.sv", code);
+  // Use consistent test path format
+  constexpr std::string_view kTestFilename = "test.sv";
+  std::string test_uri = "file:///" + std::string(kTestFilename);
+  std::string test_path = "/" + std::string(kTestFilename);
+
+  auto buffer = source_manager->assignText(test_path, code);
   auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
   if (tree) {
     compilation->addSyntaxTree(tree);
   }
 
-  auto index = SemanticIndex::FromCompilation(*compilation, *source_manager);
+  auto index =
+      SemanticIndex::FromCompilation(*compilation, *source_manager, test_uri);
 
   // Verify that reference tracking populated the reference_map_
   // We need to access the reference_map through a getter method (to be added
@@ -305,13 +328,19 @@ TEST_CASE(
   slang::Bag options;
   auto compilation = std::make_unique<slang::ast::Compilation>(options);
 
-  auto buffer = source_manager->assignText("test.sv", code);
+  // Use consistent test path format
+  constexpr std::string_view kTestFilename = "test.sv";
+  std::string test_uri = "file:///" + std::string(kTestFilename);
+  std::string test_path = "/" + std::string(kTestFilename);
+
+  auto buffer = source_manager->assignText(test_path, code);
   auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
   if (tree) {
     compilation->addSyntaxTree(tree);
   }
 
-  auto index = SemanticIndex::FromCompilation(*compilation, *source_manager);
+  auto index =
+      SemanticIndex::FromCompilation(*compilation, *source_manager, test_uri);
 
   // Test getter methods exist and return proper types
   const auto& definition_ranges = index->GetDefinitionRanges();
@@ -345,13 +374,19 @@ TEST_CASE(
   slang::Bag options;
   auto compilation = std::make_unique<slang::ast::Compilation>(options);
 
-  auto buffer = source_manager->assignText("test.sv", code);
+  // Use consistent test path format
+  constexpr std::string_view kTestFilename = "test.sv";
+  std::string test_uri = "file:///" + std::string(kTestFilename);
+  std::string test_path = "/" + std::string(kTestFilename);
+
+  auto buffer = source_manager->assignText(test_path, code);
   auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
   if (tree) {
     compilation->addSyntaxTree(tree);
   }
 
-  auto index = SemanticIndex::FromCompilation(*compilation, *source_manager);
+  auto index =
+      SemanticIndex::FromCompilation(*compilation, *source_manager, test_uri);
 
   // Test that LookupSymbolAt exists and returns optional type
   // Using invalid location should return nullopt
@@ -399,7 +434,7 @@ TEST_CASE(
   )";
 
   auto index = fixture.BuildIndexFromSource(code);
-  auto symbols = index->GetDocumentSymbols("test.sv");
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Find struct in package and verify it contains struct fields
   auto struct_symbol = std::find_if(
@@ -428,7 +463,7 @@ TEST_CASE(
 
   SemanticTestFixture fixture;
   auto index = fixture.BuildIndexFromSource(code);
-  auto symbols = index->GetDocumentSymbols("test.sv");
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Find generate block and verify it contains both signal and parameter
   auto gen_block = std::find_if(
@@ -456,7 +491,7 @@ TEST_CASE(
 
   SemanticTestFixture fixture;
   auto index = fixture.BuildIndexFromSource(code);
-  auto symbols = index->GetDocumentSymbols("test.sv");
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Find generate for loop block and verify it contains template symbols
   auto gen_loop = std::find_if(
@@ -502,7 +537,7 @@ TEST_CASE(
 
   SemanticTestFixture fixture;
   auto index = fixture.BuildIndexFromSource(code);
-  auto symbols = index->GetDocumentSymbols("test.sv");
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Should have test_empty_gen module but no truly_empty_block namespace
   REQUIRE(symbols.size() == 1);
@@ -536,7 +571,7 @@ TEST_CASE(
 
   SemanticTestFixture fixture;
   auto index = fixture.BuildIndexFromSource(code);
-  auto symbols = index->GetDocumentSymbols("test.sv");
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Should have test_assertion_gen module AND assertion_block namespace
   REQUIRE(symbols.size() == 1);
@@ -584,7 +619,7 @@ TEST_CASE(
   )";
 
   auto index = fixture.BuildIndexFromSource(code);
-  auto symbols = index->GetDocumentSymbols("test.sv");
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   REQUIRE(!symbols.empty());
   REQUIRE(symbols[0].children.has_value());
@@ -631,7 +666,7 @@ TEST_CASE(
   auto index = fixture.BuildIndexFromSource(code);
 
   // Test 1: Document symbols should NOT show function internals
-  auto symbols = index->GetDocumentSymbols("test.sv");
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
   REQUIRE(!symbols.empty());
   REQUIRE(symbols[0].children.has_value());
 
@@ -685,7 +720,7 @@ TEST_CASE(
   )";
 
   auto index = fixture.BuildIndexFromSource(code);
-  auto symbols = index->GetDocumentSymbols("test.sv");
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // All document symbols should have non-empty names (VSCode requirement)
   std::function<void(const std::vector<lsp::DocumentSymbol>&)> check_names;
@@ -722,7 +757,7 @@ TEST_CASE(
   )";
 
   auto index = fixture.BuildIndexFromSource(code);
-  auto symbols = index->GetDocumentSymbols("test.sv");
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Check that genvar 'entry' is not in document symbols anywhere
   std::function<void(const std::vector<lsp::DocumentSymbol>&)> check_no_genvar;
@@ -793,7 +828,7 @@ TEST_CASE(
 
   SemanticTestFixture fixture;
   auto index = fixture.BuildIndexFromSource(code);
-  auto symbols = index->GetDocumentSymbols("test.sv");
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Should have test_empty_gen module
   REQUIRE(symbols.size() == 1);

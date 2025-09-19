@@ -3,6 +3,7 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 
 #include <lsp/document_features.hpp>
 #include <slang/ast/ASTVisitor.h>
@@ -60,8 +61,8 @@ class SemanticIndex {
 
   static auto FromCompilation(
       slang::ast::Compilation& compilation,
-      const slang::SourceManager& source_manager)
-      -> std::unique_ptr<SemanticIndex>;
+      const slang::SourceManager& source_manager,
+      const std::string& current_file_uri) -> std::unique_ptr<SemanticIndex>;
 
   // Query methods
   auto GetSymbolCount() const -> size_t {
@@ -116,8 +117,11 @@ class SemanticIndex {
   class IndexVisitor : public slang::ast::ASTVisitor<IndexVisitor, true, true> {
    public:
     explicit IndexVisitor(
-        SemanticIndex* index, const slang::SourceManager* source_manager)
-        : index_(index), source_manager_(source_manager) {
+        SemanticIndex* index, const slang::SourceManager* source_manager,
+        std::string current_file_uri)
+        : index_(index),
+          source_manager_(source_manager),
+          current_file_uri_(std::move(current_file_uri)) {
     }
 
     // Universal pre-visit hook for symbols
@@ -143,6 +147,7 @@ class SemanticIndex {
    private:
     SemanticIndex* index_;
     const slang::SourceManager* source_manager_;
+    std::string current_file_uri_;
 
     void ProcessSymbol(const slang::ast::Symbol& symbol);
   };

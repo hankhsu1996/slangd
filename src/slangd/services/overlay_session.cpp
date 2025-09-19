@@ -28,8 +28,8 @@ auto OverlaySession::Create(
       BuildCompilation(uri, content, layout_service, catalog, logger);
 
   // Create unified semantic index (replaces DefinitionIndex + SymbolIndex)
-  auto semantic_index =
-      semantic::SemanticIndex::FromCompilation(*compilation, *source_manager);
+  auto semantic_index = semantic::SemanticIndex::FromCompilation(
+      *compilation, *source_manager, uri);
 
   // Create diagnostic index for the current URI (kept separate)
   auto diagnostic_index = std::make_unique<semantic::DiagnosticIndex>(

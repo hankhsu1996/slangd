@@ -30,9 +30,14 @@ class SemanticTestFixture {
   using SymbolKey = slangd::semantic::SymbolKey;
   auto BuildIndexFromSource(const std::string& source)
       -> std::unique_ptr<SemanticIndex> {
-    std::string path = "test.sv";
+    constexpr std::string_view kTestFilename = "test.sv";
+
+    // Use consistent URI/path format
+    std::string test_uri = "file:///" + std::string(kTestFilename);
+    std::string test_path = "/" + std::string(kTestFilename);
+
     SetSourceManager(std::make_shared<slang::SourceManager>());
-    auto buffer = GetSourceManager()->assignText(path, source);
+    auto buffer = GetSourceManager()->assignText(test_path, source);
     SetBufferId(buffer.id);
     auto tree =
         slang::syntax::SyntaxTree::fromBuffer(buffer, *GetSourceManager());
@@ -42,7 +47,7 @@ class SemanticTestFixture {
     GetCompilation()->addSyntaxTree(tree);
 
     return SemanticIndex::FromCompilation(
-        *GetCompilation(), *GetSourceManager());
+        *GetCompilation(), *GetSourceManager(), test_uri);
   }
 
   auto MakeKey(const std::string& source, const std::string& symbol)
@@ -190,9 +195,14 @@ class MultiFileSemanticFixture : public SemanticTestFixture {
     // Add each file to the compilation
     for (size_t i = 0; i < file_contents.size(); ++i) {
       std::string filename = fmt::format("file_{}.sv", i);
-      file_paths.push_back(filename);  // Track the actual file path created
 
-      auto buffer = GetSourceManager()->assignText(filename, file_contents[i]);
+      // Use consistent URI/path format
+      std::string file_uri = "file:///" + filename;
+      std::string file_path = "/" + filename;
+
+      file_paths.push_back(file_path);  // Track the actual file path created
+
+      auto buffer = GetSourceManager()->assignText(file_path, file_contents[i]);
       auto tree =
           slang::syntax::SyntaxTree::fromBuffer(buffer, *GetSourceManager());
       GetCompilation()->addSyntaxTree(tree);
@@ -203,8 +213,10 @@ class MultiFileSemanticFixture : public SemanticTestFixture {
       }
     }
 
-    auto index =
-        SemanticIndex::FromCompilation(*GetCompilation(), *GetSourceManager());
+    // Use the first file URI for the index
+    std::string first_file_uri = "file:///file_0.sv";
+    auto index = SemanticIndex::FromCompilation(
+        *GetCompilation(), *GetSourceManager(), first_file_uri);
 
     return IndexWithFiles{
         .index = std::move(index), .file_paths = std::move(file_paths)};

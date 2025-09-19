@@ -20,17 +20,18 @@ namespace slangd::semantic {
 
 auto SemanticIndex::FromCompilation(
     slang::ast::Compilation& compilation,
-    const slang::SourceManager& source_manager)
-    -> std::unique_ptr<SemanticIndex> {
+    const slang::SourceManager& source_manager,
+    const std::string& current_file_uri) -> std::unique_ptr<SemanticIndex> {
   auto index = std::unique_ptr<SemanticIndex>(new SemanticIndex());
 
   // Store source manager reference for document symbol processing
   index->source_manager_ = &source_manager;
 
   // Create visitor for comprehensive symbol collection and reference tracking
-  auto visitor = IndexVisitor(index.get(), &source_manager);
+  auto visitor = IndexVisitor(index.get(), &source_manager, current_file_uri);
 
-  // Single traversal from root captures ALL symbols
+  // Single traversal from root captures ALL symbols - no filtering here!
+  // DocumentSymbolBuilder handles filtering at display time for performance
   compilation.getRoot().visit(visitor);
 
   return index;
