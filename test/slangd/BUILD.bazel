@@ -58,10 +58,10 @@ cc_test(
 )
 
 cc_test(
-    name = "definition_multifile_test",
+    name = "multifile_definition_test",
     timeout = "short",
     srcs = [
-        "semantic/definition_multifile_test.cpp",
+        "semantic/integration/multifile_definition_test.cpp",
     ],
     deps = [
         "//:slangd_core",
@@ -86,10 +86,10 @@ cc_test(
 )
 
 cc_test(
-    name = "semantic_index_multifile_test",
+    name = "multifile_reference_test",
     timeout = "short",
     srcs = [
-        "semantic/semantic_index_multifile_test.cpp",
+        "semantic/integration/multifile_reference_test.cpp",
         "semantic/test_fixtures.hpp",
     ],
     deps = [

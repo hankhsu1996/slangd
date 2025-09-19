@@ -12,7 +12,7 @@
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/semantic/semantic_index.hpp"
 #include "slangd/services/global_catalog.hpp"
-#include "test_fixtures.hpp"
+#include "../test_fixtures.hpp"
 
 auto main(int argc, char* argv[]) -> int {
   if (auto* level = std::getenv("SPDLOG_LEVEL")) {

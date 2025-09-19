@@ -179,11 +179,11 @@ cc_library(
 
 **Separate unit tests from integration tests**
 
-- [ ] **Step 5.1:** Create `test/slangd/semantic/integration/` directory
-- [ ] **Step 5.2:** Move `definition_multifile_test.cpp` → `integration/multifile_definition_test.cpp`
-- [ ] **Step 5.3:** Move `semantic_index_multifile_test.cpp` → `integration/multifile_reference_test.cpp`
-- [ ] **Step 5.4:** Update `test/slangd/BUILD.bazel` paths
-- [ ] **Step 5.5:** Verify integration tests pass: `bazel test //test/slangd/semantic/integration:all`
+- [x] **Step 5.1:** Create `test/slangd/semantic/integration/` directory
+- [x] **Step 5.2:** Move `definition_multifile_test.cpp` → `integration/multifile_definition_test.cpp`
+- [x] **Step 5.3:** Move `semantic_index_multifile_test.cpp` → `integration/multifile_reference_test.cpp`
+- [x] **Step 5.4:** Update `test/slangd/BUILD.bazel` paths
+- [x] **Step 5.5:** Verify integration tests pass: `bazel test //test/slangd:multifile_definition_test //test/slangd:multifile_reference_test`
 
 ## Phase 6: Simplify Test Fixtures
 
