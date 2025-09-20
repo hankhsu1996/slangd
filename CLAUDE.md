@@ -50,6 +50,7 @@ SystemVerilog LSP server with modular design:
 - We are not using GDB, because it's harder to do batch debugging.
 - We use spdlog for logging when needed.
 - Do not use `env SPDLOG_LEVEL=debug bazel test //...`. Set the log level in each test file instead.
+- Generally, just do `bazel test //...` even if you are changing a single file, we don't have that mush tests, so it is fast.
 
 **AST Debugging:**
 

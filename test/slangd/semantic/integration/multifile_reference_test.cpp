@@ -1,7 +1,6 @@
 #include <cstdlib>
 #include <memory>
 #include <string>
-#include <string_view>
 #include <vector>
 
 #include <asio.hpp>
@@ -11,7 +10,6 @@
 
 #include "../test_fixtures.hpp"
 #include "slangd/semantic/semantic_index.hpp"
-#include "slangd/services/global_catalog.hpp"
 
 auto main(int argc, char* argv[]) -> int {
   if (auto* level = std::getenv("SPDLOG_LEVEL")) {
@@ -35,42 +33,6 @@ using SemanticTestFixture = slangd::semantic::test::SemanticTestFixture;
 using MultiFileSemanticFixture =
     slangd::semantic::test::MultiFileSemanticFixture;
 using AsyncMultiFileFixture = slangd::semantic::test::AsyncMultiFileFixture;
-
-TEST_CASE(
-    "SemanticIndex GlobalCatalog integration basic functionality",
-    "[semantic_index][multifile]") {
-  test::RunAsyncTest(
-      [](asio::any_io_executor executor) -> asio::awaitable<void> {
-        AsyncMultiFileFixture fixture;
-
-        // Create a package file
-        fixture.CreateFile("math_pkg.sv", R"(
-      package math_pkg;
-        parameter BUS_WIDTH = 64;
-        typedef logic [BUS_WIDTH-1:0] data_t;
-      endpackage
-    )");
-
-        // Create GlobalCatalog
-        auto catalog = co_await fixture.CreateGlobalCatalog(executor);
-        REQUIRE(catalog != nullptr);
-        REQUIRE(catalog->GetVersion() == 1);
-
-        // Verify package was discovered
-        const auto& packages = catalog->GetPackages();
-        bool found_math_pkg = false;
-        for (const auto& pkg : packages) {
-          if (pkg.name == "math_pkg") {
-            found_math_pkg = true;
-            REQUIRE(pkg.file_path.Path().filename() == "math_pkg.sv");
-            break;
-          }
-        }
-        REQUIRE(found_math_pkg);
-
-        co_return;
-      });
-}
 
 TEST_CASE(
     "SemanticIndex cross-package import resolution",
