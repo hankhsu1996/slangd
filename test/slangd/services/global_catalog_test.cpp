@@ -12,8 +12,10 @@
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/utils/canonical_path.hpp"
 
+constexpr auto kLogLevel = spdlog::level::warn;
+
 auto main(int argc, char* argv[]) -> int {
-  spdlog::set_level(spdlog::level::debug);
+  spdlog::set_level(kLogLevel);
   spdlog::set_pattern("[%l] %v");
 
   // Suppress Bazel test sharding warnings

@@ -1,8 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <filesystem>
-#include <fstream>
 #include <memory>
 #include <set>
 #include <stdexcept>
@@ -10,16 +8,16 @@
 #include <string_view>
 #include <vector>
 
-#include <asio.hpp>
 #include <fmt/format.h>
 #include <slang/ast/Compilation.h>
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/text/SourceLocation.h>
 #include <slang/text/SourceManager.h>
 #include <slang/util/Bag.h>
+#include <spdlog/spdlog.h>
 
 #include "slangd/semantic/semantic_index.hpp"
-#include "slangd/utils/canonical_path.hpp"
+#include "test/slangd/common/file_fixture.hpp"
 
 namespace slangd::semantic::test {
 
@@ -139,20 +137,14 @@ class SemanticTestFixture {
 };
 
 // Extended fixture for multifile tests
-class MultiFileSemanticFixture : public SemanticTestFixture {
+class MultiFileSemanticFixture : public SemanticTestFixture,
+                                 public slangd::test::FileTestFixture {
  public:
-  MultiFileSemanticFixture() {
-    // Create a temporary directory for test files
-    temp_dir_ =
-        std::filesystem::temp_directory_path() / "slangd_semantic_multifile";
-    std::filesystem::create_directories(temp_dir_);
+  MultiFileSemanticFixture()
+      : slangd::test::FileTestFixture("slangd_semantic_multifile") {
   }
 
-  ~MultiFileSemanticFixture() {
-    // Clean up test files
-    std::error_code ec;
-    std::filesystem::remove_all(temp_dir_, ec);
-  }
+  ~MultiFileSemanticFixture() = default;
 
   // Explicitly delete copy operations
   MultiFileSemanticFixture(const MultiFileSemanticFixture&) = delete;
@@ -163,19 +155,6 @@ class MultiFileSemanticFixture : public SemanticTestFixture {
   MultiFileSemanticFixture(MultiFileSemanticFixture&&) = delete;
   auto operator=(MultiFileSemanticFixture&&)
       -> MultiFileSemanticFixture& = delete;
-
-  [[nodiscard]] auto GetTempDir() const -> slangd::CanonicalPath {
-    return slangd::CanonicalPath(temp_dir_);
-  }
-
-  auto CreateFile(std::string_view filename, std::string_view content)
-      -> slangd::CanonicalPath {
-    auto file_path = temp_dir_ / filename;
-    std::ofstream file(file_path);
-    file << content;
-    file.close();
-    return slangd::CanonicalPath(file_path);
-  }
 
   // Result struct for BuildIndexFromFiles - includes both index and file paths
   struct IndexWithFiles {
@@ -402,41 +381,6 @@ class MultiFileSemanticFixture : public SemanticTestFixture {
              entry.target_range.start().buffer().getId();
     });
   }
-
- private:
-  std::filesystem::path temp_dir_;
 };
-
-// Async test runner for coroutine tests
-template <typename F>
-void RunAsyncTest(F&& test_fn) {
-  asio::io_context io_context;
-  auto executor = io_context.get_executor();
-
-  bool completed = false;
-  std::exception_ptr exception;
-
-  asio::co_spawn(
-      io_context,
-      [fn = std::forward<F>(test_fn), &completed, &exception,
-       executor]() -> asio::awaitable<void> {
-        try {
-          co_await fn(executor);
-          completed = true;
-        } catch (...) {
-          exception = std::current_exception();
-          completed = true;
-        }
-      },
-      asio::detached);
-
-  io_context.run();
-
-  if (exception) {
-    std::rethrow_exception(exception);
-  }
-
-  // Note: REQUIRE macro should be called by the caller if needed
-}
 
 }  // namespace slangd::semantic::test

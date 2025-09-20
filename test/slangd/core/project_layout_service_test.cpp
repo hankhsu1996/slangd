@@ -8,9 +8,17 @@
 
 #include "slangd/utils/canonical_path.hpp"
 
+constexpr auto kLogLevel = spdlog::level::warn;
+
 auto main(int argc, char* argv[]) -> int {
-  spdlog::set_level(spdlog::level::debug);
+  spdlog::set_level(kLogLevel);
   spdlog::set_pattern("[%l] %v");
+
+  // Suppress Bazel test sharding warnings
+  setenv("TEST_SHARD_INDEX", "0", 0);
+  setenv("TEST_TOTAL_SHARDS", "1", 0);
+  setenv("TEST_SHARD_STATUS_FILE", "", 0);
+
   return Catch::Session().run(argc, argv);
 }
 

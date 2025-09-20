@@ -17,11 +17,14 @@ This file provides guidance to Claude Code when working with code in this reposi
 3. Implement minimal fix
 4. Clean up and remove debug code
 
+- **Unit test files**: <300 lines total
+- **Individual test cases**: <50 lines each
+
 **Pre-commit:**
 
 1. Format code, check build/test pass
 2. Use `feature/`, `bugfix/`, `refactor/` branch prefixes
-3. Commit messages: Short summary + bullet points using '-' in details, no Claude attribution
+3. Commit messages: Short summary + bullet points using '-' in details, no Claude attribution, focus on 'what' changed not process/phase/step
 
 ## Architecture
 
@@ -41,6 +44,13 @@ SystemVerilog LSP server with modular design:
 
 - C++23, ASIO coroutines, `std::expected`, trailing return types
 - Use `toString(symbol.kind) -> std::string_view` for Slang enum printing
+
+**General Debugging:**
+
+- We are not using GDB, because it's harder to do batch debugging.
+- We use spdlog for logging when needed.
+- Do not use `env SPDLOG_LEVEL=debug bazel test //...`. Set the log level in each test file instead.
+- Generally, just do `bazel test //...` even if you are changing a single file, we don't have that mush tests, so it is fast.
 
 **AST Debugging:**
 

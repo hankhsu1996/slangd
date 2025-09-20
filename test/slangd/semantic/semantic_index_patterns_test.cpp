@@ -1,20 +1,32 @@
 #include <algorithm>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include <catch2/catch_all.hpp>
+#include <spdlog/spdlog.h>
 
+#include "../common/simple_fixture.hpp"
 #include "slangd/semantic/semantic_index.hpp"
-#include "test_fixtures.hpp"
+
+constexpr auto kLogLevel = spdlog::level::warn;
 
 auto main(int argc, char* argv[]) -> int {
+  spdlog::set_level(kLogLevel);
+  spdlog::set_pattern("[%l] %v");
+
+  // Suppress Bazel test sharding warnings
+  setenv("TEST_SHARD_INDEX", "0", 0);
+  setenv("TEST_TOTAL_SHARDS", "1", 0);
+  setenv("TEST_SHARD_STATUS_FILE", "", 0);
+
   return Catch::Session().run(argc, argv);
 }
 
 namespace slangd::semantic {
 
-using SemanticTestFixture = slangd::semantic::test::SemanticTestFixture;
+using slangd::test::SimpleTestFixture;
 
 // Helper function to extract symbol names from index
 auto GetSymbolNames(const SemanticIndex& index) -> std::vector<std::string> {
@@ -37,7 +49,7 @@ auto HasSymbols(
 
 TEST_CASE(
     "SemanticIndex handles interface ports without crash", "[semantic_index]") {
-  SemanticTestFixture fixture;
+  SimpleTestFixture fixture;
 
   SECTION("basic interface port with member access") {
     const std::string source = R"(
@@ -53,7 +65,7 @@ TEST_CASE(
       endmodule
     )";
 
-    auto index = fixture.BuildIndexFromSource(source);
+    auto index = fixture.CompileSource(source);
     REQUIRE(index != nullptr);
     REQUIRE(index->GetSymbolCount() > 0);
     REQUIRE(HasSymbols(*index, {"internal_var"}));
@@ -69,7 +81,7 @@ TEST_CASE(
       endmodule
     )";
 
-    auto index = fixture.BuildIndexFromSource(source);
+    auto index = fixture.CompileSource(source);
     REQUIRE(index != nullptr);
     REQUIRE(index->GetSymbolCount() > 0);
     REQUIRE(HasSymbols(*index, {"internal_state", "counter"}));
@@ -96,7 +108,7 @@ TEST_CASE(
       endmodule
     )";
 
-    auto index = fixture.BuildIndexFromSource(source);
+    auto index = fixture.CompileSource(source);
     REQUIRE(index != nullptr);
     REQUIRE(index->GetSymbolCount() > 0);
     REQUIRE(HasSymbols(*index, {"state", "counter", "enable"}));
@@ -106,7 +118,7 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex handles complex SystemVerilog patterns",
     "[semantic_index]") {
-  SemanticTestFixture fixture;
+  SimpleTestFixture fixture;
 
   SECTION("nested scope definitions") {
     const std::string source = R"(
@@ -120,7 +132,7 @@ TEST_CASE(
       endmodule
     )";
 
-    auto index = fixture.BuildIndexFromSource(source);
+    auto index = fixture.CompileSource(source);
     REQUIRE(index != nullptr);
     REQUIRE(
         HasSymbols(*index, {"nested_signal", "deeply_nested", "named_block"}));
@@ -135,7 +147,7 @@ TEST_CASE(
       endmodule
     )";
 
-    auto index = fixture.BuildIndexFromSource(source);
+    auto index = fixture.CompileSource(source);
 
     const std::vector<std::string> expected = {
         "sig1", "sig2", "sig3", "byte1", "byte2", "byte3", "w1", "w2", "w3"};
@@ -157,7 +169,7 @@ TEST_CASE(
       endmodule
     )";
 
-    auto index = fixture.BuildIndexFromSource(source);
+    auto index = fixture.CompileSource(source);
     const auto& refs = index->GetReferences();
 
     REQUIRE(!refs.empty());
@@ -179,7 +191,7 @@ TEST_CASE(
       endmodule
     )";
 
-    auto index = fixture.BuildIndexFromSource(source);
+    auto index = fixture.CompileSource(source);
 
     // Should find most symbols (enum values may have different indexing
     // behavior)
@@ -194,7 +206,7 @@ TEST_CASE(
       endpackage
     )";
 
-    auto index = fixture.BuildIndexFromSource(source);
+    auto index = fixture.CompileSource(source);
     REQUIRE(index != nullptr);
     REQUIRE(index->GetSymbolCount() > 0);
     REQUIRE(HasSymbols(*index, {"test_pkg", "WIDTH", "data_t"}));
@@ -218,7 +230,7 @@ TEST_CASE(
       endmodule
     )";
 
-    auto index = fixture.BuildIndexFromSource(source);
+    auto index = fixture.CompileSource(source);
     REQUIRE(index != nullptr);
     REQUIRE(index->GetSymbolCount() > 0);
     REQUIRE(HasSymbols(*index, {"packet_t", "data_t", "pkt"}));
@@ -237,7 +249,7 @@ TEST_CASE(
       endmodule
     )";
 
-    auto index = fixture.BuildIndexFromSource(source);
+    auto index = fixture.CompileSource(source);
 
     const std::vector<std::string> expected = {
         "test_pkg", "test_module", "test_signal", "WIDTH", "data_t"};
