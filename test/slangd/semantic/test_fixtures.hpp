@@ -8,7 +8,6 @@
 #include <string_view>
 #include <vector>
 
-#include <asio.hpp>
 #include <fmt/format.h>
 #include <slang/ast/Compilation.h>
 #include <slang/syntax/SyntaxTree.h>
@@ -17,12 +16,7 @@
 #include <slang/util/Bag.h>
 #include <spdlog/spdlog.h>
 
-#include "lsp/basic.hpp"
-#include "slangd/core/project_layout_service.hpp"
 #include "slangd/semantic/semantic_index.hpp"
-#include "slangd/services/global_catalog.hpp"
-#include "slangd/services/overlay_session.hpp"
-#include "slangd/utils/conversion.hpp"
 #include "test/slangd/common/file_fixture.hpp"
 
 namespace slangd::semantic::test {
@@ -387,158 +381,6 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
              entry.target_range.start().buffer().getId();
     });
   }
-};
-
-// Async test runner for coroutine tests
-template <typename F>
-void RunAsyncTest(F&& test_fn) {
-  asio::io_context io_context;
-  auto executor = io_context.get_executor();
-
-  bool completed = false;
-  std::exception_ptr exception;
-
-  asio::co_spawn(
-      io_context,
-      [fn = std::forward<F>(test_fn), &completed, &exception,
-       executor]() -> asio::awaitable<void> {
-        try {
-          co_await fn(executor);
-          completed = true;
-        } catch (...) {
-          exception = std::current_exception();
-          completed = true;
-        }
-      },
-      asio::detached);
-
-  io_context.run();
-
-  if (exception) {
-    std::rethrow_exception(exception);
-  }
-
-  // Note: REQUIRE macro should be called by the caller if needed
-}
-
-// Async fixture for multifile tests with GlobalCatalog integration
-class AsyncMultiFileFixture : public MultiFileSemanticFixture {
- public:
-  auto CreateGlobalCatalog(asio::any_io_executor executor)
-      -> asio::awaitable<std::shared_ptr<slangd::services::GlobalCatalog>> {
-    // Create project layout service
-    layout_service_ = slangd::ProjectLayoutService::Create(
-        executor, GetTempDir(), spdlog::default_logger());
-
-    // Create GlobalCatalog from project layout
-    auto catalog = slangd::services::GlobalCatalog::CreateFromProjectLayout(
-        layout_service_, spdlog::default_logger());
-
-    co_return catalog;
-  }
-
-  // Package + Module scenario from module perspective
-  auto BuildIndexFromModulePerspective(
-      const std::vector<std::string>& package_files,
-      const std::string& module_content,
-      const std::string& module_name = "test_module") -> IndexWithRoles {
-    std::vector<FileSpec> files;
-
-    // Module is the current file (being edited)
-    files.emplace_back(module_content, FileRole::kCurrentFile, module_name);
-
-    // Packages are unopened dependencies
-    for (size_t i = 0; i < package_files.size(); ++i) {
-      std::string pkg_name = fmt::format("package_{}", i);
-      files.emplace_back(package_files[i], FileRole::kUnopendFile, pkg_name);
-    }
-
-    return BuildIndexWithRoles(files);
-  }
-
-  // Package + Module scenario from package perspective
-  auto BuildIndexFromPackagePerspective(
-      const std::vector<std::string>& package_files,
-      const std::string& module_content,
-      const std::string& package_name = "test_package") -> IndexWithRoles {
-    std::vector<FileSpec> files;
-
-    // First package is the current file (being edited)
-    if (!package_files.empty()) {
-      files.emplace_back(
-          package_files[0], FileRole::kCurrentFile, package_name);
-
-      // Remaining packages are unopened dependencies
-      for (size_t i = 1; i < package_files.size(); ++i) {
-        std::string pkg_name = fmt::format("package_{}", i);
-        files.emplace_back(package_files[i], FileRole::kUnopendFile, pkg_name);
-      }
-    }
-
-    // Module is unopened dependency
-    files.emplace_back(module_content, FileRole::kUnopendFile, "module");
-
-    return BuildIndexWithRoles(files);
-  }
-
-  // Create OverlaySession with catalog integration
-  auto CreateOverlaySession(
-      asio::any_io_executor executor, std::string uri, std::string content,
-      std::shared_ptr<slangd::services::GlobalCatalog> catalog = nullptr)
-      -> asio::awaitable<std::shared_ptr<slangd::services::OverlaySession>> {
-    // Create layout service if not already created
-    if (!layout_service_) {
-      layout_service_ = slangd::ProjectLayoutService::Create(
-          executor, GetTempDir(), spdlog::default_logger());
-    }
-
-    auto session = slangd::services::OverlaySession::Create(
-        uri, content, layout_service_, catalog, spdlog::default_logger());
-
-    co_return session;
-  }
-
-  // Helper to find SourceLocation of text in OverlaySession
-  static auto FindLocationInOverlaySession(
-      const std::string& text, const slang::SourceManager& source_manager)
-      -> slang::SourceLocation {
-    // In overlay session, the main buffer is typically the first one
-    auto buffers = source_manager.getAllBuffers();
-    if (buffers.empty()) {
-      return {};
-    }
-    auto buffer_id = buffers[0];  // Use first buffer
-
-    // Get the actual content from this buffer
-    auto buffer_content = source_manager.getSourceText(buffer_id);
-
-    // Find position of text in the buffer content
-    std::string buffer_content_str(buffer_content);
-    size_t pos = buffer_content_str.find(text);
-    if (pos == std::string::npos) {
-      return {};
-    }
-
-    // Convert byte offset to line/character position
-    int line = 0;
-    size_t line_start = 0;
-    for (size_t i = 0; i < pos; i++) {
-      if (buffer_content_str[i] == '\n') {
-        line++;
-        line_start = i + 1;  // Start of next line is after the newline
-      }
-    }
-
-    int character = static_cast<int>(pos - line_start);
-    lsp::Position position{.line = line, .character = character};
-
-    // Use the conversion utility to get slang::SourceLocation
-    return slangd::ConvertLspPositionToSlangLocation(
-        position, buffer_id, source_manager);
-  }
-
- private:
-  std::shared_ptr<slangd::ProjectLayoutService> layout_service_;
 };
 
 }  // namespace slangd::semantic::test

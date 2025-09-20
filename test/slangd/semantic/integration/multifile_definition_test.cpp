@@ -21,10 +21,10 @@ auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
 }
 
-using slangd::semantic::test::AsyncMultiFileFixture;
+using slangd::semantic::test::MultiFileSemanticFixture;
 
 TEST_CASE("Definition lookup for package imports", "[definition][multifile]") {
-  AsyncMultiFileFixture fixture;
+  MultiFileSemanticFixture fixture;
 
   // Create package file with typedef
   const std::string package_content = R"(

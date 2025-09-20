@@ -30,12 +30,11 @@ namespace slangd::semantic {
 using SemanticTestFixture = slangd::semantic::test::SemanticTestFixture;
 using MultiFileSemanticFixture =
     slangd::semantic::test::MultiFileSemanticFixture;
-using AsyncMultiFileFixture = slangd::semantic::test::AsyncMultiFileFixture;
 
 TEST_CASE(
     "SemanticIndex cross-package import resolution",
     "[semantic_index][multifile]") {
-  AsyncMultiFileFixture fixture;
+  MultiFileSemanticFixture fixture;
 
   // Create package file with typedef
   const std::string package_content = R"(
@@ -93,7 +92,7 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex qualified package references",
     "[semantic_index][multifile]") {
-  AsyncMultiFileFixture fixture;
+  MultiFileSemanticFixture fixture;
 
   // Create package file with multiple symbols
   const std::string package_content = R"(
@@ -168,7 +167,7 @@ TEST_CASE(
 
 TEST_CASE(
     "SemanticIndex multi-package dependencies", "[semantic_index][multifile]") {
-  AsyncMultiFileFixture fixture;
+  MultiFileSemanticFixture fixture;
 
   // Create base package
   const std::string base_package = R"(
@@ -244,7 +243,7 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex interface cross-file references",
     "[semantic_index][multifile]") {
-  AsyncMultiFileFixture fixture;
+  MultiFileSemanticFixture fixture;
 
   // Create interface definition file
   const std::string interface_content = R"(
@@ -311,7 +310,7 @@ TEST_CASE(
 }
 
 TEST_CASE("GetDocumentSymbols filters by URI", "[semantic_index][multifile]") {
-  AsyncMultiFileFixture fixture;
+  MultiFileSemanticFixture fixture;
 
   const std::string package_content = R"(
     package test_pkg;
