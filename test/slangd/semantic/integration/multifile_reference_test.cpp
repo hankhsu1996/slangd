@@ -9,10 +9,9 @@
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
-#include "slangd/core/project_layout_service.hpp"
+#include "../test_fixtures.hpp"
 #include "slangd/semantic/semantic_index.hpp"
 #include "slangd/services/global_catalog.hpp"
-#include "../test_fixtures.hpp"
 
 auto main(int argc, char* argv[]) -> int {
   if (auto* level = std::getenv("SPDLOG_LEVEL")) {
@@ -35,70 +34,7 @@ namespace slangd::semantic {
 using SemanticTestFixture = slangd::semantic::test::SemanticTestFixture;
 using MultiFileSemanticFixture =
     slangd::semantic::test::MultiFileSemanticFixture;
-
-// Specialized fixture for async GlobalCatalog integration testing
-class AsyncMultiFileFixture : public MultiFileSemanticFixture {
- public:
-  auto CreateGlobalCatalog(asio::any_io_executor executor)
-      -> asio::awaitable<std::shared_ptr<slangd::services::GlobalCatalog>> {
-    // Create project layout service
-    layout_service_ = slangd::ProjectLayoutService::Create(
-        executor, GetTempDir(), spdlog::default_logger());
-
-    // Create GlobalCatalog from project layout
-    auto catalog = slangd::services::GlobalCatalog::CreateFromProjectLayout(
-        layout_service_, spdlog::default_logger());
-
-    co_return catalog;
-  }
-
-  // Package + Module scenario from module perspective
-  auto BuildIndexFromModulePerspective(
-      const std::vector<std::string>& package_files,
-      const std::string& module_content,
-      const std::string& module_name = "test_module") -> IndexWithRoles {
-    std::vector<FileSpec> files;
-
-    // Module is the current file (being edited)
-    files.emplace_back(module_content, FileRole::kCurrentFile, module_name);
-
-    // Packages are unopened dependencies
-    for (size_t i = 0; i < package_files.size(); ++i) {
-      std::string pkg_name = fmt::format("package_{}", i);
-      files.emplace_back(package_files[i], FileRole::kUnopendFile, pkg_name);
-    }
-
-    return BuildIndexWithRoles(files);
-  }
-
-  // Package + Module scenario from package perspective
-  auto BuildIndexFromPackagePerspective(
-      const std::vector<std::string>& package_files,
-      const std::string& module_content,
-      const std::string& package_name = "test_package") -> IndexWithRoles {
-    std::vector<FileSpec> files;
-
-    // First package is the current file (being edited)
-    if (!package_files.empty()) {
-      files.emplace_back(
-          package_files[0], FileRole::kCurrentFile, package_name);
-
-      // Remaining packages are unopened dependencies
-      for (size_t i = 1; i < package_files.size(); ++i) {
-        std::string pkg_name = fmt::format("package_{}", i);
-        files.emplace_back(package_files[i], FileRole::kUnopendFile, pkg_name);
-      }
-    }
-
-    // Module is unopened dependency
-    files.emplace_back(module_content, FileRole::kUnopendFile, "module");
-
-    return BuildIndexWithRoles(files);
-  }
-
- private:
-  std::shared_ptr<slangd::ProjectLayoutService> layout_service_;
-};
+using AsyncMultiFileFixture = slangd::semantic::test::AsyncMultiFileFixture;
 
 TEST_CASE(
     "SemanticIndex GlobalCatalog integration basic functionality",

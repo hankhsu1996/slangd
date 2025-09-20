@@ -1,8 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <filesystem>
-#include <fstream>
 #include <memory>
 #include <set>
 #include <stdexcept>
@@ -17,9 +15,15 @@
 #include <slang/text/SourceLocation.h>
 #include <slang/text/SourceManager.h>
 #include <slang/util/Bag.h>
+#include <spdlog/spdlog.h>
 
+#include "lsp/basic.hpp"
+#include "slangd/core/project_layout_service.hpp"
 #include "slangd/semantic/semantic_index.hpp"
-#include "slangd/utils/canonical_path.hpp"
+#include "slangd/services/global_catalog.hpp"
+#include "slangd/services/overlay_session.hpp"
+#include "slangd/utils/conversion.hpp"
+#include "test/slangd/common/file_fixture.hpp"
 
 namespace slangd::semantic::test {
 
@@ -139,20 +143,14 @@ class SemanticTestFixture {
 };
 
 // Extended fixture for multifile tests
-class MultiFileSemanticFixture : public SemanticTestFixture {
+class MultiFileSemanticFixture : public SemanticTestFixture,
+                                 public slangd::test::FileTestFixture {
  public:
-  MultiFileSemanticFixture() {
-    // Create a temporary directory for test files
-    temp_dir_ =
-        std::filesystem::temp_directory_path() / "slangd_semantic_multifile";
-    std::filesystem::create_directories(temp_dir_);
+  MultiFileSemanticFixture()
+      : slangd::test::FileTestFixture("slangd_semantic_multifile") {
   }
 
-  ~MultiFileSemanticFixture() {
-    // Clean up test files
-    std::error_code ec;
-    std::filesystem::remove_all(temp_dir_, ec);
-  }
+  ~MultiFileSemanticFixture() = default;
 
   // Explicitly delete copy operations
   MultiFileSemanticFixture(const MultiFileSemanticFixture&) = delete;
@@ -163,19 +161,6 @@ class MultiFileSemanticFixture : public SemanticTestFixture {
   MultiFileSemanticFixture(MultiFileSemanticFixture&&) = delete;
   auto operator=(MultiFileSemanticFixture&&)
       -> MultiFileSemanticFixture& = delete;
-
-  [[nodiscard]] auto GetTempDir() const -> slangd::CanonicalPath {
-    return slangd::CanonicalPath(temp_dir_);
-  }
-
-  auto CreateFile(std::string_view filename, std::string_view content)
-      -> slangd::CanonicalPath {
-    auto file_path = temp_dir_ / filename;
-    std::ofstream file(file_path);
-    file << content;
-    file.close();
-    return slangd::CanonicalPath(file_path);
-  }
 
   // Result struct for BuildIndexFromFiles - includes both index and file paths
   struct IndexWithFiles {
@@ -402,9 +387,6 @@ class MultiFileSemanticFixture : public SemanticTestFixture {
              entry.target_range.start().buffer().getId();
     });
   }
-
- private:
-  std::filesystem::path temp_dir_;
 };
 
 // Async test runner for coroutine tests
@@ -438,5 +420,125 @@ void RunAsyncTest(F&& test_fn) {
 
   // Note: REQUIRE macro should be called by the caller if needed
 }
+
+// Async fixture for multifile tests with GlobalCatalog integration
+class AsyncMultiFileFixture : public MultiFileSemanticFixture {
+ public:
+  auto CreateGlobalCatalog(asio::any_io_executor executor)
+      -> asio::awaitable<std::shared_ptr<slangd::services::GlobalCatalog>> {
+    // Create project layout service
+    layout_service_ = slangd::ProjectLayoutService::Create(
+        executor, GetTempDir(), spdlog::default_logger());
+
+    // Create GlobalCatalog from project layout
+    auto catalog = slangd::services::GlobalCatalog::CreateFromProjectLayout(
+        layout_service_, spdlog::default_logger());
+
+    co_return catalog;
+  }
+
+  // Package + Module scenario from module perspective
+  auto BuildIndexFromModulePerspective(
+      const std::vector<std::string>& package_files,
+      const std::string& module_content,
+      const std::string& module_name = "test_module") -> IndexWithRoles {
+    std::vector<FileSpec> files;
+
+    // Module is the current file (being edited)
+    files.emplace_back(module_content, FileRole::kCurrentFile, module_name);
+
+    // Packages are unopened dependencies
+    for (size_t i = 0; i < package_files.size(); ++i) {
+      std::string pkg_name = fmt::format("package_{}", i);
+      files.emplace_back(package_files[i], FileRole::kUnopendFile, pkg_name);
+    }
+
+    return BuildIndexWithRoles(files);
+  }
+
+  // Package + Module scenario from package perspective
+  auto BuildIndexFromPackagePerspective(
+      const std::vector<std::string>& package_files,
+      const std::string& module_content,
+      const std::string& package_name = "test_package") -> IndexWithRoles {
+    std::vector<FileSpec> files;
+
+    // First package is the current file (being edited)
+    if (!package_files.empty()) {
+      files.emplace_back(
+          package_files[0], FileRole::kCurrentFile, package_name);
+
+      // Remaining packages are unopened dependencies
+      for (size_t i = 1; i < package_files.size(); ++i) {
+        std::string pkg_name = fmt::format("package_{}", i);
+        files.emplace_back(package_files[i], FileRole::kUnopendFile, pkg_name);
+      }
+    }
+
+    // Module is unopened dependency
+    files.emplace_back(module_content, FileRole::kUnopendFile, "module");
+
+    return BuildIndexWithRoles(files);
+  }
+
+  // Create OverlaySession with catalog integration
+  auto CreateOverlaySession(
+      asio::any_io_executor executor, std::string uri, std::string content,
+      std::shared_ptr<slangd::services::GlobalCatalog> catalog = nullptr)
+      -> asio::awaitable<std::shared_ptr<slangd::services::OverlaySession>> {
+    // Create layout service if not already created
+    if (!layout_service_) {
+      layout_service_ = slangd::ProjectLayoutService::Create(
+          executor, GetTempDir(), spdlog::default_logger());
+    }
+
+    auto session = slangd::services::OverlaySession::Create(
+        uri, content, layout_service_, catalog, spdlog::default_logger());
+
+    co_return session;
+  }
+
+  // Helper to find SourceLocation of text in OverlaySession
+  static auto FindLocationInOverlaySession(
+      const std::string& text, const slang::SourceManager& source_manager)
+      -> slang::SourceLocation {
+    // In overlay session, the main buffer is typically the first one
+    auto buffers = source_manager.getAllBuffers();
+    if (buffers.empty()) {
+      return {};
+    }
+    auto buffer_id = buffers[0];  // Use first buffer
+
+    // Get the actual content from this buffer
+    auto buffer_content = source_manager.getSourceText(buffer_id);
+
+    // Find position of text in the buffer content
+    std::string buffer_content_str(buffer_content);
+    size_t pos = buffer_content_str.find(text);
+    if (pos == std::string::npos) {
+      return {};
+    }
+
+    // Convert byte offset to line/character position
+    int line = 0;
+    size_t line_start = 0;
+    for (size_t i = 0; i < pos; i++) {
+      if (buffer_content_str[i] == '\n') {
+        line++;
+        line_start = i + 1;  // Start of next line is after the newline
+      }
+    }
+
+    int character = static_cast<int>(pos - line_start);
+    lsp::Position position{.line = line, .character = character};
+
+    // Use the conversion utility to get slang::SourceLocation
+    return slangd::ConvertLspPositionToSlangLocation(
+        position, buffer_id, source_manager);
+  }
+
+ private:
+  std::shared_ptr<slangd::ProjectLayoutService> layout_service_;
+};
 
 }  // namespace slangd::semantic::test

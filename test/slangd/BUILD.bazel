@@ -18,6 +18,14 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "file_fixture",
+    hdrs = ["common/file_fixture.hpp"],
+    deps = [
+        "//:slangd_core",
+    ],
+)
+
 cc_test(
     name = "project_layout_service_test",
     timeout = "short",
@@ -62,10 +70,13 @@ cc_test(
     timeout = "short",
     srcs = [
         "semantic/integration/multifile_definition_test.cpp",
+        "semantic/test_fixtures.hpp",
     ],
     deps = [
+        ":file_fixture",
         "//:slangd_core",
         "@catch2",
+        "@fmt",
         "@slang",
     ],
 )
@@ -92,6 +103,7 @@ cc_test(
         "semantic/test_fixtures.hpp",
     ],
     deps = [
+        ":file_fixture",
         "//:slangd_core",
         "@catch2",
         "@fmt",
