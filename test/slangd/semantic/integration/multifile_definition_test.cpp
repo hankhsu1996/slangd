@@ -7,7 +7,6 @@
 
 #include "../test_fixtures.hpp"
 
-// Set to spdlog::level::info when debugging, spdlog::level::warn otherwise
 constexpr auto kLogLevel = spdlog::level::warn;
 
 auto main(int argc, char* argv[]) -> int {
