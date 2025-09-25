@@ -143,6 +143,10 @@ class SemanticIndex {
     // Reference tracking for WildcardImportSymbol (package references)
     void handle(const slang::ast::WildcardImportSymbol& import_symbol);
 
+    // Definition handlers for self-references
+    void handle(const slang::ast::ParameterSymbol& param);
+    void handle(const slang::ast::DefinitionSymbol& definition);
+
     // Default traversal
     template <typename T>
     void handle(const T& node) {

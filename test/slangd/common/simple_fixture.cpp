@@ -42,10 +42,11 @@ auto SimpleTestFixture::FindSymbol(
   // Detect ambiguous symbol names early
   size_t second_occurrence = code.find(name, offset + 1);
   if (second_occurrence != std::string::npos) {
-    throw std::runtime_error(fmt::format(
-        "FindSymbol: Ambiguous symbol '{}' found at multiple locations. "
-        "Use unique descriptive names in test code.",
-        name));
+    throw std::runtime_error(
+        fmt::format(
+            "FindSymbol: Ambiguous symbol '{}' found at multiple locations. "
+            "Use unique descriptive names in test code.",
+            name));
   }
 
   return slang::SourceLocation{buffer_id_, offset};

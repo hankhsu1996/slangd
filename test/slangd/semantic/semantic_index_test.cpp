@@ -187,4 +187,60 @@ TEST_CASE(
   REQUIRE(!result.has_value());
 }
 
+TEST_CASE(
+    "SemanticIndex module self-definition lookup works", "[semantic_index]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module empty_module;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Find the module name location
+  auto module_location = fixture.FindSymbol(code, "empty_module");
+  REQUIRE(module_location.valid());
+
+  // Look up definition at the module name - should return the module's own
+  // definition range
+  auto def_range = index->LookupDefinitionAt(module_location);
+  REQUIRE(def_range.has_value());
+
+  // The definition range should contain the module location (self-reference)
+  REQUIRE(def_range->contains(module_location));
+}
+
+TEST_CASE(
+    "SemanticIndex parameter self-definition lookup works",
+    "[semantic_index]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module param_test;
+      parameter int WIDTH = 8;
+      parameter logic ENABLE = 1'b1;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Find the parameter name locations
+  auto width_location = fixture.FindSymbol(code, "WIDTH");
+  auto enable_location = fixture.FindSymbol(code, "ENABLE");
+  REQUIRE(width_location.valid());
+  REQUIRE(enable_location.valid());
+
+  // Look up definition at parameter names - should return their own definition
+  // ranges
+  auto width_def = index->LookupDefinitionAt(width_location);
+  auto enable_def = index->LookupDefinitionAt(enable_location);
+
+  REQUIRE(width_def.has_value());
+  REQUIRE(enable_def.has_value());
+
+  // The definition ranges should contain the parameter locations
+  // (self-references)
+  REQUIRE(width_def->contains(width_location));
+  REQUIRE(enable_def->contains(enable_location));
+}
+
 }  // namespace slangd::semantic

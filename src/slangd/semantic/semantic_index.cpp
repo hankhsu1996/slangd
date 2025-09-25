@@ -245,20 +245,6 @@ void SemanticIndex::IndexVisitor::ProcessSymbol(
     index_->symbols_[unwrapped.location] = info;
   }
 
-  // Create self-reference entries for parameter definitions to support
-  // go-to-definition
-  if (unwrapped.kind == slang::ast::SymbolKind::Parameter && is_definition) {
-    ReferenceEntry ref_entry{
-        .source_range = definition_range,  // Same as target for self-reference
-        .target_loc = unwrapped.location,
-        .target_range = definition_range,
-        .symbol_kind = ConvertToLspKind(unwrapped),
-        .symbol_name = std::string(unwrapped.name)};
-    index_->references_.push_back(ref_entry);
-  }
-
-  // Definition ranges are now stored in references_ vector when references are
-  // collected
 }
 
 void SemanticIndex::IndexVisitor::handle(
@@ -348,6 +334,55 @@ void SemanticIndex::IndexVisitor::handle(
 
   // Continue traversal
   this->visitDefault(import_symbol);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::ParameterSymbol& param) {
+  // Create self-reference for parameter definition
+  if (param.location.valid()) {
+    if (const auto* syntax = param.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(param, *syntax);
+
+      // Create self-reference entry for go-to-definition
+      ReferenceEntry self_ref{
+          .source_range =
+              definition_range,  // Same as target for self-reference
+          .target_loc = param.location,
+          .target_range = definition_range,
+          .symbol_kind = ConvertToLspKind(param),
+          .symbol_name = std::string(param.name)};
+      index_->references_.push_back(self_ref);
+    }
+  }
+
+  // Continue traversal
+  this->visitDefault(param);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::DefinitionSymbol& definition) {
+  // Create self-reference for definition symbols (modules, interfaces, etc.)
+  // Only handle actual definitions, not instances
+  if (definition.location.valid()) {
+    if (const auto* syntax = definition.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(definition, *syntax);
+
+      // Create self-reference entry for go-to-definition
+      ReferenceEntry self_ref{
+          .source_range =
+              definition_range,  // Same as target for self-reference
+          .target_loc = definition.location,
+          .target_range = definition_range,
+          .symbol_kind = ConvertToLspKind(definition),
+          .symbol_name = std::string(definition.name)};
+      index_->references_.push_back(self_ref);
+    }
+  }
+
+  // Continue traversal
+  this->visitDefault(definition);
 }
 
 // Go-to-definition implementation
