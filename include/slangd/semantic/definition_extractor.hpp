@@ -17,17 +17,7 @@ class DefinitionExtractor {
       -> slang::SourceRange;
 
  private:
-  // Symbol-type specific extraction methods
-  static auto ExtractPackageRange(const slang::syntax::SyntaxNode& syntax)
-      -> slang::SourceRange;
-  static auto ExtractModuleRange(const slang::syntax::SyntaxNode& syntax)
-      -> slang::SourceRange;
-  static auto ExtractTypedefRange(const slang::syntax::SyntaxNode& syntax)
-      -> slang::SourceRange;
-  static auto ExtractVariableRange(const slang::syntax::SyntaxNode& syntax)
-      -> slang::SourceRange;
-  static auto ExtractParameterRange(const slang::syntax::SyntaxNode& syntax)
-      -> slang::SourceRange;
+  // Symbol-type specific extraction method for complex cases
   static auto ExtractStatementBlockRange(
       const slang::syntax::SyntaxNode& syntax) -> slang::SourceRange;
 };

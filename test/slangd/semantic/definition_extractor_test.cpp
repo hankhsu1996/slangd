@@ -44,12 +44,9 @@ TEST_CASE(
 
   REQUIRE(result.has_value());
 
-  // For our parameter `parameter int WIDTH = 8;`, the current implementation
-  // returns the full declaration range "WIDTH = 8" (9 chars) instead of just
-  // "WIDTH" (5 chars) This is acceptable for now since go-to-definition
-  // functionality works
+  // The parameter definition range should contain just the parameter name
+  // "WIDTH" (5 chars), not the full declaration "WIDTH = 8" (9 chars)
   auto range_length = result->end().offset() - result->start().offset();
 
-  // TODO(hankhsu): Improve DefinitionExtractor to return precise name range
-  CHECK(range_length == 9);  // Currently returns "WIDTH = 8"
+  CHECK(range_length == 5);  // Now correctly returns just "WIDTH"
 }

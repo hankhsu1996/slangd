@@ -1,6 +1,8 @@
 #include "slangd/semantic/definition_extractor.hpp"
 
 #include <slang/syntax/AllSyntax.h>
+#include <slang/syntax/SyntaxFacts.h>
+#include <spdlog/spdlog.h>
 
 namespace slangd::semantic {
 
@@ -14,28 +16,34 @@ auto DefinitionExtractor::ExtractDefinitionRange(
   switch (symbol.kind) {
     case SK::Package:
       if (syntax.kind == SyntaxKind::PackageDeclaration) {
-        return ExtractPackageRange(syntax);
+        return syntax.as<slang::syntax::ModuleDeclarationSyntax>()
+            .header->name.range();
       }
       break;
 
     case SK::Definition: {
       if (syntax.kind == SyntaxKind::ModuleDeclaration) {
-        return ExtractModuleRange(syntax);
+        return syntax.as<slang::syntax::ModuleDeclarationSyntax>()
+            .header->name.range();
       }
       break;
     }
 
     case SK::TypeAlias:
       if (syntax.kind == SyntaxKind::TypedefDeclaration) {
-        return ExtractTypedefRange(syntax);
+        return syntax.as<slang::syntax::TypedefDeclarationSyntax>()
+            .name.range();
       }
       break;
 
     case SK::Variable:
-      return ExtractVariableRange(syntax);
+      return syntax.sourceRange();  // Variables use full declaration range
 
     case SK::Parameter:
-      return ExtractParameterRange(syntax);
+      if (syntax.kind == SyntaxKind::Declarator) {
+        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
+      }
+      break;
 
     case SK::StatementBlock: {
       if (syntax.kind == SyntaxKind::SequentialBlockStatement ||
@@ -51,42 +59,6 @@ auto DefinitionExtractor::ExtractDefinitionRange(
   }
 
   // Default fallback: use the syntax node's source range
-  return syntax.sourceRange();
-}
-
-auto DefinitionExtractor::ExtractPackageRange(
-    const slang::syntax::SyntaxNode& syntax) -> slang::SourceRange {
-  const auto& pkg_syntax = syntax.as<slang::syntax::ModuleDeclarationSyntax>();
-  return pkg_syntax.header->name.range();
-}
-
-auto DefinitionExtractor::ExtractModuleRange(
-    const slang::syntax::SyntaxNode& syntax) -> slang::SourceRange {
-  const auto& mod_syntax = syntax.as<slang::syntax::ModuleDeclarationSyntax>();
-  return mod_syntax.header->name.range();
-}
-
-auto DefinitionExtractor::ExtractTypedefRange(
-    const slang::syntax::SyntaxNode& syntax) -> slang::SourceRange {
-  const auto& typedef_syntax =
-      syntax.as<slang::syntax::TypedefDeclarationSyntax>();
-  return typedef_syntax.name.range();
-}
-
-auto DefinitionExtractor::ExtractVariableRange(
-    const slang::syntax::SyntaxNode& syntax) -> slang::SourceRange {
-  // For variables, use the entire syntax range as name range
-  return syntax.sourceRange();
-}
-
-auto DefinitionExtractor::ExtractParameterRange(
-    const slang::syntax::SyntaxNode& syntax) -> slang::SourceRange {
-  // TODO(hankhsu): Extract precise parameter name range instead of full
-  // declaration Currently returns the full syntax range which includes "WIDTH =
-  // 8" instead of just "WIDTH" This is acceptable for now since
-  // go-to-definition functionality works Future enhancement: Parse parameter
-  // declaration syntax to extract just the name token
-
   return syntax.sourceRange();
 }
 
