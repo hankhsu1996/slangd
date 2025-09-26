@@ -418,6 +418,59 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::TypeAliasType& type_alias) {
+  // Handle unpacked dimensions from TypedefDeclarationSyntax
+  if (const auto* typedef_syntax = type_alias.getSyntax()) {
+    if (typedef_syntax->kind == slang::syntax::SyntaxKind::TypedefDeclaration) {
+      const auto& typedef_decl =
+          typedef_syntax->as<slang::syntax::TypedefDeclarationSyntax>();
+
+      // Process unpacked dimensions (e.g., typedef logic name[SIZE-1:0])
+      for (const auto& dim : typedef_decl.dimensions) {
+        if (dim != nullptr && dim->specifier != nullptr) {
+          if (dim->specifier->kind ==
+              slang::syntax::SyntaxKind::RangeDimensionSpecifier) {
+            const auto& range_spec =
+                dim->specifier
+                    ->as<slang::syntax::RangeDimensionSpecifierSyntax>();
+            if (range_spec.selector != nullptr) {
+              if (range_spec.selector->kind ==
+                      slang::syntax::SyntaxKind::SimpleRangeSelect ||
+                  range_spec.selector->kind ==
+                      slang::syntax::SyntaxKind::AscendingRangeSelect ||
+                  range_spec.selector->kind ==
+                      slang::syntax::SyntaxKind::DescendingRangeSelect) {
+                const auto& range_select =
+                    range_spec.selector->as<slang::syntax::RangeSelectSyntax>();
+                if (range_select.left != nullptr) {
+                  // Create ASTContext from the type alias's parent scope
+                  slang::ast::ASTContext context{
+                      *type_alias.getParentScope(),
+                      slang::ast::LookupLocation::max};
+
+                  // Bind and visit the left expression (e.g., ARRAY_SIZE-1)
+                  const auto& left_expr =
+                      slang::ast::Expression::bind(*range_select.left, context);
+                  left_expr.visit(*this);
+                }
+                if (range_select.right != nullptr) {
+                  // Create ASTContext from the type alias's parent scope
+                  slang::ast::ASTContext context{
+                      *type_alias.getParentScope(),
+                      slang::ast::LookupLocation::max};
+
+                  // Bind and visit the right expression (e.g., 0)
+                  const auto& right_expr = slang::ast::Expression::bind(
+                      *range_select.right, context);
+                  right_expr.visit(*this);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   // Create self-reference for typedef definitions
   if (type_alias.location.valid()) {
     if (const auto* syntax = type_alias.getSyntax()) {
@@ -436,7 +489,61 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
 
-  // Continue traversal
+  // Handle packed dimensions from target type syntax
+  if (const auto* target_syntax = type_alias.targetType.getTypeSyntax()) {
+    if (target_syntax->kind == slang::syntax::SyntaxKind::LogicType ||
+        target_syntax->kind == slang::syntax::SyntaxKind::RegType ||
+        target_syntax->kind == slang::syntax::SyntaxKind::BitType) {
+      const auto& integer_type =
+          target_syntax->as<slang::syntax::IntegerTypeSyntax>();
+      for (const auto& dim : integer_type.dimensions) {
+        if (dim != nullptr && dim->specifier != nullptr) {
+          if (dim->specifier->kind ==
+              slang::syntax::SyntaxKind::RangeDimensionSpecifier) {
+            const auto& range_spec =
+                dim->specifier
+                    ->as<slang::syntax::RangeDimensionSpecifierSyntax>();
+            if (range_spec.selector != nullptr) {
+              // Visit dimension bound expressions directly from syntax
+              if (range_spec.selector->kind ==
+                      slang::syntax::SyntaxKind::SimpleRangeSelect ||
+                  range_spec.selector->kind ==
+                      slang::syntax::SyntaxKind::AscendingRangeSelect ||
+                  range_spec.selector->kind ==
+                      slang::syntax::SyntaxKind::DescendingRangeSelect) {
+                const auto& range_select =
+                    range_spec.selector->as<slang::syntax::RangeSelectSyntax>();
+                if (range_select.left != nullptr) {
+                  // Create ASTContext from the type alias's parent scope
+                  slang::ast::ASTContext context{
+                      *type_alias.getParentScope(),
+                      slang::ast::LookupLocation::max};
+
+                  // Bind and visit the left expression (e.g., PACKED_WIDTH-1)
+                  const auto& left_expr =
+                      slang::ast::Expression::bind(*range_select.left, context);
+                  left_expr.visit(*this);
+                }
+                if (range_select.right != nullptr) {
+                  // Create ASTContext from the type alias's parent scope
+                  slang::ast::ASTContext context{
+                      *type_alias.getParentScope(),
+                      slang::ast::LookupLocation::max};
+
+                  // Bind and visit the right expression (e.g., 0)
+                  const auto& right_expr = slang::ast::Expression::bind(
+                      *range_select.right, context);
+                  right_expr.visit(*this);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Continue normal traversal
   this->visitDefault(type_alias);
 }
 

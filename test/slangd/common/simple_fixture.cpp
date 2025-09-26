@@ -1,5 +1,6 @@
 #include "simple_fixture.hpp"
 
+#include <regex>
 #include <stdexcept>
 
 #include <fmt/format.h>
@@ -24,6 +25,10 @@ auto SimpleTestFixture::CompileSource(const std::string& code)
   auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager_);
 
   slang::Bag options;
+  // Enable LSP mode to activate expression preservation for typedef parameter
+  // references
+  options.set<slang::ast::CompilationFlags>(
+      slang::ast::CompilationFlags::LanguageServerMode);
   compilation_ = std::make_unique<slang::ast::Compilation>(options);
   compilation_->addSyntaxTree(tree);
 
@@ -56,6 +61,106 @@ auto SimpleTestFixture::GetDefinitionRange(
     semantic::SemanticIndex* index, slang::SourceLocation loc)
     -> std::optional<slang::SourceRange> {
   return index->LookupDefinitionAt(loc);
+}
+
+auto SimpleTestFixture::FindAllOccurrences(
+    const std::string& code, const std::string& symbol_name)
+    -> std::vector<slang::SourceLocation> {
+  std::vector<slang::SourceLocation> occurrences;
+
+  // Create regex pattern for complete identifier match
+  // \b = word boundary, ensures we match complete identifiers only
+  std::string pattern = R"(\b)" + symbol_name + R"(\b)";
+  std::regex symbol_regex(pattern);
+
+  // Use sregex_iterator for elegant iteration over all matches
+  auto begin = std::sregex_iterator(code.begin(), code.end(), symbol_regex);
+  auto end = std::sregex_iterator();
+
+  for (auto it = begin; it != end; ++it) {
+    const std::smatch& match = *it;
+    occurrences.emplace_back(buffer_id_, match.position());
+  }
+
+  if (occurrences.empty()) {
+    throw std::runtime_error(
+        fmt::format(
+            "FindAllOccurrences: No occurrences of '{}' found", symbol_name));
+  }
+
+  return occurrences;
+}
+
+void SimpleTestFixture::AssertGoToDefinition(
+    semantic::SemanticIndex* index, const std::string& code,
+    const std::string& symbol_name, size_t reference_index,
+    size_t definition_index) {
+  auto occurrences = FindAllOccurrences(code, symbol_name);
+
+  if (reference_index >= occurrences.size()) {
+    throw std::runtime_error(
+        fmt::format(
+            "AssertGoToDefinition: reference_index {} out of range for symbol "
+            "'{}' (found {} occurrences)",
+            reference_index, symbol_name, occurrences.size()));
+  }
+
+  if (definition_index >= occurrences.size()) {
+    throw std::runtime_error(
+        fmt::format(
+            "AssertGoToDefinition: definition_index {} out of range for symbol "
+            "'{}' (found {} occurrences)",
+            definition_index, symbol_name, occurrences.size()));
+  }
+
+  auto reference_loc = occurrences[reference_index];
+  auto expected_def_loc = occurrences[definition_index];
+
+  // Perform go-to-definition lookup
+  auto actual_def_range = index->LookupDefinitionAt(reference_loc);
+
+  if (!actual_def_range.has_value()) {
+    throw std::runtime_error(
+        fmt::format(
+            "AssertGoToDefinition: LookupDefinitionAt failed for symbol '{}' "
+            "at reference_index {}",
+            symbol_name, reference_index));
+  }
+
+  if (!actual_def_range->contains(expected_def_loc)) {
+    throw std::runtime_error(
+        fmt::format(
+            "AssertGoToDefinition: definition range does not contain expected "
+            "location for symbol '{}'",
+            symbol_name));
+  }
+}
+
+void SimpleTestFixture::AssertReferenceExists(
+    semantic::SemanticIndex* index, const std::string& code,
+    const std::string& symbol_name, size_t reference_index) {
+  auto occurrences = FindAllOccurrences(code, symbol_name);
+
+  if (reference_index >= occurrences.size()) {
+    throw std::runtime_error(
+        fmt::format(
+            "AssertReferenceExists: reference_index {} out of range for symbol "
+            "'{}' (found {} occurrences)",
+            reference_index, symbol_name, occurrences.size()));
+  }
+
+  auto reference_loc = occurrences[reference_index];
+
+  // Check that the reference location produces a valid go-to-definition result
+  auto def_range = index->LookupDefinitionAt(reference_loc);
+
+  if (!def_range.has_value()) {
+    throw std::runtime_error(
+        fmt::format(
+            "AssertReferenceExists: reference not found for symbol '{}' at "
+            "reference_index {}",
+            symbol_name, reference_index));
+  }
 }
 
 }  // namespace slangd::test

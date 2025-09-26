@@ -282,7 +282,7 @@ TEST_CASE(
     module typecast_test;
       typedef logic [7:0] unique_cast_type;
       logic [7:0] result;
-      
+
       always_comb begin
         result = unique_cast_type'(8'h42);
       end
@@ -291,28 +291,65 @@ TEST_CASE(
 
   auto index = fixture.CompileSource(code);
 
-  // Check that references were captured for the cast expression
-  const auto& references = index->GetReferences();
+  fixture.AssertGoToDefinition(index.get(), code, "unique_cast_type", 1, 0);
+}
 
-  // Look for references to our typedef in cast expressions
-  bool found_cast_reference = false;
+// TODO: Variable declaration parameter references require VariableSymbol
+// handler Currently only typedef parameter references are implemented
+/*
+TEST_CASE(
+    "SemanticIndex parameter reference go-to-definition works",
+    "[semantic_index]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module param_ref_test;
+      localparam int BUS_WIDTH = 8;
+      logic [BUS_WIDTH-1:0] data_bus;
+    endmodule
+  )";
 
-  for (const auto& ref : references) {
-    if (ref.symbol_name == "unique_cast_type") {
-      // If this reference has a different source location than target, it's the
-      // cast reference
-      if (ref.source_range.start() != ref.target_loc) {
-        found_cast_reference = true;
+  auto index = fixture.CompileSource(code);
 
-        // Verify that this reference resolves back to the typedef definition
-        auto cast_def = index->LookupDefinitionAt(ref.source_range.start());
-        REQUIRE(cast_def.has_value());
-        break;
-      }
-    }
-  }
+  // The infrastructure for typedef parameter references is complete,
+  // but this test uses a variable declaration (not typedef).
+  // Variable dimension expressions need different handling.
 
-  REQUIRE(found_cast_reference);
+  // Test go-to-definition: parameter usage should resolve to parameter
+  // definition BUS_WIDTH occurs at:
+  //   [0] localparam definition
+  //   [1] usage in variable declaration
+  fixture.AssertGoToDefinition(index.get(), code, "BUS_WIDTH", 1, 0);
+}
+*/
+
+TEST_CASE(
+    "SemanticIndex packed typedef parameter reference works",
+    "[semantic_index]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module test_packed;
+      localparam int PACKED_WIDTH = 8;
+      typedef logic [PACKED_WIDTH-1:0] packed_bus_t;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(index.get(), code, "PACKED_WIDTH", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex unpacked typedef parameter go-to-definition",
+    "[semantic_index]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module test_unpacked_dims;
+      localparam int ARRAY_SIZE = 16;
+      typedef logic unpacked_array_t[ARRAY_SIZE-1:0];
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(index.get(), code, "ARRAY_SIZE", 1, 0);
 }
 
 }  // namespace slangd::semantic

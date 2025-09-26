@@ -24,6 +24,25 @@ class SimpleTestFixture {
       semantic::SemanticIndex* index, slang::SourceLocation loc)
       -> std::optional<slang::SourceRange>;
 
+  // High-level API for clean go-to-definition testing
+
+  // Find all occurrences of a symbol in source code (ordered by appearance)
+  auto FindAllOccurrences(
+      const std::string& code, const std::string& symbol_name)
+      -> std::vector<slang::SourceLocation>;
+
+  // Assert that go-to-definition works: reference at ref_index points to
+  // definition at def_index
+  void AssertGoToDefinition(
+      semantic::SemanticIndex* index, const std::string& code,
+      const std::string& symbol_name, size_t reference_index,
+      size_t definition_index);
+
+  // Assert that a reference was captured by the semantic index
+  void AssertReferenceExists(
+      semantic::SemanticIndex* index, const std::string& code,
+      const std::string& symbol_name, size_t reference_index);
+
  private:
   std::shared_ptr<slang::SourceManager> source_manager_;
   std::unique_ptr<slang::ast::Compilation> compilation_;

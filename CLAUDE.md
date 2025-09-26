@@ -53,13 +53,14 @@ SystemVerilog LSP server with modular design:
 - Do not use `env SPDLOG_LEVEL=debug bazel test //...`. Set the log level in each test file instead.
 - Generally, just do `bazel test //...` even if you are changing a single file, we don't have that mush tests, so it is fast.
 
-**AST Debugging:**
+**AST/CST Debugging:**
 
 ```bash
 # Use debug/ directory (gitignored) for AST investigation
 mkdir -p debug
 echo 'module test; function logic f(); endfunction; endmodule' > debug/test.sv
-slang debug/test.sv --ast-json debug/test.json
+slang debug/test.sv --ast-json debug/ast.json
+slang debug/test.sv --cst-json debug/cst.json
 ```
 
 - Keep test files minimal - JSON output is extremely large.
