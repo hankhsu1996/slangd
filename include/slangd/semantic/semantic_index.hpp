@@ -137,6 +137,9 @@ class SemanticIndex {
     // Reference tracking for NamedValueExpression
     void handle(const slang::ast::NamedValueExpression& expr);
 
+    // Reference tracking for ConversionExpression (type casts)
+    void handle(const slang::ast::ConversionExpression& expr);
+
     // Reference tracking for VariableSymbol (type references)
     void handle(const slang::ast::VariableSymbol& symbol);
 

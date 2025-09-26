@@ -4,6 +4,7 @@
 
 #include <slang/ast/Compilation.h>
 #include <slang/ast/Symbol.h>
+#include <slang/ast/expressions/ConversionExpression.h>
 #include <slang/ast/expressions/MiscExpressions.h>
 #include <slang/ast/symbols/BlockSymbols.h>
 #include <slang/ast/symbols/CompilationUnitSymbols.h>
@@ -261,6 +262,31 @@ void SemanticIndex::IndexVisitor::handle(
           .target_range = definition_range,
           .symbol_kind = ConvertToLspKind(expr.symbol),
           .symbol_name = std::string(expr.symbol.name)};
+      index_->references_.push_back(ref_entry);
+    }
+  }
+
+  // Continue traversal
+  this->visitDefault(expr);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::ConversionExpression& expr) {
+  // Handle type cast expressions like t_type'(value)
+  // The type reference should be tracked as a reference to the type symbol
+  const auto& target_type = *expr.type;
+  if (target_type.location.valid()) {
+    if (const auto* syntax = target_type.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(target_type, *syntax);
+
+      // Create reference entry for the type cast
+      ReferenceEntry ref_entry{
+          .source_range = expr.sourceRange,
+          .target_loc = target_type.location,
+          .target_range = definition_range,
+          .symbol_kind = ConvertToLspKind(target_type),
+          .symbol_name = std::string(target_type.name)};
       index_->references_.push_back(ref_entry);
     }
   }

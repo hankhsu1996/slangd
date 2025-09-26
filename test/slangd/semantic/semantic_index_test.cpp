@@ -275,4 +275,44 @@ TEST_CASE(
   REQUIRE(word_def->contains(word_location));
 }
 
+TEST_CASE(
+    "SemanticIndex type cast reference lookup works", "[semantic_index]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module typecast_test;
+      typedef logic [7:0] unique_cast_type;
+      logic [7:0] result;
+      
+      always_comb begin
+        result = unique_cast_type'(8'h42);
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Check that references were captured for the cast expression
+  const auto& references = index->GetReferences();
+
+  // Look for references to our typedef in cast expressions
+  bool found_cast_reference = false;
+
+  for (const auto& ref : references) {
+    if (ref.symbol_name == "unique_cast_type") {
+      // If this reference has a different source location than target, it's the
+      // cast reference
+      if (ref.source_range.start() != ref.target_loc) {
+        found_cast_reference = true;
+
+        // Verify that this reference resolves back to the typedef definition
+        auto cast_def = index->LookupDefinitionAt(ref.source_range.start());
+        REQUIRE(cast_def.has_value());
+        break;
+      }
+    }
+  }
+
+  REQUIRE(found_cast_reference);
+}
+
 }  // namespace slangd::semantic
