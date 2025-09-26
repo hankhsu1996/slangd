@@ -243,4 +243,36 @@ TEST_CASE(
   REQUIRE(enable_def->contains(enable_location));
 }
 
+TEST_CASE(
+    "SemanticIndex typedef self-definition lookup works", "[semantic_index]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module typedef_test;
+      typedef logic [7:0] byte_t;
+      typedef logic [15:0] word_t;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Find the typedef name locations
+  auto byte_location = fixture.FindSymbol(code, "byte_t");
+  auto word_location = fixture.FindSymbol(code, "word_t");
+  REQUIRE(byte_location.valid());
+  REQUIRE(word_location.valid());
+
+  // Look up definition at typedef names - should return their own definition
+  // ranges
+  auto byte_def = index->LookupDefinitionAt(byte_location);
+  auto word_def = index->LookupDefinitionAt(word_location);
+
+  REQUIRE(byte_def.has_value());
+  REQUIRE(word_def.has_value());
+
+  // The definition ranges should contain the typedef locations
+  // (self-references)
+  REQUIRE(byte_def->contains(byte_location));
+  REQUIRE(word_def->contains(word_location));
+}
+
 }  // namespace slangd::semantic

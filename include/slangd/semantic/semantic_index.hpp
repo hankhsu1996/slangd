@@ -146,6 +146,7 @@ class SemanticIndex {
     // Definition handlers for self-references
     void handle(const slang::ast::ParameterSymbol& param);
     void handle(const slang::ast::DefinitionSymbol& definition);
+    void handle(const slang::ast::TypeAliasType& type_alias);
 
     // Default traversal
     template <typename T>

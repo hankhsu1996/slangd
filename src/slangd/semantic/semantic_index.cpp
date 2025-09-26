@@ -390,6 +390,30 @@ void SemanticIndex::IndexVisitor::handle(
   this->visitDefault(definition);
 }
 
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::TypeAliasType& type_alias) {
+  // Create self-reference for typedef definitions
+  if (type_alias.location.valid()) {
+    if (const auto* syntax = type_alias.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(type_alias, *syntax);
+
+      // Create self-reference entry for go-to-definition
+      ReferenceEntry self_ref{
+          .source_range =
+              definition_range,  // Same as target for self-reference
+          .target_loc = type_alias.location,
+          .target_range = definition_range,
+          .symbol_kind = ConvertToLspKind(type_alias),
+          .symbol_name = std::string(type_alias.name)};
+      index_->references_.push_back(self_ref);
+    }
+  }
+
+  // Continue traversal
+  this->visitDefault(type_alias);
+}
+
 // Go-to-definition implementation
 
 auto SemanticIndex::LookupDefinitionAt(slang::SourceLocation loc) const
