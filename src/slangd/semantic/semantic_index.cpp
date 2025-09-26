@@ -244,7 +244,6 @@ void SemanticIndex::IndexVisitor::ProcessSymbol(
   if (should_store) {
     index_->symbols_[unwrapped.location] = info;
   }
-
 }
 
 void SemanticIndex::IndexVisitor::handle(

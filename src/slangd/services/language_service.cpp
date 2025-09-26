@@ -122,9 +122,32 @@ auto LanguageService::GetDefinitionsForPosition(
     logger_->error("No buffers found in source manager for: {}", uri);
     return {};
   }
-  auto buffer = buffers[0];
-  auto location =
-      ConvertLspPositionToSlangLocation(position, buffer, source_manager);
+
+  // Find the buffer that matches the requested URI
+  // Convert URI to path for comparison with buffer paths
+  auto target_path = CanonicalPath::FromUri(uri);
+  slang::BufferID target_buffer;
+  bool found_buffer = false;
+
+  for (const auto& buffer_id : buffers) {
+    auto buffer_path = source_manager.getFullPath(buffer_id);
+    if (buffer_path == target_path.String()) {
+      target_buffer = buffer_id;
+      found_buffer = true;
+      break;
+    }
+  }
+
+  if (!found_buffer) {
+    logger_->error(
+        "No buffer found matching URI: {} (path: {})", uri,
+        target_path.String());
+    // Fallback to first buffer (old behavior)
+    target_buffer = buffers[0];
+  }
+
+  auto location = ConvertLspPositionToSlangLocation(
+      position, target_buffer, source_manager);
 
   // Look up definition using semantic index
   auto def_range_opt = session->GetSemanticIndex().LookupDefinitionAt(location);
