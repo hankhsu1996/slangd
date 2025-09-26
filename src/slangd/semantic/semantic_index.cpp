@@ -306,30 +306,36 @@ void SemanticIndex::IndexVisitor::handle(
     const slang::ast::WildcardImportSymbol& import_symbol) {
   // Track reference: import statement -> package location
   const auto* package = import_symbol.getPackage();
-  if (package != nullptr && package->location.valid()) {
-    // The import symbol itself doesn't have a meaningful source range for the
-    // package name. We need to extract the package name reference from the
-    // syntax. For now, use the import symbol's location as the reference
-    // location.
-    // TODO(hankhsu): Extract precise package name location from import syntax
-    slang::SourceRange import_range{
-        import_symbol.location, import_symbol.location};
-
-    // Store import reference with embedded definition range
-    if (const auto* pkg_syntax = package->getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(*package, *pkg_syntax);
-
-      // Unified references_ storage for import references
-      ReferenceEntry ref_entry{
-          .source_range = import_range,
-          .target_loc = package->location,
-          .target_range = definition_range,
-          .symbol_kind = ConvertToLspKind(*package),
-          .symbol_name = std::string(package->name)};
-      index_->references_.push_back(ref_entry);
-    }
+  if (package == nullptr || !package->location.valid()) {
+    this->visitDefault(import_symbol);
+    return;
   }
+
+  const auto* import_syntax = import_symbol.getSyntax();
+  if (import_syntax == nullptr ||
+      import_syntax->kind != slang::syntax::SyntaxKind::PackageImportItem) {
+    this->visitDefault(import_symbol);
+    return;
+  }
+
+  const auto& import_item =
+      import_syntax->as<slang::syntax::PackageImportItemSyntax>();
+  const auto* pkg_syntax = package->getSyntax();
+  if (pkg_syntax == nullptr) {
+    this->visitDefault(import_symbol);
+    return;
+  }
+
+  // All conditions met - store the import reference
+  auto definition_range =
+      DefinitionExtractor::ExtractDefinitionRange(*package, *pkg_syntax);
+  ReferenceEntry ref_entry{
+      .source_range = import_item.package.range(),
+      .target_loc = package->location,
+      .target_range = definition_range,
+      .symbol_kind = ConvertToLspKind(*package),
+      .symbol_name = std::string(package->name)};
+  index_->references_.push_back(ref_entry);
 
   // Continue traversal
   this->visitDefault(import_symbol);

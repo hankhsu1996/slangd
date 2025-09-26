@@ -12,7 +12,10 @@ auto DefinitionExtractor::ExtractDefinitionRange(
   using SK = slang::ast::SymbolKind;
   using SyntaxKind = slang::syntax::SyntaxKind;
 
-  // Extract precise name range based on symbol and syntax type
+  // Extract precise name range based on symbol and syntax type.
+  // This function is safe to call with any symbol/syntax combination -
+  // it will extract the precise range when possible, or fall back to
+  // the full syntax range, ensuring a valid range is always returned.
   switch (symbol.kind) {
     case SK::Package:
       if (syntax.kind == SyntaxKind::PackageDeclaration) {
@@ -54,11 +57,14 @@ auto DefinitionExtractor::ExtractDefinitionRange(
     }
 
     default:
-      // For most symbol types, use the syntax source range
+      // For symbol types without specific handling, fall back to full syntax
+      // range
       break;
   }
 
-  // Default fallback: use the syntax node's source range
+  // Safe fallback: return the full syntax range when precise extraction isn't
+  // possible. This ensures every symbol gets a valid, clickable range for
+  // go-to-definition.
   return syntax.sourceRange();
 }
 
