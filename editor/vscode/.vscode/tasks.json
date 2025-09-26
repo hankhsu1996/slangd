@@ -14,7 +14,7 @@
     {
       "label": "copy-binary",
       "type": "shell",
-      "command": "mkdir -p ./bin && cp ../../bazel-bin/slangd ./bin/",
+      "command": "mkdir -p ./bin && cp -f ../../bazel-bin/slangd ./bin/",
       "options": {
         "cwd": "${workspaceFolder}"
       },
