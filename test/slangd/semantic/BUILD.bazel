@@ -12,24 +12,10 @@ cc_test(
         "test_fixtures.hpp",
     ],
     deps = [
-        "//test/slangd:file_fixture",
         "//:slangd_core",
+        "//test/slangd:file_fixture",
         "@catch2",
         "@fmt",
-        "@slang",
-    ],
-)
-
-cc_test(
-    name = "semantic_index_patterns_test",
-    timeout = "short",
-    srcs = [
-        "semantic_index_patterns_test.cpp",
-    ],
-    deps = [
-        "//test/slangd:simple_fixture",
-        "//:slangd_core",
-        "@catch2",
         "@slang",
     ],
 )
@@ -42,14 +28,13 @@ cc_test(
         "test_fixtures.hpp",
     ],
     deps = [
-        "//test/slangd:file_fixture",
         "//:slangd_core",
+        "//test/slangd:file_fixture",
         "@catch2",
         "@fmt",
         "@slang",
     ],
 )
-
 
 cc_test(
     name = "definition_test",
@@ -58,8 +43,8 @@ cc_test(
         "definition_test.cpp",
     ],
     deps = [
-        "//test/slangd:simple_fixture",
         "//:slangd_core",
+        "//test/slangd:simple_fixture",
         "@catch2",
         "@slang",
     ],
@@ -72,38 +57,9 @@ cc_test(
         "document_symbol_test.cpp",
     ],
     deps = [
-        "//test/slangd:simple_fixture",
         "//:slangd_core",
-        "@catch2",
-        "@slang",
-    ],
-)
-
-cc_test(
-    name = "generate_block_test",
-    timeout = "short",
-    srcs = [
-        "generate_block_test.cpp",
-    ],
-    deps = [
         "//test/slangd:simple_fixture",
-        "//:slangd_core",
         "@catch2",
-        "@slang",
-    ],
-)
-
-cc_test(
-    name = "type_handling_test",
-    timeout = "short",
-    srcs = [
-        "type_handling_test.cpp",
-    ],
-    deps = [
-        "//test/slangd:simple_fixture",
-        "//:slangd_core",
-        "@catch2",
-        "@fmt",
         "@slang",
     ],
 )
@@ -115,8 +71,8 @@ cc_test(
         "diagnostic_index_test.cpp",
     ],
     deps = [
-        "//test/slangd:simple_fixture",
         "//:slangd_core",
+        "//test/slangd:simple_fixture",
         "@catch2",
         "@slang",
     ],
@@ -129,8 +85,8 @@ cc_test(
         "symbol_utils_test.cpp",
     ],
     deps = [
-        "//test/slangd:simple_fixture",
         "//:slangd_core",
+        "//test/slangd:simple_fixture",
         "@catch2",
         "@slang",
     ],

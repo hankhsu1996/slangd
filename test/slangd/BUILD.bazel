@@ -2,6 +2,8 @@
 Build file for slangd tests - shared fixtures and utilities.
 """
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
 filegroup(
     name = "fixtures",
     srcs = glob(["fixtures/**"]),
