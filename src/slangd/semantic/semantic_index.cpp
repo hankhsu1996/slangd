@@ -589,6 +589,17 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::FieldSymbol& field) {
   this->visitDefault(field);
 }
 
+void SemanticIndex::IndexVisitor::handle(const slang::ast::NetSymbol& net) {
+  if (net.location.valid()) {
+    if (const auto* syntax = net.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(net, *syntax);
+      CreateReference(definition_range, net);
+    }
+  }
+  this->visitDefault(net);
+}
+
 // Go-to-definition implementation
 auto SemanticIndex::LookupDefinitionAt(slang::SourceLocation loc) const
     -> std::optional<slang::SourceRange> {

@@ -76,6 +76,13 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       // Struct/union field symbols
       return syntax.sourceRange();
 
+    case SK::Net:
+      // Net symbols - extract name from declarator syntax
+      if (syntax.kind == SyntaxKind::Declarator) {
+        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
+      }
+      return syntax.sourceRange();
+
     default:
       // For symbol types without specific handling, fall back to full syntax
       // range
