@@ -4,6 +4,7 @@
 
 #include <slang/ast/Compilation.h>
 #include <slang/ast/Symbol.h>
+#include <slang/ast/expressions/CallExpression.h>
 #include <slang/ast/expressions/ConversionExpression.h>
 #include <slang/ast/expressions/MiscExpressions.h>
 #include <slang/ast/symbols/BlockSymbols.h>
@@ -373,7 +374,34 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
 
+  // Handle compiler-generated function return variables
+  // When referencing the implicit return variable (e.g., my_func = value),
+  // redirect to the parent subroutine for better UX
+  if (expr.symbol.kind == slang::ast::SymbolKind::Variable) {
+    const auto& variable = expr.symbol.as<slang::ast::VariableSymbol>();
+    if (variable.flags.has(slang::ast::VariableFlags::CompilerGenerated)) {
+      const auto* parent_scope = variable.getParentScope();
+      if (parent_scope != nullptr) {
+        const auto& parent_symbol = parent_scope->asSymbol();
+        if (parent_symbol.kind == slang::ast::SymbolKind::Subroutine) {
+          target_symbol = &parent_symbol;
+        }
+      }
+    }
+  }
+
   CreateReference(expr.sourceRange, *target_symbol);
+  this->visitDefault(expr);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::CallExpression& expr) {
+  // Handle references to subroutines (functions/tasks) in calls
+  if (!expr.isSystemCall()) {
+    if (const auto* subroutine_symbol = std::get_if<0>(&expr.subroutine)) {
+      CreateReference(expr.sourceRange, **subroutine_symbol);
+    }
+  }
   this->visitDefault(expr);
 }
 
@@ -479,6 +507,18 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
   this->visitDefault(param);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::SubroutineSymbol& subroutine) {
+  if (subroutine.location.valid()) {
+    if (const auto* syntax = subroutine.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(subroutine, *syntax);
+      CreateReference(definition_range, subroutine);
+    }
+  }
+  this->visitDefault(subroutine);
 }
 
 void SemanticIndex::IndexVisitor::handle(

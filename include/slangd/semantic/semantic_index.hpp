@@ -137,6 +137,9 @@ class SemanticIndex {
     // Reference tracking for NamedValueExpression
     void handle(const slang::ast::NamedValueExpression& expr);
 
+    // Reference tracking for CallExpression (function/task calls)
+    void handle(const slang::ast::CallExpression& expr);
+
     // Reference tracking for ConversionExpression (type casts)
     void handle(const slang::ast::ConversionExpression& expr);
 
@@ -151,6 +154,7 @@ class SemanticIndex {
 
     // Definition handlers for self-references
     void handle(const slang::ast::ParameterSymbol& param);
+    void handle(const slang::ast::SubroutineSymbol& subroutine);
     void handle(const slang::ast::DefinitionSymbol& definition);
     void handle(const slang::ast::TypeAliasType& type_alias);
 

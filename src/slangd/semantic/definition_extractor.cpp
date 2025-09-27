@@ -56,6 +56,18 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       break;
     }
 
+    case SK::Subroutine:
+      if (syntax.kind == SyntaxKind::TaskDeclaration ||
+          syntax.kind == SyntaxKind::FunctionDeclaration) {
+        // Both task and function declarations use FunctionDeclarationSyntax
+        const auto& func_syntax =
+            syntax.as<slang::syntax::FunctionDeclarationSyntax>();
+        if (func_syntax.prototype && func_syntax.prototype->name) {
+          return func_syntax.prototype->name->sourceRange();
+        }
+      }
+      break;
+
     default:
       // For symbol types without specific handling, fall back to full syntax
       // range

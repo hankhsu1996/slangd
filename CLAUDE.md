@@ -21,6 +21,14 @@ This file provides guidance to Claude Code when working with code in this reposi
 - **Unit test files**: <300 lines total
 - **Individual test cases**: <50 lines each
 
+**Adding new language features:**
+
+When adding support for new SystemVerilog constructs:
+1. Add tests first (TDD approach)
+2. Check `docs/SEMANTIC_INDEXING.md` for implementation patterns
+3. Add definition extraction + handlers as needed
+4. Verify with both self-definition and reference tests
+
 **Pre-commit:**
 
 1. Format code, check build/test pass
