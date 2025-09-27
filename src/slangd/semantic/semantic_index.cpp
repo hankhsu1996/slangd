@@ -412,6 +412,13 @@ void SemanticIndex::IndexVisitor::handle(
 }
 
 void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::MemberAccessExpression& expr) {
+  // Create reference from member access to the field symbol
+  CreateReference(expr.sourceRange, expr.member);
+  this->visitDefault(expr);
+}
+
+void SemanticIndex::IndexVisitor::handle(
     const slang::ast::VariableSymbol& symbol) {
   const auto& declared_type = symbol.getDeclaredType();
   if (const auto& type_syntax = declared_type->getTypeSyntax()) {
@@ -557,6 +564,29 @@ void SemanticIndex::IndexVisitor::handle(
   }
 
   this->visitDefault(type_alias);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::EnumValueSymbol& enum_value) {
+  if (enum_value.location.valid()) {
+    if (const auto* syntax = enum_value.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(enum_value, *syntax);
+      CreateReference(definition_range, enum_value);
+    }
+  }
+  this->visitDefault(enum_value);
+}
+
+void SemanticIndex::IndexVisitor::handle(const slang::ast::FieldSymbol& field) {
+  if (field.location.valid()) {
+    if (const auto* syntax = field.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(field, *syntax);
+      CreateReference(definition_range, field);
+    }
+  }
+  this->visitDefault(field);
 }
 
 // Go-to-definition implementation

@@ -576,4 +576,315 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "increment_task", 2, 0);
 }
 
+// ===== ENUM SUPPORT TEST CASES =====
+
+TEST_CASE("SemanticIndex enum value self-definition works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    typedef enum logic [1:0] {
+      STATE_IDLE,
+      STATE_BUSY,
+      STATE_DONE
+    } state_t;
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test enum value self-definitions
+  fixture.AssertGoToDefinition(*index, code, "STATE_IDLE", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "STATE_BUSY", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "STATE_DONE", 0, 0);
+}
+
+TEST_CASE("SemanticIndex enum value reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    typedef enum logic [1:0] {
+      STATE_IDLE,
+      STATE_BUSY,
+      STATE_DONE
+    } state_t;
+
+    module enum_test;
+      state_t current = STATE_IDLE;
+      initial begin
+        current = STATE_BUSY;
+        if (current == STATE_DONE) begin
+          $display("Done");
+        end
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test enum value references go to their definitions
+  fixture.AssertGoToDefinition(*index, code, "STATE_IDLE", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "STATE_BUSY", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "STATE_DONE", 1, 0);
+}
+
+TEST_CASE("SemanticIndex package enum explicit import works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package enum_pkg;
+      typedef enum {
+        PKG_STATE_A,
+        PKG_STATE_B,
+        PKG_STATE_C
+      } pkg_state_t;
+    endpackage
+
+    module package_enum_test;
+      import enum_pkg::PKG_STATE_A;
+      import enum_pkg::PKG_STATE_B;
+      import enum_pkg::pkg_state_t;
+      
+      initial begin
+        pkg_state_t state = PKG_STATE_A;
+        state = PKG_STATE_B;
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test enum value definitions in package
+  fixture.AssertGoToDefinition(*index, code, "PKG_STATE_A", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "PKG_STATE_B", 0, 0);
+
+  // Test explicit import references
+  fixture.AssertGoToDefinition(*index, code, "PKG_STATE_A", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "PKG_STATE_B", 1, 0);
+
+  // Test enum value usage
+  fixture.AssertGoToDefinition(*index, code, "PKG_STATE_A", 2, 0);
+  fixture.AssertGoToDefinition(*index, code, "PKG_STATE_B", 2, 0);
+}
+
+TEST_CASE("SemanticIndex package enum wildcard import works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package wild_enum_pkg;
+      typedef enum {
+        WILD_A,
+        WILD_B,
+        WILD_C
+      } wild_enum_t;
+    endpackage
+
+    module wildcard_enum_test;
+      import wild_enum_pkg::*;
+      
+      initial begin
+        wild_enum_t state = WILD_A;
+        state = WILD_B;
+        if (state != WILD_C) begin
+          $display("Not WILD_C");
+        end
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test enum value definitions in package
+  fixture.AssertGoToDefinition(*index, code, "WILD_A", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "WILD_B", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "WILD_C", 0, 0);
+
+  // Test enum value usage through wildcard import
+  fixture.AssertGoToDefinition(*index, code, "WILD_A", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "WILD_B", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "WILD_C", 1, 0);
+}
+
+TEST_CASE("SemanticIndex anonymous enum works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module anon_enum_test;
+      enum {
+        ANON_FIRST,
+        ANON_SECOND,
+        ANON_THIRD
+      } anon_state;
+      
+      initial begin
+        anon_state = ANON_FIRST;
+        anon_state = ANON_SECOND;
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test anonymous enum value definitions and references
+  fixture.AssertGoToDefinition(*index, code, "ANON_FIRST", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "ANON_SECOND", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "ANON_FIRST", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "ANON_SECOND", 1, 0);
+}
+
+// ===== STRUCT/UNION SUPPORT TEST CASES =====
+
+TEST_CASE("SemanticIndex struct field member access works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    typedef struct {
+      logic [31:0] data;
+      logic        valid;
+      logic [7:0]  id;
+    } packet_t;
+
+    module struct_test;
+      packet_t pkt;
+      
+      initial begin
+        pkt.data = 32'h1234;
+        pkt.valid = 1'b1;
+        pkt.id = 8'hAB;
+        
+        if (pkt.valid && pkt.data != 0) begin
+          $display("ID: %h", pkt.id);
+        end
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test struct field member access references
+  fixture.AssertGoToDefinition(*index, code, "data", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "valid", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "id", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "valid", 2, 0);
+  fixture.AssertGoToDefinition(*index, code, "data", 2, 0);
+  fixture.AssertGoToDefinition(*index, code, "id", 2, 0);
+}
+
+TEST_CASE("SemanticIndex nested struct member access works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    typedef struct {
+      logic [31:0] data;
+      logic        valid;
+    } header_t;
+
+    typedef struct {
+      header_t header;
+      logic [7:0] payload[0:15];
+    } frame_t;
+
+    module nested_struct_test;
+      frame_t frame;
+      
+      initial begin
+        frame.header.data = 32'hABCD;
+        frame.header.valid = 1'b1;
+        frame.payload[0] = 8'h01;
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test nested struct member access
+  fixture.AssertGoToDefinition(*index, code, "header", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "data", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "header", 2, 0);
+  fixture.AssertGoToDefinition(*index, code, "valid", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "payload", 1, 0);
+}
+
+TEST_CASE("SemanticIndex union member access works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    typedef union {
+      logic [31:0] word;
+      logic [7:0]  bytes[4];
+      struct {
+        logic [15:0] low;
+        logic [15:0] high;
+      } halves;
+    } word_union_t;
+
+    module union_test;
+      word_union_t wu;
+      
+      initial begin
+        wu.word = 32'h12345678;
+        wu.bytes[0] = 8'hAB;
+        wu.halves.low = 16'hCDEF;
+        wu.halves.high = 16'h9876;
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test union member access
+  fixture.AssertGoToDefinition(*index, code, "word", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "bytes", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "halves", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "low", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "halves", 2, 0);
+  fixture.AssertGoToDefinition(*index, code, "high", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex package struct explicit import works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package struct_pkg;
+      typedef struct {
+        logic clk;
+        logic reset;
+        logic [7:0] data;
+      } control_t;
+    endpackage
+
+    module package_struct_test;
+      import struct_pkg::control_t;
+      
+      control_t ctrl;
+      
+      initial begin
+        ctrl.clk = 1'b0;
+        ctrl.reset = 1'b1;
+        ctrl.data = 8'h00;
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test struct field member access from package
+  fixture.AssertGoToDefinition(*index, code, "clk", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "reset", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "data", 1, 0);
+}
+
+TEST_CASE("SemanticIndex direct struct declaration works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module direct_struct_test;
+      struct {
+        int x;
+        int y;
+      } point;
+      
+      initial begin
+        point.x = 10;
+        point.y = 20;
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test direct struct field access (not typedef)
+  fixture.AssertGoToDefinition(*index, code, "x", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "y", 1, 0);
+}
+
 }  // namespace slangd::semantic

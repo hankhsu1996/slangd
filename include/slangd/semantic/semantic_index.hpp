@@ -143,6 +143,9 @@ class SemanticIndex {
     // Reference tracking for ConversionExpression (type casts)
     void handle(const slang::ast::ConversionExpression& expr);
 
+    // Reference tracking for MemberAccessExpression (struct/union field access)
+    void handle(const slang::ast::MemberAccessExpression& expr);
+
     // Reference tracking for VariableSymbol (type references)
     void handle(const slang::ast::VariableSymbol& symbol);
 
@@ -157,6 +160,8 @@ class SemanticIndex {
     void handle(const slang::ast::SubroutineSymbol& subroutine);
     void handle(const slang::ast::DefinitionSymbol& definition);
     void handle(const slang::ast::TypeAliasType& type_alias);
+    void handle(const slang::ast::EnumValueSymbol& enum_value);
+    void handle(const slang::ast::FieldSymbol& field);
 
     // Default traversal
     template <typename T>

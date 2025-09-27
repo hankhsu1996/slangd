@@ -68,6 +68,14 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       break;
 
+    case SK::EnumValue:
+      // Enum values have their name directly accessible through syntax
+      return syntax.sourceRange();
+
+    case SK::Field:
+      // Struct/union field symbols
+      return syntax.sourceRange();
+
     default:
       // For symbol types without specific handling, fall back to full syntax
       // range
