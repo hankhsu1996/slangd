@@ -534,4 +534,46 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "my_func", 2, 0);
 }
 
+TEST_CASE(
+    "SemanticIndex package function explicit import works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package math_pkg;
+      function int add_one(input int value);
+        return value + 1;
+      endfunction
+      
+      task increment_task(inout int value);
+        value = value + 1;
+      endtask
+    endpackage
+
+    module package_import_test;
+      import math_pkg::add_one;
+      import math_pkg::increment_task;
+      
+      initial begin
+        int result = add_one(5);
+        increment_task(result);
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test function definition in package
+  fixture.AssertGoToDefinition(*index, code, "add_one", 0, 0);
+
+  // Test task definition in package
+  fixture.AssertGoToDefinition(*index, code, "increment_task", 0, 0);
+
+  // Test explicit import references
+  fixture.AssertGoToDefinition(*index, code, "add_one", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "increment_task", 1, 0);
+
+  // Test function/task calls
+  fixture.AssertGoToDefinition(*index, code, "add_one", 2, 0);
+  fixture.AssertGoToDefinition(*index, code, "increment_task", 2, 0);
+}
+
 }  // namespace slangd::semantic
