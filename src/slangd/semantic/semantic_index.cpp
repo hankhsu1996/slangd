@@ -247,90 +247,177 @@ void SemanticIndex::IndexVisitor::ProcessSymbol(
   }
 }
 
-void SemanticIndex::IndexVisitor::handle(
-    const slang::ast::NamedValueExpression& expr) {
-  // Store reference with embedded definition information
-  if (expr.symbol.location.valid()) {
-    if (const auto* syntax = expr.symbol.getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(expr.symbol, *syntax);
+void SemanticIndex::IndexVisitor::ProcessDimensionsInScope(
+    const slang::ast::Scope& scope,
+    const slang::syntax::SyntaxList<slang::syntax::VariableDimensionSyntax>&
+        dimensions) {
+  for (const auto& dim : dimensions) {
+    if (dim == nullptr || dim->specifier == nullptr) {
+      continue;
+    }
 
-      // Unified references_ storage with embedded definition range
-      ReferenceEntry ref_entry{
-          .source_range = expr.sourceRange,
-          .target_loc = expr.symbol.location,
+    const auto& spec = *dim->specifier;
+    slang::ast::ASTContext context{scope, slang::ast::LookupLocation::max};
+
+    switch (spec.kind) {
+      case slang::syntax::SyntaxKind::RangeDimensionSpecifier: {
+        const auto& range_spec =
+            spec.as<slang::syntax::RangeDimensionSpecifierSyntax>();
+        if (range_spec.selector == nullptr) {
+          break;
+        }
+
+        const auto& selector = *range_spec.selector;
+        switch (selector.kind) {
+          case slang::syntax::SyntaxKind::BitSelect: {
+            const auto& bit_select =
+                selector.as<slang::syntax::BitSelectSyntax>();
+            if (bit_select.expr != nullptr) {
+              const auto& expr =
+                  slang::ast::Expression::bind(*bit_select.expr, context);
+              expr.visit(*this);
+            }
+            break;
+          }
+          case slang::syntax::SyntaxKind::SimpleRangeSelect:
+          case slang::syntax::SyntaxKind::AscendingRangeSelect:
+          case slang::syntax::SyntaxKind::DescendingRangeSelect: {
+            const auto& range_select =
+                selector.as<slang::syntax::RangeSelectSyntax>();
+            if (range_select.left != nullptr) {
+              const auto& left_expr =
+                  slang::ast::Expression::bind(*range_select.left, context);
+              left_expr.visit(*this);
+            }
+            if (range_select.right != nullptr) {
+              const auto& right_expr =
+                  slang::ast::Expression::bind(*range_select.right, context);
+              right_expr.visit(*this);
+            }
+            break;
+          }
+          default:
+            // Other selector kinds don't contain parameter expressions
+            break;
+        }
+        break;
+      }
+      case slang::syntax::SyntaxKind::WildcardDimensionSpecifier:
+        // Wildcard dimensions (e.g., [*]) don't contain expressions to visit
+        break;
+      case slang::syntax::SyntaxKind::QueueDimensionSpecifier: {
+        const auto& queue_spec =
+            spec.as<slang::syntax::QueueDimensionSpecifierSyntax>();
+        if (queue_spec.maxSizeClause != nullptr &&
+            queue_spec.maxSizeClause->expr != nullptr) {
+          const auto& max_size_expr = slang::ast::Expression::bind(
+              *queue_spec.maxSizeClause->expr, context);
+          max_size_expr.visit(*this);
+        }
+        break;
+      }
+      default:
+        // Other dimension specifier kinds don't contain parameter expressions
+        break;
+    }
+  }
+}
+
+void SemanticIndex::IndexVisitor::ProcessVariableDimensions(
+    const slang::ast::VariableSymbol& symbol,
+    const slang::syntax::SyntaxList<slang::syntax::VariableDimensionSyntax>&
+        dimensions) {
+  ProcessDimensionsInScope(*symbol.getParentScope(), dimensions);
+}
+
+void SemanticIndex::IndexVisitor::ProcessIntegerTypeDimensions(
+    const slang::ast::Scope& scope,
+    const slang::syntax::DataTypeSyntax& type_syntax) {
+  if (type_syntax.kind == slang::syntax::SyntaxKind::LogicType ||
+      type_syntax.kind == slang::syntax::SyntaxKind::RegType ||
+      type_syntax.kind == slang::syntax::SyntaxKind::BitType) {
+    const auto& integer_type =
+        type_syntax.as<slang::syntax::IntegerTypeSyntax>();
+    ProcessDimensionsInScope(scope, integer_type.dimensions);
+  }
+}
+
+void SemanticIndex::IndexVisitor::CreateSelfReference(
+    const slang::ast::Symbol& symbol) {
+  if (symbol.location.valid()) {
+    if (const auto* syntax = symbol.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(symbol, *syntax);
+
+      ReferenceEntry self_ref{
+          .source_range =
+              definition_range,  // Same as target for self-reference
+          .target_loc = symbol.location,
           .target_range = definition_range,
-          .symbol_kind = ConvertToLspKind(expr.symbol),
-          .symbol_name = std::string(expr.symbol.name)};
+          .symbol_kind = ConvertToLspKind(symbol),
+          .symbol_name = std::string(symbol.name)};
+      index_->references_.push_back(self_ref);
+    }
+  }
+}
+
+void SemanticIndex::IndexVisitor::CreateCrossReference(
+    slang::SourceRange source_range, const slang::ast::Symbol& target_symbol) {
+  if (target_symbol.location.valid()) {
+    if (const auto* syntax = target_symbol.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(target_symbol, *syntax);
+
+      ReferenceEntry ref_entry{
+          .source_range = source_range,
+          .target_loc = target_symbol.location,
+          .target_range = definition_range,
+          .symbol_kind = ConvertToLspKind(target_symbol),
+          .symbol_name = std::string(target_symbol.name)};
       index_->references_.push_back(ref_entry);
     }
   }
+}
 
-  // Continue traversal
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::NamedValueExpression& expr) {
+  CreateCrossReference(expr.sourceRange, expr.symbol);
   this->visitDefault(expr);
 }
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::ConversionExpression& expr) {
-  // Handle type cast expressions like t_type'(value)
-  // The type reference should be tracked as a reference to the type symbol
-  const auto& target_type = *expr.type;
-  if (target_type.location.valid()) {
-    if (const auto* syntax = target_type.getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(target_type, *syntax);
-
-      // Create reference entry for the type cast
-      ReferenceEntry ref_entry{
-          .source_range = expr.sourceRange,
-          .target_loc = target_type.location,
-          .target_range = definition_range,
-          .symbol_kind = ConvertToLspKind(target_type),
-          .symbol_name = std::string(target_type.name)};
-      index_->references_.push_back(ref_entry);
-    }
-  }
-
-  // Continue traversal
+  CreateCrossReference(expr.sourceRange, *expr.type);
   this->visitDefault(expr);
 }
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::VariableSymbol& symbol) {
-  // Track type references in variable declarations (e.g., data_t my_data;)
   const auto& declared_type = symbol.getDeclaredType();
   if (const auto& type_syntax = declared_type->getTypeSyntax()) {
     if (type_syntax->kind == slang::syntax::SyntaxKind::NamedType) {
       const auto& named_type =
           type_syntax->as<slang::syntax::NamedTypeSyntax>();
       const auto& resolved_type = symbol.getType();
+      CreateCrossReference(named_type.name->sourceRange(), resolved_type);
+    }
 
-      if (resolved_type.location.valid()) {
-        // Store type reference with embedded definition range
-        if (const auto* syntax = resolved_type.getSyntax()) {
-          auto definition_range = DefinitionExtractor::ExtractDefinitionRange(
-              resolved_type, *syntax);
+    ProcessIntegerTypeDimensions(*symbol.getParentScope(), *type_syntax);
+  }
 
-          // Unified references_ storage for type references
-          ReferenceEntry ref_entry{
-              .source_range = named_type.name->sourceRange(),
-              .target_loc = resolved_type.location,
-              .target_range = definition_range,
-              .symbol_kind = ConvertToLspKind(resolved_type),
-              .symbol_name = std::string(resolved_type.name)};
-          index_->references_.push_back(ref_entry);
-        }
-      }
+  if (const auto* decl_syntax = symbol.getSyntax()) {
+    if (decl_syntax->kind == slang::syntax::SyntaxKind::Declarator) {
+      const auto& declarator =
+          decl_syntax->as<slang::syntax::DeclaratorSyntax>();
+      ProcessVariableDimensions(symbol, declarator.dimensions);
     }
   }
 
-  // Continue traversal
   this->visitDefault(symbol);
 }
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::WildcardImportSymbol& import_symbol) {
-  // Track reference: import statement -> package location
   const auto* package = import_symbol.getPackage();
   if (package == nullptr || !package->location.valid()) {
     this->visitDefault(import_symbol);
@@ -352,203 +439,43 @@ void SemanticIndex::IndexVisitor::handle(
     return;
   }
 
-  // All conditions met - store the import reference
-  auto definition_range =
-      DefinitionExtractor::ExtractDefinitionRange(*package, *pkg_syntax);
-  ReferenceEntry ref_entry{
-      .source_range = import_item.package.range(),
-      .target_loc = package->location,
-      .target_range = definition_range,
-      .symbol_kind = ConvertToLspKind(*package),
-      .symbol_name = std::string(package->name)};
-  index_->references_.push_back(ref_entry);
-
-  // Continue traversal
+  CreateCrossReference(import_item.package.range(), *package);
   this->visitDefault(import_symbol);
 }
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::ParameterSymbol& param) {
-  // Create self-reference for parameter definition
-  if (param.location.valid()) {
-    if (const auto* syntax = param.getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(param, *syntax);
-
-      // Create self-reference entry for go-to-definition
-      ReferenceEntry self_ref{
-          .source_range =
-              definition_range,  // Same as target for self-reference
-          .target_loc = param.location,
-          .target_range = definition_range,
-          .symbol_kind = ConvertToLspKind(param),
-          .symbol_name = std::string(param.name)};
-      index_->references_.push_back(self_ref);
-    }
-  }
-
-  // Continue traversal
+  CreateSelfReference(param);
   this->visitDefault(param);
 }
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::DefinitionSymbol& definition) {
-  // Create self-reference for definition symbols (modules, interfaces, etc.)
-  // Only handle actual definitions, not instances
-  if (definition.location.valid()) {
-    if (const auto* syntax = definition.getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(definition, *syntax);
-
-      // Create self-reference entry for go-to-definition
-      ReferenceEntry self_ref{
-          .source_range =
-              definition_range,  // Same as target for self-reference
-          .target_loc = definition.location,
-          .target_range = definition_range,
-          .symbol_kind = ConvertToLspKind(definition),
-          .symbol_name = std::string(definition.name)};
-      index_->references_.push_back(self_ref);
-    }
-  }
-
-  // Continue traversal
+  CreateSelfReference(definition);
   this->visitDefault(definition);
 }
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::TypeAliasType& type_alias) {
-  // Handle unpacked dimensions from TypedefDeclarationSyntax
   if (const auto* typedef_syntax = type_alias.getSyntax()) {
     if (typedef_syntax->kind == slang::syntax::SyntaxKind::TypedefDeclaration) {
       const auto& typedef_decl =
           typedef_syntax->as<slang::syntax::TypedefDeclarationSyntax>();
-
-      // Process unpacked dimensions (e.g., typedef logic name[SIZE-1:0])
-      for (const auto& dim : typedef_decl.dimensions) {
-        if (dim != nullptr && dim->specifier != nullptr) {
-          if (dim->specifier->kind ==
-              slang::syntax::SyntaxKind::RangeDimensionSpecifier) {
-            const auto& range_spec =
-                dim->specifier
-                    ->as<slang::syntax::RangeDimensionSpecifierSyntax>();
-            if (range_spec.selector != nullptr) {
-              if (range_spec.selector->kind ==
-                      slang::syntax::SyntaxKind::SimpleRangeSelect ||
-                  range_spec.selector->kind ==
-                      slang::syntax::SyntaxKind::AscendingRangeSelect ||
-                  range_spec.selector->kind ==
-                      slang::syntax::SyntaxKind::DescendingRangeSelect) {
-                const auto& range_select =
-                    range_spec.selector->as<slang::syntax::RangeSelectSyntax>();
-                if (range_select.left != nullptr) {
-                  // Create ASTContext from the type alias's parent scope
-                  slang::ast::ASTContext context{
-                      *type_alias.getParentScope(),
-                      slang::ast::LookupLocation::max};
-
-                  // Bind and visit the left expression (e.g., ARRAY_SIZE-1)
-                  const auto& left_expr =
-                      slang::ast::Expression::bind(*range_select.left, context);
-                  left_expr.visit(*this);
-                }
-                if (range_select.right != nullptr) {
-                  // Create ASTContext from the type alias's parent scope
-                  slang::ast::ASTContext context{
-                      *type_alias.getParentScope(),
-                      slang::ast::LookupLocation::max};
-
-                  // Bind and visit the right expression (e.g., 0)
-                  const auto& right_expr = slang::ast::Expression::bind(
-                      *range_select.right, context);
-                  right_expr.visit(*this);
-                }
-              }
-            }
-          }
-        }
-      }
+      ProcessDimensionsInScope(
+          *type_alias.getParentScope(), typedef_decl.dimensions);
     }
   }
 
-  // Create self-reference for typedef definitions
-  if (type_alias.location.valid()) {
-    if (const auto* syntax = type_alias.getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(type_alias, *syntax);
+  CreateSelfReference(type_alias);
 
-      // Create self-reference entry for go-to-definition
-      ReferenceEntry self_ref{
-          .source_range =
-              definition_range,  // Same as target for self-reference
-          .target_loc = type_alias.location,
-          .target_range = definition_range,
-          .symbol_kind = ConvertToLspKind(type_alias),
-          .symbol_name = std::string(type_alias.name)};
-      index_->references_.push_back(self_ref);
-    }
-  }
-
-  // Handle packed dimensions from target type syntax
   if (const auto* target_syntax = type_alias.targetType.getTypeSyntax()) {
-    if (target_syntax->kind == slang::syntax::SyntaxKind::LogicType ||
-        target_syntax->kind == slang::syntax::SyntaxKind::RegType ||
-        target_syntax->kind == slang::syntax::SyntaxKind::BitType) {
-      const auto& integer_type =
-          target_syntax->as<slang::syntax::IntegerTypeSyntax>();
-      for (const auto& dim : integer_type.dimensions) {
-        if (dim != nullptr && dim->specifier != nullptr) {
-          if (dim->specifier->kind ==
-              slang::syntax::SyntaxKind::RangeDimensionSpecifier) {
-            const auto& range_spec =
-                dim->specifier
-                    ->as<slang::syntax::RangeDimensionSpecifierSyntax>();
-            if (range_spec.selector != nullptr) {
-              // Visit dimension bound expressions directly from syntax
-              if (range_spec.selector->kind ==
-                      slang::syntax::SyntaxKind::SimpleRangeSelect ||
-                  range_spec.selector->kind ==
-                      slang::syntax::SyntaxKind::AscendingRangeSelect ||
-                  range_spec.selector->kind ==
-                      slang::syntax::SyntaxKind::DescendingRangeSelect) {
-                const auto& range_select =
-                    range_spec.selector->as<slang::syntax::RangeSelectSyntax>();
-                if (range_select.left != nullptr) {
-                  // Create ASTContext from the type alias's parent scope
-                  slang::ast::ASTContext context{
-                      *type_alias.getParentScope(),
-                      slang::ast::LookupLocation::max};
-
-                  // Bind and visit the left expression (e.g., PACKED_WIDTH-1)
-                  const auto& left_expr =
-                      slang::ast::Expression::bind(*range_select.left, context);
-                  left_expr.visit(*this);
-                }
-                if (range_select.right != nullptr) {
-                  // Create ASTContext from the type alias's parent scope
-                  slang::ast::ASTContext context{
-                      *type_alias.getParentScope(),
-                      slang::ast::LookupLocation::max};
-
-                  // Bind and visit the right expression (e.g., 0)
-                  const auto& right_expr = slang::ast::Expression::bind(
-                      *range_select.right, context);
-                  right_expr.visit(*this);
-                }
-              }
-            }
-          }
-        }
-      }
-    }
+    ProcessIntegerTypeDimensions(*type_alias.getParentScope(), *target_syntax);
   }
 
-  // Continue normal traversal
   this->visitDefault(type_alias);
 }
 
 // Go-to-definition implementation
-
 auto SemanticIndex::LookupDefinitionAt(slang::SourceLocation loc) const
     -> std::optional<slang::SourceRange> {
   // Direct lookup using unified reference storage

@@ -163,6 +163,31 @@ class SemanticIndex {
     std::string current_file_uri_;
 
     void ProcessSymbol(const slang::ast::Symbol& symbol);
+
+    // Helper to process all dimension specifier types comprehensively
+    void ProcessVariableDimensions(
+        const slang::ast::VariableSymbol& symbol,
+        const slang::syntax::SyntaxList<slang::syntax::VariableDimensionSyntax>&
+            dimensions);
+
+    // Generic dimension processor for any scope context
+    void ProcessDimensionsInScope(
+        const slang::ast::Scope& scope,
+        const slang::syntax::SyntaxList<slang::syntax::VariableDimensionSyntax>&
+            dimensions);
+
+    // Helper to process integer type packed dimensions
+    void ProcessIntegerTypeDimensions(
+        const slang::ast::Scope& scope,
+        const slang::syntax::DataTypeSyntax& type_syntax);
+
+    // Helper to create self-reference entries
+    void CreateSelfReference(const slang::ast::Symbol& symbol);
+
+    // Helper to create cross-reference entries (reference -> target)
+    void CreateCrossReference(
+        slang::SourceRange source_range,
+        const slang::ast::Symbol& target_symbol);
   };
 };
 

@@ -85,12 +85,9 @@ TEST_CASE("SemanticIndex type cast reference lookup works", "[definition]") {
   fixture.AssertGoToDefinition(*index, code, "unique_cast_type", 1, 0);
 }
 
-// TODO: Variable declaration parameter references require VariableSymbol
-// handler Currently only typedef parameter references are implemented
-/*
 TEST_CASE(
-    "SemanticIndex parameter reference go-to-definition works",
-    "[semantic_index]") {
+    "SemanticIndex variable declaration parameter reference works",
+    "[definition]") {
   SimpleTestFixture fixture;
   std::string code = R"(
     module param_ref_test;
@@ -100,18 +97,158 @@ TEST_CASE(
   )";
 
   auto index = fixture.CompileSource(code);
-
-  // The infrastructure for typedef parameter references is complete,
-  // but this test uses a variable declaration (not typedef).
-  // Variable dimension expressions need different handling.
-
-  // Test go-to-definition: parameter usage should resolve to parameter
-  // definition BUS_WIDTH occurs at:
-  //   [0] localparam definition
-  //   [1] usage in variable declaration
   fixture.AssertGoToDefinition(*index, code, "BUS_WIDTH", 1, 0);
 }
-*/
+
+TEST_CASE(
+    "SemanticIndex unpacked variable dimension parameter reference works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module unpacked_test;
+      localparam int ARRAY_SIZE = 16;
+      logic data_array[ARRAY_SIZE-1:0];
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "ARRAY_SIZE", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex bit select dimension parameter reference works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module bit_select_test;
+      localparam int INDEX_WIDTH = 4;
+      logic bit_array[INDEX_WIDTH];
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "INDEX_WIDTH", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex ascending range dimension parameter reference works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module ascending_test;
+      localparam int WIDTH = 8;
+      logic [0:WIDTH-1] ascending_bus;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex queue dimension parameter reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module queue_test;
+      localparam int MAX_QUEUE_SIZE = 16;
+      int bounded_queue[$:MAX_QUEUE_SIZE];
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "MAX_QUEUE_SIZE", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex typedef packed dimensions comprehensive test",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module typedef_packed_comprehensive;
+      localparam int WIDTH1 = 8;
+      localparam int WIDTH2 = 4;
+
+      // Simple range in packed typedef
+      typedef logic [WIDTH1-1:0] simple_packed_t;
+
+      // Ascending range in packed typedef
+      typedef logic [0:WIDTH2-1] ascending_packed_t;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  // Test both width parameters are found in their respective typedef usages
+  fixture.AssertGoToDefinition(*index, code, "WIDTH1", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "WIDTH2", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex typedef unpacked dimensions comprehensive test",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module typedef_unpacked_comprehensive;
+      localparam int ARRAY_SIZE = 16;
+      localparam int DEPTH = 32;
+
+      // Range select in unpacked typedef
+      typedef logic unpacked_range_t[ARRAY_SIZE-1:0];
+
+      // Bit select in unpacked typedef
+      typedef int unpacked_bit_t[DEPTH];
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "ARRAY_SIZE", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "DEPTH", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex variable declaration comprehensive dimension test",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module var_decl_comprehensive;
+      localparam int PACKED_W = 8;
+      localparam int UNPACKED_W = 16;
+      localparam int QUEUE_MAX = 32;
+
+      // Packed dimensions on variable
+      logic [PACKED_W-1:0] packed_var;
+
+      // Unpacked dimensions on variable
+      logic unpacked_var[UNPACKED_W-1:0];
+
+      // Queue dimension on variable
+      int queue_var[$:QUEUE_MAX];
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "PACKED_W", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "UNPACKED_W", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "QUEUE_MAX", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex multi-dimensional parameter references work",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module multi_dim_test;
+      localparam int DIM1 = 4;
+      localparam int DIM2 = 8;
+
+      // Multi-dimensional array with parameters
+      logic multi_array[DIM1][DIM2-1:0];
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "DIM1", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "DIM2", 1, 0);
+}
 
 TEST_CASE(
     "SemanticIndex packed typedef parameter reference works", "[definition]") {
