@@ -344,6 +344,53 @@ void SemanticIndex::IndexVisitor::ProcessIntegerTypeDimensions(
   }
 }
 
+void SemanticIndex::IndexVisitor::TraverseCompoundTypeMembers(
+    const slang::ast::Type& type) {
+  // Manual semantic traversal for compound types following Slang's design
+  // pattern
+  switch (type.kind) {
+    case slang::ast::SymbolKind::EnumType: {
+      const auto& enum_type = type.as<slang::ast::EnumType>();
+      for (const auto& enum_value : enum_type.values()) {
+        this->visit(enum_value);
+      }
+      break;
+    }
+    case slang::ast::SymbolKind::PackedStructType: {
+      const auto& struct_type = type.as<slang::ast::PackedStructType>();
+      for (const auto& field :
+           struct_type.membersOfType<slang::ast::FieldSymbol>()) {
+        this->visit(field);
+      }
+      break;
+    }
+    case slang::ast::SymbolKind::UnpackedStructType: {
+      const auto& struct_type = type.as<slang::ast::UnpackedStructType>();
+      for (const auto& field : struct_type.fields) {
+        this->visit(*field);
+      }
+      break;
+    }
+    case slang::ast::SymbolKind::PackedUnionType: {
+      const auto& union_type = type.as<slang::ast::PackedUnionType>();
+      for (const auto& field :
+           union_type.membersOfType<slang::ast::FieldSymbol>()) {
+        this->visit(field);
+      }
+      break;
+    }
+    case slang::ast::SymbolKind::UnpackedUnionType: {
+      const auto& union_type = type.as<slang::ast::UnpackedUnionType>();
+      for (const auto& field : union_type.fields) {
+        this->visit(*field);
+      }
+      break;
+    }
+    default:
+      break;
+  }
+}
+
 void SemanticIndex::IndexVisitor::CreateReference(
     slang::SourceRange source_range, const slang::ast::Symbol& target_symbol) {
   if (target_symbol.location.valid()) {
@@ -440,6 +487,9 @@ void SemanticIndex::IndexVisitor::handle(
       ProcessVariableDimensions(symbol, declarator.dimensions);
     }
   }
+
+  // Traverse compound type members for LSP symbol indexing
+  TraverseCompoundTypeMembers(symbol.getType());
 
   this->visitDefault(symbol);
 }
@@ -563,6 +613,9 @@ void SemanticIndex::IndexVisitor::handle(
   if (const auto* target_syntax = type_alias.targetType.getTypeSyntax()) {
     ProcessIntegerTypeDimensions(*type_alias.getParentScope(), *target_syntax);
   }
+
+  // Traverse compound type members for LSP symbol indexing
+  TraverseCompoundTypeMembers(type_alias.targetType.getType());
 
   this->visitDefault(type_alias);
 }

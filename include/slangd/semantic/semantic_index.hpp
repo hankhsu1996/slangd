@@ -177,6 +177,7 @@ class SemanticIndex {
     std::string current_file_uri_;
 
     void ProcessSymbol(const slang::ast::Symbol& symbol);
+    void TraverseCompoundTypeMembers(const slang::ast::Type& type);
 
     // Helper to process all dimension specifier types comprehensively
     void ProcessVariableDimensions(

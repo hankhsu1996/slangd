@@ -69,11 +69,17 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       break;
 
     case SK::EnumValue:
-      // Enum values have their name directly accessible through syntax
+      // Enum values use declarator syntax with name field
+      if (syntax.kind == SyntaxKind::Declarator) {
+        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
+      }
       return syntax.sourceRange();
 
     case SK::Field:
-      // Struct/union field symbols
+      // Struct/union field symbols use declarator syntax with name field
+      if (syntax.kind == SyntaxKind::Declarator) {
+        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
+      }
       return syntax.sourceRange();
 
     case SK::Net:
