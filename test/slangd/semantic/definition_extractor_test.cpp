@@ -39,8 +39,7 @@ TEST_CASE(
   REQUIRE(param_location.valid());
 
   // Lookup the definition range
-  auto result =
-      SimpleTestFixture::GetDefinitionRange(index.get(), param_location);
+  auto result = SimpleTestFixture::GetDefinitionRange(*index, param_location);
 
   REQUIRE(result.has_value());
 

@@ -21,7 +21,7 @@ class SimpleTestFixture {
 
   // Get definition range for symbol at location
   static auto GetDefinitionRange(
-      semantic::SemanticIndex* index, slang::SourceLocation loc)
+      semantic::SemanticIndex& index, slang::SourceLocation loc)
       -> std::optional<slang::SourceRange>;
 
   // High-level API for clean go-to-definition testing
@@ -34,14 +34,22 @@ class SimpleTestFixture {
   // Assert that go-to-definition works: reference at ref_index points to
   // definition at def_index
   void AssertGoToDefinition(
-      semantic::SemanticIndex* index, const std::string& code,
+      semantic::SemanticIndex& index, const std::string& code,
       const std::string& symbol_name, size_t reference_index,
       size_t definition_index);
 
   // Assert that a reference was captured by the semantic index
   void AssertReferenceExists(
-      semantic::SemanticIndex* index, const std::string& code,
+      semantic::SemanticIndex& index, const std::string& code,
       const std::string& symbol_name, size_t reference_index);
+
+  // Assert that index has symbols (for tests expecting non-empty results)
+  static void AssertHasSymbols(semantic::SemanticIndex& index);
+
+  // High-level symbol lookup: find symbol by name and verify its properties
+  void AssertSymbolAtLocation(
+      semantic::SemanticIndex& index, const std::string& code,
+      const std::string& symbol_name, lsp::SymbolKind expected_kind);
 
  private:
   std::shared_ptr<slang::SourceManager> source_manager_;

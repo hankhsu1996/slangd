@@ -32,8 +32,15 @@ auto SimpleTestFixture::CompileSource(const std::string& code)
   compilation_ = std::make_unique<slang::ast::Compilation>(options);
   compilation_->addSyntaxTree(tree);
 
-  return semantic::SemanticIndex::FromCompilation(
+  auto index = semantic::SemanticIndex::FromCompilation(
       *compilation_, *source_manager_, test_uri);
+
+  // Validate that compilation succeeded
+  if (!index) {
+    throw std::runtime_error("CompileSource: Failed to create semantic index");
+  }
+
+  return index;
 }
 
 auto SimpleTestFixture::FindSymbol(
@@ -58,9 +65,9 @@ auto SimpleTestFixture::FindSymbol(
 }
 
 auto SimpleTestFixture::GetDefinitionRange(
-    semantic::SemanticIndex* index, slang::SourceLocation loc)
+    semantic::SemanticIndex& index, slang::SourceLocation loc)
     -> std::optional<slang::SourceRange> {
-  return index->LookupDefinitionAt(loc);
+  return index.LookupDefinitionAt(loc);
 }
 
 auto SimpleTestFixture::FindAllOccurrences(
@@ -92,7 +99,7 @@ auto SimpleTestFixture::FindAllOccurrences(
 }
 
 void SimpleTestFixture::AssertGoToDefinition(
-    semantic::SemanticIndex* index, const std::string& code,
+    semantic::SemanticIndex& index, const std::string& code,
     const std::string& symbol_name, size_t reference_index,
     size_t definition_index) {
   auto occurrences = FindAllOccurrences(code, symbol_name);
@@ -117,7 +124,7 @@ void SimpleTestFixture::AssertGoToDefinition(
   auto expected_def_loc = occurrences[definition_index];
 
   // Perform go-to-definition lookup
-  auto actual_def_range = index->LookupDefinitionAt(reference_loc);
+  auto actual_def_range = index.LookupDefinitionAt(reference_loc);
 
   if (!actual_def_range.has_value()) {
     throw std::runtime_error(
@@ -137,7 +144,7 @@ void SimpleTestFixture::AssertGoToDefinition(
 }
 
 void SimpleTestFixture::AssertReferenceExists(
-    semantic::SemanticIndex* index, const std::string& code,
+    semantic::SemanticIndex& index, const std::string& code,
     const std::string& symbol_name, size_t reference_index) {
   auto occurrences = FindAllOccurrences(code, symbol_name);
 
@@ -152,7 +159,7 @@ void SimpleTestFixture::AssertReferenceExists(
   auto reference_loc = occurrences[reference_index];
 
   // Check that the reference location produces a valid go-to-definition result
-  auto def_range = index->LookupDefinitionAt(reference_loc);
+  auto def_range = index.LookupDefinitionAt(reference_loc);
 
   if (!def_range.has_value()) {
     throw std::runtime_error(
@@ -160,6 +167,51 @@ void SimpleTestFixture::AssertReferenceExists(
             "AssertReferenceExists: reference not found for symbol '{}' at "
             "reference_index {}",
             symbol_name, reference_index));
+  }
+}
+
+void SimpleTestFixture::AssertHasSymbols(semantic::SemanticIndex& index) {
+  if (index.GetSymbolCount() == 0) {
+    throw std::runtime_error(
+        "AssertHasSymbols: Expected symbols but index is empty");
+  }
+}
+
+void SimpleTestFixture::AssertSymbolAtLocation(
+    semantic::SemanticIndex& index, const std::string& code,
+    const std::string& symbol_name, lsp::SymbolKind expected_kind) {
+  // Find symbol location (this makes the two-step process explicit)
+  auto location = FindSymbol(code, symbol_name);
+  if (!location.valid()) {
+    throw std::runtime_error(
+        fmt::format(
+            "AssertSymbolAtLocation: Invalid location for symbol '{}'",
+            symbol_name));
+  }
+
+  // Perform O(1) lookup
+  auto symbol_info = index.GetSymbolAt(location);
+  if (!symbol_info.has_value()) {
+    throw std::runtime_error(
+        fmt::format(
+            "AssertSymbolAtLocation: No symbol found at location for '{}'",
+            symbol_name));
+  }
+
+  // Verify symbol properties
+  if (std::string(symbol_info->symbol->name) != symbol_name) {
+    throw std::runtime_error(
+        fmt::format(
+            "AssertSymbolAtLocation: Expected symbol name '{}' but got '{}'",
+            symbol_name, std::string(symbol_info->symbol->name)));
+  }
+
+  if (symbol_info->lsp_kind != expected_kind) {
+    throw std::runtime_error(
+        fmt::format(
+            "AssertSymbolAtLocation: Expected symbol kind but got different "
+            "kind for '{}'",
+            symbol_name));
   }
 }
 
