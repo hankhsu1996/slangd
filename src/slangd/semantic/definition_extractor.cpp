@@ -83,6 +83,22 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       return syntax.sourceRange();
 
+    case SK::Port:
+      // Port symbols - handle different ANSI and non-ANSI syntax types
+      if (syntax.kind == SyntaxKind::ImplicitAnsiPort) {
+        return syntax.as<slang::syntax::ImplicitAnsiPortSyntax>()
+            .declarator->name.range();
+      } else if (syntax.kind == SyntaxKind::ExplicitAnsiPort) {
+        return syntax.as<slang::syntax::ExplicitAnsiPortSyntax>().name.range();
+      } else if (syntax.kind == SyntaxKind::PortDeclaration) {
+        const auto& decl_syntax =
+            syntax.as<slang::syntax::PortDeclarationSyntax>();
+        if (!decl_syntax.declarators.empty()) {
+          return decl_syntax.declarators[0]->name.range();
+        }
+      }
+      return syntax.sourceRange();
+
     default:
       // For symbol types without specific handling, fall back to full syntax
       // range

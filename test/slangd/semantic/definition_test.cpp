@@ -1018,4 +1018,27 @@ TEST_CASE("SemanticIndex multiple net declarations work", "[definition]") {
   fixture.AssertGoToDefinition(*index, code, "z", 1, 0);
 }
 
+TEST_CASE("SemanticIndex port self-definition lookup works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module port_test(
+      input  logic clk,
+      output logic valid,
+      input  logic [31:0] data
+    );
+      always_ff @(posedge clk) begin
+        valid <= (data > 0) ? 1'b1 : 1'b0;
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "clk", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "valid", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "data", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "clk", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "valid", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "data", 1, 0);
+}
+
 }  // namespace slangd::semantic

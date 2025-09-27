@@ -12,6 +12,7 @@
 #include <slang/ast/symbols/InstanceSymbols.h>
 #include <slang/ast/symbols/MemberSymbols.h>
 #include <slang/ast/symbols/ParameterSymbols.h>
+#include <slang/ast/symbols/PortSymbols.h>
 #include <slang/ast/symbols/VariableSymbols.h>
 #include <slang/ast/types/AllTypes.h>
 #include <slang/syntax/AllSyntax.h>
@@ -598,6 +599,17 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::NetSymbol& net) {
     }
   }
   this->visitDefault(net);
+}
+
+void SemanticIndex::IndexVisitor::handle(const slang::ast::PortSymbol& port) {
+  if (port.location.valid()) {
+    if (const auto* syntax = port.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(port, *syntax);
+      CreateReference(definition_range, port);
+    }
+  }
+  this->visitDefault(port);
 }
 
 // Go-to-definition implementation
