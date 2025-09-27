@@ -321,4 +321,75 @@ TEST_CASE("Module self-definition lookup works", "[definition]") {
   fixture.AssertGoToDefinition(*index, code, "test_module", 0, 0);
 }
 
+TEST_CASE("SemanticIndex wildcard import reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package test_pkg;
+      parameter int IMPORTED_PARAM = 16;
+    endpackage
+
+    module wildcard_import_test;
+      import test_pkg::*;
+      logic [IMPORTED_PARAM-1:0] data;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "IMPORTED_PARAM", 1, 0);
+}
+
+TEST_CASE("SemanticIndex explicit import reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package explicit_pkg;
+      parameter int SPECIFIC_PARAM = 8;
+    endpackage
+
+    module explicit_import_test;
+      import explicit_pkg::SPECIFIC_PARAM;
+      parameter int WIDTH = SPECIFIC_PARAM;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "SPECIFIC_PARAM", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "SPECIFIC_PARAM", 2, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex module header import reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package header_pkg;
+      typedef logic [7:0] byte_t;
+    endpackage
+
+    module header_import_test import header_pkg::*;
+      byte_t data_byte;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "byte_t", 1, 0);
+}
+
+TEST_CASE("SemanticIndex local scope import reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package local_pkg;
+      parameter int LOCAL_WIDTH = 12;
+    endpackage
+
+    module local_import_test;
+      initial begin
+        import local_pkg::*;
+        logic [LOCAL_WIDTH-1:0] local_data;
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "LOCAL_WIDTH", 1, 0);
+}
+
 }  // namespace slangd::semantic

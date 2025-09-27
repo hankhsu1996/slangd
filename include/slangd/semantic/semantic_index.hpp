@@ -146,6 +146,9 @@ class SemanticIndex {
     // Reference tracking for WildcardImportSymbol (package references)
     void handle(const slang::ast::WildcardImportSymbol& import_symbol);
 
+    // Reference tracking for ExplicitImportSymbol (package references)
+    void handle(const slang::ast::ExplicitImportSymbol& import_symbol);
+
     // Definition handlers for self-references
     void handle(const slang::ast::ParameterSymbol& param);
     void handle(const slang::ast::DefinitionSymbol& definition);
@@ -181,11 +184,8 @@ class SemanticIndex {
         const slang::ast::Scope& scope,
         const slang::syntax::DataTypeSyntax& type_syntax);
 
-    // Helper to create self-reference entries
-    void CreateSelfReference(const slang::ast::Symbol& symbol);
-
-    // Helper to create cross-reference entries (reference -> target)
-    void CreateCrossReference(
+    // Helper to create reference entries (source -> target)
+    void CreateReference(
         slang::SourceRange source_range,
         const slang::ast::Symbol& target_symbol);
   };

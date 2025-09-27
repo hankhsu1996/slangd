@@ -342,52 +342,44 @@ void SemanticIndex::IndexVisitor::ProcessIntegerTypeDimensions(
   }
 }
 
-void SemanticIndex::IndexVisitor::CreateSelfReference(
-    const slang::ast::Symbol& symbol) {
-  if (symbol.location.valid()) {
-    if (const auto* syntax = symbol.getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(symbol, *syntax);
-
-      ReferenceEntry self_ref{
-          .source_range =
-              definition_range,  // Same as target for self-reference
-          .target_loc = symbol.location,
-          .target_range = definition_range,
-          .symbol_kind = ConvertToLspKind(symbol),
-          .symbol_name = std::string(symbol.name)};
-      index_->references_.push_back(self_ref);
-    }
-  }
-}
-
-void SemanticIndex::IndexVisitor::CreateCrossReference(
+void SemanticIndex::IndexVisitor::CreateReference(
     slang::SourceRange source_range, const slang::ast::Symbol& target_symbol) {
   if (target_symbol.location.valid()) {
     if (const auto* syntax = target_symbol.getSyntax()) {
       auto definition_range =
           DefinitionExtractor::ExtractDefinitionRange(target_symbol, *syntax);
 
-      ReferenceEntry ref_entry{
+      ReferenceEntry ref{
           .source_range = source_range,
           .target_loc = target_symbol.location,
           .target_range = definition_range,
           .symbol_kind = ConvertToLspKind(target_symbol),
           .symbol_name = std::string(target_symbol.name)};
-      index_->references_.push_back(ref_entry);
+      index_->references_.push_back(ref);
     }
   }
 }
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::NamedValueExpression& expr) {
-  CreateCrossReference(expr.sourceRange, expr.symbol);
+  const slang::ast::Symbol* target_symbol = &expr.symbol;
+
+  if (expr.symbol.kind == slang::ast::SymbolKind::ExplicitImport) {
+    const auto& import_symbol =
+        expr.symbol.as<slang::ast::ExplicitImportSymbol>();
+    const auto* imported_symbol = import_symbol.importedSymbol();
+    if (imported_symbol != nullptr) {
+      target_symbol = imported_symbol;
+    }
+  }
+
+  CreateReference(expr.sourceRange, *target_symbol);
   this->visitDefault(expr);
 }
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::ConversionExpression& expr) {
-  CreateCrossReference(expr.sourceRange, *expr.type);
+  CreateReference(expr.sourceRange, *expr.type);
   this->visitDefault(expr);
 }
 
@@ -399,7 +391,7 @@ void SemanticIndex::IndexVisitor::handle(
       const auto& named_type =
           type_syntax->as<slang::syntax::NamedTypeSyntax>();
       const auto& resolved_type = symbol.getType();
-      CreateCrossReference(named_type.name->sourceRange(), resolved_type);
+      CreateReference(named_type.name->sourceRange(), resolved_type);
     }
 
     ProcessIntegerTypeDimensions(*symbol.getParentScope(), *type_syntax);
@@ -439,19 +431,65 @@ void SemanticIndex::IndexVisitor::handle(
     return;
   }
 
-  CreateCrossReference(import_item.package.range(), *package);
+  CreateReference(import_item.package.range(), *package);
+  this->visitDefault(import_symbol);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::ExplicitImportSymbol& import_symbol) {
+  const auto* package = import_symbol.package();
+  if (package == nullptr || !package->location.valid()) {
+    this->visitDefault(import_symbol);
+    return;
+  }
+
+  const auto* import_syntax = import_symbol.getSyntax();
+  if (import_syntax == nullptr ||
+      import_syntax->kind != slang::syntax::SyntaxKind::PackageImportItem) {
+    this->visitDefault(import_symbol);
+    return;
+  }
+
+  const auto& import_item =
+      import_syntax->as<slang::syntax::PackageImportItemSyntax>();
+  const auto* pkg_syntax = package->getSyntax();
+  if (pkg_syntax == nullptr) {
+    this->visitDefault(import_symbol);
+    return;
+  }
+
+  CreateReference(import_item.package.range(), *package);
+
+  // Create reference for the imported symbol name
+  const auto* imported_symbol = import_symbol.importedSymbol();
+  if (imported_symbol != nullptr) {
+    CreateReference(import_item.item.range(), *imported_symbol);
+  }
+
   this->visitDefault(import_symbol);
 }
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::ParameterSymbol& param) {
-  CreateSelfReference(param);
+  if (param.location.valid()) {
+    if (const auto* syntax = param.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(param, *syntax);
+      CreateReference(definition_range, param);
+    }
+  }
   this->visitDefault(param);
 }
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::DefinitionSymbol& definition) {
-  CreateSelfReference(definition);
+  if (definition.location.valid()) {
+    if (const auto* syntax = definition.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(definition, *syntax);
+      CreateReference(definition_range, definition);
+    }
+  }
   this->visitDefault(definition);
 }
 
@@ -466,7 +504,13 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
 
-  CreateSelfReference(type_alias);
+  if (type_alias.location.valid()) {
+    if (const auto* syntax = type_alias.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(type_alias, *syntax);
+      CreateReference(definition_range, type_alias);
+    }
+  }
 
   if (const auto* target_syntax = type_alias.targetType.getTypeSyntax()) {
     ProcessIntegerTypeDimensions(*type_alias.getParentScope(), *target_syntax);
