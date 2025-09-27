@@ -67,6 +67,14 @@ class SimpleTestFixture {
       lsp::DiagnosticSeverity severity,
       const std::string& message_substring = "");
 
+  // Assert that a symbol's definition range has expected length
+  void AssertDefinitionRangeLength(
+      semantic::SemanticIndex& index, const std::string& code,
+      const std::string& symbol_name, size_t expected_length);
+
+  // Assert that semantic index has valid definition ranges for symbols
+  static void AssertValidDefinitionRanges(semantic::SemanticIndex& index);
+
  private:
   std::shared_ptr<slang::SourceManager> source_manager_;
   std::unique_ptr<slang::ast::Compilation> compilation_;

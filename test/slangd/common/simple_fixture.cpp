@@ -278,4 +278,56 @@ void SimpleTestFixture::AssertDiagnosticExists(
   throw std::runtime_error(error_msg);
 }
 
+void SimpleTestFixture::AssertDefinitionRangeLength(
+    semantic::SemanticIndex& index, const std::string& code,
+    const std::string& symbol_name, size_t expected_length) {
+  auto symbol_location = FindSymbol(code, symbol_name);
+  if (!symbol_location.valid()) {
+    throw std::runtime_error(
+        fmt::format(
+            "AssertDefinitionRangeLength: Symbol '{}' not found", symbol_name));
+  }
+
+  auto definition_range = GetDefinitionRange(index, symbol_location);
+  if (!definition_range.has_value()) {
+    throw std::runtime_error(
+        fmt::format(
+            "AssertDefinitionRangeLength: No definition range found for '{}'",
+            symbol_name));
+  }
+
+  auto actual_length =
+      definition_range->end().offset() - definition_range->start().offset();
+
+  if (actual_length != expected_length) {
+    throw std::runtime_error(
+        fmt::format(
+            "AssertDefinitionRangeLength: Expected length {} but got {} for "
+            "'{}'",
+            expected_length, actual_length, symbol_name));
+  }
+}
+
+void SimpleTestFixture::AssertValidDefinitionRanges(
+    semantic::SemanticIndex& index) {
+  const auto& all_symbols = index.GetAllSymbols();
+
+  if (all_symbols.empty()) {
+    throw std::runtime_error(
+        "AssertValidDefinitionRanges: No symbols found in index");
+  }
+
+  bool found_valid_definition =
+      std::ranges::any_of(all_symbols, [](const auto& symbol_pair) -> bool {
+        const auto& [location, info] = symbol_pair;
+        return info.is_definition && info.definition_range.start().valid();
+      });
+
+  if (!found_valid_definition) {
+    throw std::runtime_error(
+        "AssertValidDefinitionRanges: No symbols with valid definition ranges "
+        "found");
+  }
+}
+
 }  // namespace slangd::test
