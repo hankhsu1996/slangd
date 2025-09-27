@@ -1,0 +1,29 @@
+"""
+Build file for slangd services tests.
+"""
+
+cc_test(
+    name = "overlay_session_test",
+    timeout = "short",
+    srcs = [
+        "overlay_session_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "global_catalog_test",
+    timeout = "short",
+    srcs = [
+        "global_catalog_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)

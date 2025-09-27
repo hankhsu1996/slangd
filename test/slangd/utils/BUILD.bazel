@@ -1,0 +1,20 @@
+"""
+Build file for slangd utils tests.
+"""
+
+# Placeholder for future utils tests
+# When adding utils tests, follow this pattern:
+#
+# cc_test(
+#     name = "example_utils_test",
+#     timeout = "short",
+#     srcs = [
+#         "example_utils_test.cpp",
+#     ],
+#     deps = [
+#         "//test/slangd:simple_fixture",
+#         "//:slangd_core",
+#         "@catch2",
+#         "@slang",
+#     ],
+# )

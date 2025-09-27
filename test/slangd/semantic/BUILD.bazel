@@ -1,0 +1,148 @@
+"""
+Build file for slangd semantic tests.
+"""
+
+cc_test(
+    name = "multifile_definition_test",
+    timeout = "short",
+    srcs = [
+        "integration/multifile_definition_test.cpp",
+        "test_fixtures.hpp",
+    ],
+    deps = [
+        "//test/slangd:file_fixture",
+        "//:slangd_core",
+        "@catch2",
+        "@fmt",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "semantic_index_patterns_test",
+    timeout = "short",
+    srcs = [
+        "semantic_index_patterns_test.cpp",
+    ],
+    deps = [
+        "//test/slangd:simple_fixture",
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "multifile_reference_test",
+    timeout = "short",
+    srcs = [
+        "integration/multifile_reference_test.cpp",
+        "test_fixtures.hpp",
+    ],
+    deps = [
+        "//test/slangd:file_fixture",
+        "//:slangd_core",
+        "@catch2",
+        "@fmt",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "definition_extractor_test",
+    timeout = "short",
+    srcs = [
+        "definition_extractor_test.cpp",
+    ],
+    deps = [
+        "//test/slangd:simple_fixture",
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "semantic_index_test",
+    timeout = "short",
+    srcs = [
+        "semantic_index_test.cpp",
+    ],
+    deps = [
+        "//test/slangd:simple_fixture",
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "document_symbol_builder_test",
+    timeout = "short",
+    srcs = [
+        "document_symbol_builder_test.cpp",
+    ],
+    deps = [
+        "//test/slangd:simple_fixture",
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "generate_block_test",
+    timeout = "short",
+    srcs = [
+        "generate_block_test.cpp",
+    ],
+    deps = [
+        "//test/slangd:simple_fixture",
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "type_handling_test",
+    timeout = "short",
+    srcs = [
+        "type_handling_test.cpp",
+    ],
+    deps = [
+        "//test/slangd:simple_fixture",
+        "//:slangd_core",
+        "@catch2",
+        "@fmt",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "diagnostic_index_test",
+    timeout = "short",
+    srcs = [
+        "diagnostic_index_test.cpp",
+    ],
+    deps = [
+        "//test/slangd:simple_fixture",
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "symbol_utils_test",
+    timeout = "short",
+    srcs = [
+        "symbol_utils_test.cpp",
+    ],
+    deps = [
+        "//test/slangd:simple_fixture",
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)
