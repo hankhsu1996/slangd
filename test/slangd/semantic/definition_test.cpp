@@ -1,5 +1,3 @@
-#include "slangd/semantic/semantic_index.hpp"
-
 #include <cstdlib>
 #include <memory>
 #include <string>
@@ -10,6 +8,7 @@
 #include <spdlog/spdlog.h>
 
 #include "../common/simple_fixture.hpp"
+#include "slangd/semantic/semantic_index.hpp"
 
 constexpr auto kLogLevel = spdlog::level::warn;
 
@@ -233,6 +232,35 @@ TEST_CASE(
 
   auto index = fixture.CompileSource(code);
   fixture.AssertGoToDefinition(*index, code, "ARRAY_SIZE", 1, 0);
+}
+
+TEST_CASE(
+    "Parameter definition range should be name only, not full declaration",
+    "[semantic_index]") {
+  SimpleTestFixture fixture;
+
+  std::string code = R"(
+    module test;
+      parameter int WIDTH = 8;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Find the parameter location in the source by searching for the name
+  auto param_location = fixture.FindSymbol(code, "WIDTH");
+  REQUIRE(param_location.valid());
+
+  // Lookup the definition range
+  auto result = SimpleTestFixture::GetDefinitionRange(*index, param_location);
+
+  REQUIRE(result.has_value());
+
+  // The parameter definition range should contain just the parameter name
+  // "WIDTH" (5 chars), not the full declaration "WIDTH = 8" (9 chars)
+  auto range_length = result->end().offset() - result->start().offset();
+
+  CHECK(range_length == 5);  // Now correctly returns just "WIDTH"
 }
 
 }  // namespace slangd::semantic

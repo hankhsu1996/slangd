@@ -69,21 +69,10 @@ TEST_CASE("SemanticIndex handles enum and struct types", "[type_handling]") {
   REQUIRE(!document_symbols.empty());
 
   // Check for interface with modport
-  bool found_interface = false;
-  bool found_module = false;
-  for (const auto& symbol : document_symbols) {
-    if (symbol.name == "test_if") {
-      found_interface = true;
-      REQUIRE(symbol.kind == lsp::SymbolKind::kInterface);
-    }
-    if (symbol.name == "test_module") {
-      found_module = true;
-      REQUIRE(symbol.kind == lsp::SymbolKind::kClass);
-    }
-  }
-
-  REQUIRE(found_interface);
-  REQUIRE(found_module);
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      document_symbols, "test_if", lsp::SymbolKind::kInterface);
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      document_symbols, "test_module", lsp::SymbolKind::kClass);
 }
 
 TEST_CASE(
@@ -106,38 +95,19 @@ TEST_CASE(
   const auto& all_symbols = index->GetAllSymbols();
   REQUIRE(!all_symbols.empty());
 
-  bool found_module = false;
-  bool found_signal = false;
-  bool found_typedef = false;
-  bool found_block = false;
+  // Verify expected symbols are present
+  SimpleTestFixture::AssertContainsSymbols(
+      *index, {"test_module", "signal", "byte_t", "init_block"});
 
+  // Verify definition ranges are valid for key symbols
   for (const auto& [location, info] : all_symbols) {
     std::string name(info.symbol->name);
-
-    if (name == "test_module") {
-      found_module = true;
-      REQUIRE(info.is_definition);
-      REQUIRE(info.definition_range.start().valid());
-      REQUIRE(info.definition_range.end().valid());
-    } else if (name == "signal") {
-      found_signal = true;
-      REQUIRE(info.is_definition);
-      REQUIRE(info.definition_range.start().valid());
-    } else if (name == "byte_t") {
-      found_typedef = true;
-      REQUIRE(info.is_definition);
-      REQUIRE(info.definition_range.start().valid());
-    } else if (name == "init_block") {
-      found_block = true;
+    if (name == "test_module" || name == "signal" || name == "byte_t" ||
+        name == "init_block") {
       REQUIRE(info.is_definition);
       REQUIRE(info.definition_range.start().valid());
     }
   }
-
-  REQUIRE(found_module);
-  REQUIRE(found_signal);
-  REQUIRE(found_typedef);
-  REQUIRE(found_block);
 }
 
 TEST_CASE(
@@ -164,6 +134,7 @@ TEST_CASE(
   (void)references;  // May be empty for single-file tests
 
   // Test that symbols have definition ranges in their SymbolInfo
+  // Verify at least one symbol has valid definition ranges
   bool found_symbol_with_range = false;
   for (const auto& [loc, info] : all_symbols) {
     if (info.is_definition && info.location.valid()) {
@@ -200,23 +171,22 @@ TEST_CASE(
   REQUIRE(symbols[0].children.has_value());
 
   // Find functions and tasks in module
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "simple_func", lsp::SymbolKind::kFunction);
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "simple_task", lsp::SymbolKind::kFunction);
+
+  // Verify function is a leaf node (no children shown in document symbols)
   auto function_symbol = std::find_if(
       symbols[0].children->begin(), symbols[0].children->end(),
       [](const auto& s) { return s.name == "simple_func"; });
-
-  auto task_symbol = std::find_if(
-      symbols[0].children->begin(), symbols[0].children->end(),
-      [](const auto& s) { return s.name == "simple_task"; });
-
-  REQUIRE(function_symbol != symbols[0].children->end());
-  REQUIRE(function_symbol->kind == lsp::SymbolKind::kFunction);
-  // Functions should be leaf nodes (no children shown in document symbols)
   REQUIRE(
       (!function_symbol->children.has_value() ||
        function_symbol->children->empty()));
 
-  REQUIRE(task_symbol != symbols[0].children->end());
-  REQUIRE(task_symbol->kind == lsp::SymbolKind::kFunction);
+  auto task_symbol = std::find_if(
+      symbols[0].children->begin(), symbols[0].children->end(),
+      [](const auto& s) { return s.name == "simple_task"; });
   // Tasks should be leaf nodes (no children shown in document symbols)
   REQUIRE(
       (!task_symbol->children.has_value() || task_symbol->children->empty()));

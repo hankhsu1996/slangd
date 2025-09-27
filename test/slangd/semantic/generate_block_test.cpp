@@ -54,11 +54,13 @@ TEST_CASE(
   auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Find generate block and verify it contains both signal and parameter
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "gen_block", lsp::SymbolKind::kNamespace);
+
+  // Verify it has the right number of children
   auto gen_block = std::find_if(
       symbols[0].children->begin(), symbols[0].children->end(),
       [](const auto& s) { return s.name == "gen_block"; });
-
-  REQUIRE(gen_block != symbols[0].children->end());
   REQUIRE(gen_block->children.has_value());
   REQUIRE(gen_block->children->size() == 2);
 }
@@ -82,11 +84,13 @@ TEST_CASE(
   auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Find generate for loop block and verify it contains template symbols
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "gen_loop", lsp::SymbolKind::kNamespace);
+
+  // Verify it has the right number of children and correct contents
   auto gen_loop = std::find_if(
       symbols[0].children->begin(), symbols[0].children->end(),
       [](const auto& s) { return s.name == "gen_loop"; });
-
-  REQUIRE(gen_loop != symbols[0].children->end());
   REQUIRE(gen_loop->children.has_value());
   // Generate for loop should show meaningful symbols only (genvar filtered out)
   // Expected: loop_signal and LOOP_PARAM (genvar 'i' filtered out)
@@ -168,24 +172,17 @@ TEST_CASE(
   // The generate block with assertions should NOT be filtered out
   REQUIRE(symbols[0].children.has_value());
 
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "assertion_block", lsp::SymbolKind::kNamespace);
+
+  // The assertion block should contain the assertion symbol
   auto assertion_block = std::find_if(
       symbols[0].children->begin(), symbols[0].children->end(),
       [](const auto& s) { return s.name == "assertion_block"; });
-
-  REQUIRE(assertion_block != symbols[0].children->end());
-  REQUIRE(assertion_block->kind == lsp::SymbolKind::kNamespace);
-
-  // The assertion block should contain the assertion symbol
   REQUIRE(assertion_block->children.has_value());
 
-  auto check_value = std::find_if(
-      assertion_block->children->begin(), assertion_block->children->end(),
-      [](const auto& s) { return s.name == "check_value"; });
-
-  REQUIRE(check_value != assertion_block->children->end());
-  REQUIRE(
-      check_value->kind ==
-      lsp::SymbolKind::kVariable);  // Assertions are indexed as variables
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "check_value", lsp::SymbolKind::kVariable);
 }
 
 TEST_CASE(
@@ -218,23 +215,22 @@ TEST_CASE(
   // assertions
   REQUIRE(symbols[0].children.has_value());
 
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "assertion_block", lsp::SymbolKind::kNamespace);
+
+  // The assertion block should contain the assertion symbol
   auto assertion_block = std::find_if(
       symbols[0].children->begin(), symbols[0].children->end(),
       [](const auto& s) { return s.name == "assertion_block"; });
-
-  REQUIRE(assertion_block != symbols[0].children->end());
-  REQUIRE(assertion_block->kind == lsp::SymbolKind::kNamespace);
-
-  // The assertion block should contain the assertion symbol
   REQUIRE(assertion_block->children.has_value());
 
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "check_value", lsp::SymbolKind::kVariable);
+
+  // Verify assertions are not classified as kObject
   auto check_value = std::find_if(
       assertion_block->children->begin(), assertion_block->children->end(),
       [](const auto& s) { return s.name == "check_value"; });
-
-  REQUIRE(check_value != assertion_block->children->end());
-  // Assertions should be classified as variables (or similar, not 'object')
-  // NOTE: This should be kVariable or a proper assertion kind, not kObject
   REQUIRE(check_value->kind != lsp::SymbolKind::kObject);
 }
 

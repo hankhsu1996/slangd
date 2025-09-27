@@ -28,25 +28,6 @@ namespace slangd::semantic {
 
 using slangd::test::SimpleTestFixture;
 
-// Helper function to extract symbol names from index
-auto GetSymbolNames(const SemanticIndex& index) -> std::vector<std::string> {
-  std::vector<std::string> names;
-  for (const auto& [loc, info] : index.GetAllSymbols()) {
-    names.emplace_back(info.symbol->name);
-  }
-  return names;
-}
-
-// Helper function to check if symbols exist
-auto HasSymbols(
-    const SemanticIndex& index, const std::vector<std::string>& expected)
-    -> bool {
-  auto names = GetSymbolNames(index);
-  return std::ranges::all_of(expected, [&names](const std::string& symbol) {
-    return std::ranges::find(names, symbol) != names.end();
-  });
-}
-
 TEST_CASE(
     "SemanticIndex handles interface ports without crash", "[semantic_index]") {
   SimpleTestFixture fixture;
@@ -68,7 +49,7 @@ TEST_CASE(
     auto index = fixture.CompileSource(source);
     REQUIRE(index != nullptr);
     REQUIRE(index->GetSymbolCount() > 0);
-    REQUIRE(HasSymbols(*index, {"internal_var"}));
+    SimpleTestFixture::AssertContainsSymbols(*index, {"internal_var"});
   }
 
   SECTION("undefined interface - single file resilience") {
@@ -84,7 +65,8 @@ TEST_CASE(
     auto index = fixture.CompileSource(source);
     REQUIRE(index != nullptr);
     REQUIRE(index->GetSymbolCount() > 0);
-    REQUIRE(HasSymbols(*index, {"internal_state", "counter"}));
+    SimpleTestFixture::AssertContainsSymbols(
+        *index, {"internal_state", "counter"});
   }
 
   SECTION("interface in always_comb conditions and RHS") {
@@ -111,7 +93,8 @@ TEST_CASE(
     auto index = fixture.CompileSource(source);
     REQUIRE(index != nullptr);
     REQUIRE(index->GetSymbolCount() > 0);
-    REQUIRE(HasSymbols(*index, {"state", "counter", "enable"}));
+    SimpleTestFixture::AssertContainsSymbols(
+        *index, {"state", "counter", "enable"});
   }
 }
 
@@ -134,8 +117,8 @@ TEST_CASE(
 
     auto index = fixture.CompileSource(source);
     REQUIRE(index != nullptr);
-    REQUIRE(
-        HasSymbols(*index, {"nested_signal", "deeply_nested", "named_block"}));
+    SimpleTestFixture::AssertContainsSymbols(
+        *index, {"nested_signal", "deeply_nested", "named_block"});
   }
 
   SECTION("multiple declarations on single line") {
@@ -151,7 +134,7 @@ TEST_CASE(
 
     const std::vector<std::string> expected = {
         "sig1", "sig2", "sig3", "byte1", "byte2", "byte3", "w1", "w2", "w3"};
-    REQUIRE(HasSymbols(*index, expected));
+    SimpleTestFixture::AssertContainsSymbols(*index, expected);
   }
 
   SECTION("reference tracking in expressions") {
@@ -173,7 +156,7 @@ TEST_CASE(
     const auto& refs = index->GetReferences();
 
     REQUIRE(!refs.empty());
-    REQUIRE(HasSymbols(*index, {"a", "b", "c", "result"}));
+    SimpleTestFixture::AssertContainsSymbols(*index, {"a", "b", "c", "result"});
   }
 
   SECTION("typedef and enum definitions") {
@@ -195,7 +178,8 @@ TEST_CASE(
 
     // Should find most symbols (enum values may have different indexing
     // behavior)
-    REQUIRE(HasSymbols(*index, {"word_t", "state_t", "data", "current_state"}));
+    SimpleTestFixture::AssertContainsSymbols(
+        *index, {"word_t", "state_t", "data", "current_state"});
   }
 
   SECTION("package definitions") {
@@ -209,7 +193,8 @@ TEST_CASE(
     auto index = fixture.CompileSource(source);
     REQUIRE(index != nullptr);
     REQUIRE(index->GetSymbolCount() > 0);
-    REQUIRE(HasSymbols(*index, {"test_pkg", "WIDTH", "data_t"}));
+    SimpleTestFixture::AssertContainsSymbols(
+        *index, {"test_pkg", "WIDTH", "data_t"});
   }
 
   SECTION("struct and union types") {
@@ -233,7 +218,8 @@ TEST_CASE(
     auto index = fixture.CompileSource(source);
     REQUIRE(index != nullptr);
     REQUIRE(index->GetSymbolCount() > 0);
-    REQUIRE(HasSymbols(*index, {"packet_t", "data_t", "pkt"}));
+    SimpleTestFixture::AssertContainsSymbols(
+        *index, {"packet_t", "data_t", "pkt"});
   }
 
   SECTION("module with package imports") {
@@ -253,7 +239,7 @@ TEST_CASE(
 
     const std::vector<std::string> expected = {
         "test_pkg", "test_module", "test_signal", "WIDTH", "data_t"};
-    REQUIRE(HasSymbols(*index, expected));
+    SimpleTestFixture::AssertContainsSymbols(*index, expected);
   }
 }
 

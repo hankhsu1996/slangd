@@ -51,6 +51,22 @@ class SimpleTestFixture {
       semantic::SemanticIndex& index, const std::string& code,
       const std::string& symbol_name, lsp::SymbolKind expected_kind);
 
+  // Assert that index contains all the specified symbols
+  static void AssertContainsSymbols(
+      semantic::SemanticIndex& index,
+      const std::vector<std::string>& expected_symbols);
+
+  // Assert that a document symbol with specific name exists
+  static void AssertDocumentSymbolExists(
+      const std::vector<lsp::DocumentSymbol>& symbols,
+      const std::string& symbol_name, lsp::SymbolKind expected_kind);
+
+  // Assert that a diagnostic matching the criteria exists
+  static void AssertDiagnosticExists(
+      const std::vector<lsp::Diagnostic>& diagnostics,
+      lsp::DiagnosticSeverity severity,
+      const std::string& message_substring = "");
+
  private:
   std::shared_ptr<slang::SourceManager> source_manager_;
   std::unique_ptr<slang::ast::Compilation> compilation_;

@@ -1,5 +1,8 @@
 #include "simple_fixture.hpp"
 
+#include <algorithm>
+#include <functional>
+#include <ranges>
 #include <regex>
 #include <stdexcept>
 
@@ -213,6 +216,66 @@ void SimpleTestFixture::AssertSymbolAtLocation(
             "kind for '{}'",
             symbol_name));
   }
+}
+
+void SimpleTestFixture::AssertContainsSymbols(
+    semantic::SemanticIndex& index,
+    const std::vector<std::string>& expected_symbols) {
+  const auto& all_symbols = index.GetAllSymbols();
+  std::vector<std::string> found_symbol_names;
+
+  for (const auto& [loc, info] : all_symbols) {
+    found_symbol_names.emplace_back(info.symbol->name);
+  }
+
+  for (const auto& expected : expected_symbols) {
+    if (!std::ranges::contains(found_symbol_names, expected)) {
+      throw std::runtime_error(
+          fmt::format(
+              "AssertContainsSymbols: Expected symbol '{}' not found in index",
+              expected));
+    }
+  }
+}
+
+void SimpleTestFixture::AssertDocumentSymbolExists(
+    const std::vector<lsp::DocumentSymbol>& symbols,
+    const std::string& symbol_name, lsp::SymbolKind expected_kind) {
+  std::function<bool(const std::vector<lsp::DocumentSymbol>&)> search_symbols;
+  search_symbols = [&](const std::vector<lsp::DocumentSymbol>& syms) -> bool {
+    return std::ranges::any_of(syms, [&](const auto& symbol) -> bool {
+      return (symbol.name == symbol_name && symbol.kind == expected_kind) ||
+             (symbol.children.has_value() && search_symbols(*symbol.children));
+    });
+  };
+
+  if (!search_symbols(symbols)) {
+    throw std::runtime_error(
+        fmt::format(
+            "AssertDocumentSymbolExists: Symbol '{}' with expected kind not "
+            "found",
+            symbol_name));
+  }
+}
+
+void SimpleTestFixture::AssertDiagnosticExists(
+    const std::vector<lsp::Diagnostic>& diagnostics,
+    lsp::DiagnosticSeverity severity, const std::string& message_substring) {
+  for (const auto& diagnostic : diagnostics) {
+    if (diagnostic.severity == severity) {
+      if (message_substring.empty() ||
+          diagnostic.message.find(message_substring) != std::string::npos) {
+        return;  // Found matching diagnostic
+      }
+    }
+  }
+
+  std::string error_msg =
+      fmt::format("AssertDiagnosticExists: No diagnostic found with severity");
+  if (!message_substring.empty()) {
+    error_msg += fmt::format(" and message containing '{}'", message_substring);
+  }
+  throw std::runtime_error(error_msg);
 }
 
 }  // namespace slangd::test

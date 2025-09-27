@@ -54,12 +54,13 @@ TEST_CASE(
   auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Find enum in module and verify it contains enum members
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "state_t", lsp::SymbolKind::kEnum);
+
+  // Find the enum to verify it has the right number of children
   auto enum_symbol = std::find_if(
       symbols[0].children->begin(), symbols[0].children->end(),
       [](const auto& s) { return s.name == "state_t"; });
-
-  REQUIRE(enum_symbol != symbols[0].children->end());
-  REQUIRE(enum_symbol->kind == lsp::SymbolKind::kEnum);
   REQUIRE(enum_symbol->children.has_value());
   REQUIRE(enum_symbol->children->size() == 3);  // IDLE, ACTIVE, DONE
 }
@@ -82,12 +83,13 @@ TEST_CASE(
   auto symbols = index->GetDocumentSymbols(GetTestUri());
 
   // Find struct in package and verify it contains struct fields
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "packet_t", lsp::SymbolKind::kStruct);
+
+  // Find the struct to verify it has the right number of children
   auto struct_symbol = std::find_if(
       symbols[0].children->begin(), symbols[0].children->end(),
       [](const auto& s) { return s.name == "packet_t"; });
-
-  REQUIRE(struct_symbol != symbols[0].children->end());
-  REQUIRE(struct_symbol->kind == lsp::SymbolKind::kStruct);
   REQUIRE(struct_symbol->children.has_value());
   REQUIRE(struct_symbol->children->size() == 3);  // data, valid, address
 }
@@ -162,37 +164,13 @@ TEST_CASE(
 
   check_no_genvar(symbols);
 
-  // But verify that other meaningful symbols are still there
-  bool found_test_module = false;
-  bool found_gen_loop = false;
-  bool found_local_signal = false;
-
-  std::function<void(const std::vector<lsp::DocumentSymbol>&)>
-      check_meaningful_symbols;
-  check_meaningful_symbols = [&](const std::vector<lsp::DocumentSymbol>& syms) {
-    for (const auto& symbol : syms) {
-      if (symbol.name == "test_module") {
-        found_test_module = true;
-      }
-      if (symbol.name == "gen_loop") {
-        found_gen_loop = true;
-      }
-      if (symbol.name == "local_signal") {
-        found_local_signal = true;
-      }
-
-      if (symbol.children.has_value()) {
-        check_meaningful_symbols(*symbol.children);
-      }
-    }
-  };
-
-  check_meaningful_symbols(symbols);
-
-  // Verify meaningful symbols are present while genvar is filtered out
-  REQUIRE(found_test_module);
-  REQUIRE(found_gen_loop);
-  REQUIRE(found_local_signal);
+  // Verify that other meaningful symbols are still there
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "test_module", lsp::SymbolKind::kClass);
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "gen_loop", lsp::SymbolKind::kNamespace);
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "local_signal", lsp::SymbolKind::kVariable);
 }
 
 TEST_CASE(
@@ -219,12 +197,13 @@ TEST_CASE(
   REQUIRE(symbols[0].children.has_value());
 
   // Find the function
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "my_function", lsp::SymbolKind::kFunction);
+
+  // Find the function to verify it has no children
   auto function_symbol = std::find_if(
       symbols[0].children->begin(), symbols[0].children->end(),
       [](const auto& s) { return s.name == "my_function"; });
-
-  REQUIRE(function_symbol != symbols[0].children->end());
-  REQUIRE(function_symbol->kind == lsp::SymbolKind::kFunction);
 
   // Function should be a leaf node - no local_var or local_array in document
   // symbols
@@ -234,23 +213,8 @@ TEST_CASE(
 
   // Test 2: But local variables should still be in semantic index for
   // go-to-definition
-  const auto& all_symbols = index->GetAllSymbols();
-
-  bool found_local_var = false;
-  bool found_local_array = false;
-  for (const auto& [location, info] : all_symbols) {
-    std::string name(info.symbol->name);
-    if (name == "local_var") {
-      found_local_var = true;
-    }
-    if (name == "local_array") {
-      found_local_array = true;
-    }
-  }
-
-  // Local variables should be indexed for go-to-definition functionality
-  REQUIRE(found_local_var);
-  REQUIRE(found_local_array);
+  SimpleTestFixture::AssertContainsSymbols(
+      *index, {"local_var", "local_array"});
 }
 
 }  // namespace slangd::semantic

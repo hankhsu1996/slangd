@@ -2,6 +2,8 @@
 Build file for slangd semantic tests.
 """
 
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
 cc_test(
     name = "multifile_definition_test",
     timeout = "short",
@@ -48,11 +50,12 @@ cc_test(
     ],
 )
 
+
 cc_test(
-    name = "definition_extractor_test",
+    name = "definition_test",
     timeout = "short",
     srcs = [
-        "definition_extractor_test.cpp",
+        "definition_test.cpp",
     ],
     deps = [
         "//test/slangd:simple_fixture",
@@ -63,24 +66,10 @@ cc_test(
 )
 
 cc_test(
-    name = "semantic_index_test",
+    name = "document_symbol_test",
     timeout = "short",
     srcs = [
-        "semantic_index_test.cpp",
-    ],
-    deps = [
-        "//test/slangd:simple_fixture",
-        "//:slangd_core",
-        "@catch2",
-        "@slang",
-    ],
-)
-
-cc_test(
-    name = "document_symbol_builder_test",
-    timeout = "short",
-    srcs = [
-        "document_symbol_builder_test.cpp",
+        "document_symbol_test.cpp",
     ],
     deps = [
         "//test/slangd:simple_fixture",
