@@ -684,7 +684,17 @@ void SemanticIndex::IndexVisitor::handle(
         }
       }
 
-      // TODO: Modport name cross-reference (cpu -> modport definition)
+      // Modport name cross-reference (cpu -> modport definition)
+      if (!interface_port.modport.empty()) {
+        auto modport_range = interface_port.modportNameRange();
+        if (modport_range.start().valid()) {
+          // Use existing Slang resolution logic to get ModportSymbol
+          auto connection = interface_port.getConnection();
+          if (connection.second != nullptr) {
+            CreateReference(modport_range, *connection.second);
+          }
+        }
+      }
     }
   }
   this->visitDefault(interface_port);

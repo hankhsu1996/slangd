@@ -26,8 +26,12 @@ This file provides guidance to Claude Code when working with code in this reposi
 When adding support for new SystemVerilog constructs:
 1. Add tests first (TDD approach)
 2. Check `docs/SEMANTIC_INDEXING.md` for implementation patterns
-3. Add definition extraction + handlers as needed
-4. Verify with both self-definition and reference tests
+3. **Check existing Slang infrastructure** - look for `get*()`, `find()`, or resolution methods before building custom solutions
+4. Add definition extraction + handlers as needed
+5. Verify with both self-definition and reference tests
+
+**Design Principle:**
+Leverage existing Slang library infrastructure rather than overengineering. The best LSP solutions are simple and reuse Slang's existing resolution logic.
 
 **Pre-commit:**
 

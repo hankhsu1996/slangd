@@ -1133,9 +1133,9 @@ TEST_CASE(
   fixture.AssertGoToDefinition(
       *index, code, "MemBus", 1, 0);  // Module port MemBus -> interface MemBus
 
-  // TODO: Test modport name cross-reference (currently not implemented)
-  // fixture.AssertGoToDefinition(
-  //     *index, code, "cpu", 1, 0);  // Module port cpu -> modport cpu
+  // Test modport name cross-reference
+  fixture.AssertGoToDefinition(
+      *index, code, "cpu", 1, 0);  // Module port cpu -> modport cpu
 
   // Test interface signal self-definitions
   fixture.AssertGoToDefinition(
