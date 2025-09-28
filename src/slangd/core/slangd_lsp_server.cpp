@@ -254,7 +254,7 @@ auto SlangdLspServer::OnGotoDefinition(lsp::DefinitionParams params)
 
   const auto& file = file_opt->get();
 
-  co_return language_service_->GetDefinitionsForPosition(
+  co_return co_await language_service_->GetDefinitionsForPosition(
       std::string(params.textDocument.uri), params.position, file.content);
 }
 

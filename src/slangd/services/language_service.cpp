@@ -87,12 +87,12 @@ auto LanguageService::ComputeDiagnostics(std::string uri, std::string content)
 
 auto LanguageService::GetDefinitionsForPosition(
     std::string uri, lsp::Position position, std::string content)
-    -> std::vector<lsp::Location> {
+    -> asio::awaitable<std::vector<lsp::Location>> {
   utils::ScopedTimer timer("GetDefinitionsForPosition", logger_);
 
   if (!layout_service_) {
     logger_->error("LanguageService: Workspace not initialized");
-    return {};
+    co_return std::vector<lsp::Location>{};
   }
 
   logger_->debug(
@@ -112,7 +112,7 @@ auto LanguageService::GetDefinitionsForPosition(
   auto session = GetOrCreateOverlay(cache_key, content);
   if (!session) {
     logger_->error("Failed to create overlay session for: {}", uri);
-    return {};
+    co_return std::vector<lsp::Location>{};
   }
 
   // Get source manager and convert position to location
@@ -120,7 +120,7 @@ auto LanguageService::GetDefinitionsForPosition(
   auto buffers = source_manager.getAllBuffers();
   if (buffers.empty()) {
     logger_->error("No buffers found in source manager for: {}", uri);
-    return {};
+    co_return std::vector<lsp::Location>{};
   }
 
   // Find the buffer that matches the requested URI
@@ -155,7 +155,7 @@ auto LanguageService::GetDefinitionsForPosition(
     logger_->debug(
         "No definition found at position {}:{} in {}", position.line,
         position.character, uri);
-    return {};
+    co_return std::vector<lsp::Location>{};
   }
 
   // Convert to LSP location with correct file URI
@@ -170,7 +170,7 @@ auto LanguageService::GetDefinitionsForPosition(
       lsp_location.range.start.character, lsp_location.range.end.line,
       lsp_location.range.end.character, lsp_location.uri);
 
-  return {lsp_location};
+  co_return std::vector<lsp::Location>{lsp_location};
 }
 
 auto LanguageService::GetDocumentSymbols(std::string uri, std::string content)
