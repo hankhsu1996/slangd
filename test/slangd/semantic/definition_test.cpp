@@ -1129,9 +1129,27 @@ TEST_CASE(
   fixture.AssertGoToDefinition(
       *index, code, "mem_if", 0, 0);  // Interface port mem_if self-definition
 
-  // TODO: Test interface name cross-reference (requires debugging)
+  // Test interface name cross-reference
+  fixture.AssertGoToDefinition(
+      *index, code, "MemBus", 1, 0);  // Module port MemBus -> interface MemBus
+
+  // TODO: Test modport name cross-reference (currently not implemented)
   // fixture.AssertGoToDefinition(
-  //     *index, code, "MemBus", 1, 0);  // Module port MemBus -> interface MemBus
+  //     *index, code, "cpu", 1, 0);  // Module port cpu -> modport cpu
+
+  // Test interface signal self-definitions
+  fixture.AssertGoToDefinition(
+      *index, code, "addr", 0, 0);  // Interface addr definition
+  fixture.AssertGoToDefinition(
+      *index, code, "data", 0, 0);  // Interface data definition
+
+  // Test modport self-definition
+  fixture.AssertGoToDefinition(
+      *index, code, "cpu", 0, 0);  // Modport cpu definition
+
+  // Test interface member access
+  fixture.AssertGoToDefinition(
+      *index, code, "addr", 1, 0);  // mem_if.addr -> interface addr definition
 }
 
 }  // namespace slangd::semantic

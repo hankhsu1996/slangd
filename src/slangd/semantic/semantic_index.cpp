@@ -675,20 +675,16 @@ void SemanticIndex::IndexVisitor::handle(
       CreateReference(definition_range, interface_port);
 
       // Create cross-references from interface port syntax to target symbols
-      if (syntax->kind == slang::syntax::SyntaxKind::InterfacePortHeader) {
-        const auto& header_syntax =
-            syntax->as<slang::syntax::InterfacePortHeaderSyntax>();
-
-        // Create reference from interface name to interface definition
-        if (interface_port.interfaceDef != nullptr) {
-          CreateReference(
-              header_syntax.nameOrKeyword.range(),
-              *interface_port.interfaceDef);
+      // Interface name cross-reference (MemBus -> interface definition)
+      if (interface_port.interfaceDef != nullptr) {
+        slang::SourceRange interface_name_range =
+            interface_port.interfaceNameRange();
+        if (interface_name_range.start().valid()) {
+          CreateReference(interface_name_range, *interface_port.interfaceDef);
         }
-
-        // TODO: Add modport cross-reference - requires finding modport symbol
-        // through proper instance lookup (see InterfacePortSymbol::getModport)
       }
+
+      // TODO: Modport name cross-reference (cpu -> modport definition)
     }
   }
   this->visitDefault(interface_port);
