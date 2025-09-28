@@ -13,17 +13,16 @@ io_context (main thread)
 
 ## Request Handling Patterns
 
-### Synchronous (Fast Operations)
+### Asynchronous (All LSP Operations)
 ```cpp
 auto OnGotoDefinition() -> asio::awaitable<DefinitionResult> {
-  return language_service_->GetDefinitionsForPosition(...);  // 0-5ms
+  co_return co_await language_service_->GetDefinitionsForPosition(...);  // 0-700ms+
 }
-```
-- Go-to-definition, document symbols
-- **Risk**: Blocks if overlay creation needed
 
-### Asynchronous (Expensive Operations)  
-```cpp
+auto OnDocumentSymbols() -> asio::awaitable<DocumentSymbolResult> {
+  co_return co_await language_service_->GetDocumentSymbols(...);  // 0-700ms+
+}
+
 auto OnDidOpenTextDocument() -> asio::awaitable<void> {
   asio::co_spawn(strand_, [this, uri]() -> asio::awaitable<void> {
     auto diagnostics = co_await language_service_->ComputeDiagnostics(...);  // 700ms+
@@ -31,8 +30,10 @@ auto OnDidOpenTextDocument() -> asio::awaitable<void> {
   }, asio::detached);
 }
 ```
-- Diagnostics, file watching
-- **Pattern**: `co_spawn(strand_, work, asio::detached)`
+- **All operations** now use async pattern for consistency
+- **Cache hits**: 0ms (instant response)
+- **Cache misses**: 700ms+ (overlay compilation on main thread)
+- **Next step**: Background thread pool for true concurrency
 
 ## Overlay Session Management
 
@@ -40,7 +41,7 @@ auto OnDidOpenTextDocument() -> asio::awaitable<void> {
 - **Cache hit**: 0ms (instant response)  
 - **Cache miss**: 700ms+ (full compilation)
 
-**Performance Issue**: Cross-file navigation triggers overlay builds on single thread, causing 10s delays.
+**Performance Issue**: Overlay compilation still blocks main thread for 700ms+ even with async interfaces. Next step: background thread pool for true concurrency.
 
 ## Key Files
 

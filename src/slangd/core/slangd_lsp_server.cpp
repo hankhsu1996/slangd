@@ -236,7 +236,7 @@ auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
 
   const auto& file = file_opt->get();
 
-  co_return language_service_->GetDocumentSymbols(
+  co_return co_await language_service_->GetDocumentSymbols(
       params.textDocument.uri, file.content);
 }
 

@@ -64,7 +64,7 @@ class LanguageService : public LanguageServiceBase {
       -> asio::awaitable<std::vector<lsp::Location>> override;
 
   auto GetDocumentSymbols(std::string uri, std::string content)
-      -> std::vector<lsp::DocumentSymbol> override;
+      -> asio::awaitable<std::vector<lsp::DocumentSymbol>> override;
 
   auto HandleConfigChange() -> void override;
 
@@ -81,12 +81,11 @@ class LanguageService : public LanguageServiceBase {
 
   // Create overlay session for the given URI and content
   auto CreateOverlaySession(std::string uri, std::string content)
-      -> std::shared_ptr<OverlaySession>;
+      -> asio::awaitable<std::shared_ptr<OverlaySession>>;
 
   // Get or create overlay session from cache
-  auto GetOrCreateOverlay(
-      const OverlayCacheKey& key, const std::string& content)
-      -> std::shared_ptr<OverlaySession>;
+  auto GetOrCreateOverlay(OverlayCacheKey key, std::string content)
+      -> asio::awaitable<std::shared_ptr<OverlaySession>>;
 
   // Clear cache when catalog version changes
   auto ClearCache() -> void;
