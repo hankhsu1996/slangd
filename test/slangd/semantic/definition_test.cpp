@@ -1064,7 +1064,6 @@ TEST_CASE(
 
   auto index = fixture.CompileSource(code);
 
-  // Test modport self-definitions
   fixture.AssertGoToDefinition(*index, code, "master", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "slave", 0, 0);
 }
@@ -1090,16 +1089,10 @@ TEST_CASE(
 
   auto index = fixture.CompileSource(code);
 
-  // Test interface signal self-definitions (should work with existing Variable
-  // handlers)
-  fixture.AssertGoToDefinition(
-      *index, code, "addr", 0, 0);  // interface addr definition
-  fixture.AssertGoToDefinition(
-      *index, code, "data", 0, 0);  // interface data definition
-  fixture.AssertGoToDefinition(
-      *index, code, "valid", 0, 0);  // interface valid definition
-  fixture.AssertGoToDefinition(
-      *index, code, "ready", 0, 0);  // interface ready definition
+  fixture.AssertGoToDefinition(*index, code, "addr", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "data", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "valid", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "ready", 0, 0);
 }
 
 TEST_CASE(
@@ -1121,35 +1114,167 @@ TEST_CASE(
 
   auto index = fixture.CompileSource(code);
 
-  // First test: Make sure basic interface definition works
-  fixture.AssertGoToDefinition(
-      *index, code, "MemBus", 0, 0);  // Interface MemBus definition
+  fixture.AssertGoToDefinition(*index, code, "MemBus", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "mem_if", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "MemBus", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "cpu", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "addr", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "data", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "cpu", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "addr", 1, 0);
+}
 
-  // Second test: Interface port self-definition should work
-  fixture.AssertGoToDefinition(
-      *index, code, "mem_if", 0, 0);  // Interface port mem_if self-definition
+// ===== GENERATE BLOCK SUPPORT TEST CASES =====
 
-  // Test interface name cross-reference
-  fixture.AssertGoToDefinition(
-      *index, code, "MemBus", 1, 0);  // Module port MemBus -> interface MemBus
+TEST_CASE(
+    "SemanticIndex generate block self-definition works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module gen_block_test;
+      generate
+        if (1) begin : named_gen
+          logic signal;
+        end
+      endgenerate
+    endmodule
+  )";
 
-  // Test modport name cross-reference
-  fixture.AssertGoToDefinition(
-      *index, code, "cpu", 1, 0);  // Module port cpu -> modport cpu
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "named_gen", 0, 0);
+}
 
-  // Test interface signal self-definitions
-  fixture.AssertGoToDefinition(
-      *index, code, "addr", 0, 0);  // Interface addr definition
-  fixture.AssertGoToDefinition(
-      *index, code, "data", 0, 0);  // Interface data definition
+TEST_CASE(
+    "SemanticIndex generate block array self-definition works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module gen_array_test;
+      genvar i;
+      generate
+        for (i = 0; i < 4; i = i + 1) begin : gen_loop
+          logic [i:0] bus;
+        end
+      endgenerate
+    endmodule
+  )";
 
-  // Test modport self-definition
-  fixture.AssertGoToDefinition(
-      *index, code, "cpu", 0, 0);  // Modport cpu definition
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "gen_loop", 0, 0);
+}
 
-  // Test interface member access
-  fixture.AssertGoToDefinition(
-      *index, code, "addr", 1, 0);  // mem_if.addr -> interface addr definition
+TEST_CASE(
+    "SemanticIndex genvar self-definition outside generate works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module genvar_outside_test;
+      genvar i;
+      generate
+        for (i = 0; i < 4; i = i + 1) begin : gen_loop
+          logic data;
+        end
+      endgenerate
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "i", 0, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex genvar self-definition inside generate works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module genvar_inside_test;
+      generate
+        for (genvar j = 0; j < 2; j = j + 1) begin : inline_gen
+          logic data;
+        end
+      endgenerate
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "j", 0, 0);
+}
+
+// NOTE: Genvar reference tests removed - genvar references in expressions
+// are not currently supported. See docs/SEMANTIC_INDEXING.md "Known
+// Limitations"
+
+TEST_CASE("SemanticIndex multiple generate constructs work", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module multi_gen_test;
+      // Named generate block
+      generate
+        if (1) begin : conditional_gen
+          logic ctrl_signal;
+        end
+      endgenerate
+      
+      // Generate for loop
+      genvar i;
+      generate
+        for (i = 0; i < 2; i = i + 1) begin : array_gen
+          logic [i:0] indexed_bus;
+        end
+      endgenerate
+      
+      // Inline genvar 
+      generate
+        for (genvar k = 0; k < 3; k = k + 1) begin : inline_array_gen
+          logic [k+1:0] sized_bus;
+        end
+      endgenerate
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test generate block self-definitions (these work)
+  fixture.AssertGoToDefinition(*index, code, "conditional_gen", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "array_gen", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "inline_array_gen", 0, 0);
+
+  // Test genvar self-definitions (these work)
+  fixture.AssertGoToDefinition(*index, code, "i", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "k", 0, 0);
+
+  // NOTE: Genvar reference tests removed - not currently supported
+  // See docs/SEMANTIC_INDEXING.md "Known Limitations"
+}
+
+TEST_CASE("SemanticIndex nested generate blocks work", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module nested_gen_test;
+      genvar i, j;
+      generate
+        for (i = 0; i < 2; i = i + 1) begin : outer_gen
+          generate
+            for (j = 0; j < 3; j = j + 1) begin : inner_gen
+              logic [i+j:0] combined_bus;
+            end
+          endgenerate
+        end
+      endgenerate
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test generate block self-definitions (these work)
+  fixture.AssertGoToDefinition(*index, code, "outer_gen", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "inner_gen", 0, 0);
+
+  // Test genvar self-definitions (these work)
+  fixture.AssertGoToDefinition(*index, code, "i", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "j", 0, 0);
+
+  // NOTE: Genvar reference tests removed - not currently supported
+  // See docs/SEMANTIC_INDEXING.md "Known Limitations"
 }
 
 }  // namespace slangd::semantic

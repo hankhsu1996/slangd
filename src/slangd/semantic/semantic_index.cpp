@@ -724,6 +724,30 @@ void SemanticIndex::IndexVisitor::handle(
   this->visitDefault(modport_port);
 }
 
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::GenerateBlockSymbol& generate_block) {
+  if (generate_block.location.valid()) {
+    if (const auto* syntax = generate_block.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(generate_block, *syntax);
+      CreateReference(definition_range, generate_block);
+    }
+  }
+  this->visitDefault(generate_block);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::GenvarSymbol& genvar) {
+  if (genvar.location.valid()) {
+    if (const auto* syntax = genvar.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(genvar, *syntax);
+      CreateReference(definition_range, genvar);
+    }
+  }
+  this->visitDefault(genvar);
+}
+
 // Go-to-definition implementation
 auto SemanticIndex::LookupDefinitionAt(slang::SourceLocation loc) const
     -> std::optional<slang::SourceRange> {

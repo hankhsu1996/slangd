@@ -128,6 +128,51 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       return syntax.sourceRange();
 
+    case SK::GenerateBlock:
+      // Named generate block - extract name from begin block
+      if (syntax.kind == SyntaxKind::GenerateBlock) {
+        const auto& gen_block = syntax.as<slang::syntax::GenerateBlockSyntax>();
+        if (gen_block.beginName != nullptr) {
+          return gen_block.beginName->name.range();
+        }
+      }
+      return syntax.sourceRange();
+
+    case SK::GenerateBlockArray:
+      // Generate block array (for loop) - extract name from loop generate block
+      if (syntax.kind == SyntaxKind::LoopGenerate) {
+        const auto& loop_gen = syntax.as<slang::syntax::LoopGenerateSyntax>();
+        if (loop_gen.block->kind == SyntaxKind::GenerateBlock) {
+          const auto& gen_block =
+              loop_gen.block->as<slang::syntax::GenerateBlockSyntax>();
+          if (gen_block.beginName != nullptr) {
+            return gen_block.beginName->name.range();
+          }
+        }
+      }
+      return syntax.sourceRange();
+
+    case SK::Genvar:
+      // Genvar declaration - extract name from identifier list
+      if (syntax.kind == SyntaxKind::GenvarDeclaration) {
+        const auto& genvar_decl =
+            syntax.as<slang::syntax::GenvarDeclarationSyntax>();
+        // Find the specific genvar name by matching the symbol name
+        for (const auto& identifier : genvar_decl.identifiers) {
+          if (identifier->identifier.valueText() == symbol.name) {
+            return identifier->identifier.range();
+          }
+        }
+      }
+      // Handle inline genvar in loop generate
+      if (syntax.kind == SyntaxKind::LoopGenerate) {
+        const auto& loop_gen = syntax.as<slang::syntax::LoopGenerateSyntax>();
+        if (loop_gen.genvar.valueText() == "genvar") {
+          return loop_gen.identifier.range();
+        }
+      }
+      return syntax.sourceRange();
+
     default:
       // For symbol types without specific handling, fall back to full syntax
       // range

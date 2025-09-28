@@ -150,3 +150,41 @@ See the subroutine implementation for a complete example:
 - **Self-references**: `handle(SubroutineSymbol&)` in `semantic_index.cpp`  
 - **Call references**: `handle(CallExpression&)` in `semantic_index.cpp`
 - **Test coverage**: Multiple test cases in `definition_test.cpp`
+
+## Known Limitations
+
+### SystemVerilog Generate Variables (Genvar References)
+
+**Current Support**: 
+- ✅ Genvar self-definitions work (`genvar i;` - clicking on `i` goes to declaration)
+- ✅ Generate block self-definitions work (clicking on named generate blocks)
+- ❌ **Genvar references in expressions do NOT work**
+
+**Examples of unsupported references**:
+```systemverilog
+module example;
+  genvar i;
+  generate
+    for (i = 0; i < 4; i = i + 1) begin : gen_loop
+         ^     ^     ^           // ← These references fail
+      logic [i:0] bus;
+             ^                  // ← This reference also fails  
+    end
+  endgenerate
+  
+  always_comb begin
+    case (i)  // ← This reference fails too
+      // ...
+    endcase
+  end
+endmodule
+```
+
+**Root Cause**: Genvar references get resolved to constant literals (`IntegerLiteral`) during compilation, losing the original symbol reference information needed for go-to-definition.
+
+**Technical Challenge**: Unlike regular variables that use `NamedValueExpression` (preserving symbol references), genvars resolve directly to constants. The LSP-side replay approach used for parameters fails because:
+1. **Scope limitations**: Genvar references can appear anywhere, not just in type dimensions
+2. **Resolution timing**: Genvars are resolved during generate block elaboration, before LSP processing
+3. **Performance concerns**: Would require aggressive expression rebinding across entire syntax trees
+
+**Future Solution**: This limitation will likely require modifications to the Slang compiler library to preserve original genvar symbol references in an LSP-compatible way, following the existing LSP modifications in the Slang fork (`memberNameRange`, `LanguageServerMode`, etc.).

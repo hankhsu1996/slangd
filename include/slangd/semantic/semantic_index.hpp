@@ -167,6 +167,8 @@ class SemanticIndex {
     void handle(const slang::ast::InterfacePortSymbol& interface_port);
     void handle(const slang::ast::ModportSymbol& modport);
     void handle(const slang::ast::ModportPortSymbol& modport_port);
+    void handle(const slang::ast::GenerateBlockSymbol& generate_block);
+    void handle(const slang::ast::GenvarSymbol& genvar);
 
     // Default traversal
     template <typename T>
@@ -179,6 +181,7 @@ class SemanticIndex {
     const slang::SourceManager* source_manager_;
     std::string current_file_uri_;
 
+    // Helper methods
     void ProcessSymbol(const slang::ast::Symbol& symbol);
     void TraverseCompoundTypeMembers(const slang::ast::Type& type);
 
