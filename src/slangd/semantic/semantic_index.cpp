@@ -461,8 +461,9 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::MemberAccessExpression& expr) {
-  // Create reference from member access to the field symbol
-  CreateReference(expr.sourceRange, expr.member);
+  // Use memberNameRange() for precise LSP go-to-definition
+  // while sourceRange remains as full expression range for AST semantics
+  CreateReference(expr.memberNameRange(), expr.member);
   this->visitDefault(expr);
 }
 
