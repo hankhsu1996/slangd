@@ -9,6 +9,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 - `bazel build //...` - Build everything
 - `bazel test //...` - Run all tests
 - `find src include test -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i` - Format code
+- `bazel run @hedron_compile_commands//:refresh_all` - Refresh compile database
 
 **TDD for new SV features:**
 
@@ -19,6 +20,18 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 - **Unit test files**: <300 lines total
 - **Individual test cases**: <50 lines each
+
+**Adding new language features:**
+
+When adding support for new SystemVerilog constructs:
+1. Add tests first (TDD approach)
+2. Check `docs/SEMANTIC_INDEXING.md` for implementation patterns
+3. **Check existing Slang infrastructure** - look for `get*()`, `find()`, or resolution methods before building custom solutions
+4. Add definition extraction + handlers as needed
+5. Verify with both self-definition and reference tests
+
+**Design Principle:**
+Leverage existing Slang library infrastructure rather than overengineering. The best LSP solutions are simple and reuse Slang's existing resolution logic.
 
 **Pre-commit:**
 
@@ -52,13 +65,14 @@ SystemVerilog LSP server with modular design:
 - Do not use `env SPDLOG_LEVEL=debug bazel test //...`. Set the log level in each test file instead.
 - Generally, just do `bazel test //...` even if you are changing a single file, we don't have that mush tests, so it is fast.
 
-**AST Debugging:**
+**AST/CST Debugging:**
 
 ```bash
 # Use debug/ directory (gitignored) for AST investigation
 mkdir -p debug
 echo 'module test; function logic f(); endfunction; endmodule' > debug/test.sv
-slang debug/test.sv --ast-json debug/test.json
+slang debug/test.sv --ast-json debug/ast.json
+slang debug/test.sv --cst-json debug/cst.json
 ```
 
 - Keep test files minimal - JSON output is extremely large.

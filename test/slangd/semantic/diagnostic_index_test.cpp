@@ -95,19 +95,21 @@ TEST_CASE("DiagnosticIndex detects syntax errors", "[diagnostic_index]") {
   REQUIRE(diagnostics.size() > 0);
 
   // Should have at least one error diagnostic
-  bool found_error = false;
+  SimpleTestFixture::AssertDiagnosticExists(
+      diagnostics, lsp::DiagnosticSeverity::kError);
+
+  // Verify diagnostic properties
   for (const auto& diag : diagnostics) {
     if (diag.severity == lsp::DiagnosticSeverity::kError) {
-      found_error = true;
       // Should have valid range
       REQUIRE(diag.range.start.line >= 0);
       REQUIRE(diag.range.start.character >= 0);
       // Should have message and source
       REQUIRE(!diag.message.empty());
       REQUIRE(diag.source == "slang");
+      break;  // Only need to check one error diagnostic
     }
   }
-  REQUIRE(found_error);
 }
 
 TEST_CASE("DiagnosticIndex detects semantic errors", "[diagnostic_index]") {
@@ -142,14 +144,8 @@ TEST_CASE("DiagnosticIndex detects semantic errors", "[diagnostic_index]") {
   REQUIRE(diagnostics.size() > 0);
 
   // Should find the undefined variable error
-  bool found_undefined_error = false;
-  for (const auto& diag : diagnostics) {
-    if (diag.severity == lsp::DiagnosticSeverity::kError &&
-        diag.message.find("undefined") != std::string::npos) {
-      found_undefined_error = true;
-    }
-  }
-  REQUIRE(found_undefined_error);
+  SimpleTestFixture::AssertDiagnosticExists(
+      diagnostics, lsp::DiagnosticSeverity::kError, "undefined");
 }
 
 TEST_CASE("DiagnosticIndex handles malformed module", "[diagnostic_index]") {
@@ -179,16 +175,17 @@ TEST_CASE("DiagnosticIndex handles malformed module", "[diagnostic_index]") {
   REQUIRE(diagnostics.size() > 0);
 
   // Should have error diagnostics for malformed syntax
-  bool found_syntax_error = false;
+  SimpleTestFixture::AssertDiagnosticExists(
+      diagnostics, lsp::DiagnosticSeverity::kError);
+
+  // Verify basic diagnostic structure
   for (const auto& diag : diagnostics) {
     if (diag.severity == lsp::DiagnosticSeverity::kError) {
-      found_syntax_error = true;
-      // Verify basic diagnostic structure
       REQUIRE(!diag.message.empty());
       REQUIRE(diag.source == "slang");
+      break;  // Only need to check one error diagnostic
     }
   }
-  REQUIRE(found_syntax_error);
 }
 
 TEST_CASE("DiagnosticIndex handles empty file", "[diagnostic_index]") {

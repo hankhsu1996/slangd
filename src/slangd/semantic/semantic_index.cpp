@@ -4,12 +4,15 @@
 
 #include <slang/ast/Compilation.h>
 #include <slang/ast/Symbol.h>
+#include <slang/ast/expressions/CallExpression.h>
+#include <slang/ast/expressions/ConversionExpression.h>
 #include <slang/ast/expressions/MiscExpressions.h>
 #include <slang/ast/symbols/BlockSymbols.h>
 #include <slang/ast/symbols/CompilationUnitSymbols.h>
 #include <slang/ast/symbols/InstanceSymbols.h>
 #include <slang/ast/symbols/MemberSymbols.h>
 #include <slang/ast/symbols/ParameterSymbols.h>
+#include <slang/ast/symbols/PortSymbols.h>
 #include <slang/ast/symbols/VariableSymbols.h>
 #include <slang/ast/types/AllTypes.h>
 #include <slang/syntax/AllSyntax.h>
@@ -244,114 +247,508 @@ void SemanticIndex::IndexVisitor::ProcessSymbol(
   if (should_store) {
     index_->symbols_[unwrapped.location] = info;
   }
+}
 
-  // Create self-reference entries for parameter definitions to support
-  // go-to-definition
-  if (unwrapped.kind == slang::ast::SymbolKind::Parameter && is_definition) {
-    ReferenceEntry ref_entry{
-        .source_range = definition_range,  // Same as target for self-reference
-        .target_loc = unwrapped.location,
-        .target_range = definition_range,
-        .symbol_kind = ConvertToLspKind(unwrapped),
-        .symbol_name = std::string(unwrapped.name)};
-    index_->references_.push_back(ref_entry);
+void SemanticIndex::IndexVisitor::ProcessDimensionsInScope(
+    const slang::ast::Scope& scope,
+    const slang::syntax::SyntaxList<slang::syntax::VariableDimensionSyntax>&
+        dimensions) {
+  for (const auto& dim : dimensions) {
+    if (dim == nullptr || dim->specifier == nullptr) {
+      continue;
+    }
+
+    const auto& spec = *dim->specifier;
+    slang::ast::ASTContext context{scope, slang::ast::LookupLocation::max};
+
+    switch (spec.kind) {
+      case slang::syntax::SyntaxKind::RangeDimensionSpecifier: {
+        const auto& range_spec =
+            spec.as<slang::syntax::RangeDimensionSpecifierSyntax>();
+        if (range_spec.selector == nullptr) {
+          break;
+        }
+
+        const auto& selector = *range_spec.selector;
+        switch (selector.kind) {
+          case slang::syntax::SyntaxKind::BitSelect: {
+            const auto& bit_select =
+                selector.as<slang::syntax::BitSelectSyntax>();
+            if (bit_select.expr != nullptr) {
+              const auto& expr =
+                  slang::ast::Expression::bind(*bit_select.expr, context);
+              expr.visit(*this);
+            }
+            break;
+          }
+          case slang::syntax::SyntaxKind::SimpleRangeSelect:
+          case slang::syntax::SyntaxKind::AscendingRangeSelect:
+          case slang::syntax::SyntaxKind::DescendingRangeSelect: {
+            const auto& range_select =
+                selector.as<slang::syntax::RangeSelectSyntax>();
+            if (range_select.left != nullptr) {
+              const auto& left_expr =
+                  slang::ast::Expression::bind(*range_select.left, context);
+              left_expr.visit(*this);
+            }
+            if (range_select.right != nullptr) {
+              const auto& right_expr =
+                  slang::ast::Expression::bind(*range_select.right, context);
+              right_expr.visit(*this);
+            }
+            break;
+          }
+          default:
+            // Other selector kinds don't contain parameter expressions
+            break;
+        }
+        break;
+      }
+      case slang::syntax::SyntaxKind::WildcardDimensionSpecifier:
+        // Wildcard dimensions (e.g., [*]) don't contain expressions to visit
+        break;
+      case slang::syntax::SyntaxKind::QueueDimensionSpecifier: {
+        const auto& queue_spec =
+            spec.as<slang::syntax::QueueDimensionSpecifierSyntax>();
+        if (queue_spec.maxSizeClause != nullptr &&
+            queue_spec.maxSizeClause->expr != nullptr) {
+          const auto& max_size_expr = slang::ast::Expression::bind(
+              *queue_spec.maxSizeClause->expr, context);
+          max_size_expr.visit(*this);
+        }
+        break;
+      }
+      default:
+        // Other dimension specifier kinds don't contain parameter expressions
+        break;
+    }
   }
+}
 
-  // Definition ranges are now stored in references_ vector when references are
-  // collected
+void SemanticIndex::IndexVisitor::ProcessVariableDimensions(
+    const slang::ast::VariableSymbol& symbol,
+    const slang::syntax::SyntaxList<slang::syntax::VariableDimensionSyntax>&
+        dimensions) {
+  ProcessDimensionsInScope(*symbol.getParentScope(), dimensions);
+}
+
+void SemanticIndex::IndexVisitor::ProcessIntegerTypeDimensions(
+    const slang::ast::Scope& scope,
+    const slang::syntax::DataTypeSyntax& type_syntax) {
+  if (type_syntax.kind == slang::syntax::SyntaxKind::LogicType ||
+      type_syntax.kind == slang::syntax::SyntaxKind::RegType ||
+      type_syntax.kind == slang::syntax::SyntaxKind::BitType) {
+    const auto& integer_type =
+        type_syntax.as<slang::syntax::IntegerTypeSyntax>();
+    ProcessDimensionsInScope(scope, integer_type.dimensions);
+  }
+}
+
+void SemanticIndex::IndexVisitor::TraverseCompoundTypeMembers(
+    const slang::ast::Type& type) {
+  // Manual semantic traversal for compound types following Slang's design
+  // pattern
+  switch (type.kind) {
+    case slang::ast::SymbolKind::EnumType: {
+      const auto& enum_type = type.as<slang::ast::EnumType>();
+      for (const auto& enum_value : enum_type.values()) {
+        this->visit(enum_value);
+      }
+      break;
+    }
+    case slang::ast::SymbolKind::PackedStructType: {
+      const auto& struct_type = type.as<slang::ast::PackedStructType>();
+      for (const auto& field :
+           struct_type.membersOfType<slang::ast::FieldSymbol>()) {
+        this->visit(field);
+      }
+      break;
+    }
+    case slang::ast::SymbolKind::UnpackedStructType: {
+      const auto& struct_type = type.as<slang::ast::UnpackedStructType>();
+      for (const auto& field : struct_type.fields) {
+        this->visit(*field);
+      }
+      break;
+    }
+    case slang::ast::SymbolKind::PackedUnionType: {
+      const auto& union_type = type.as<slang::ast::PackedUnionType>();
+      for (const auto& field :
+           union_type.membersOfType<slang::ast::FieldSymbol>()) {
+        this->visit(field);
+      }
+      break;
+    }
+    case slang::ast::SymbolKind::UnpackedUnionType: {
+      const auto& union_type = type.as<slang::ast::UnpackedUnionType>();
+      for (const auto& field : union_type.fields) {
+        this->visit(*field);
+      }
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+void SemanticIndex::IndexVisitor::CreateReference(
+    slang::SourceRange source_range, const slang::ast::Symbol& target_symbol) {
+  if (target_symbol.location.valid()) {
+    if (const auto* syntax = target_symbol.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(target_symbol, *syntax);
+
+      ReferenceEntry ref{
+          .source_range = source_range,
+          .target_loc = target_symbol.location,
+          .target_range = definition_range,
+          .symbol_kind = ConvertToLspKind(target_symbol),
+          .symbol_name = std::string(target_symbol.name)};
+      index_->references_.push_back(ref);
+    }
+  }
 }
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::NamedValueExpression& expr) {
-  // Store reference with embedded definition information
-  if (expr.symbol.location.valid()) {
-    if (const auto* syntax = expr.symbol.getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(expr.symbol, *syntax);
+  const slang::ast::Symbol* target_symbol = &expr.symbol;
 
-      // Unified references_ storage with embedded definition range
-      ReferenceEntry ref_entry{
-          .source_range = expr.sourceRange,
-          .target_loc = expr.symbol.location,
-          .target_range = definition_range,
-          .symbol_kind = ConvertToLspKind(expr.symbol),
-          .symbol_name = std::string(expr.symbol.name)};
-      index_->references_.push_back(ref_entry);
+  if (expr.symbol.kind == slang::ast::SymbolKind::ExplicitImport) {
+    const auto& import_symbol =
+        expr.symbol.as<slang::ast::ExplicitImportSymbol>();
+    const auto* imported_symbol = import_symbol.importedSymbol();
+    if (imported_symbol != nullptr) {
+      target_symbol = imported_symbol;
     }
   }
 
-  // Continue traversal
+  // Handle compiler-generated function return variables
+  // When referencing the implicit return variable (e.g., my_func = value),
+  // redirect to the parent subroutine for better UX
+  if (expr.symbol.kind == slang::ast::SymbolKind::Variable) {
+    const auto& variable = expr.symbol.as<slang::ast::VariableSymbol>();
+    if (variable.flags.has(slang::ast::VariableFlags::CompilerGenerated)) {
+      const auto* parent_scope = variable.getParentScope();
+      if (parent_scope != nullptr) {
+        const auto& parent_symbol = parent_scope->asSymbol();
+        if (parent_symbol.kind == slang::ast::SymbolKind::Subroutine) {
+          target_symbol = &parent_symbol;
+        }
+      }
+    }
+  }
+
+  CreateReference(expr.sourceRange, *target_symbol);
+  this->visitDefault(expr);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::CallExpression& expr) {
+  // Handle references to subroutines (functions/tasks) in calls
+  if (!expr.isSystemCall()) {
+    if (const auto* subroutine_symbol = std::get_if<0>(&expr.subroutine)) {
+      CreateReference(expr.sourceRange, **subroutine_symbol);
+    }
+  }
+  this->visitDefault(expr);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::ConversionExpression& expr) {
+  CreateReference(expr.sourceRange, *expr.type);
+  this->visitDefault(expr);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::MemberAccessExpression& expr) {
+  // Use memberNameRange() for precise LSP go-to-definition
+  // while sourceRange remains as full expression range for AST semantics
+  CreateReference(expr.memberNameRange(), expr.member);
   this->visitDefault(expr);
 }
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::VariableSymbol& symbol) {
-  // Track type references in variable declarations (e.g., data_t my_data;)
   const auto& declared_type = symbol.getDeclaredType();
   if (const auto& type_syntax = declared_type->getTypeSyntax()) {
     if (type_syntax->kind == slang::syntax::SyntaxKind::NamedType) {
       const auto& named_type =
           type_syntax->as<slang::syntax::NamedTypeSyntax>();
       const auto& resolved_type = symbol.getType();
+      CreateReference(named_type.name->sourceRange(), resolved_type);
+    }
 
-      if (resolved_type.location.valid()) {
-        // Store type reference with embedded definition range
-        if (const auto* syntax = resolved_type.getSyntax()) {
-          auto definition_range = DefinitionExtractor::ExtractDefinitionRange(
-              resolved_type, *syntax);
+    ProcessIntegerTypeDimensions(*symbol.getParentScope(), *type_syntax);
+  }
 
-          // Unified references_ storage for type references
-          ReferenceEntry ref_entry{
-              .source_range = named_type.name->sourceRange(),
-              .target_loc = resolved_type.location,
-              .target_range = definition_range,
-              .symbol_kind = ConvertToLspKind(resolved_type),
-              .symbol_name = std::string(resolved_type.name)};
-          index_->references_.push_back(ref_entry);
-        }
-      }
+  if (const auto* decl_syntax = symbol.getSyntax()) {
+    if (decl_syntax->kind == slang::syntax::SyntaxKind::Declarator) {
+      const auto& declarator =
+          decl_syntax->as<slang::syntax::DeclaratorSyntax>();
+      ProcessVariableDimensions(symbol, declarator.dimensions);
     }
   }
 
-  // Continue traversal
+  // Traverse compound type members for LSP symbol indexing
+  TraverseCompoundTypeMembers(symbol.getType());
+
   this->visitDefault(symbol);
 }
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::WildcardImportSymbol& import_symbol) {
-  // Track reference: import statement -> package location
   const auto* package = import_symbol.getPackage();
-  if (package != nullptr && package->location.valid()) {
-    // The import symbol itself doesn't have a meaningful source range for the
-    // package name. We need to extract the package name reference from the
-    // syntax. For now, use the import symbol's location as the reference
-    // location.
-    // TODO(hankhsu): Extract precise package name location from import syntax
-    slang::SourceRange import_range{
-        import_symbol.location, import_symbol.location};
-
-    // Store import reference with embedded definition range
-    if (const auto* pkg_syntax = package->getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(*package, *pkg_syntax);
-
-      // Unified references_ storage for import references
-      ReferenceEntry ref_entry{
-          .source_range = import_range,
-          .target_loc = package->location,
-          .target_range = definition_range,
-          .symbol_kind = ConvertToLspKind(*package),
-          .symbol_name = std::string(package->name)};
-      index_->references_.push_back(ref_entry);
-    }
+  if (package == nullptr || !package->location.valid()) {
+    this->visitDefault(import_symbol);
+    return;
   }
 
-  // Continue traversal
+  const auto* import_syntax = import_symbol.getSyntax();
+  if (import_syntax == nullptr ||
+      import_syntax->kind != slang::syntax::SyntaxKind::PackageImportItem) {
+    this->visitDefault(import_symbol);
+    return;
+  }
+
+  const auto& import_item =
+      import_syntax->as<slang::syntax::PackageImportItemSyntax>();
+  const auto* pkg_syntax = package->getSyntax();
+  if (pkg_syntax == nullptr) {
+    this->visitDefault(import_symbol);
+    return;
+  }
+
+  CreateReference(import_item.package.range(), *package);
   this->visitDefault(import_symbol);
 }
 
-// Go-to-definition implementation
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::ExplicitImportSymbol& import_symbol) {
+  const auto* package = import_symbol.package();
+  if (package == nullptr || !package->location.valid()) {
+    this->visitDefault(import_symbol);
+    return;
+  }
 
+  const auto* import_syntax = import_symbol.getSyntax();
+  if (import_syntax == nullptr ||
+      import_syntax->kind != slang::syntax::SyntaxKind::PackageImportItem) {
+    this->visitDefault(import_symbol);
+    return;
+  }
+
+  const auto& import_item =
+      import_syntax->as<slang::syntax::PackageImportItemSyntax>();
+  const auto* pkg_syntax = package->getSyntax();
+  if (pkg_syntax == nullptr) {
+    this->visitDefault(import_symbol);
+    return;
+  }
+
+  CreateReference(import_item.package.range(), *package);
+
+  // Create reference for the imported symbol name
+  const auto* imported_symbol = import_symbol.importedSymbol();
+  if (imported_symbol != nullptr) {
+    CreateReference(import_item.item.range(), *imported_symbol);
+  }
+
+  this->visitDefault(import_symbol);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::ParameterSymbol& param) {
+  if (param.location.valid()) {
+    if (const auto* syntax = param.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(param, *syntax);
+      CreateReference(definition_range, param);
+    }
+  }
+  this->visitDefault(param);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::SubroutineSymbol& subroutine) {
+  if (subroutine.location.valid()) {
+    if (const auto* syntax = subroutine.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(subroutine, *syntax);
+      CreateReference(definition_range, subroutine);
+    }
+  }
+  this->visitDefault(subroutine);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::DefinitionSymbol& definition) {
+  if (definition.location.valid()) {
+    if (const auto* syntax = definition.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(definition, *syntax);
+      CreateReference(definition_range, definition);
+    }
+  }
+  this->visitDefault(definition);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::TypeAliasType& type_alias) {
+  if (const auto* typedef_syntax = type_alias.getSyntax()) {
+    if (typedef_syntax->kind == slang::syntax::SyntaxKind::TypedefDeclaration) {
+      const auto& typedef_decl =
+          typedef_syntax->as<slang::syntax::TypedefDeclarationSyntax>();
+      ProcessDimensionsInScope(
+          *type_alias.getParentScope(), typedef_decl.dimensions);
+    }
+  }
+
+  if (type_alias.location.valid()) {
+    if (const auto* syntax = type_alias.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(type_alias, *syntax);
+      CreateReference(definition_range, type_alias);
+    }
+  }
+
+  if (const auto* target_syntax = type_alias.targetType.getTypeSyntax()) {
+    ProcessIntegerTypeDimensions(*type_alias.getParentScope(), *target_syntax);
+  }
+
+  // Traverse compound type members for LSP symbol indexing
+  TraverseCompoundTypeMembers(type_alias.targetType.getType());
+
+  this->visitDefault(type_alias);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::EnumValueSymbol& enum_value) {
+  if (enum_value.location.valid()) {
+    if (const auto* syntax = enum_value.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(enum_value, *syntax);
+      CreateReference(definition_range, enum_value);
+    }
+  }
+  this->visitDefault(enum_value);
+}
+
+void SemanticIndex::IndexVisitor::handle(const slang::ast::FieldSymbol& field) {
+  if (field.location.valid()) {
+    if (const auto* syntax = field.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(field, *syntax);
+      CreateReference(definition_range, field);
+    }
+  }
+  this->visitDefault(field);
+}
+
+void SemanticIndex::IndexVisitor::handle(const slang::ast::NetSymbol& net) {
+  if (net.location.valid()) {
+    if (const auto* syntax = net.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(net, *syntax);
+      CreateReference(definition_range, net);
+    }
+  }
+  this->visitDefault(net);
+}
+
+void SemanticIndex::IndexVisitor::handle(const slang::ast::PortSymbol& port) {
+  if (port.location.valid()) {
+    if (const auto* syntax = port.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(port, *syntax);
+      CreateReference(definition_range, port);
+    }
+  }
+  this->visitDefault(port);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::InterfacePortSymbol& interface_port) {
+  if (interface_port.location.valid()) {
+    if (const auto* syntax = interface_port.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(interface_port, *syntax);
+      CreateReference(definition_range, interface_port);
+
+      // Create cross-references from interface port syntax to target symbols
+      // Interface name cross-reference (MemBus -> interface definition)
+      if (interface_port.interfaceDef != nullptr) {
+        slang::SourceRange interface_name_range =
+            interface_port.interfaceNameRange();
+        if (interface_name_range.start().valid()) {
+          CreateReference(interface_name_range, *interface_port.interfaceDef);
+        }
+      }
+
+      // Modport name cross-reference (cpu -> modport definition)
+      if (!interface_port.modport.empty()) {
+        auto modport_range = interface_port.modportNameRange();
+        if (modport_range.start().valid()) {
+          // Use existing Slang resolution logic to get ModportSymbol
+          auto connection = interface_port.getConnection();
+          if (connection.second != nullptr) {
+            CreateReference(modport_range, *connection.second);
+          }
+        }
+      }
+    }
+  }
+  this->visitDefault(interface_port);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::ModportSymbol& modport) {
+  if (modport.location.valid()) {
+    if (const auto* syntax = modport.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(modport, *syntax);
+      CreateReference(definition_range, modport);
+    }
+  }
+  this->visitDefault(modport);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::ModportPortSymbol& modport_port) {
+  if (modport_port.location.valid()) {
+    if (const auto* syntax = modport_port.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(modport_port, *syntax);
+      CreateReference(definition_range, modport_port);
+    }
+  }
+  this->visitDefault(modport_port);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::GenerateBlockSymbol& generate_block) {
+  if (generate_block.location.valid()) {
+    if (const auto* syntax = generate_block.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(generate_block, *syntax);
+      CreateReference(definition_range, generate_block);
+    }
+  }
+  this->visitDefault(generate_block);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::GenvarSymbol& genvar) {
+  if (genvar.location.valid()) {
+    if (const auto* syntax = genvar.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(genvar, *syntax);
+      CreateReference(definition_range, genvar);
+    }
+  }
+  this->visitDefault(genvar);
+}
+
+// Go-to-definition implementation
 auto SemanticIndex::LookupDefinitionAt(slang::SourceLocation loc) const
     -> std::optional<slang::SourceRange> {
   // Direct lookup using unified reference storage

@@ -60,11 +60,12 @@ class SemanticTestFixture {
     // Detect ambiguous symbol names early
     size_t second_occurrence = source.find(symbol, offset + 1);
     if (second_occurrence != std::string::npos) {
-      throw std::runtime_error(fmt::format(
-          "MakeKey: Ambiguous symbol '{}' found at multiple locations. "
-          "Use unique descriptive names (e.g., 'test_signal' not 'signal') "
-          "or use MakeKeyAt({}) for specific occurrence.",
-          symbol, offset));
+      throw std::runtime_error(
+          fmt::format(
+              "MakeKey: Ambiguous symbol '{}' found at multiple locations. "
+              "Use unique descriptive names (e.g., 'test_signal' not 'signal') "
+              "or use MakeKeyAt({}) for specific occurrence.",
+              symbol, offset));
     }
 
     return SymbolKey{.bufferId = buffer_id_.getId(), .offset = offset};
@@ -78,9 +79,10 @@ class SemanticTestFixture {
     for (size_t i = 0; i <= occurrence; ++i) {
       offset = source.find(symbol, offset);
       if (offset == std::string::npos) {
-        throw std::runtime_error(fmt::format(
-            "MakeKeyAt: Symbol '{}' occurrence {} not found in source", symbol,
-            occurrence));
+        throw std::runtime_error(
+            fmt::format(
+                "MakeKeyAt: Symbol '{}' occurrence {} not found in source",
+                symbol, occurrence));
       }
       if (i < occurrence) {
         offset += symbol.length();

@@ -61,3 +61,43 @@ TEST_CASE("Definition lookup for package imports", "[definition][multifile]") {
   // Verify cross-file definition resolution works
   REQUIRE(def_range->start().buffer() != location.buffer());
 }
+
+TEST_CASE(
+    "Definition lookup for package name in import statement",
+    "[definition][multifile]") {
+  MultiFileSemanticFixture fixture;
+
+  // Create package file
+  const std::string package_content = R"(
+    package my_pkg;
+      parameter WIDTH = 32;
+      typedef logic [WIDTH-1:0] data_t;
+    endpackage
+  )";
+
+  // Create module that imports the package
+  const std::string module_content = R"(
+    module test_module;
+      import my_pkg::*;
+      data_t my_data;
+    endmodule
+  )";
+
+  // Build SemanticIndex
+  auto result = fixture.CreateBuilder()
+                    .SetCurrentFile(module_content, "test_module")
+                    .AddUnopendFile(package_content, "my_pkg")
+                    .Build();
+  REQUIRE(result.index != nullptr);
+
+  // Find the package name in the import statement (clicking on "my_pkg")
+  auto location = fixture.FindLocation(module_content, "my_pkg");
+  REQUIRE(location.valid());
+
+  // Look up definition - should resolve to package definition in other file
+  auto def_range = result.index->LookupDefinitionAt(location);
+  REQUIRE(def_range.has_value());
+
+  // Verify it resolves to the package definition in the other file
+  REQUIRE(def_range->start().buffer() != location.buffer());
+}

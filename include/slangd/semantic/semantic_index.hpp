@@ -137,11 +137,38 @@ class SemanticIndex {
     // Reference tracking for NamedValueExpression
     void handle(const slang::ast::NamedValueExpression& expr);
 
+    // Reference tracking for CallExpression (function/task calls)
+    void handle(const slang::ast::CallExpression& expr);
+
+    // Reference tracking for ConversionExpression (type casts)
+    void handle(const slang::ast::ConversionExpression& expr);
+
+    // Reference tracking for MemberAccessExpression (struct/union field access)
+    void handle(const slang::ast::MemberAccessExpression& expr);
+
     // Reference tracking for VariableSymbol (type references)
     void handle(const slang::ast::VariableSymbol& symbol);
 
     // Reference tracking for WildcardImportSymbol (package references)
     void handle(const slang::ast::WildcardImportSymbol& import_symbol);
+
+    // Reference tracking for ExplicitImportSymbol (package references)
+    void handle(const slang::ast::ExplicitImportSymbol& import_symbol);
+
+    // Definition handlers for self-references
+    void handle(const slang::ast::ParameterSymbol& param);
+    void handle(const slang::ast::SubroutineSymbol& subroutine);
+    void handle(const slang::ast::DefinitionSymbol& definition);
+    void handle(const slang::ast::TypeAliasType& type_alias);
+    void handle(const slang::ast::EnumValueSymbol& enum_value);
+    void handle(const slang::ast::FieldSymbol& field);
+    void handle(const slang::ast::NetSymbol& net);
+    void handle(const slang::ast::PortSymbol& port);
+    void handle(const slang::ast::InterfacePortSymbol& interface_port);
+    void handle(const slang::ast::ModportSymbol& modport);
+    void handle(const slang::ast::ModportPortSymbol& modport_port);
+    void handle(const slang::ast::GenerateBlockSymbol& generate_block);
+    void handle(const slang::ast::GenvarSymbol& genvar);
 
     // Default traversal
     template <typename T>
@@ -154,7 +181,31 @@ class SemanticIndex {
     const slang::SourceManager* source_manager_;
     std::string current_file_uri_;
 
+    // Helper methods
     void ProcessSymbol(const slang::ast::Symbol& symbol);
+    void TraverseCompoundTypeMembers(const slang::ast::Type& type);
+
+    // Helper to process all dimension specifier types comprehensively
+    void ProcessVariableDimensions(
+        const slang::ast::VariableSymbol& symbol,
+        const slang::syntax::SyntaxList<slang::syntax::VariableDimensionSyntax>&
+            dimensions);
+
+    // Generic dimension processor for any scope context
+    void ProcessDimensionsInScope(
+        const slang::ast::Scope& scope,
+        const slang::syntax::SyntaxList<slang::syntax::VariableDimensionSyntax>&
+            dimensions);
+
+    // Helper to process integer type packed dimensions
+    void ProcessIntegerTypeDimensions(
+        const slang::ast::Scope& scope,
+        const slang::syntax::DataTypeSyntax& type_syntax);
+
+    // Helper to create reference entries (source -> target)
+    void CreateReference(
+        slang::SourceRange source_range,
+        const slang::ast::Symbol& target_symbol);
   };
 };
 

@@ -11,23 +11,16 @@ namespace slangd::semantic {
 // the exact name range for go-to-definition functionality.
 class DefinitionExtractor {
  public:
-  // Main extraction method that delegates to symbol-type specialists
+  // Extract the most precise definition range for a symbol.
+  // Always returns a valid range - either the precise name range when possible,
+  // or the full syntax range as a safe fallback. Safe to call with any
+  // symbol/syntax combination.
   static auto ExtractDefinitionRange(
       const slang::ast::Symbol& symbol, const slang::syntax::SyntaxNode& syntax)
       -> slang::SourceRange;
 
  private:
-  // Symbol-type specific extraction methods
-  static auto ExtractPackageRange(const slang::syntax::SyntaxNode& syntax)
-      -> slang::SourceRange;
-  static auto ExtractModuleRange(const slang::syntax::SyntaxNode& syntax)
-      -> slang::SourceRange;
-  static auto ExtractTypedefRange(const slang::syntax::SyntaxNode& syntax)
-      -> slang::SourceRange;
-  static auto ExtractVariableRange(const slang::syntax::SyntaxNode& syntax)
-      -> slang::SourceRange;
-  static auto ExtractParameterRange(const slang::syntax::SyntaxNode& syntax)
-      -> slang::SourceRange;
+  // Symbol-type specific extraction method for complex cases
   static auto ExtractStatementBlockRange(
       const slang::syntax::SyntaxNode& syntax) -> slang::SourceRange;
 };

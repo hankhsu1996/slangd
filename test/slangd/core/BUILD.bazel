@@ -1,0 +1,18 @@
+"""
+Build file for slangd core tests.
+"""
+
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+cc_test(
+    name = "project_layout_service_test",
+    timeout = "short",
+    srcs = [
+        "project_layout_service_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)
