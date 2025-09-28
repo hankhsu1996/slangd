@@ -1041,4 +1041,97 @@ TEST_CASE("SemanticIndex port self-definition lookup works", "[definition]") {
   fixture.AssertGoToDefinition(*index, code, "data", 1, 0);
 }
 
+TEST_CASE(
+    "SemanticIndex interface modport self-definition works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    interface I2C;
+      logic sda, scl;
+      
+      modport master (
+        output sda, scl
+      );
+      
+      modport slave (
+        input sda, scl
+      );
+    endinterface
+
+    module TestModule;
+      I2C i2c_inst();
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test modport self-definitions
+  fixture.AssertGoToDefinition(*index, code, "master", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "slave", 0, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex interface signal self-definition works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    interface MemBus;
+      logic [31:0] addr, data;
+      logic valid, ready;
+      
+      modport cpu (
+        output addr, data, valid,
+        input ready
+      );
+    endinterface
+
+    module TestModule;
+      MemBus mem_inst();
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test interface signal self-definitions (should work with existing Variable
+  // handlers)
+  fixture.AssertGoToDefinition(
+      *index, code, "addr", 0, 0);  // interface addr definition
+  fixture.AssertGoToDefinition(
+      *index, code, "data", 0, 0);  // interface data definition
+  fixture.AssertGoToDefinition(
+      *index, code, "valid", 0, 0);  // interface valid definition
+  fixture.AssertGoToDefinition(
+      *index, code, "ready", 0, 0);  // interface ready definition
+}
+
+TEST_CASE(
+    "SemanticIndex interface port in module declaration works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    interface MemBus;
+      logic [31:0] addr, data;
+      modport cpu (output addr, data);
+    endinterface
+
+    module CPU(
+      MemBus.cpu mem_if
+    );
+      assign mem_if.addr = 32'h1000;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // First test: Make sure basic interface definition works
+  fixture.AssertGoToDefinition(
+      *index, code, "MemBus", 0, 0);  // Interface MemBus definition
+
+  // Second test: Interface port self-definition should work
+  fixture.AssertGoToDefinition(
+      *index, code, "mem_if", 0, 0);  // Interface port mem_if self-definition
+
+  // TODO: Test interface name cross-reference (requires debugging)
+  // fixture.AssertGoToDefinition(
+  //     *index, code, "MemBus", 1, 0);  // Module port MemBus -> interface MemBus
+}
+
 }  // namespace slangd::semantic

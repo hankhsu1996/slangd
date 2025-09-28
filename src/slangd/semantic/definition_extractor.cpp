@@ -62,7 +62,8 @@ auto DefinitionExtractor::ExtractDefinitionRange(
         // Both task and function declarations use FunctionDeclarationSyntax
         const auto& func_syntax =
             syntax.as<slang::syntax::FunctionDeclarationSyntax>();
-        if (func_syntax.prototype && func_syntax.prototype->name) {
+        if ((func_syntax.prototype != nullptr) &&
+            (func_syntax.prototype->name != nullptr)) {
           return func_syntax.prototype->name->sourceRange();
         }
       }
@@ -102,6 +103,28 @@ auto DefinitionExtractor::ExtractDefinitionRange(
         if (!decl_syntax.declarators.empty()) {
           return decl_syntax.declarators[0]->name.range();
         }
+      }
+      return syntax.sourceRange();
+
+    case SK::InterfacePort:
+      // Interface port symbols - extract name from interface port header
+      if (syntax.kind == SyntaxKind::InterfacePortHeader) {
+        return syntax.as<slang::syntax::InterfacePortHeaderSyntax>()
+            .nameOrKeyword.range();
+      }
+      return syntax.sourceRange();
+
+    case SK::Modport:
+      // Modport symbols - extract name from modport item
+      if (syntax.kind == SyntaxKind::ModportItem) {
+        return syntax.as<slang::syntax::ModportItemSyntax>().name.range();
+      }
+      return syntax.sourceRange();
+
+    case SK::ModportPort:
+      // Modport port symbols - extract name from modport named port
+      if (syntax.kind == SyntaxKind::ModportNamedPort) {
+        return syntax.as<slang::syntax::ModportNamedPortSyntax>().name.range();
       }
       return syntax.sourceRange();
 

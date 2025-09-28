@@ -164,6 +164,9 @@ class SemanticIndex {
     void handle(const slang::ast::FieldSymbol& field);
     void handle(const slang::ast::NetSymbol& net);
     void handle(const slang::ast::PortSymbol& port);
+    void handle(const slang::ast::InterfacePortSymbol& interface_port);
+    void handle(const slang::ast::ModportSymbol& modport);
+    void handle(const slang::ast::ModportPortSymbol& modport_port);
 
     // Default traversal
     template <typename T>

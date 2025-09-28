@@ -666,6 +666,58 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::PortSymbol& port) {
   this->visitDefault(port);
 }
 
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::InterfacePortSymbol& interface_port) {
+  if (interface_port.location.valid()) {
+    if (const auto* syntax = interface_port.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(interface_port, *syntax);
+      CreateReference(definition_range, interface_port);
+
+      // Create cross-references from interface port syntax to target symbols
+      if (syntax->kind == slang::syntax::SyntaxKind::InterfacePortHeader) {
+        const auto& header_syntax =
+            syntax->as<slang::syntax::InterfacePortHeaderSyntax>();
+
+        // Create reference from interface name to interface definition
+        if (interface_port.interfaceDef != nullptr) {
+          CreateReference(
+              header_syntax.nameOrKeyword.range(),
+              *interface_port.interfaceDef);
+        }
+
+        // TODO: Add modport cross-reference - requires finding modport symbol
+        // through proper instance lookup (see InterfacePortSymbol::getModport)
+      }
+    }
+  }
+  this->visitDefault(interface_port);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::ModportSymbol& modport) {
+  if (modport.location.valid()) {
+    if (const auto* syntax = modport.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(modport, *syntax);
+      CreateReference(definition_range, modport);
+    }
+  }
+  this->visitDefault(modport);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::ModportPortSymbol& modport_port) {
+  if (modport_port.location.valid()) {
+    if (const auto* syntax = modport_port.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(modport_port, *syntax);
+      CreateReference(definition_range, modport_port);
+    }
+  }
+  this->visitDefault(modport_port);
+}
+
 // Go-to-definition implementation
 auto SemanticIndex::LookupDefinitionAt(slang::SourceLocation loc) const
     -> std::optional<slang::SourceRange> {
