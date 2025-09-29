@@ -475,9 +475,26 @@ void SemanticIndex::IndexVisitor::handle(
       const auto& named_type =
           type_syntax->as<slang::syntax::NamedTypeSyntax>();
       const auto& resolved_type = symbol.getType();
-      CreateReference(named_type.name->sourceRange(), resolved_type);
-    }
 
+      // For user-defined types (like typedef), we need to find the defining
+      // symbol
+      if (const auto* type_alias =
+              resolved_type.as_if<slang::ast::TypeAliasType>()) {
+        CreateReference(named_type.name->sourceRange(), *type_alias);
+      } else if (
+          const auto* packed_array =
+              resolved_type.as_if<slang::ast::PackedArrayType>()) {
+        // For packed arrays like packet_t[3:0], look at the element type
+        const auto& element_type = packed_array->elementType;
+        if (const auto* type_alias =
+                element_type.as_if<slang::ast::TypeAliasType>()) {
+          CreateReference(named_type.name->sourceRange(), *type_alias);
+        }
+      }
+    }
+  }
+
+  if (const auto& type_syntax = declared_type->getTypeSyntax()) {
     ProcessIntegerTypeDimensions(*symbol.getParentScope(), *type_syntax);
   }
 

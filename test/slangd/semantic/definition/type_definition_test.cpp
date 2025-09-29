@@ -379,3 +379,28 @@ TEST_CASE("SemanticIndex direct struct declaration works", "[definition]") {
   fixture.AssertGoToDefinition(*index, code, "x", 1, 0);
   fixture.AssertGoToDefinition(*index, code, "y", 1, 0);
 }
+
+TEST_CASE(
+    "SemanticIndex typedef reference in packed array port works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    typedef struct packed {
+      logic [7:0] data;
+    } packet_t;
+
+    module test_module (
+      output packet_t    simple_output,
+      input  packet_t    [3:0] packed_array
+    );
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test simple type reference - this should work
+  fixture.AssertGoToDefinition(*index, code, "packet_t", 1, 0);
+
+  // Test type reference in packed array - this was the failing case
+  fixture.AssertGoToDefinition(*index, code, "packet_t", 2, 0);
+}
