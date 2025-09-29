@@ -1,6 +1,7 @@
 #include "slangd/services/language_service.hpp"
 
 #include <algorithm>
+#include <ranges>
 
 #include <slang/ast/symbols/CompilationUnitSymbols.h>
 #include <slang/diagnostics/DiagnosticEngine.h>
@@ -17,8 +18,10 @@ LanguageService::LanguageService(
     asio::any_io_executor executor, std::shared_ptr<spdlog::logger> logger)
     : global_catalog_(nullptr),
       logger_(logger ? logger : spdlog::default_logger()),
-      executor_(std::move(executor)) {
-  logger_->debug("LanguageService created");
+      executor_(std::move(executor)),
+      compilation_pool_(std::make_unique<asio::thread_pool>(kThreadPoolSize)) {
+  logger_->debug(
+      "LanguageService created with {} compilation threads", kThreadPoolSize);
 }
 
 auto LanguageService::InitializeWorkspace(std::string workspace_uri)
@@ -69,7 +72,7 @@ auto LanguageService::ComputeDiagnostics(std::string uri, std::string content)
       .catalog_version = catalog_version};
 
   // Get or create overlay session from cache
-  auto session = GetOrCreateOverlay(cache_key, content);
+  auto session = co_await GetOrCreateOverlay(cache_key, content);
   if (!session) {
     logger_->error("Failed to create overlay session for: {}", uri);
     co_return std::vector<lsp::Diagnostic>{};
@@ -87,12 +90,12 @@ auto LanguageService::ComputeDiagnostics(std::string uri, std::string content)
 
 auto LanguageService::GetDefinitionsForPosition(
     std::string uri, lsp::Position position, std::string content)
-    -> std::vector<lsp::Location> {
+    -> asio::awaitable<std::vector<lsp::Location>> {
   utils::ScopedTimer timer("GetDefinitionsForPosition", logger_);
 
   if (!layout_service_) {
     logger_->error("LanguageService: Workspace not initialized");
-    return {};
+    co_return std::vector<lsp::Location>{};
   }
 
   logger_->debug(
@@ -109,10 +112,11 @@ auto LanguageService::GetDefinitionsForPosition(
       .catalog_version = catalog_version};
 
   // Get or create overlay session from cache
-  auto session = GetOrCreateOverlay(cache_key, content);
+  auto session = co_await GetOrCreateOverlay(cache_key, content);
+
   if (!session) {
     logger_->error("Failed to create overlay session for: {}", uri);
-    return {};
+    co_return std::vector<lsp::Location>{};
   }
 
   // Get source manager and convert position to location
@@ -120,7 +124,7 @@ auto LanguageService::GetDefinitionsForPosition(
   auto buffers = source_manager.getAllBuffers();
   if (buffers.empty()) {
     logger_->error("No buffers found in source manager for: {}", uri);
-    return {};
+    co_return std::vector<lsp::Location>{};
   }
 
   // Find the buffer that matches the requested URI
@@ -155,7 +159,7 @@ auto LanguageService::GetDefinitionsForPosition(
     logger_->debug(
         "No definition found at position {}:{} in {}", position.line,
         position.character, uri);
-    return {};
+    co_return std::vector<lsp::Location>{};
   }
 
   // Convert to LSP location with correct file URI
@@ -170,16 +174,16 @@ auto LanguageService::GetDefinitionsForPosition(
       lsp_location.range.start.character, lsp_location.range.end.line,
       lsp_location.range.end.character, lsp_location.uri);
 
-  return {lsp_location};
+  co_return std::vector<lsp::Location>{lsp_location};
 }
 
 auto LanguageService::GetDocumentSymbols(std::string uri, std::string content)
-    -> std::vector<lsp::DocumentSymbol> {
+    -> asio::awaitable<std::vector<lsp::DocumentSymbol>> {
   utils::ScopedTimer timer("GetDocumentSymbols", logger_);
 
   if (!layout_service_) {
     logger_->error("LanguageService: Workspace not initialized");
-    return {};
+    co_return std::vector<lsp::DocumentSymbol>{};
   }
 
   logger_->debug("LanguageService getting document symbols for: {}", uri);
@@ -194,14 +198,14 @@ auto LanguageService::GetDocumentSymbols(std::string uri, std::string content)
       .catalog_version = catalog_version};
 
   // Get or create overlay session from cache
-  auto session = GetOrCreateOverlay(cache_key, content);
+  auto session = co_await GetOrCreateOverlay(cache_key, content);
   if (!session) {
     logger_->error("Failed to create overlay session for: {}", uri);
-    return {};
+    co_return std::vector<lsp::DocumentSymbol>{};
   }
 
   // Use the unified SemanticIndex for document symbols
-  return session->GetSemanticIndex().GetDocumentSymbols(uri);
+  co_return session->GetSemanticIndex().GetDocumentSymbols(uri);
 }
 
 auto LanguageService::HandleConfigChange() -> void {
@@ -240,14 +244,26 @@ auto LanguageService::HandleSourceFileChange(
 }
 
 auto LanguageService::CreateOverlaySession(std::string uri, std::string content)
-    -> std::shared_ptr<OverlaySession> {
-  return OverlaySession::Create(
-      uri, content, layout_service_, global_catalog_, logger_);
+    -> asio::awaitable<std::shared_ptr<OverlaySession>> {
+  // Dispatch compilation to background thread pool
+  auto session = co_await asio::co_spawn(
+      compilation_pool_->get_executor(),
+      [uri, content,
+       this]() -> asio::awaitable<std::shared_ptr<OverlaySession>> {
+        // SystemVerilog compilation runs on background thread
+        co_return OverlaySession::Create(
+            uri, content, layout_service_, global_catalog_, logger_);
+      },
+      asio::use_awaitable);
+
+  // Post result back to main strand before returning
+  co_await asio::post(executor_, asio::use_awaitable);
+  co_return session;
 }
 
 auto LanguageService::GetOrCreateOverlay(
-    const OverlayCacheKey& key, const std::string& content)
-    -> std::shared_ptr<OverlaySession> {
+    OverlayCacheKey key, std::string content)
+    -> asio::awaitable<std::shared_ptr<OverlaySession>> {
   auto now = std::chrono::steady_clock::now();
 
   // Check if we already have this overlay in cache
@@ -255,18 +271,18 @@ auto LanguageService::GetOrCreateOverlay(
     if (entry.key == key) {
       // Cache hit! Update access time and return
       entry.last_access = now;
-      return entry.session;
+      co_return entry.session;
     }
   }
 
   // Cache miss - create new overlay session
 
-  auto shared_session = CreateOverlaySession(key.doc_uri, content);
+  auto shared_session = co_await CreateOverlaySession(key.doc_uri, content);
   if (!shared_session) {
     logger_->error(
         "Failed to create overlay session for {}:hash{}", key.doc_uri,
         key.content_hash);
-    return nullptr;
+    co_return nullptr;
   }
 
   // Add to cache
@@ -275,9 +291,8 @@ auto LanguageService::GetOrCreateOverlay(
   // If cache is full, remove oldest entry (simple LRU)
   if (overlay_cache_.size() >= kMaxCacheSize) {
     // Find oldest entry
-    auto oldest_it = std::min_element(
-        overlay_cache_.begin(), overlay_cache_.end(),
-        [](const CacheEntry& a, const CacheEntry& b) {
+    auto oldest_it = std::ranges::min_element(
+        overlay_cache_, [](const CacheEntry& a, const CacheEntry& b) -> bool {
           return a.last_access < b.last_access;
         });
 
@@ -294,7 +309,7 @@ auto LanguageService::GetOrCreateOverlay(
   logger_->debug(
       "Added overlay to cache for {}:hash{} (cache size: {})", key.doc_uri,
       key.content_hash, overlay_cache_.size());
-  return shared_session;
+  co_return shared_session;
 }
 
 auto LanguageService::ClearCache() -> void {
@@ -303,14 +318,13 @@ auto LanguageService::ClearCache() -> void {
 }
 
 auto LanguageService::ClearCacheForFile(const std::string& uri) -> void {
-  auto it = std::remove_if(
-      overlay_cache_.begin(), overlay_cache_.end(),
-      [&uri](const CacheEntry& entry) -> bool {
+  auto it = std::ranges::remove_if(
+      overlay_cache_, [&uri](const CacheEntry& entry) -> bool {
         return entry.key.doc_uri == uri;
       });
 
-  size_t removed_count = std::distance(it, overlay_cache_.end());
-  overlay_cache_.erase(it, overlay_cache_.end());
+  size_t removed_count = std::distance(it.begin(), overlay_cache_.end());
+  overlay_cache_.erase(it.begin(), overlay_cache_.end());
 
   logger_->debug(
       "Cleared {} overlay cache entries for file: {}", removed_count, uri);
