@@ -1,6 +1,7 @@
 #include "slangd/services/language_service.hpp"
 
 #include <algorithm>
+#include <ranges>
 
 #include <slang/ast/symbols/CompilationUnitSymbols.h>
 #include <slang/diagnostics/DiagnosticEngine.h>
@@ -17,8 +18,10 @@ LanguageService::LanguageService(
     asio::any_io_executor executor, std::shared_ptr<spdlog::logger> logger)
     : global_catalog_(nullptr),
       logger_(logger ? logger : spdlog::default_logger()),
-      executor_(std::move(executor)) {
-  logger_->debug("LanguageService created");
+      executor_(std::move(executor)),
+      compilation_pool_(std::make_unique<asio::thread_pool>(kThreadPoolSize)) {
+  logger_->debug(
+      "LanguageService created with {} compilation threads", kThreadPoolSize);
 }
 
 auto LanguageService::InitializeWorkspace(std::string workspace_uri)
@@ -242,8 +245,20 @@ auto LanguageService::HandleSourceFileChange(
 
 auto LanguageService::CreateOverlaySession(std::string uri, std::string content)
     -> asio::awaitable<std::shared_ptr<OverlaySession>> {
-  co_return OverlaySession::Create(
-      uri, content, layout_service_, global_catalog_, logger_);
+  // Dispatch compilation to background thread pool
+  auto session = co_await asio::co_spawn(
+      compilation_pool_->get_executor(),
+      [uri, content,
+       this]() -> asio::awaitable<std::shared_ptr<OverlaySession>> {
+        // SystemVerilog compilation runs on background thread
+        co_return OverlaySession::Create(
+            uri, content, layout_service_, global_catalog_, logger_);
+      },
+      asio::use_awaitable);
+
+  // Post result back to main strand before returning
+  co_await asio::post(executor_, asio::use_awaitable);
+  co_return session;
 }
 
 auto LanguageService::GetOrCreateOverlay(
@@ -276,9 +291,8 @@ auto LanguageService::GetOrCreateOverlay(
   // If cache is full, remove oldest entry (simple LRU)
   if (overlay_cache_.size() >= kMaxCacheSize) {
     // Find oldest entry
-    auto oldest_it = std::min_element(
-        overlay_cache_.begin(), overlay_cache_.end(),
-        [](const CacheEntry& a, const CacheEntry& b) {
+    auto oldest_it = std::ranges::min_element(
+        overlay_cache_, [](const CacheEntry& a, const CacheEntry& b) -> bool {
           return a.last_access < b.last_access;
         });
 
@@ -304,14 +318,13 @@ auto LanguageService::ClearCache() -> void {
 }
 
 auto LanguageService::ClearCacheForFile(const std::string& uri) -> void {
-  auto it = std::remove_if(
-      overlay_cache_.begin(), overlay_cache_.end(),
-      [&uri](const CacheEntry& entry) -> bool {
+  auto it = std::ranges::remove_if(
+      overlay_cache_, [&uri](const CacheEntry& entry) -> bool {
         return entry.key.doc_uri == uri;
       });
 
-  size_t removed_count = std::distance(it, overlay_cache_.end());
-  overlay_cache_.erase(it, overlay_cache_.end());
+  size_t removed_count = std::distance(it.begin(), overlay_cache_.end());
+  overlay_cache_.erase(it.begin(), overlay_cache_.end());
 
   logger_->debug(
       "Cleared {} overlay cache entries for file: {}", removed_count, uri);

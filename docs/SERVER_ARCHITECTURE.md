@@ -2,13 +2,14 @@
 
 ## ASIO Concurrency Model
 
-**Single-threaded event loop** with strand-serialized state access.
+**Main thread event loop** with background thread pool for compilation.
 
 ```
 io_context (main thread)
 ├── LspServer (JSON-RPC handling)
 ├── SlangdLspServer (LSP protocol) 
 └── LanguageService (SystemVerilog logic)
+    └── thread_pool (4 threads) → OverlaySession compilation
 ```
 
 ## Request Handling Patterns
@@ -30,10 +31,10 @@ auto OnDidOpenTextDocument() -> asio::awaitable<void> {
   }, asio::detached);
 }
 ```
-- **All operations** now use async pattern for consistency
+- **All operations** use async pattern for consistency
 - **Cache hits**: 0ms (instant response)
-- **Cache misses**: 700ms+ (overlay compilation on main thread)
-- **Next step**: Background thread pool for true concurrency
+- **Cache misses**: 700ms+ (overlay compilation on background threads)
+- **True concurrency**: Multiple overlays can compile simultaneously
 
 ## Overlay Session Management
 
@@ -41,7 +42,7 @@ auto OnDidOpenTextDocument() -> asio::awaitable<void> {
 - **Cache hit**: 0ms (instant response)  
 - **Cache miss**: 700ms+ (full compilation)
 
-**Performance Issue**: Overlay compilation still blocks main thread for 700ms+ even with async interfaces. Next step: background thread pool for true concurrency.
+**Performance Solution**: Overlay compilation runs on 4-thread background pool. Main thread remains responsive for LSP operations while multiple files can compile concurrently.
 
 ## Key Files
 

@@ -102,6 +102,10 @@ class LanguageService : public LanguageServiceBase {
   // LRU cache for overlay sessions
   std::vector<CacheEntry> overlay_cache_;
   static constexpr size_t kMaxCacheSize = 16;
+
+  // Background thread pool for overlay compilation
+  std::unique_ptr<asio::thread_pool> compilation_pool_;
+  static constexpr size_t kThreadPoolSize = 4;
 };
 
 }  // namespace slangd::services
