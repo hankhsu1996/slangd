@@ -1,52 +1,128 @@
 # Server Architecture
 
-## ASIO Concurrency Model
+## Design Principles
 
-**Main thread event loop** with background thread pool for compilation.
+**Layered Architecture**: Clean separation between protocol, domain logic, and business operations enables extensibility and testability.
+
+**Async-First**: All operations are awaitable to prevent blocking the main event loop, essential for responsive LSP servers.
+
+**Dependency Injection**: Components depend on abstractions, not implementations, allowing different service strategies.
+
+## Component Layers
 
 ```
-io_context (main thread)
-├── LspServer (JSON-RPC handling)
-├── SlangdLspServer (LSP protocol) 
-└── LanguageService (SystemVerilog logic)
-    └── thread_pool (4 threads) → OverlaySession compilation
+JSON-RPC Transport ← VSCode
+         ↓
+   Generic LSP Server (protocol handling)
+         ↓
+SystemVerilog LSP Server (domain-specific handlers)
+         ↓
+  Language Service Interface (business operations)
+         ↓
+   Background Thread Pool (heavy computation)
 ```
 
-## Request Handling Patterns
+### Transport & Protocol Layer
+- **FramedPipeTransport**: Handles JSON-RPC communication with VSCode
+- **RpcEndpoint**: Generic JSON-RPC request/response processing
+- **lsp::LspServer**: Base LSP protocol implementation with file tracking
 
-### Asynchronous (All LSP Operations)
+### Domain Layer
+- **SlangdLspServer**: SystemVerilog-specific LSP handlers
+- **Strand coordination**: Ensures thread-safe LSP state management
+- **Request debouncing**: Prevents excessive diagnostic requests
+
+### Business Logic Layer
+- **LanguageServiceBase**: Abstract interface for all LSP operations
+- **LanguageService**: Concrete implementation using overlay sessions
+- **Extensible design**: Supports future implementations (e.g., persistent indexing)
+
+### Computation Layer
+- **Background thread pool**: Isolates expensive SystemVerilog compilation
+- **Async dispatch**: Operations complete without blocking main thread
+- **Result coordination**: Thread-safe handoff of computed results
+
+## Request Flow Pattern
+
+```
+VSCode Request → JSON-RPC → LSP Handler → Language Service → Background Pool
+                                                              ↓
+VSCode Response ← JSON-RPC ← LSP Handler ← Result ← Computation Complete
+```
+
+**Key insight**: Main thread handles protocol coordination while background threads handle computation. This prevents LSP timeouts during heavy SystemVerilog processing.
+
+## Executor & Threading Model
+
+### Main Event Loop (io_context)
+- **Single-threaded**: All LSP protocol handling, file tracking, and cache management
+- **Strand coordination**: `asio::strand` serializes access to shared state
+- **Non-blocking**: Uses `co_await` for all potentially slow operations
+
+### Background Thread Pool Pattern
 ```cpp
-auto OnGotoDefinition() -> asio::awaitable<DefinitionResult> {
-  co_return co_await language_service_->GetDefinitionsForPosition(...);  // 0-700ms+
-}
+// Dispatch expensive work to background threads
+auto result = co_await asio::co_spawn(
+    thread_pool_->get_executor(),
+    [data]() -> asio::awaitable<Result> {
+        // Heavy computation runs here (SystemVerilog compilation)
+        co_return DoExpensiveWork(data);
+    },
+    asio::use_awaitable);
 
-auto OnDocumentSymbols() -> asio::awaitable<DocumentSymbolResult> {
-  co_return co_await language_service_->GetDocumentSymbols(...);  // 0-700ms+
-}
-
-auto OnDidOpenTextDocument() -> asio::awaitable<void> {
-  asio::co_spawn(strand_, [this, uri]() -> asio::awaitable<void> {
-    auto diagnostics = co_await language_service_->ComputeDiagnostics(...);  // 700ms+
-    co_await PublishDiagnostics(diagnostics);
-  }, asio::detached);
-}
+// Post result back to main thread for cache/protocol handling
+co_await asio::post(main_executor_, asio::use_awaitable);
 ```
-- **All operations** use async pattern for consistency
-- **Cache hits**: 0ms (instant response)
-- **Cache misses**: 700ms+ (overlay compilation on background threads)
-- **True concurrency**: Multiple overlays can compile simultaneously
 
-## Overlay Session Management
+### Why This Pattern Works
+- **Isolation**: Background threads only access immutable data (no shared state)
+- **Coordination**: Results posted back to main thread for cache updates
+- **Responsiveness**: Main thread stays available for new LSP requests
+- **Concurrency**: Multiple SystemVerilog files can compile simultaneously
 
-**Caching Strategy**: LRU cache of compiled SystemVerilog sessions
-- **Cache hit**: 0ms (instant response)  
-- **Cache miss**: 700ms+ (full compilation)
+### Async Operation Flow
+1. **LSP Request**: Arrives on main thread via JSON-RPC
+2. **Cache Check**: Main thread checks LRU cache (fast path)
+3. **Background Dispatch**: Cache miss triggers `co_spawn` to thread pool
+4. **Compilation**: SystemVerilog parsing/analysis runs on background thread
+5. **Result Handoff**: `asio::post` switches context back to main thread
+6. **Cache Update**: Main thread adds result to LRU cache
+7. **LSP Response**: Main thread sends response to VSCode
 
-**Performance Solution**: Overlay compilation runs on 4-thread background pool. Main thread remains responsive for LSP operations while multiple files can compile concurrently.
+**Critical insight**: The `co_await` + `asio::post` pattern enables true async without breaking thread safety.
 
-## Key Files
+## State Management
 
-- `src/main.cpp`: Single io_context setup
-- `src/slangd/core/slangd_lsp_server.cpp`: LSP handlers, async patterns
-- `src/slangd/services/language_service.cpp`: Overlay management, blocking calls
-- `src/slangd/services/overlay_session.cpp`: Expensive compilation logic
+### Thread Safety Strategy
+- **Main thread**: All LSP protocol state (open files, configurations)
+- **Strand serialization**: Ensures consistent state access across async operations
+- **Background isolation**: Computation threads access only immutable data
+
+### Caching Pattern
+- **LRU overlay cache**: Avoids recompilation of frequently accessed files
+- **Version-aware keys**: Invalidates cache when content or configuration changes
+- **Main thread coordination**: All cache operations happen on protocol thread
+
+## Extension Patterns
+
+### Adding New LSP Features
+1. Add method to `LanguageServiceBase` interface
+2. Implement in `LanguageService` (may use background dispatch)
+3. Add handler to `SlangdLspServer` (coordinate with strand)
+4. Register handler in base `LspServer` framework
+
+### Alternative Service Implementations
+The `LanguageServiceBase` abstraction enables different strategies:
+- **Current**: Per-request overlay compilation with caching
+- **Future**: Persistent global index with incremental updates
+- **Hybrid**: Fast local cache with background global indexing
+
+## Why This Architecture?
+
+**Responsiveness**: Background compilation prevents LSP timeouts during heavy processing
+
+**Scalability**: Thread pool enables concurrent processing of multiple files
+
+**Maintainability**: Clear layer separation makes features easier to add and test
+
+**Flexibility**: Abstract interfaces enable architectural evolution without breaking changes
