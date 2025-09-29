@@ -565,6 +565,18 @@ void SemanticIndex::IndexVisitor::handle(
       CreateReference(definition_range, param);
     }
   }
+
+  // Handle parameter type references (e.g., 'parameter t_unit_kind UNIT_TYPE')
+  const auto& declared_type = param.getDeclaredType();
+  if (const auto& type_syntax = declared_type->getTypeSyntax()) {
+    if (type_syntax->kind == slang::syntax::SyntaxKind::NamedType) {
+      const auto& named_type =
+          type_syntax->as<slang::syntax::NamedTypeSyntax>();
+      const auto& resolved_type = param.getType();
+      CreateReference(named_type.name->sourceRange(), resolved_type);
+    }
+  }
+
   this->visitDefault(param);
 }
 

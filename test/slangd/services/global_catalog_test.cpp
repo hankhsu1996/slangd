@@ -12,7 +12,7 @@
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/utils/canonical_path.hpp"
 
-constexpr auto kLogLevel = spdlog::level::warn;
+constexpr auto kLogLevel = spdlog::level::debug;
 
 auto main(int argc, char* argv[]) -> int {
   spdlog::set_level(kLogLevel);

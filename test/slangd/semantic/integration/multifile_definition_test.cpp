@@ -7,7 +7,7 @@
 
 #include "../test_fixtures.hpp"
 
-constexpr auto kLogLevel = spdlog::level::warn;
+constexpr auto kLogLevel = spdlog::level::debug;
 
 auto main(int argc, char* argv[]) -> int {
   spdlog::set_level(kLogLevel);
