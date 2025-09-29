@@ -476,20 +476,25 @@ void SemanticIndex::IndexVisitor::handle(
           type_syntax->as<slang::syntax::NamedTypeSyntax>();
       const auto& resolved_type = symbol.getType();
 
+      // Helper function to recursively find TypeAlias in nested PackedArrays
+      auto find_type_alias_in_type =
+          [](const slang::ast::Type& type) -> const slang::ast::TypeAliasType* {
+        const slang::ast::Type* current = &type;
+
+        // Keep traversing through nested PackedArrayTypes
+        while (const auto* packed_array =
+                   current->as_if<slang::ast::PackedArrayType>()) {
+          current = &packed_array->elementType;
+        }
+
+        // Check if we finally found a TypeAlias
+        return current->as_if<slang::ast::TypeAliasType>();
+      };
+
       // For user-defined types (like typedef), we need to find the defining
       // symbol
-      if (const auto* type_alias =
-              resolved_type.as_if<slang::ast::TypeAliasType>()) {
+      if (const auto* type_alias = find_type_alias_in_type(resolved_type)) {
         CreateReference(named_type.name->sourceRange(), *type_alias);
-      } else if (
-          const auto* packed_array =
-              resolved_type.as_if<slang::ast::PackedArrayType>()) {
-        // For packed arrays like packet_t[3:0], look at the element type
-        const auto& element_type = packed_array->elementType;
-        if (const auto* type_alias =
-                element_type.as_if<slang::ast::TypeAliasType>()) {
-          CreateReference(named_type.name->sourceRange(), *type_alias);
-        }
       }
     }
   }
