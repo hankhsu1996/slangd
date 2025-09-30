@@ -61,14 +61,6 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       return syntax.sourceRange();
 
-    case SK::InterfacePort:
-      // Interface port symbols - extract name from interface port header
-      if (syntax.kind == SyntaxKind::InterfacePortHeader) {
-        return syntax.as<slang::syntax::InterfacePortHeaderSyntax>()
-            .nameOrKeyword.range();
-      }
-      return syntax.sourceRange();
-
     case SK::Modport:
       // Modport symbols - extract name from modport item
       if (syntax.kind == SyntaxKind::ModportItem) {
@@ -80,16 +72,6 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       // Modport port symbols - extract name from modport named port
       if (syntax.kind == SyntaxKind::ModportNamedPort) {
         return syntax.as<slang::syntax::ModportNamedPortSyntax>().name.range();
-      }
-      return syntax.sourceRange();
-
-    case SK::GenerateBlock:
-      // Named generate block - extract name from begin block
-      if (syntax.kind == SyntaxKind::GenerateBlock) {
-        const auto& gen_block = syntax.as<slang::syntax::GenerateBlockSyntax>();
-        if (gen_block.beginName != nullptr) {
-          return gen_block.beginName->name.range();
-        }
       }
       return syntax.sourceRange();
 

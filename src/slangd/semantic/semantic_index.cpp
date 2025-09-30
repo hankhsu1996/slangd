@@ -808,46 +808,45 @@ void SemanticIndex::IndexVisitor::handle(
     const slang::ast::InterfacePortSymbol& interface_port) {
   if (interface_port.location.valid()) {
     if (const auto* syntax = interface_port.getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(interface_port, *syntax);
+      // Create self-reference for interface port
+      slang::SourceRange definition_range = syntax->sourceRange();
+      if (syntax->kind == slang::syntax::SyntaxKind::InterfacePortHeader) {
+        definition_range =
+            syntax->as<slang::syntax::InterfacePortHeaderSyntax>()
+                .nameOrKeyword.range();
+      }
       CreateReference(definition_range, definition_range, interface_port);
 
-      // Create cross-references from interface port syntax to target symbols
-      // Interface name cross-reference (MemBus -> interface definition)
-      if (interface_port.interfaceDef != nullptr) {
-        slang::SourceRange interface_name_range =
-            interface_port.interfaceNameRange();
+      // Create cross-reference from interface name to interface definition
+      if (interface_port.interfaceDef != nullptr &&
+          interface_port.interfaceDef->location.valid()) {
+        auto interface_name_range = interface_port.interfaceNameRange();
         if (interface_name_range.start().valid()) {
-          if (interface_port.interfaceDef->location.valid()) {
-            if (const auto* interface_syntax =
-                    interface_port.interfaceDef->getSyntax()) {
-              auto interface_definition_range =
-                  DefinitionExtractor::ExtractDefinitionRange(
-                      *interface_port.interfaceDef, *interface_syntax);
-              CreateReference(
-                  interface_name_range, interface_definition_range,
-                  *interface_port.interfaceDef);
-            }
+          if (const auto* interface_syntax =
+                  interface_port.interfaceDef->getSyntax()) {
+            auto interface_definition_range =
+                DefinitionExtractor::ExtractDefinitionRange(
+                    *interface_port.interfaceDef, *interface_syntax);
+            CreateReference(
+                interface_name_range, interface_definition_range,
+                *interface_port.interfaceDef);
           }
         }
       }
 
-      // Modport name cross-reference (cpu -> modport definition)
+      // Create cross-reference from modport name to modport definition
       if (!interface_port.modport.empty()) {
         auto modport_range = interface_port.modportNameRange();
         if (modport_range.start().valid()) {
-          // Use existing Slang resolution logic to get ModportSymbol
           auto connection = interface_port.getConnection();
-          if (connection.second != nullptr) {
-            if (connection.second->location.valid()) {
-              if (const auto* modport_syntax = connection.second->getSyntax()) {
-                auto modport_definition_range =
-                    DefinitionExtractor::ExtractDefinitionRange(
-                        *connection.second, *modport_syntax);
-                CreateReference(
-                    modport_range, modport_definition_range,
-                    *connection.second);
-              }
+          if (connection.second != nullptr &&
+              connection.second->location.valid()) {
+            if (const auto* modport_syntax = connection.second->getSyntax()) {
+              auto modport_definition_range =
+                  DefinitionExtractor::ExtractDefinitionRange(
+                      *connection.second, *modport_syntax);
+              CreateReference(
+                  modport_range, modport_definition_range, *connection.second);
             }
           }
         }
