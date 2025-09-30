@@ -12,7 +12,7 @@
 
 #include "../common/simple_fixture.hpp"
 
-constexpr auto kLogLevel = spdlog::level::warn;
+constexpr auto kLogLevel = spdlog::level::debug;
 
 auto main(int argc, char* argv[]) -> int {
   spdlog::set_level(kLogLevel);
@@ -26,8 +26,7 @@ auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
 }
 
-namespace slangd::semantic {
-
+using slangd::semantic::ComputeLspRange;
 using slangd::test::SimpleTestFixture;
 
 TEST_CASE(
@@ -132,5 +131,3 @@ TEST_CASE(
   REQUIRE(range.end.line == 0);
   REQUIRE(range.end.character == 0);
 }
-
-}  // namespace slangd::semantic

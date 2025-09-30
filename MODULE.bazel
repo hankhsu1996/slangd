@@ -16,8 +16,9 @@ bazel_dep(name = "slang", version = "9.0.0")
 git_override(
     module_name = "slang",
     remote = "https://github.com/hankhsu1996/slang.git",
-    commit = "e233f8b0",
+    commit = "c9cd31f8",
 )
+
 # local_path_override(
 #     module_name = "slang",
 #     path = "../slang",

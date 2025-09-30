@@ -1,47 +1,14 @@
 """
-Build file for slangd semantic tests.
+Build file for slangd semantic definition tests.
 """
 
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 cc_test(
-    name = "multifile_definition_test",
+    name = "type_definition_test",
     timeout = "short",
     srcs = [
-        "integration/multifile_definition_test.cpp",
-        "test_fixtures.hpp",
-    ],
-    deps = [
-        "//:slangd_core",
-        "//test/slangd:file_fixture",
-        "@catch2",
-        "@fmt",
-        "@slang",
-    ],
-)
-
-cc_test(
-    name = "multifile_reference_test",
-    timeout = "short",
-    srcs = [
-        "integration/multifile_reference_test.cpp",
-        "test_fixtures.hpp",
-    ],
-    deps = [
-        "//:slangd_core",
-        "//test/slangd:file_fixture",
-        "@catch2",
-        "@fmt",
-        "@slang",
-    ],
-)
-
-
-cc_test(
-    name = "document_symbol_test",
-    timeout = "short",
-    srcs = [
-        "document_symbol_test.cpp",
+        "type_definition_test.cpp",
     ],
     deps = [
         "//:slangd_core",
@@ -52,10 +19,10 @@ cc_test(
 )
 
 cc_test(
-    name = "diagnostic_index_test",
+    name = "subroutine_definition_test",
     timeout = "short",
     srcs = [
-        "diagnostic_index_test.cpp",
+        "subroutine_definition_test.cpp",
     ],
     deps = [
         "//:slangd_core",
@@ -66,10 +33,52 @@ cc_test(
 )
 
 cc_test(
-    name = "symbol_utils_test",
+    name = "scope_definition_test",
     timeout = "short",
     srcs = [
-        "symbol_utils_test.cpp",
+        "scope_definition_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "//test/slangd:simple_fixture",
+        "@catch2",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "interface_definition_test",
+    timeout = "short",
+    srcs = [
+        "interface_definition_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "//test/slangd:simple_fixture",
+        "@catch2",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "variable_definition_test",
+    timeout = "short",
+    srcs = [
+        "variable_definition_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "//test/slangd:simple_fixture",
+        "@catch2",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "net_definition_test",
+    timeout = "short",
+    srcs = [
+        "net_definition_test.cpp",
     ],
     deps = [
         "//:slangd_core",

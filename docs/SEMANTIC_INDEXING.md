@@ -121,6 +121,70 @@ TEST_CASE("SemanticIndex my_symbol reference go-to-definition works") {
 - Handle optional syntax elements gracefully
 - Fall back to `syntax.sourceRange()` when precise extraction isn't possible
 
+## Slang Fork Modifications for LSP
+
+### The Problem
+
+Slang's `evalInteger()` converts parameter expressions to constants, losing symbol references needed for LSP go-to-definition:
+
+```systemverilog
+parameter WIDTH = 8;
+logic [WIDTH-1:0] data;  // evalInteger converts WIDTH-1 to literal 7
+```
+
+### The Solution: Symmetric Expression Storage
+
+**Key Insight**: Store expressions **alongside the values they produce** for perfect symmetry:
+
+```cpp
+// In ASTContext.h - Symmetric design
+struct SLANG_EXPORT EvaluatedDimension {
+    // Computed values
+    DimensionKind kind = DimensionKind::Unknown;
+    ConstantRange range;
+    const Type* associativeType = nullptr;
+    uint32_t queueMaxSize = 0;
+    
+    // Corresponding source expressions (symmetric!)
+    const Expression* rangeLeftExpr = nullptr;        // → range.left
+    const Expression* rangeRightExpr = nullptr;       // → range.right  
+    const Expression* associativeTypeExpr = nullptr;  // → associativeType
+    const Expression* queueMaxSizeExpr = nullptr;     // → queueMaxSize
+    
+    // Clean visitor pattern
+    template<typename TVisitor>
+    void visitExpressions(TVisitor&& visitor) const;
+};
+```
+
+**Critical Discovery**: Slang's `BumpAllocator` requires **trivially destructible types**. Our symmetric approach using individual pointers (not `SmallVector`) satisfies this constraint.
+
+### Direct Type Storage
+
+Store `EvaluatedDimension` directly in types to eliminate re-evaluation:
+
+```cpp
+// In AllTypes.h
+class PackedArrayType {
+    const Type& elementType;
+    ConstantRange range;
+    EvaluatedDimension evalDim;  // Direct storage - no pointers!
+};
+
+// LSP accesses expressions without re-evaluation
+packedArrayType.evalDim.visitExpressions([this](const Expression& expr) {
+    expr.visit(*this);  // Direct access to stored expressions
+});
+```
+
+### Benefits
+
+- **Zero re-evaluation**: Expressions stored once during compilation, accessed many times in LSP
+- **Trivially destructible**: Compatible with Slang's BumpAllocator memory management  
+- **Symmetric design**: Perfect correspondence between computed values and source expressions
+- **Direct type access**: No `evalPackedDimension()` calls needed in LSP code
+- **Universal coverage**: Handles all dimension types (ranges, queues, associative arrays)
+
 ## Debugging Tips
 
 ### AST Investigation
@@ -136,12 +200,54 @@ slang debug/test.sv --ast-json debug/ast.json
 1. **"LookupDefinitionAt failed"**: Missing reference creation (need expression handler)
 2. **"No symbol found"**: Missing symbol processing (need definition extraction)
 3. **Wrong definition target**: Check reference creation logic or test indices
+4. **Overlapping source ranges**: Fix the root cause in reference creation, don't add disambiguation logic
 
 ### Test Development
 1. Start with failing tests
 2. Add debug logging to understand AST structure
 3. Implement minimal changes to make tests pass
 4. Clean up debug code
+
+## Type Reference Handling
+
+For typedef and type reference handling, see the dedicated documentation: `LSP_TYPE_HANDLING.md`
+
+This covers:
+- TypeReferenceSymbol architecture
+- LSP vs Slang library differences  
+- Type system integration requirements
+- Debugging strategies for type-related issues
+
+## Important Design Principle: No Overlapping Ranges
+
+**Critical Rule**: Source ranges in `references_` should NEVER overlap. If they do, you have a bug in reference creation.
+
+**Wrong approach**: Add disambiguation logic to `LookupDefinitionAt()` 
+```cpp
+// DON'T DO THIS - masks the real problem
+if (range_size < smallest_range_size) {
+  best_match = &ref_entry;  // Band-aid solution
+}
+```
+
+**Correct approach**: Fix the root cause in reference creation
+- Use precise name token ranges, not full syntax ranges
+- For user-defined types: Use typedef name length for exact bounds
+- For overlapping contexts: Create separate, non-overlapping reference entries
+
+**Why this matters**: 
+- Overlaps indicate imprecise reference creation
+- Disambiguation logic becomes complex and brittle
+- The real issue is creating incorrect source ranges in the first place
+
+The `LookupDefinitionAt()` implementation should be simple:
+```cpp
+for (const auto& ref_entry : references_) {
+  if (ref_entry.source_range.contains(loc)) {
+    return ref_entry.target_range;  // First match wins - no overlap needed
+  }
+}
+```
 
 ## Examples
 
@@ -156,9 +262,9 @@ See the subroutine implementation for a complete example:
 ### SystemVerilog Generate Variables (Genvar References)
 
 **Current Support**: 
-- ✅ Genvar self-definitions work (`genvar i;` - clicking on `i` goes to declaration)
-- ✅ Generate block self-definitions work (clicking on named generate blocks)
-- ❌ **Genvar references in expressions do NOT work**
+- Genvar self-definitions work (`genvar i;` - clicking on `i` goes to declaration)
+- Generate block self-definitions work (clicking on named generate blocks)
+- **Genvar references in expressions do NOT work**
 
 **Examples of unsupported references**:
 ```systemverilog

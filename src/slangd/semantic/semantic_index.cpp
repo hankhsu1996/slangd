@@ -249,106 +249,61 @@ void SemanticIndex::IndexVisitor::ProcessSymbol(
   }
 }
 
-void SemanticIndex::IndexVisitor::ProcessDimensionsInScope(
-    const slang::ast::Scope& scope,
-    const slang::syntax::SyntaxList<slang::syntax::VariableDimensionSyntax>&
-        dimensions) {
-  for (const auto& dim : dimensions) {
-    if (dim == nullptr || dim->specifier == nullptr) {
-      continue;
-    }
-
-    const auto& spec = *dim->specifier;
-    slang::ast::ASTContext context{scope, slang::ast::LookupLocation::max};
-
-    switch (spec.kind) {
-      case slang::syntax::SyntaxKind::RangeDimensionSpecifier: {
-        const auto& range_spec =
-            spec.as<slang::syntax::RangeDimensionSpecifierSyntax>();
-        if (range_spec.selector == nullptr) {
-          break;
-        }
-
-        const auto& selector = *range_spec.selector;
-        switch (selector.kind) {
-          case slang::syntax::SyntaxKind::BitSelect: {
-            const auto& bit_select =
-                selector.as<slang::syntax::BitSelectSyntax>();
-            if (bit_select.expr != nullptr) {
-              const auto& expr =
-                  slang::ast::Expression::bind(*bit_select.expr, context);
-              expr.visit(*this);
-            }
-            break;
-          }
-          case slang::syntax::SyntaxKind::SimpleRangeSelect:
-          case slang::syntax::SyntaxKind::AscendingRangeSelect:
-          case slang::syntax::SyntaxKind::DescendingRangeSelect: {
-            const auto& range_select =
-                selector.as<slang::syntax::RangeSelectSyntax>();
-            if (range_select.left != nullptr) {
-              const auto& left_expr =
-                  slang::ast::Expression::bind(*range_select.left, context);
-              left_expr.visit(*this);
-            }
-            if (range_select.right != nullptr) {
-              const auto& right_expr =
-                  slang::ast::Expression::bind(*range_select.right, context);
-              right_expr.visit(*this);
-            }
-            break;
-          }
-          default:
-            // Other selector kinds don't contain parameter expressions
-            break;
-        }
-        break;
-      }
-      case slang::syntax::SyntaxKind::WildcardDimensionSpecifier:
-        // Wildcard dimensions (e.g., [*]) don't contain expressions to visit
-        break;
-      case slang::syntax::SyntaxKind::QueueDimensionSpecifier: {
-        const auto& queue_spec =
-            spec.as<slang::syntax::QueueDimensionSpecifierSyntax>();
-        if (queue_spec.maxSizeClause != nullptr &&
-            queue_spec.maxSizeClause->expr != nullptr) {
-          const auto& max_size_expr = slang::ast::Expression::bind(
-              *queue_spec.maxSizeClause->expr, context);
-          max_size_expr.visit(*this);
-        }
-        break;
-      }
-      default:
-        // Other dimension specifier kinds don't contain parameter expressions
-        break;
-    }
-  }
-}
-
-void SemanticIndex::IndexVisitor::ProcessVariableDimensions(
-    const slang::ast::VariableSymbol& symbol,
-    const slang::syntax::SyntaxList<slang::syntax::VariableDimensionSyntax>&
-        dimensions) {
-  ProcessDimensionsInScope(*symbol.getParentScope(), dimensions);
-}
-
-void SemanticIndex::IndexVisitor::ProcessIntegerTypeDimensions(
-    const slang::ast::Scope& scope,
-    const slang::syntax::DataTypeSyntax& type_syntax) {
-  if (type_syntax.kind == slang::syntax::SyntaxKind::LogicType ||
-      type_syntax.kind == slang::syntax::SyntaxKind::RegType ||
-      type_syntax.kind == slang::syntax::SyntaxKind::BitType) {
-    const auto& integer_type =
-        type_syntax.as<slang::syntax::IntegerTypeSyntax>();
-    ProcessDimensionsInScope(scope, integer_type.dimensions);
-  }
-}
-
-void SemanticIndex::IndexVisitor::TraverseCompoundTypeMembers(
-    const slang::ast::Type& type) {
-  // Manual semantic traversal for compound types following Slang's design
-  // pattern
+void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
   switch (type.kind) {
+    case slang::ast::SymbolKind::PackedArrayType: {
+      const auto& packed_array = type.as<slang::ast::PackedArrayType>();
+      packed_array.evalDim.visitExpressions(
+          [this](const slang::ast::Expression& expr) -> void {
+            expr.visit(*this);
+          });
+      TraverseType(packed_array.elementType);
+      break;
+    }
+    case slang::ast::SymbolKind::FixedSizeUnpackedArrayType: {
+      const auto& unpacked_array =
+          type.as<slang::ast::FixedSizeUnpackedArrayType>();
+      unpacked_array.evalDim.visitExpressions(
+          [this](const slang::ast::Expression& expr) -> void {
+            expr.visit(*this);
+          });
+      TraverseType(unpacked_array.elementType);
+      break;
+    }
+    case slang::ast::SymbolKind::DynamicArrayType: {
+      const auto& dynamic_array = type.as<slang::ast::DynamicArrayType>();
+      TraverseType(dynamic_array.elementType);
+      break;
+    }
+    case slang::ast::SymbolKind::QueueType: {
+      const auto& queue_type = type.as<slang::ast::QueueType>();
+      queue_type.evalDim.visitExpressions(
+          [this](const slang::ast::Expression& expr) -> void {
+            expr.visit(*this);
+          });
+      TraverseType(queue_type.elementType);
+      break;
+    }
+    case slang::ast::SymbolKind::AssociativeArrayType: {
+      const auto& assoc_array = type.as<slang::ast::AssociativeArrayType>();
+      TraverseType(assoc_array.elementType);
+      break;
+    }
+    case slang::ast::SymbolKind::TypeAlias: {
+      const auto& type_alias = type.as<slang::ast::TypeAliasType>();
+      TraverseType(type_alias.targetType.getType());
+      break;
+    }
+    case slang::ast::SymbolKind::TypeReference: {
+      const auto& type_ref = type.as<slang::ast::TypeReferenceSymbol>();
+      if (const auto* typedef_target =
+              type_ref.getResolvedType().as_if<slang::ast::TypeAliasType>()) {
+        if (typedef_target->location.valid()) {
+          CreateReference(type_ref.getUsageLocation(), *typedef_target);
+        }
+      }
+      break;
+    }
     case slang::ast::SymbolKind::EnumType: {
       const auto& enum_type = type.as<slang::ast::EnumType>();
       for (const auto& enum_value : enum_type.values()) {
@@ -455,43 +410,19 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::ConversionExpression& expr) {
-  CreateReference(expr.sourceRange, *expr.type);
+  TraverseType(*expr.type);
   this->visitDefault(expr);
 }
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::MemberAccessExpression& expr) {
-  // Use memberNameRange() for precise LSP go-to-definition
-  // while sourceRange remains as full expression range for AST semantics
   CreateReference(expr.memberNameRange(), expr.member);
   this->visitDefault(expr);
 }
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::VariableSymbol& symbol) {
-  const auto& declared_type = symbol.getDeclaredType();
-  if (const auto& type_syntax = declared_type->getTypeSyntax()) {
-    if (type_syntax->kind == slang::syntax::SyntaxKind::NamedType) {
-      const auto& named_type =
-          type_syntax->as<slang::syntax::NamedTypeSyntax>();
-      const auto& resolved_type = symbol.getType();
-      CreateReference(named_type.name->sourceRange(), resolved_type);
-    }
-
-    ProcessIntegerTypeDimensions(*symbol.getParentScope(), *type_syntax);
-  }
-
-  if (const auto* decl_syntax = symbol.getSyntax()) {
-    if (decl_syntax->kind == slang::syntax::SyntaxKind::Declarator) {
-      const auto& declarator =
-          decl_syntax->as<slang::syntax::DeclaratorSyntax>();
-      ProcessVariableDimensions(symbol, declarator.dimensions);
-    }
-  }
-
-  // Traverse compound type members for LSP symbol indexing
-  TraverseCompoundTypeMembers(symbol.getType());
-
+  TraverseType(symbol.getType());
   this->visitDefault(symbol);
 }
 
@@ -565,6 +496,8 @@ void SemanticIndex::IndexVisitor::handle(
       CreateReference(definition_range, param);
     }
   }
+
+  TraverseType(param.getType());
   this->visitDefault(param);
 }
 
@@ -594,15 +527,6 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::TypeAliasType& type_alias) {
-  if (const auto* typedef_syntax = type_alias.getSyntax()) {
-    if (typedef_syntax->kind == slang::syntax::SyntaxKind::TypedefDeclaration) {
-      const auto& typedef_decl =
-          typedef_syntax->as<slang::syntax::TypedefDeclarationSyntax>();
-      ProcessDimensionsInScope(
-          *type_alias.getParentScope(), typedef_decl.dimensions);
-    }
-  }
-
   if (type_alias.location.valid()) {
     if (const auto* syntax = type_alias.getSyntax()) {
       auto definition_range =
@@ -611,13 +535,7 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
 
-  if (const auto* target_syntax = type_alias.targetType.getTypeSyntax()) {
-    ProcessIntegerTypeDimensions(*type_alias.getParentScope(), *target_syntax);
-  }
-
-  // Traverse compound type members for LSP symbol indexing
-  TraverseCompoundTypeMembers(type_alias.targetType.getType());
-
+  TraverseType(type_alias.targetType.getType());
   this->visitDefault(type_alias);
 }
 
@@ -641,6 +559,8 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::FieldSymbol& field) {
       CreateReference(definition_range, field);
     }
   }
+
+  TraverseType(field.getType());
   this->visitDefault(field);
 }
 
@@ -652,6 +572,8 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::NetSymbol& net) {
       CreateReference(definition_range, net);
     }
   }
+
+  TraverseType(net.getType());
   this->visitDefault(net);
 }
 
@@ -663,6 +585,8 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::PortSymbol& port) {
       CreateReference(definition_range, port);
     }
   }
+
+  TraverseType(port.getType());
   this->visitDefault(port);
 }
 
@@ -752,13 +676,13 @@ void SemanticIndex::IndexVisitor::handle(
 auto SemanticIndex::LookupDefinitionAt(slang::SourceLocation loc) const
     -> std::optional<slang::SourceRange> {
   // Direct lookup using unified reference storage
-  // Linear search through references for position containment
+  // NOTE: Ranges should NOT overlap - if they do, fix the root cause in
+  // reference creation
   for (const auto& ref_entry : references_) {
     if (ref_entry.source_range.contains(loc)) {
       return ref_entry.target_range;
     }
   }
-
   return std::nullopt;
 }
 

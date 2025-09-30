@@ -11,7 +11,7 @@
 
 #include "../common/simple_fixture.hpp"
 
-constexpr auto kLogLevel = spdlog::level::warn;
+constexpr auto kLogLevel = spdlog::level::debug;
 
 auto main(int argc, char* argv[]) -> int {
   spdlog::set_level(kLogLevel);
@@ -25,8 +25,7 @@ auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
 }
 
-namespace slangd::semantic {
-
+using slangd::semantic::DiagnosticIndex;
 using slangd::test::SimpleTestFixture;
 
 // Helper function to get consistent test URI
@@ -215,5 +214,3 @@ TEST_CASE("DiagnosticIndex handles empty file", "[diagnostic_index]") {
   const auto& diagnostics = diagnostic_index.GetDiagnostics();
   REQUIRE(diagnostics.size() >= 0);
 }
-
-}  // namespace slangd::semantic

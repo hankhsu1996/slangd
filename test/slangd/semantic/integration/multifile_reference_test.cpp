@@ -11,7 +11,7 @@
 #include "../test_fixtures.hpp"
 #include "slangd/semantic/semantic_index.hpp"
 
-constexpr auto kLogLevel = spdlog::level::warn;
+constexpr auto kLogLevel = spdlog::level::debug;
 
 auto main(int argc, char* argv[]) -> int {
   spdlog::set_level(kLogLevel);
@@ -24,8 +24,6 @@ auto main(int argc, char* argv[]) -> int {
 
   return Catch::Session().run(argc, argv);
 }
-
-namespace slangd::semantic {
 
 using SemanticTestFixture = slangd::semantic::test::SemanticTestFixture;
 using MultiFileSemanticFixture =
@@ -359,5 +357,3 @@ TEST_CASE("GetDocumentSymbols filters by URI", "[semantic_index][multifile]") {
   // Verify that only the current file (module) has symbols
   CHECK(module_symbols.size() > 0);
 }
-
-}  // namespace slangd::semantic

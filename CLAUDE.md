@@ -63,7 +63,14 @@ SystemVerilog LSP server with modular design:
 - We are not using GDB, because it's harder to do batch debugging.
 - We use spdlog for logging when needed.
 - Do not use `env SPDLOG_LEVEL=debug bazel test //...`. Set the log level in each test file instead.
+- Default log level is already set to debug - do not add SPDLOG_LEVEL=xxx to test commands.
 - Generally, just do `bazel test //...` even if you are changing a single file, we don't have that mush tests, so it is fast.
+
+**Privacy Requirements:**
+
+- **NEVER** use actual proprietary code examples or variable/signal names from the user's codebase in unit tests
+- Always create minimal, generic examples for testing (e.g., use `packet_t`, `counter_t` instead of proprietary names)
+- User code examples are confidential and must not be included in the repository
 
 **AST/CST Debugging:**
 
