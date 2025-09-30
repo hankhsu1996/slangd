@@ -61,20 +61,6 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       return syntax.sourceRange();
 
-    case SK::Modport:
-      // Modport symbols - extract name from modport item
-      if (syntax.kind == SyntaxKind::ModportItem) {
-        return syntax.as<slang::syntax::ModportItemSyntax>().name.range();
-      }
-      return syntax.sourceRange();
-
-    case SK::ModportPort:
-      // Modport port symbols - extract name from modport named port
-      if (syntax.kind == SyntaxKind::ModportNamedPort) {
-        return syntax.as<slang::syntax::ModportNamedPortSyntax>().name.range();
-      }
-      return syntax.sourceRange();
-
     case SK::GenerateBlockArray:
       // Generate block array (for loop) - extract name from loop generate block
       if (syntax.kind == SyntaxKind::LoopGenerate) {

@@ -860,9 +860,11 @@ void SemanticIndex::IndexVisitor::handle(
     const slang::ast::ModportSymbol& modport) {
   if (modport.location.valid()) {
     if (const auto* syntax = modport.getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(modport, *syntax);
-      CreateReference(definition_range, definition_range, modport);
+      if (syntax->kind == slang::syntax::SyntaxKind::ModportItem) {
+        auto definition_range =
+            syntax->as<slang::syntax::ModportItemSyntax>().name.range();
+        CreateReference(definition_range, definition_range, modport);
+      }
     }
   }
   this->visitDefault(modport);
@@ -872,9 +874,11 @@ void SemanticIndex::IndexVisitor::handle(
     const slang::ast::ModportPortSymbol& modport_port) {
   if (modport_port.location.valid()) {
     if (const auto* syntax = modport_port.getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(modport_port, *syntax);
-      CreateReference(definition_range, definition_range, modport_port);
+      if (syntax->kind == slang::syntax::SyntaxKind::ModportNamedPort) {
+        auto definition_range =
+            syntax->as<slang::syntax::ModportNamedPortSyntax>().name.range();
+        CreateReference(definition_range, definition_range, modport_port);
+      }
     }
   }
   this->visitDefault(modport_port);
