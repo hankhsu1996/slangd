@@ -35,12 +35,6 @@ auto DefinitionExtractor::ExtractDefinitionRange(
     case SK::Variable:
       return syntax.sourceRange();  // Variables use full declaration range
 
-    case SK::Parameter:
-      if (syntax.kind == SyntaxKind::Declarator) {
-        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
-      }
-      break;
-
     case SK::StatementBlock: {
       if (syntax.kind == SyntaxKind::SequentialBlockStatement ||
           syntax.kind == SyntaxKind::ParallelBlockStatement) {
@@ -61,27 +55,6 @@ auto DefinitionExtractor::ExtractDefinitionRange(
         }
       }
       break;
-
-    case SK::EnumValue:
-      // Enum values use declarator syntax with name field
-      if (syntax.kind == SyntaxKind::Declarator) {
-        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
-      }
-      return syntax.sourceRange();
-
-    case SK::Field:
-      // Struct/union field symbols use declarator syntax with name field
-      if (syntax.kind == SyntaxKind::Declarator) {
-        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
-      }
-      return syntax.sourceRange();
-
-    case SK::Net:
-      // Net symbols - extract name from declarator syntax
-      if (syntax.kind == SyntaxKind::Declarator) {
-        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
-      }
-      return syntax.sourceRange();
 
     case SK::Port:
       // Port symbols - handle different ANSI and non-ANSI syntax types
