@@ -299,7 +299,12 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
       if (const auto* typedef_target =
               type_ref.getResolvedType().as_if<slang::ast::TypeAliasType>()) {
         if (typedef_target->location.valid()) {
-          CreateReference(type_ref.getUsageLocation(), *typedef_target);
+          if (const auto* syntax = typedef_target->getSyntax()) {
+            auto definition_range = DefinitionExtractor::ExtractDefinitionRange(
+                *typedef_target, *syntax);
+            CreateReference(
+                type_ref.getUsageLocation(), definition_range, *typedef_target);
+          }
         }
       }
       break;
@@ -347,21 +352,15 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
 }
 
 void SemanticIndex::IndexVisitor::CreateReference(
-    slang::SourceRange source_range, const slang::ast::Symbol& target_symbol) {
-  if (target_symbol.location.valid()) {
-    if (const auto* syntax = target_symbol.getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(target_symbol, *syntax);
-
-      ReferenceEntry ref{
-          .source_range = source_range,
-          .target_loc = target_symbol.location,
-          .target_range = definition_range,
-          .symbol_kind = ConvertToLspKind(target_symbol),
-          .symbol_name = std::string(target_symbol.name)};
-      index_->references_.push_back(ref);
-    }
-  }
+    slang::SourceRange source_range, slang::SourceRange definition_range,
+    const slang::ast::Symbol& target_symbol) {
+  ReferenceEntry ref{
+      .source_range = source_range,
+      .target_loc = target_symbol.location,
+      .target_range = definition_range,
+      .symbol_kind = ConvertToLspKind(target_symbol),
+      .symbol_name = std::string(target_symbol.name)};
+  index_->references_.push_back(ref);
 }
 
 void SemanticIndex::IndexVisitor::handle(
@@ -393,7 +392,13 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
 
-  CreateReference(expr.sourceRange, *target_symbol);
+  if (target_symbol->location.valid()) {
+    if (const auto* syntax = target_symbol->getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(*target_symbol, *syntax);
+      CreateReference(expr.sourceRange, definition_range, *target_symbol);
+    }
+  }
   this->visitDefault(expr);
 }
 
@@ -402,7 +407,14 @@ void SemanticIndex::IndexVisitor::handle(
   // Handle references to subroutines (functions/tasks) in calls
   if (!expr.isSystemCall()) {
     if (const auto* subroutine_symbol = std::get_if<0>(&expr.subroutine)) {
-      CreateReference(expr.sourceRange, **subroutine_symbol);
+      if ((*subroutine_symbol)->location.valid()) {
+        if (const auto* syntax = (*subroutine_symbol)->getSyntax()) {
+          auto definition_range = DefinitionExtractor::ExtractDefinitionRange(
+              **subroutine_symbol, *syntax);
+          CreateReference(
+              expr.sourceRange, definition_range, **subroutine_symbol);
+        }
+      }
     }
   }
   this->visitDefault(expr);
@@ -416,7 +428,13 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::MemberAccessExpression& expr) {
-  CreateReference(expr.memberNameRange(), expr.member);
+  if (expr.member.location.valid()) {
+    if (const auto* syntax = expr.member.getSyntax()) {
+      auto definition_range =
+          DefinitionExtractor::ExtractDefinitionRange(expr.member, *syntax);
+      CreateReference(expr.memberNameRange(), definition_range, expr.member);
+    }
+  }
   this->visitDefault(expr);
 }
 
@@ -449,7 +467,9 @@ void SemanticIndex::IndexVisitor::handle(
     return;
   }
 
-  CreateReference(import_item.package.range(), *package);
+  auto definition_range =
+      DefinitionExtractor::ExtractDefinitionRange(*package, *pkg_syntax);
+  CreateReference(import_item.package.range(), definition_range, *package);
   this->visitDefault(import_symbol);
 }
 
@@ -476,12 +496,23 @@ void SemanticIndex::IndexVisitor::handle(
     return;
   }
 
-  CreateReference(import_item.package.range(), *package);
+  auto definition_range =
+      DefinitionExtractor::ExtractDefinitionRange(*package, *pkg_syntax);
+  CreateReference(import_item.package.range(), definition_range, *package);
 
   // Create reference for the imported symbol name
   const auto* imported_symbol = import_symbol.importedSymbol();
   if (imported_symbol != nullptr) {
-    CreateReference(import_item.item.range(), *imported_symbol);
+    if (imported_symbol->location.valid()) {
+      if (const auto* imported_syntax = imported_symbol->getSyntax()) {
+        auto imported_definition_range =
+            DefinitionExtractor::ExtractDefinitionRange(
+                *imported_symbol, *imported_syntax);
+        CreateReference(
+            import_item.item.range(), imported_definition_range,
+            *imported_symbol);
+      }
+    }
   }
 
   this->visitDefault(import_symbol);
@@ -493,7 +524,7 @@ void SemanticIndex::IndexVisitor::handle(
     if (const auto* syntax = param.getSyntax()) {
       auto definition_range =
           DefinitionExtractor::ExtractDefinitionRange(param, *syntax);
-      CreateReference(definition_range, param);
+      CreateReference(definition_range, definition_range, param);
     }
   }
 
@@ -507,7 +538,7 @@ void SemanticIndex::IndexVisitor::handle(
     if (const auto* syntax = subroutine.getSyntax()) {
       auto definition_range =
           DefinitionExtractor::ExtractDefinitionRange(subroutine, *syntax);
-      CreateReference(definition_range, subroutine);
+      CreateReference(definition_range, definition_range, subroutine);
     }
   }
   this->visitDefault(subroutine);
@@ -519,7 +550,7 @@ void SemanticIndex::IndexVisitor::handle(
     if (const auto* syntax = definition.getSyntax()) {
       auto definition_range =
           DefinitionExtractor::ExtractDefinitionRange(definition, *syntax);
-      CreateReference(definition_range, definition);
+      CreateReference(definition_range, definition_range, definition);
     }
   }
   this->visitDefault(definition);
@@ -532,7 +563,7 @@ void SemanticIndex::IndexVisitor::handle(
       if (syntax->kind == slang::syntax::SyntaxKind::TypedefDeclaration) {
         auto definition_range =
             syntax->as<slang::syntax::TypedefDeclarationSyntax>().name.range();
-        CreateReference(definition_range, type_alias);
+        CreateReference(definition_range, definition_range, type_alias);
       }
     }
   }
@@ -547,7 +578,7 @@ void SemanticIndex::IndexVisitor::handle(
     if (const auto* syntax = enum_value.getSyntax()) {
       auto definition_range =
           DefinitionExtractor::ExtractDefinitionRange(enum_value, *syntax);
-      CreateReference(definition_range, enum_value);
+      CreateReference(definition_range, definition_range, enum_value);
     }
   }
   this->visitDefault(enum_value);
@@ -558,7 +589,7 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::FieldSymbol& field) {
     if (const auto* syntax = field.getSyntax()) {
       auto definition_range =
           DefinitionExtractor::ExtractDefinitionRange(field, *syntax);
-      CreateReference(definition_range, field);
+      CreateReference(definition_range, definition_range, field);
     }
   }
 
@@ -571,7 +602,7 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::NetSymbol& net) {
     if (const auto* syntax = net.getSyntax()) {
       auto definition_range =
           DefinitionExtractor::ExtractDefinitionRange(net, *syntax);
-      CreateReference(definition_range, net);
+      CreateReference(definition_range, definition_range, net);
     }
   }
 
@@ -584,7 +615,7 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::PortSymbol& port) {
     if (const auto* syntax = port.getSyntax()) {
       auto definition_range =
           DefinitionExtractor::ExtractDefinitionRange(port, *syntax);
-      CreateReference(definition_range, port);
+      CreateReference(definition_range, definition_range, port);
     }
   }
 
@@ -598,7 +629,7 @@ void SemanticIndex::IndexVisitor::handle(
     if (const auto* syntax = interface_port.getSyntax()) {
       auto definition_range =
           DefinitionExtractor::ExtractDefinitionRange(interface_port, *syntax);
-      CreateReference(definition_range, interface_port);
+      CreateReference(definition_range, definition_range, interface_port);
 
       // Create cross-references from interface port syntax to target symbols
       // Interface name cross-reference (MemBus -> interface definition)
@@ -606,7 +637,17 @@ void SemanticIndex::IndexVisitor::handle(
         slang::SourceRange interface_name_range =
             interface_port.interfaceNameRange();
         if (interface_name_range.start().valid()) {
-          CreateReference(interface_name_range, *interface_port.interfaceDef);
+          if (interface_port.interfaceDef->location.valid()) {
+            if (const auto* interface_syntax =
+                    interface_port.interfaceDef->getSyntax()) {
+              auto interface_definition_range =
+                  DefinitionExtractor::ExtractDefinitionRange(
+                      *interface_port.interfaceDef, *interface_syntax);
+              CreateReference(
+                  interface_name_range, interface_definition_range,
+                  *interface_port.interfaceDef);
+            }
+          }
         }
       }
 
@@ -617,7 +658,16 @@ void SemanticIndex::IndexVisitor::handle(
           // Use existing Slang resolution logic to get ModportSymbol
           auto connection = interface_port.getConnection();
           if (connection.second != nullptr) {
-            CreateReference(modport_range, *connection.second);
+            if (connection.second->location.valid()) {
+              if (const auto* modport_syntax = connection.second->getSyntax()) {
+                auto modport_definition_range =
+                    DefinitionExtractor::ExtractDefinitionRange(
+                        *connection.second, *modport_syntax);
+                CreateReference(
+                    modport_range, modport_definition_range,
+                    *connection.second);
+              }
+            }
           }
         }
       }
@@ -632,7 +682,7 @@ void SemanticIndex::IndexVisitor::handle(
     if (const auto* syntax = modport.getSyntax()) {
       auto definition_range =
           DefinitionExtractor::ExtractDefinitionRange(modport, *syntax);
-      CreateReference(definition_range, modport);
+      CreateReference(definition_range, definition_range, modport);
     }
   }
   this->visitDefault(modport);
@@ -644,7 +694,7 @@ void SemanticIndex::IndexVisitor::handle(
     if (const auto* syntax = modport_port.getSyntax()) {
       auto definition_range =
           DefinitionExtractor::ExtractDefinitionRange(modport_port, *syntax);
-      CreateReference(definition_range, modport_port);
+      CreateReference(definition_range, definition_range, modport_port);
     }
   }
   this->visitDefault(modport_port);
@@ -656,7 +706,7 @@ void SemanticIndex::IndexVisitor::handle(
     if (const auto* syntax = generate_block.getSyntax()) {
       auto definition_range =
           DefinitionExtractor::ExtractDefinitionRange(generate_block, *syntax);
-      CreateReference(definition_range, generate_block);
+      CreateReference(definition_range, definition_range, generate_block);
     }
   }
   this->visitDefault(generate_block);
@@ -668,7 +718,7 @@ void SemanticIndex::IndexVisitor::handle(
     if (const auto* syntax = genvar.getSyntax()) {
       auto definition_range =
           DefinitionExtractor::ExtractDefinitionRange(genvar, *syntax);
-      CreateReference(definition_range, genvar);
+      CreateReference(definition_range, definition_range, genvar);
     }
   }
   this->visitDefault(genvar);

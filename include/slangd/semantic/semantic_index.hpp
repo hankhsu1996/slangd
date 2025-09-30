@@ -189,7 +189,7 @@ class SemanticIndex {
 
     // Helper to create reference entries (source -> target)
     void CreateReference(
-        slang::SourceRange source_range,
+        slang::SourceRange source_range, slang::SourceRange definition_range,
         const slang::ast::Symbol& target_symbol);
   };
 };
