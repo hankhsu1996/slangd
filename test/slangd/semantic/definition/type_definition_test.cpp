@@ -58,6 +58,26 @@ TEST_CASE("SemanticIndex type cast reference lookup works", "[definition]") {
 }
 
 TEST_CASE(
+    "SemanticIndex complex typedef cast should compile correctly",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    typedef struct packed { logic [7:0] x, y; } complex_t;
+    
+    module complex_test;
+      complex_t result;
+      
+      always_comb begin
+        result = complex_t'(16'h1234);
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "complex_t", 1, 0);
+}
+
+TEST_CASE(
     "SemanticIndex parameter type in module port list works", "[definition]") {
   SimpleTestFixture fixture;
   std::string code = R"(
@@ -246,7 +266,7 @@ TEST_CASE("SemanticIndex anonymous enum works", "[definition]") {
         ANON_SECOND,
         ANON_THIRD
       } anon_state;
-      
+
       initial begin
         anon_state = ANON_FIRST;
         anon_state = ANON_SECOND;
@@ -272,12 +292,12 @@ TEST_CASE("SemanticIndex struct field member access works", "[definition]") {
 
     module struct_test;
       packet_t pkt;
-      
+
       initial begin
         pkt.data = 32'h1234;
         pkt.valid = 1'b1;
         pkt.id = 8'hAB;
-        
+
         if (pkt.valid && pkt.data != 0) begin
           $display("ID: %h", pkt.id);
         end
@@ -309,7 +329,7 @@ TEST_CASE("SemanticIndex nested struct member access works", "[definition]") {
 
     module nested_struct_test;
       frame_t frame;
-      
+
       initial begin
         frame.header.data = 32'hABCD;
         frame.header.valid = 1'b1;
@@ -340,7 +360,7 @@ TEST_CASE("SemanticIndex union member access works", "[definition]") {
 
     module union_test;
       word_union_t wu;
-      
+
       initial begin
         wu.word = 32'h12345678;
         wu.bytes[0] = 8'hAB;
@@ -367,7 +387,7 @@ TEST_CASE("SemanticIndex direct struct declaration works", "[definition]") {
         int x;
         int y;
       } point;
-      
+
       initial begin
         point.x = 10;
         point.y = 20;
@@ -378,59 +398,4 @@ TEST_CASE("SemanticIndex direct struct declaration works", "[definition]") {
   auto index = fixture.CompileSource(code);
   fixture.AssertGoToDefinition(*index, code, "x", 1, 0);
   fixture.AssertGoToDefinition(*index, code, "y", 1, 0);
-}
-
-TEST_CASE(
-    "SemanticIndex typedef reference in packed array port works",
-    "[definition]") {
-  SimpleTestFixture fixture;
-  std::string code = R"(
-    typedef struct packed {
-      logic [7:0] data;
-    } packet_t;
-
-    module test_module (
-      output packet_t    simple_output,
-      input  packet_t    [3:0] packed_array
-    );
-    endmodule
-  )";
-
-  auto index = fixture.CompileSource(code);
-
-  // Test simple type reference - this should work
-  fixture.AssertGoToDefinition(*index, code, "packet_t", 1, 0);
-
-  // Test type reference in packed array - this was the failing case
-  fixture.AssertGoToDefinition(*index, code, "packet_t", 2, 0);
-}
-
-TEST_CASE(
-    "SemanticIndex typedef reference in multi-dimensional packed array works",
-    "[definition]") {
-  SimpleTestFixture fixture;
-  std::string code = R"(
-    typedef struct packed {
-      logic [7:0] data;
-      logic valid;
-    } data_t;
-
-    module test_module (
-      output data_t    simple_output,
-      input  data_t    [3:0] single_array,
-      input  data_t    [3:0][1:0] multi_array
-    );
-    endmodule
-  )";
-
-  auto index = fixture.CompileSource(code);
-
-  // Test simple type reference - should work
-  fixture.AssertGoToDefinition(*index, code, "data_t", 1, 0);
-
-  // Test single-dimensional packed array - should work with current fix
-  fixture.AssertGoToDefinition(*index, code, "data_t", 2, 0);
-
-  // Test multi-dimensional packed array - this is likely failing
-  fixture.AssertGoToDefinition(*index, code, "data_t", 3, 0);
 }

@@ -170,7 +170,7 @@ class SemanticIndex {
     void handle(const slang::ast::GenerateBlockSymbol& generate_block);
     void handle(const slang::ast::GenvarSymbol& genvar);
 
-    // Default traversal
+    // Default traversal for unhandled node types
     template <typename T>
     void handle(const T& node) {
       this->visitDefault(node);
@@ -183,24 +183,9 @@ class SemanticIndex {
 
     // Helper methods
     void ProcessSymbol(const slang::ast::Symbol& symbol);
-    void TraverseCompoundTypeMembers(const slang::ast::Type& type);
 
-    // Helper to process all dimension specifier types comprehensively
-    void ProcessVariableDimensions(
-        const slang::ast::VariableSymbol& symbol,
-        const slang::syntax::SyntaxList<slang::syntax::VariableDimensionSyntax>&
-            dimensions);
-
-    // Generic dimension processor for any scope context
-    void ProcessDimensionsInScope(
-        const slang::ast::Scope& scope,
-        const slang::syntax::SyntaxList<slang::syntax::VariableDimensionSyntax>&
-            dimensions);
-
-    // Helper to process integer type packed dimensions
-    void ProcessIntegerTypeDimensions(
-        const slang::ast::Scope& scope,
-        const slang::syntax::DataTypeSyntax& type_syntax);
+    // Unified type traversal - handles all type structure recursively
+    void TraverseType(const slang::ast::Type& type);
 
     // Helper to create reference entries (source -> target)
     void CreateReference(
