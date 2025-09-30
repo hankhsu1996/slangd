@@ -24,17 +24,6 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       break;
 
-    case SK::Definition: {
-      if (syntax.kind == SyntaxKind::ModuleDeclaration) {
-        return syntax.as<slang::syntax::ModuleDeclarationSyntax>()
-            .header->name.range();
-      }
-      break;
-    }
-
-    case SK::Variable:
-      return syntax.sourceRange();  // Variables use full declaration range
-
     case SK::StatementBlock: {
       if (syntax.kind == SyntaxKind::SequentialBlockStatement ||
           syntax.kind == SyntaxKind::ParallelBlockStatement) {

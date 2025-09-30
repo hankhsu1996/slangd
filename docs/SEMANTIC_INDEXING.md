@@ -56,10 +56,19 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::MySymbol& symbol) {
 ```
 
 **Determining Syntax Support:**
-1. **Check symbol's `fromSyntax` methods** in Slang library to identify the syntax class it uses
+1. **Check symbol's constructor or methods** in Slang library to identify the syntax class it uses
 2. **Search visitor dispatch** with `grep "SyntaxClass\*" AllSyntax.h` to find ALL syntax kinds that map to that class
 3. **Handle all relevant syntax kinds** in your handler for complete coverage
 4. **Use precise name ranges** (`name.range()`) not full syntax ranges to avoid overlaps
+
+**Reality Check & Bug Discovery:**
+5. **Generate test AST** with `slang --ast-json` to verify syntax kinds actually used
+6. **Add comprehensive logging** for unhandled syntax kinds in handlers
+7. **Let test failures guide discovery** - systematic approach can miss library quirks
+8. **Trace implementation details** - methods like `setFromDeclarator()` can change syntax references after creation
+
+**Example - Hidden Indirection Discovery:**
+Variables created via `fromSyntax(DataDeclarationSyntax)` call `setFromDeclarator()` internally, changing their syntax reference to `DeclaratorSyntax`. This means `getSyntax()` returns `Declarator`, not `DataDeclaration`, despite the creation path.
 
 **Don't forget:**
 - Add declaration to `semantic_index.hpp`

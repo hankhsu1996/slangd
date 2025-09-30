@@ -67,7 +67,9 @@ TEST_CASE(
       typedef logic [7:0] byte_t;
     endpackage
 
-    module header_import_test import header_pkg::*;
+    module header_import_test
+      import header_pkg::*;
+      ();
       byte_t data_byte;
     endmodule
   )";
@@ -222,11 +224,9 @@ TEST_CASE("SemanticIndex nested generate blocks work", "[definition]") {
       genvar i, j;
       generate
         for (i = 0; i < 2; i = i + 1) begin : outer_gen
-          generate
-            for (j = 0; j < 3; j = j + 1) begin : inner_gen
-              logic [i+j:0] combined_bus;
-            end
-          endgenerate
+          for (j = 0; j < 3; j = j + 1) begin : inner_gen
+            logic [i+j:0] combined_bus;
+          end
         end
       endgenerate
     endmodule

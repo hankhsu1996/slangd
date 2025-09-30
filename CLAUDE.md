@@ -57,6 +57,7 @@ SystemVerilog LSP server with modular design:
 
 - C++23, ASIO coroutines, `std::expected`, trailing return types
 - Use `toString(symbol.kind) -> std::string_view` for Slang enum printing
+- Use `slang::syntax::toString(syntax.kind) -> std::string_view` for SyntaxKind printing
 
 **General Debugging:**
 
