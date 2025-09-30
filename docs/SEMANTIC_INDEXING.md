@@ -45,13 +45,21 @@ Add a `handle()` method for the symbol type to enable go-to-definition on the sy
 void SemanticIndex::IndexVisitor::handle(const slang::ast::MySymbol& symbol) {
   if (symbol.location.valid()) {
     if (const auto* syntax = symbol.getSyntax()) {
-      auto definition_range = DefinitionExtractor::ExtractDefinitionRange(symbol, *syntax);
-      CreateReference(definition_range, symbol);
+      if (syntax->kind == slang::syntax::SyntaxKind::MyDeclaration) {
+        auto definition_range = syntax->as<slang::syntax::MyDeclarationSyntax>().name.range();
+        CreateReference(definition_range, definition_range, symbol);
+      }
     }
   }
   this->visitDefault(symbol);
 }
 ```
+
+**Determining Syntax Support:**
+1. **Check symbol's `fromSyntax` methods** in Slang library to identify the syntax class it uses
+2. **Search visitor dispatch** with `grep "SyntaxClass\*" AllSyntax.h` to find ALL syntax kinds that map to that class
+3. **Handle all relevant syntax kinds** in your handler for complete coverage
+4. **Use precise name ranges** (`name.range()`) not full syntax ranges to avoid overlaps
 
 **Don't forget:**
 - Add declaration to `semantic_index.hpp`

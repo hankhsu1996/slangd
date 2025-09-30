@@ -538,9 +538,16 @@ void SemanticIndex::IndexVisitor::handle(
     const slang::ast::SubroutineSymbol& subroutine) {
   if (subroutine.location.valid()) {
     if (const auto* syntax = subroutine.getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(subroutine, *syntax);
-      CreateReference(definition_range, definition_range, subroutine);
+      if (syntax->kind == slang::syntax::SyntaxKind::TaskDeclaration ||
+          syntax->kind == slang::syntax::SyntaxKind::FunctionDeclaration) {
+        const auto& func_syntax =
+            syntax->as<slang::syntax::FunctionDeclarationSyntax>();
+        if ((func_syntax.prototype != nullptr) &&
+            (func_syntax.prototype->name != nullptr)) {
+          auto definition_range = func_syntax.prototype->name->sourceRange();
+          CreateReference(definition_range, definition_range, subroutine);
+        }
+      }
     }
   }
   this->visitDefault(subroutine);
