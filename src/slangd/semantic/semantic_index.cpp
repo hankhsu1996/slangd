@@ -522,9 +522,11 @@ void SemanticIndex::IndexVisitor::handle(
     const slang::ast::ParameterSymbol& param) {
   if (param.location.valid()) {
     if (const auto* syntax = param.getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(param, *syntax);
-      CreateReference(definition_range, definition_range, param);
+      if (syntax->kind == slang::syntax::SyntaxKind::Declarator) {
+        auto definition_range =
+            syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
+        CreateReference(definition_range, definition_range, param);
+      }
     }
   }
 
@@ -576,9 +578,11 @@ void SemanticIndex::IndexVisitor::handle(
     const slang::ast::EnumValueSymbol& enum_value) {
   if (enum_value.location.valid()) {
     if (const auto* syntax = enum_value.getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(enum_value, *syntax);
-      CreateReference(definition_range, definition_range, enum_value);
+      if (syntax->kind == slang::syntax::SyntaxKind::Declarator) {
+        auto definition_range =
+            syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
+        CreateReference(definition_range, definition_range, enum_value);
+      }
     }
   }
   this->visitDefault(enum_value);
@@ -587,9 +591,11 @@ void SemanticIndex::IndexVisitor::handle(
 void SemanticIndex::IndexVisitor::handle(const slang::ast::FieldSymbol& field) {
   if (field.location.valid()) {
     if (const auto* syntax = field.getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(field, *syntax);
-      CreateReference(definition_range, definition_range, field);
+      if (syntax->kind == slang::syntax::SyntaxKind::Declarator) {
+        auto definition_range =
+            syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
+        CreateReference(definition_range, definition_range, field);
+      }
     }
   }
 
@@ -600,9 +606,11 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::FieldSymbol& field) {
 void SemanticIndex::IndexVisitor::handle(const slang::ast::NetSymbol& net) {
   if (net.location.valid()) {
     if (const auto* syntax = net.getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(net, *syntax);
-      CreateReference(definition_range, definition_range, net);
+      if (syntax->kind == slang::syntax::SyntaxKind::Declarator) {
+        auto definition_range =
+            syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
+        CreateReference(definition_range, definition_range, net);
+      }
     }
   }
 
