@@ -107,27 +107,6 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       return syntax.sourceRange();
 
-    case SK::Genvar:
-      // Genvar declaration - extract name from identifier list
-      if (syntax.kind == SyntaxKind::GenvarDeclaration) {
-        const auto& genvar_decl =
-            syntax.as<slang::syntax::GenvarDeclarationSyntax>();
-        // Find the specific genvar name by matching the symbol name
-        for (const auto& identifier : genvar_decl.identifiers) {
-          if (identifier->identifier.valueText() == symbol.name) {
-            return identifier->identifier.range();
-          }
-        }
-      }
-      // Handle inline genvar in loop generate
-      if (syntax.kind == SyntaxKind::LoopGenerate) {
-        const auto& loop_gen = syntax.as<slang::syntax::LoopGenerateSyntax>();
-        if (loop_gen.genvar.valueText() == "genvar") {
-          return loop_gen.identifier.range();
-        }
-      }
-      return syntax.sourceRange();
-
     default:
       // For symbol types without specific handling, fall back to full syntax
       // range

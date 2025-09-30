@@ -929,8 +929,9 @@ void SemanticIndex::IndexVisitor::handle(
     const slang::ast::GenvarSymbol& genvar) {
   if (genvar.location.valid()) {
     if (const auto* syntax = genvar.getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(genvar, *syntax);
+      // GenvarSymbol.getSyntax() returns IdentifierName - just use its range
+      // The symbol itself already points to the precise genvar name location
+      slang::SourceRange definition_range = syntax->sourceRange();
       CreateReference(definition_range, definition_range, genvar);
     }
   }
