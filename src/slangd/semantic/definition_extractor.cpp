@@ -32,13 +32,6 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       break;
     }
 
-    case SK::TypeAlias:
-      if (syntax.kind == SyntaxKind::TypedefDeclaration) {
-        return syntax.as<slang::syntax::TypedefDeclarationSyntax>()
-            .name.range();
-      }
-      break;
-
     case SK::Variable:
       return syntax.sourceRange();  // Variables use full declaration range
 

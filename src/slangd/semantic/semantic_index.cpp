@@ -529,9 +529,11 @@ void SemanticIndex::IndexVisitor::handle(
     const slang::ast::TypeAliasType& type_alias) {
   if (type_alias.location.valid()) {
     if (const auto* syntax = type_alias.getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(type_alias, *syntax);
-      CreateReference(definition_range, type_alias);
+      if (syntax->kind == slang::syntax::SyntaxKind::TypedefDeclaration) {
+        auto definition_range =
+            syntax->as<slang::syntax::TypedefDeclarationSyntax>().name.range();
+        CreateReference(definition_range, type_alias);
+      }
     }
   }
 
