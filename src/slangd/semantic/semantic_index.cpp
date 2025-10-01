@@ -32,13 +32,11 @@ auto SemanticIndex::FromCompilation(
     slang::ast::Compilation& compilation,
     const slang::SourceManager& source_manager,
     const std::string& current_file_uri) -> std::unique_ptr<SemanticIndex> {
-  auto index = std::unique_ptr<SemanticIndex>(new SemanticIndex());
-
-  // Store source manager reference for document symbol processing
-  index->source_manager_ = &source_manager;
+  auto index =
+      std::unique_ptr<SemanticIndex>(new SemanticIndex(source_manager));
 
   // Create visitor for comprehensive symbol collection and reference tracking
-  auto visitor = IndexVisitor(index.get(), &source_manager, current_file_uri);
+  auto visitor = IndexVisitor(*index, source_manager, current_file_uri);
 
   const auto& root = compilation.getRoot();
 
@@ -157,6 +155,26 @@ auto SemanticIndex::FromCompilation(
   return index;
 }
 
+auto SemanticEntry::Make(
+    const slang::ast::Symbol& symbol, std::string_view name,
+    slang::SourceRange source_range, bool is_definition,
+    slang::SourceRange definition_range, const slang::ast::Scope* parent_scope)
+    -> SemanticEntry {
+  // Unwrap symbol to handle TransparentMember recursion
+  const auto& unwrapped = UnwrapSymbol(symbol);
+
+  return SemanticEntry{
+      .source_range = source_range,
+      .location = unwrapped.location,
+      .symbol = &unwrapped,
+      .lsp_kind = ConvertToLspKind(unwrapped),
+      .name = std::string(name),
+      .parent = parent_scope,
+      .is_definition = is_definition,
+      .definition_range = definition_range,
+      .buffer_id = unwrapped.location.buffer()};
+}
+
 auto SemanticIndex::GetSymbolAt(slang::SourceLocation location) const
     -> std::optional<SymbolInfo> {
   if (auto it = symbols_.find(location); it != symbols_.end()) {
@@ -176,98 +194,6 @@ auto SemanticIndex::GetDocumentSymbols(const std::string& uri) const
 }
 
 // IndexVisitor implementation
-void SemanticIndex::IndexVisitor::ProcessSymbol(
-    const slang::ast::Symbol& symbol) {
-  // Skip individual GenerateBlockSymbol entries when they're part of a
-  // GenerateBlockArraySymbol We'll handle these through the special template
-  // extraction logic instead
-  if (symbol.kind == slang::ast::SymbolKind::GenerateBlock) {
-    const auto* parent_scope = symbol.getParentScope();
-    if ((parent_scope != nullptr) &&
-        parent_scope->asSymbol().kind ==
-            slang::ast::SymbolKind::GenerateBlockArray) {
-      return;
-    }
-  }
-
-  // Only index symbols that meet basic criteria
-  if (!ShouldIndexForSemanticIndex(symbol)) {
-    return;
-  }
-
-  // Unwrap symbol to handle TransparentMember recursion
-  const auto& unwrapped = UnwrapSymbol(symbol);
-
-  // Extract precise definition range from syntax node
-  slang::SourceRange definition_range;
-  bool is_definition = false;
-  if (const auto* syntax = unwrapped.getSyntax()) {
-    definition_range =
-        DefinitionExtractor::ExtractDefinitionRange(unwrapped, *syntax);
-    is_definition = true;
-  } else {
-    // Fallback to symbol location for symbols without syntax
-    definition_range =
-        slang::SourceRange{unwrapped.location, unwrapped.location};
-    is_definition = false;
-  }
-
-  // Create SymbolInfo with cached LSP data
-  SymbolInfo info{
-      .symbol = &unwrapped,
-      .location = unwrapped.location,
-      .lsp_kind = ConvertToLspKind(unwrapped),
-      .range = ComputeLspRange(unwrapped, *source_manager_),
-      .parent = unwrapped.getParentScope(),
-      .is_definition = is_definition,
-      .definition_range = definition_range,
-      .buffer_id = unwrapped.location.buffer().getId()};
-
-  // Store in flat map for O(1) lookup
-  // Priority handling: prefer named symbols and GenerateBlockArray over unnamed
-  // GenerateBlocks
-  auto existing_it = index_->symbols_.find(unwrapped.location);
-  bool should_store = true;
-  if (existing_it != index_->symbols_.end()) {
-    const auto& existing_info = existing_it->second;
-
-    // Prefer named symbols over unnamed ones
-    if (!unwrapped.name.empty() && existing_info.symbol->name.empty()) {
-      // Named symbol takes precedence over unnamed symbol
-      should_store = true;
-    } else if (unwrapped.name.empty() && !existing_info.symbol->name.empty()) {
-      // Keep named symbol over unnamed symbol
-      should_store = false;
-    } else if (
-        unwrapped.kind == slang::ast::SymbolKind::Subroutine &&
-        existing_info.symbol->kind == slang::ast::SymbolKind::Variable) {
-      // Prefer Subroutine over Variable for functions (both have same
-      // name/location)
-      should_store = true;
-    } else if (
-        unwrapped.kind == slang::ast::SymbolKind::Variable &&
-        existing_info.symbol->kind == slang::ast::SymbolKind::Subroutine) {
-      // Subroutine takes precedence over Variable
-      should_store = false;
-    } else if (
-        unwrapped.kind == slang::ast::SymbolKind::GenerateBlockArray &&
-        existing_info.symbol->kind == slang::ast::SymbolKind::GenerateBlock) {
-      // Prefer GenerateBlockArray over GenerateBlock
-      should_store = true;
-    } else if (
-        unwrapped.kind == slang::ast::SymbolKind::GenerateBlock &&
-        existing_info.symbol->kind ==
-            slang::ast::SymbolKind::GenerateBlockArray) {
-      // GenerateBlockArray takes precedence over GenerateBlock
-      should_store = false;
-    }
-  }
-
-  if (should_store) {
-    index_->symbols_[unwrapped.location] = info;
-  }
-}
-
 void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
   switch (type.kind) {
     case slang::ast::SymbolKind::PackedArrayType: {
@@ -379,27 +305,7 @@ void SemanticIndex::IndexVisitor::CreateReference(
       .target_range = definition_range,
       .symbol_kind = ConvertToLspKind(target_symbol),
       .symbol_name = std::string(target_symbol.name)};
-  index_->references_.push_back(ref);
-}
-
-void SemanticIndex::IndexVisitor::CreateSemanticEntry(
-    const slang::ast::Symbol& symbol, slang::SourceRange source_range,
-    bool is_definition, slang::SourceRange definition_range) {
-  // Unwrap symbol to handle TransparentMember recursion
-  const auto& unwrapped = UnwrapSymbol(symbol);
-
-  SemanticEntry entry{
-      .source_range = source_range,
-      .location = unwrapped.location,
-      .symbol = &unwrapped,
-      .lsp_kind = ConvertToLspKind(unwrapped),
-      .name = std::string(unwrapped.name),
-      .parent = unwrapped.getParentScope(),
-      .is_definition = is_definition,
-      .definition_range = definition_range,
-      .buffer_id = unwrapped.location.buffer()};
-
-  index_->semantic_entries_.push_back(entry);
+  index_.get().references_.push_back(ref);
 }
 
 void SemanticIndex::IndexVisitor::handle(
@@ -609,6 +515,10 @@ void SemanticIndex::IndexVisitor::handle(
             declarator->name.valueText() == symbol.name) {
           auto definition_range = declarator->name.range();
           CreateReference(definition_range, definition_range, symbol);
+          index_.get().semantic_entries_.push_back(
+              SemanticEntry::Make(
+                  symbol, symbol.name, definition_range, true, definition_range,
+                  symbol.getParentScope()));
           break;
         }
       }
@@ -618,12 +528,20 @@ void SemanticIndex::IndexVisitor::handle(
     case slang::syntax::SyntaxKind::CheckerDataDeclaration: {
       auto definition_range = syntax->sourceRange();
       CreateReference(definition_range, definition_range, symbol);
+      index_.get().semantic_entries_.push_back(
+          SemanticEntry::Make(
+              symbol, symbol.name, definition_range, true, definition_range,
+              symbol.getParentScope()));
       break;
     }
     case slang::syntax::SyntaxKind::Declarator: {
       const auto& decl_syntax = syntax->as<slang::syntax::DeclaratorSyntax>();
       auto definition_range = decl_syntax.name.range();
       CreateReference(definition_range, definition_range, symbol);
+      index_.get().semantic_entries_.push_back(
+          SemanticEntry::Make(
+              symbol, symbol.name, definition_range, true, definition_range,
+              symbol.getParentScope()));
       break;
     }
     default:
@@ -717,6 +635,10 @@ void SemanticIndex::IndexVisitor::handle(
         auto definition_range =
             syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
         CreateReference(definition_range, definition_range, param);
+        index_.get().semantic_entries_.push_back(
+            SemanticEntry::Make(
+                param, param.name, definition_range, true, definition_range,
+                param.getParentScope()));
       }
     }
   }
@@ -737,6 +659,10 @@ void SemanticIndex::IndexVisitor::handle(
             (func_syntax.prototype->name != nullptr)) {
           auto definition_range = func_syntax.prototype->name->sourceRange();
           CreateReference(definition_range, definition_range, subroutine);
+          index_.get().semantic_entries_.push_back(
+              SemanticEntry::Make(
+                  subroutine, subroutine.name, definition_range, true,
+                  definition_range, subroutine.getParentScope()));
         }
       }
     }
@@ -755,10 +681,13 @@ void SemanticIndex::IndexVisitor::handle(
             syntax->as<slang::syntax::ModuleDeclarationSyntax>();
         auto definition_range = decl_syntax.header->name.range();
         CreateReference(definition_range, definition_range, definition);
+        index_.get().semantic_entries_.push_back(
+            SemanticEntry::Make(
+                definition, definition.name, definition_range, true,
+                definition_range, definition.getParentScope()));
       }
     }
   }
-
   this->visitDefault(definition);
 }
 
@@ -770,6 +699,10 @@ void SemanticIndex::IndexVisitor::handle(
         auto definition_range =
             syntax->as<slang::syntax::TypedefDeclarationSyntax>().name.range();
         CreateReference(definition_range, definition_range, type_alias);
+        index_.get().semantic_entries_.push_back(
+            SemanticEntry::Make(
+                type_alias, type_alias.name, definition_range, true,
+                definition_range, type_alias.getParentScope()));
       }
     }
   }
@@ -788,6 +721,10 @@ void SemanticIndex::IndexVisitor::handle(
         auto definition_range =
             syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
         CreateReference(definition_range, definition_range, enum_value);
+        index_.get().semantic_entries_.push_back(
+            SemanticEntry::Make(
+                enum_value, enum_value.name, definition_range, true,
+                definition_range, enum_value.getParentScope()));
       }
     }
   }
@@ -801,6 +738,10 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::FieldSymbol& field) {
         auto definition_range =
             syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
         CreateReference(definition_range, definition_range, field);
+        index_.get().semantic_entries_.push_back(
+            SemanticEntry::Make(
+                field, field.name, definition_range, true, definition_range,
+                field.getParentScope()));
       }
     }
   }
@@ -816,6 +757,10 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::NetSymbol& net) {
         auto definition_range =
             syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
         CreateReference(definition_range, definition_range, net);
+        index_.get().semantic_entries_.push_back(
+            SemanticEntry::Make(
+                net, net.name, definition_range, true, definition_range,
+                net.getParentScope()));
       }
     }
   }
@@ -836,6 +781,10 @@ void SemanticIndex::IndexVisitor::handle(
                 .nameOrKeyword.range();
       }
       CreateReference(definition_range, definition_range, interface_port);
+      index_.get().semantic_entries_.push_back(
+          SemanticEntry::Make(
+              interface_port, interface_port.name, definition_range, true,
+              definition_range, interface_port.getParentScope()));
 
       // Create cross-reference from interface name to interface definition
       if (interface_port.interfaceDef != nullptr &&
@@ -884,6 +833,10 @@ void SemanticIndex::IndexVisitor::handle(
         auto definition_range =
             syntax->as<slang::syntax::ModportItemSyntax>().name.range();
         CreateReference(definition_range, definition_range, modport);
+        index_.get().semantic_entries_.push_back(
+            SemanticEntry::Make(
+                modport, modport.name, definition_range, true, definition_range,
+                modport.getParentScope()));
       }
     }
   }
@@ -898,6 +851,10 @@ void SemanticIndex::IndexVisitor::handle(
         auto definition_range =
             syntax->as<slang::syntax::ModportNamedPortSyntax>().name.range();
         CreateReference(definition_range, definition_range, modport_port);
+        index_.get().semantic_entries_.push_back(
+            SemanticEntry::Make(
+                modport_port, modport_port.name, definition_range, true,
+                definition_range, modport_port.getParentScope()));
       }
     }
   }
@@ -934,10 +891,27 @@ void SemanticIndex::IndexVisitor::handle(
       if (syntax->kind == slang::syntax::SyntaxKind::GenerateBlock) {
         const auto& gen_block =
             syntax->as<slang::syntax::GenerateBlockSyntax>();
+
         // Only create reference if there's an explicit name in the source code
         if (gen_block.beginName != nullptr) {
           auto definition_range = gen_block.beginName->name.range();
+          auto name_text = gen_block.beginName->name.valueText();
+
+          // Skip GenerateBlockArray parent since it's not indexed in document
+          // symbols
+          const slang::ast::Scope* parent_scope =
+              generate_block.getParentScope();
+          if (parent_scope != nullptr &&
+              parent_scope->asSymbol().kind ==
+                  slang::ast::SymbolKind::GenerateBlockArray) {
+            parent_scope = parent_scope->asSymbol().getParentScope();
+          }
+
           CreateReference(definition_range, definition_range, generate_block);
+          index_.get().semantic_entries_.push_back(
+              SemanticEntry::Make(
+                  generate_block, name_text, definition_range, true,
+                  definition_range, parent_scope));
         }
         // For unnamed blocks (auto-generated names like "genblk1"), don't
         // create reference since users can't click on text that doesn't exist
@@ -956,8 +930,48 @@ void SemanticIndex::IndexVisitor::handle(
       // The symbol itself already points to the precise genvar name location
       slang::SourceRange definition_range = syntax->sourceRange();
       CreateReference(definition_range, definition_range, genvar);
+      index_.get().semantic_entries_.push_back(
+          SemanticEntry::Make(
+              genvar, genvar.name, definition_range, true, definition_range,
+              genvar.getParentScope()));
     }
   }
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::PackageSymbol& package) {
+  if (package.location.valid()) {
+    if (const auto* syntax = package.getSyntax()) {
+      if (syntax->kind == slang::syntax::SyntaxKind::PackageDeclaration) {
+        const auto& decl_syntax =
+            syntax->as<slang::syntax::ModuleDeclarationSyntax>();
+        auto definition_range = decl_syntax.header->name.range();
+        CreateReference(definition_range, definition_range, package);
+        index_.get().semantic_entries_.push_back(
+            SemanticEntry::Make(
+                package, package.name, definition_range, true, definition_range,
+                package.getParentScope()));
+      }
+    }
+  }
+  this->visitDefault(package);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::StatementBlockSymbol& statement_block) {
+  // StatementBlockSymbol represents named statement blocks (e.g., assertion
+  // labels) Only index if it has a valid name (not empty or auto-generated)
+  if (statement_block.location.valid() && !statement_block.name.empty()) {
+    auto definition_range =
+        slang::SourceRange{statement_block.location, statement_block.location};
+
+    CreateReference(definition_range, definition_range, statement_block);
+    index_.get().semantic_entries_.push_back(
+        SemanticEntry::Make(
+            statement_block, statement_block.name, definition_range, true,
+            definition_range, statement_block.getParentScope()));
+  }
+  this->visitDefault(statement_block);
 }
 
 // Go-to-definition implementation

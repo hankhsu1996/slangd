@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <functional>
-#include <ranges>
 #include <regex>
 #include <stdexcept>
 
@@ -230,11 +229,11 @@ void SimpleTestFixture::AssertSymbolAtLocation(
 void SimpleTestFixture::AssertContainsSymbols(
     semantic::SemanticIndex& index,
     const std::vector<std::string>& expected_symbols) {
-  const auto& all_symbols = index.GetAllSymbols();
+  const auto& semantic_entries = index.GetSemanticEntries();
   std::vector<std::string> found_symbol_names;
 
-  for (const auto& [loc, info] : all_symbols) {
-    found_symbol_names.emplace_back(info.symbol->name);
+  for (const auto& entry : semantic_entries) {
+    found_symbol_names.push_back(entry.name);
   }
 
   for (const auto& expected : expected_symbols) {

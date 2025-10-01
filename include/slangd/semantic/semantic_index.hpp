@@ -60,6 +60,13 @@ struct SemanticEntry {
 
   // Metadata
   slang::BufferID buffer_id;  // For file filtering
+
+  // Factory method to construct SemanticEntry from symbol
+  static auto Make(
+      const slang::ast::Symbol& symbol, std::string_view name,
+      slang::SourceRange source_range, bool is_definition,
+      slang::SourceRange definition_range,
+      const slang::ast::Scope* parent_scope) -> SemanticEntry;
 };
 
 }  // namespace slangd::semantic
@@ -109,8 +116,8 @@ class SemanticIndex {
   auto GetAllSymbols() const
       -> const std::unordered_map<slang::SourceLocation, SymbolInfo>&;
 
-  auto GetSourceManager() const -> const slang::SourceManager* {
-    return source_manager_;
+  auto GetSourceManager() const -> const slang::SourceManager& {
+    return source_manager_.get();
   }
 
   // SymbolIndex-compatible API
@@ -122,6 +129,11 @@ class SemanticIndex {
     return references_;
   }
 
+  // Unified semantic entries access
+  auto GetSemanticEntries() const -> const std::vector<SemanticEntry>& {
+    return semantic_entries_;
+  }
+
   // Find definition range for the symbol at the given location
   auto LookupDefinitionAt(slang::SourceLocation loc) const
       -> std::optional<slang::SourceRange>;
@@ -130,7 +142,9 @@ class SemanticIndex {
   void ValidateNoRangeOverlaps() const;
 
  private:
-  explicit SemanticIndex() = default;
+  explicit SemanticIndex(const slang::SourceManager& source_manager)
+      : source_manager_(source_manager) {
+  }
 
   // Core data storage
   std::unordered_map<slang::SourceLocation, SymbolInfo> symbols_;
@@ -143,24 +157,17 @@ class SemanticIndex {
   std::vector<SemanticEntry> semantic_entries_;
 
   // Store source manager reference for symbol processing
-  const slang::SourceManager* source_manager_ = nullptr;
+  std::reference_wrapper<const slang::SourceManager> source_manager_;
 
   // Visitor for symbol collection and reference tracking
   class IndexVisitor : public slang::ast::ASTVisitor<IndexVisitor, true, true> {
    public:
     explicit IndexVisitor(
-        SemanticIndex* index, const slang::SourceManager* source_manager,
+        SemanticIndex& index, const slang::SourceManager& source_manager,
         std::string current_file_uri)
         : index_(index),
           source_manager_(source_manager),
           current_file_uri_(std::move(current_file_uri)) {
-    }
-
-    template <typename T>
-    void preVisit(const T& symbol) {
-      if constexpr (std::is_base_of_v<slang::ast::Symbol, T>) {
-        ProcessSymbol(symbol);
-      }
     }
 
     // Expression handlers
@@ -187,6 +194,8 @@ class SemanticIndex {
     void handle(const slang::ast::GenerateBlockArraySymbol& generate_array);
     void handle(const slang::ast::GenerateBlockSymbol& generate_block);
     void handle(const slang::ast::GenvarSymbol& genvar);
+    void handle(const slang::ast::PackageSymbol& package);
+    void handle(const slang::ast::StatementBlockSymbol& statement_block);
 
     template <typename T>
     void handle(const T& node) {
@@ -194,13 +203,11 @@ class SemanticIndex {
     }
 
    private:
-    SemanticIndex* index_;
-    const slang::SourceManager* source_manager_;
+    std::reference_wrapper<SemanticIndex> index_;
+    std::reference_wrapper<const slang::SourceManager> source_manager_;
     std::string current_file_uri_;
 
     // Helper methods
-    void ProcessSymbol(const slang::ast::Symbol& symbol);
-
     // Unified type traversal - handles all type structure recursively
     void TraverseType(const slang::ast::Type& type);
 
@@ -208,11 +215,6 @@ class SemanticIndex {
     void CreateReference(
         slang::SourceRange source_range, slang::SourceRange definition_range,
         const slang::ast::Symbol& target_symbol);
-
-    // Helper to create unified semantic entries (Phase 1)
-    void CreateSemanticEntry(
-        const slang::ast::Symbol& symbol, slang::SourceRange source_range,
-        bool is_definition, slang::SourceRange definition_range);
   };
 };
 

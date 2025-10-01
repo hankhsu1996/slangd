@@ -172,6 +172,86 @@ TEST_CASE(
 }
 
 TEST_CASE(
+    "SemanticIndex ShouldIndexForDocumentSymbols filters genvar correctly",
+    "[document_symbols]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module test_module;
+      logic signal;
+      generate
+        for (genvar i = 0; i < 4; i++) begin : gen_block
+          logic loop_signal;
+        end
+      endgenerate
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
+
+  // Genvar 'i' should be filtered out of document symbols
+  std::function<void(const std::vector<lsp::DocumentSymbol>&)> check_no_genvar;
+  check_no_genvar =
+      [&check_no_genvar](const std::vector<lsp::DocumentSymbol>& syms) {
+        for (const auto& symbol : syms) {
+          REQUIRE(symbol.name != "i");
+          if (symbol.children.has_value()) {
+            check_no_genvar(*symbol.children);
+          }
+        }
+      };
+
+  check_no_genvar(symbols);
+
+  // But meaningful symbols should still be there
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "test_module", lsp::SymbolKind::kClass);
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "signal", lsp::SymbolKind::kVariable);
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "gen_block", lsp::SymbolKind::kNamespace);
+}
+
+TEST_CASE(
+    "SemanticIndex ConvertToLspKind handles complex type aliases",
+    "[document_symbols]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module test_module;
+      typedef enum logic [1:0] {
+        IDLE, ACTIVE, DONE
+      } state_t;
+
+      typedef struct {
+        logic [7:0] data;
+        logic valid;
+      } packet_t;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
+
+  // Find enum and struct typedefs and verify correct LSP kinds
+  std::function<void(const std::vector<lsp::DocumentSymbol>&)> check_symbols;
+  check_symbols = [&](const auto& syms) {
+    for (const auto& sym : syms) {
+      if (sym.name == "state_t") {
+        REQUIRE(sym.kind == lsp::SymbolKind::kEnum);
+      }
+      if (sym.name == "packet_t") {
+        REQUIRE(sym.kind == lsp::SymbolKind::kStruct);
+      }
+      if (sym.children.has_value()) {
+        check_symbols(*sym.children);
+      }
+    }
+  };
+
+  check_symbols(symbols);
+}
+
+TEST_CASE(
     "SemanticIndex handles nested scope definitions in document symbols",
     "[document_symbols]") {
   SimpleTestFixture fixture;
@@ -512,15 +592,10 @@ TEST_CASE(
   std::function<bool(const std::vector<lsp::DocumentSymbol>&)> has_empty_block;
   has_empty_block =
       [&has_empty_block](const std::vector<lsp::DocumentSymbol>& syms) -> bool {
-    for (const auto& symbol : syms) {
-      if (symbol.name == "truly_empty_block") {
-        return true;
-      }
-      if (symbol.children.has_value() && has_empty_block(*symbol.children)) {
-        return true;
-      }
-    }
-    return false;
+    return std::ranges::any_of(syms, [&](const auto& symbol) -> bool {
+      return symbol.name == "truly_empty_block" ||
+             (symbol.children.has_value() && has_empty_block(*symbol.children));
+    });
   };
 
   REQUIRE(!has_empty_block(symbols));

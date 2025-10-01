@@ -25,17 +25,17 @@ class DocumentSymbolBuilder {
       -> std::vector<lsp::DocumentSymbol>;
 
  private:
-  // Individual symbol creation from SymbolInfo - returns nullopt if name is
-  // empty
-  static auto CreateDocumentSymbol(const SemanticIndex::SymbolInfo& info)
+  // Create DocumentSymbol from SemanticEntry (returns nullopt if name is empty)
+  static auto CreateDocumentSymbol(
+      const SemanticEntry& entry, const slang::SourceManager& source_manager)
       -> std::optional<lsp::DocumentSymbol>;
 
   // Recursive attachment of child symbols to parent DocumentSymbol
   static auto AttachChildrenToSymbol(
       lsp::DocumentSymbol& parent, const slang::ast::Scope* parent_scope,
       const std::unordered_map<
-          const slang::ast::Scope*,
-          std::vector<const SemanticIndex::SymbolInfo*>>& children_map,
+          const slang::ast::Scope*, std::vector<const SemanticEntry*>>&
+          children_map,
       const slang::SourceManager& source_manager) -> void;
 
   // Special handling for enum type aliases - extract enum values

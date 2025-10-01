@@ -9,6 +9,7 @@
 
 #include "slangd/semantic/semantic_index.hpp"
 #include "slangd/semantic/symbol_utils.hpp"
+#include "slangd/utils/conversion.hpp"
 #include "slangd/utils/path_utils.hpp"
 
 namespace slangd::semantic {
@@ -16,81 +17,60 @@ namespace slangd::semantic {
 auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
     const std::string& uri, const SemanticIndex& semantic_index)
     -> std::vector<lsp::DocumentSymbol> {
-  const auto& symbols = semantic_index.GetAllSymbols();
-  const auto* source_manager = semantic_index.GetSourceManager();
+  const auto& semantic_entries = semantic_index.GetSemanticEntries();
+  const auto& source_manager = semantic_index.GetSourceManager();
 
   // Build parent-to-children map from flat symbols, filtering by URI
   std::unordered_map<
-      const slang::ast::Scope*, std::vector<const SemanticIndex::SymbolInfo*>>
+      const slang::ast::Scope*, std::vector<const SemanticEntry*>>
       children_map;
-  std::vector<const SemanticIndex::SymbolInfo*> roots;
+  std::vector<const SemanticEntry*> roots;
 
-  // Group symbols by their parent, filtering by URI
-  for (const auto& [location, info] : symbols) {
+  // Group symbols by their parent, filtering by URI and processing only
+  // definitions
+  for (const auto& entry : semantic_entries) {
+    if (!entry.is_definition) {
+      continue;  // Skip cross-references, only process definitions
+    }
+
     // Skip EnumValue symbols at root level - they'll be added as children
-    if (info.symbol->kind == slang::ast::SymbolKind::EnumValue) {
+    if (entry.symbol->kind == slang::ast::SymbolKind::EnumValue) {
       continue;
     }
 
     // Skip genvar loop variables - they're just counters, not meaningful
     // symbols
-    if (info.symbol->kind == slang::ast::SymbolKind::Genvar) {
+    if (entry.symbol->kind == slang::ast::SymbolKind::Genvar) {
       continue;
     }
 
     // FILTER: Only include symbols from the requested document
-    if (!IsLocationInDocument(info.location, *source_manager, uri)) {
+    if (!IsLocationInDocument(entry.location, source_manager, uri)) {
       continue;
     }
 
     // Treat top-level symbols as roots, others as children
     // Package, Module, Interface are typically top-level even with non-null
     // parent
-    if (info.parent == nullptr ||
-        info.symbol->kind == slang::ast::SymbolKind::Package ||
-        info.symbol->kind == slang::ast::SymbolKind::Definition ||
-        info.symbol->kind == slang::ast::SymbolKind::InstanceBody) {
-      roots.push_back(&info);
+    if (entry.parent == nullptr ||
+        entry.symbol->kind == slang::ast::SymbolKind::Package ||
+        entry.symbol->kind == slang::ast::SymbolKind::Definition ||
+        entry.symbol->kind == slang::ast::SymbolKind::InstanceBody) {
+      roots.push_back(&entry);
     } else {
       // Skip symbols that are children of functions/tasks for document symbols
       // but keep them in semantic index for go-to-definition
-      if (info.parent->asSymbol().kind != slang::ast::SymbolKind::Subroutine) {
-        children_map[info.parent].push_back(&info);
-      }
-    }
-  }
-
-  // If no roots found, check what parents we have
-  if (roots.empty()) {
-    // Find symbols that might be top-level based on context
-    for (const auto& [location, info] : symbols) {
-      if (info.symbol->kind == slang::ast::SymbolKind::EnumValue) {
-        continue;
-      }
-
-      // Skip genvar loop variables - they're just counters, not meaningful
-      // symbols
-      if (info.symbol->kind == slang::ast::SymbolKind::Genvar) {
-        continue;
-      }
-
-      // FILTER: Only include symbols from the requested document
-      if (!IsLocationInDocument(info.location, *source_manager, uri)) {
-        continue;
-      }
-
-      // For modules/interfaces (InstanceBody), treat as root even with parent
-      if (info.symbol->kind == slang::ast::SymbolKind::InstanceBody) {
-        roots.push_back(&info);
+      if (entry.parent->asSymbol().kind != slang::ast::SymbolKind::Subroutine) {
+        children_map[entry.parent].push_back(&entry);
       }
     }
   }
 
   // Recursively build DocumentSymbol tree from roots
   std::vector<lsp::DocumentSymbol> result;
-  for (const auto* root_info : roots) {
-    auto doc_symbol_opt =
-        DocumentSymbolBuilder::CreateDocumentSymbol(*root_info);
+  for (const auto* root_entry : roots) {
+    auto doc_symbol_opt = DocumentSymbolBuilder::CreateDocumentSymbol(
+        *root_entry, source_manager);
     if (!doc_symbol_opt.has_value()) {
       continue;  // Skip symbols with empty names
     }
@@ -99,48 +79,49 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
 
     // For symbols, we need to check if the symbol itself is a scope
     const slang::ast::Scope* symbol_as_scope = nullptr;
-    if (root_info->symbol->isScope()) {
-      symbol_as_scope = &root_info->symbol->as<slang::ast::Scope>();
+    if (root_entry->symbol->isScope()) {
+      symbol_as_scope = &root_entry->symbol->as<slang::ast::Scope>();
     }
 
     // Special handling for Definition symbols (modules/interfaces)
     // The interface/package fix changed modules to be found as Definition
     // symbols but children are stored with Definition as parent, not as Scope
-    if (root_info->symbol->kind == slang::ast::SymbolKind::Definition) {
+    if (root_entry->symbol->kind == slang::ast::SymbolKind::Definition) {
       // Find children by iterating through children_map and checking parent
       // symbols
       for (const auto& [parent_scope, children_list] : children_map) {
         if (parent_scope != nullptr) {
           // Compare by name since the parent might be an InstanceBody but we
           // want Definition
-          if (parent_scope->asSymbol().name == root_info->symbol->name &&
+          if (parent_scope->asSymbol().name == root_entry->symbol->name &&
               !parent_scope->asSymbol().name.empty()) {
             // Found children for this Definition symbol
-            for (const auto* child_info : children_list) {
-              auto child_doc_symbol_opt = CreateDocumentSymbol(*child_info);
+            for (const auto* child_entry : children_list) {
+              auto child_doc_symbol_opt =
+                  CreateDocumentSymbol(*child_entry, source_manager);
               if (!child_doc_symbol_opt.has_value()) {
                 continue;  // Skip symbols with empty names
               }
               // Apply TypeAlias handling here too!
               auto child_doc_symbol = std::move(*child_doc_symbol_opt);
-              if (child_info->symbol->kind ==
+              if (child_entry->symbol->kind ==
                   slang::ast::SymbolKind::TypeAlias) {
                 HandleEnumTypeAlias(
-                    child_doc_symbol, child_info->symbol, *source_manager);
+                    child_doc_symbol, child_entry->symbol, source_manager);
                 HandleStructTypeAlias(
-                    child_doc_symbol, child_info->symbol, *source_manager);
+                    child_doc_symbol, child_entry->symbol, source_manager);
               }
 
               // CRITICAL FIX: Recursively attach children to this child symbol
               // too! For example, if this child is a GenerateBlock, it needs
               // its own children
               const slang::ast::Scope* child_as_scope = nullptr;
-              if (child_info->symbol->isScope()) {
-                child_as_scope = &child_info->symbol->as<slang::ast::Scope>();
+              if (child_entry->symbol->isScope()) {
+                child_as_scope = &child_entry->symbol->as<slang::ast::Scope>();
               }
               AttachChildrenToSymbol(
                   child_doc_symbol, child_as_scope, children_map,
-                  *source_manager);
+                  source_manager);
 
               doc_symbol.children->push_back(std::move(child_doc_symbol));
             }
@@ -151,15 +132,15 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
     } else {
       // Normal scope-based lookup
       DocumentSymbolBuilder::AttachChildrenToSymbol(
-          doc_symbol, symbol_as_scope, children_map, *source_manager);
+          doc_symbol, symbol_as_scope, children_map, source_manager);
     }
 
     // Special handling for enum and struct type aliases
-    if (root_info->symbol->kind == slang::ast::SymbolKind::TypeAlias) {
+    if (root_entry->symbol->kind == slang::ast::SymbolKind::TypeAlias) {
       DocumentSymbolBuilder::HandleEnumTypeAlias(
-          doc_symbol, root_info->symbol, *source_manager);
+          doc_symbol, root_entry->symbol, source_manager);
       DocumentSymbolBuilder::HandleStructTypeAlias(
-          doc_symbol, root_info->symbol, *source_manager);
+          doc_symbol, root_entry->symbol, source_manager);
     }
 
     result.push_back(std::move(doc_symbol));
@@ -174,20 +155,20 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
 // Implementation of private static member functions
 
 auto DocumentSymbolBuilder::CreateDocumentSymbol(
-    const SemanticIndex::SymbolInfo& info)
+    const SemanticEntry& entry, const slang::SourceManager& source_manager)
     -> std::optional<lsp::DocumentSymbol> {
   // VSCode requires DocumentSymbol names to be non-empty
   // Filter out symbols with empty names
-  std::string symbol_name(info.symbol->name);
-  if (symbol_name.empty()) {
+  if (entry.name.empty()) {
     return std::nullopt;
   }
 
   lsp::DocumentSymbol doc_symbol;
-  doc_symbol.name = symbol_name;
-  doc_symbol.kind = info.lsp_kind;
-  doc_symbol.range = info.range;
-  doc_symbol.selectionRange = info.range;  // Use same range for now
+  doc_symbol.name = entry.name;
+  doc_symbol.kind = entry.lsp_kind;
+  doc_symbol.range =
+      ConvertSlangRangeToLspRange(entry.source_range, source_manager);
+  doc_symbol.selectionRange = doc_symbol.range;  // Use same range for now
   doc_symbol.children =
       std::vector<lsp::DocumentSymbol>();  // Always initialize empty vector
   return doc_symbol;
@@ -196,8 +177,8 @@ auto DocumentSymbolBuilder::CreateDocumentSymbol(
 auto DocumentSymbolBuilder::AttachChildrenToSymbol(
     lsp::DocumentSymbol& parent, const slang::ast::Scope* parent_scope,
     const std::unordered_map<
-        const slang::ast::Scope*,
-        std::vector<const SemanticIndex::SymbolInfo*>>& children_map,
+        const slang::ast::Scope*, std::vector<const SemanticEntry*>>&
+        children_map,
     const slang::SourceManager& source_manager) -> void {
   if (parent_scope == nullptr) {
     return;  // No scope to check for children
@@ -241,21 +222,15 @@ auto DocumentSymbolBuilder::AttachChildrenToSymbol(
         }
 
         if (ShouldIndexForDocumentSymbols(member)) {
-          // Create SymbolInfo for the member
-          SemanticIndex::SymbolInfo member_info{
-              .symbol = &member,
-              .location = member.location,
-              .lsp_kind = ConvertToLspKindForDocuments(member),
-              .range = ComputeLspRange(member, source_manager),
-              .parent = &block_scope,
-              .is_definition = true,
-              .definition_range =
-                  slang::SourceRange{member.location, member.location},
-              .buffer_id = member.location.buffer().getId()};
-
-          auto child_doc_symbol_opt = CreateDocumentSymbol(member_info);
-          if (child_doc_symbol_opt.has_value()) {
-            parent.children->push_back(std::move(*child_doc_symbol_opt));
+          // Create DocumentSymbol directly for the member
+          if (!member.name.empty()) {
+            lsp::DocumentSymbol member_doc_symbol;
+            member_doc_symbol.name = std::string(member.name);
+            member_doc_symbol.kind = ConvertToLspKindForDocuments(member);
+            member_doc_symbol.range = ComputeLspRange(member, source_manager);
+            member_doc_symbol.selectionRange = member_doc_symbol.range;
+            member_doc_symbol.children = std::vector<lsp::DocumentSymbol>();
+            parent.children->push_back(std::move(member_doc_symbol));
           }
         }
       }
@@ -268,8 +243,9 @@ auto DocumentSymbolBuilder::AttachChildrenToSymbol(
     return;  // No children
   }
 
-  for (const auto* child_info : children_it->second) {
-    auto child_doc_symbol_opt = CreateDocumentSymbol(*child_info);
+  for (const auto* child_entry : children_it->second) {
+    auto child_doc_symbol_opt =
+        CreateDocumentSymbol(*child_entry, source_manager);
     if (!child_doc_symbol_opt.has_value()) {
       continue;  // Skip symbols with empty names
     }
@@ -278,17 +254,18 @@ auto DocumentSymbolBuilder::AttachChildrenToSymbol(
 
     // For child symbols, check if they are scopes themselves
     const slang::ast::Scope* child_as_scope = nullptr;
-    if (child_info->symbol->isScope()) {
-      child_as_scope = &child_info->symbol->as<slang::ast::Scope>();
+    if (child_entry->symbol->isScope()) {
+      child_as_scope = &child_entry->symbol->as<slang::ast::Scope>();
     }
     AttachChildrenToSymbol(
         child_doc_symbol, child_as_scope, children_map, source_manager);
 
     // Special handling for enum and struct type aliases in children too
-    if (child_info->symbol->kind == slang::ast::SymbolKind::TypeAlias) {
-      HandleEnumTypeAlias(child_doc_symbol, child_info->symbol, source_manager);
+    if (child_entry->symbol->kind == slang::ast::SymbolKind::TypeAlias) {
+      HandleEnumTypeAlias(
+          child_doc_symbol, child_entry->symbol, source_manager);
       HandleStructTypeAlias(
-          child_doc_symbol, child_info->symbol, source_manager);
+          child_doc_symbol, child_entry->symbol, source_manager);
     }
 
     parent.children->push_back(std::move(child_doc_symbol));
