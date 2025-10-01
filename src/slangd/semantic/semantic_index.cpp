@@ -180,6 +180,26 @@ auto SemanticIndex::GetDocumentSymbols(const std::string& uri) const
   return DocumentSymbolBuilder::BuildDocumentSymbolTree(uri, *this);
 }
 
+// IndexVisitor helper methods
+void SemanticIndex::IndexVisitor::AddEntry(SemanticEntry entry) {
+  index_.get().semantic_entries_.push_back(std::move(entry));
+}
+
+void SemanticIndex::IndexVisitor::AddDefinition(
+    const slang::ast::Symbol& symbol, std::string_view name,
+    slang::SourceRange range, const slang::ast::Scope* parent_scope) {
+  AddEntry(SemanticEntry::Make(symbol, name, range, true, range, parent_scope));
+}
+
+void SemanticIndex::IndexVisitor::AddReference(
+    const slang::ast::Symbol& symbol, std::string_view name,
+    slang::SourceRange source_range, slang::SourceRange definition_range,
+    const slang::ast::Scope* parent_scope) {
+  AddEntry(
+      SemanticEntry::Make(
+          symbol, name, source_range, false, definition_range, parent_scope));
+}
+
 // IndexVisitor implementation
 void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
   switch (type.kind) {
@@ -234,11 +254,10 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
           if (const auto* syntax = typedef_target->getSyntax()) {
             auto definition_range = DefinitionExtractor::ExtractDefinitionRange(
                 *typedef_target, *syntax);
-            index_.get().semantic_entries_.push_back(
-                SemanticEntry::Make(
-                    *typedef_target, typedef_target->name,
-                    type_ref.getUsageLocation(), false, definition_range,
-                    typedef_target->getParentScope()));
+            AddReference(
+                *typedef_target, typedef_target->name,
+                type_ref.getUsageLocation(), definition_range,
+                typedef_target->getParentScope());
           }
         }
       }
@@ -341,10 +360,9 @@ void SemanticIndex::IndexVisitor::handle(
           expr.sourceRange.start() +
               static_cast<uint32_t>(target_symbol->name.length()));
 
-      index_.get().semantic_entries_.push_back(
-          SemanticEntry::Make(
-              *target_symbol, target_symbol->name, reference_range, false,
-              definition_range, target_symbol->getParentScope()));
+      AddReference(
+          *target_symbol, target_symbol->name, reference_range,
+          definition_range, target_symbol->getParentScope());
     }
   }
   this->visitDefault(expr);
@@ -415,10 +433,9 @@ void SemanticIndex::IndexVisitor::handle(
     return;
   }
 
-  index_.get().semantic_entries_.push_back(
-      SemanticEntry::Make(
-          **subroutine_symbol, (*subroutine_symbol)->name, *call_range, false,
-          *definition_range, (*subroutine_symbol)->getParentScope()));
+  AddReference(
+      **subroutine_symbol, (*subroutine_symbol)->name, *call_range,
+      *definition_range, (*subroutine_symbol)->getParentScope());
   this->visitDefault(expr);
 }
 
@@ -438,10 +455,9 @@ void SemanticIndex::IndexVisitor::handle(
     if (const auto* syntax = expr.member.getSyntax()) {
       auto definition_range =
           DefinitionExtractor::ExtractDefinitionRange(expr.member, *syntax);
-      index_.get().semantic_entries_.push_back(
-          SemanticEntry::Make(
-              expr.member, expr.member.name, expr.memberNameRange(), false,
-              definition_range, expr.member.getParentScope()));
+      AddReference(
+          expr.member, expr.member.name, expr.memberNameRange(),
+          definition_range, expr.member.getParentScope());
     }
   }
   this->visitDefault(expr);
@@ -470,10 +486,9 @@ void SemanticIndex::IndexVisitor::handle(
           expr.sourceRange.start() +
               static_cast<uint32_t>(target_symbol->name.length()));
 
-      index_.get().semantic_entries_.push_back(
-          SemanticEntry::Make(
-              *target_symbol, target_symbol->name, reference_range, false,
-              definition_range, target_symbol->getParentScope()));
+      AddReference(
+          *target_symbol, target_symbol->name, reference_range,
+          definition_range, target_symbol->getParentScope());
     }
   }
   this->visitDefault(expr);
@@ -504,10 +519,8 @@ void SemanticIndex::IndexVisitor::handle(
         if (declarator != nullptr &&
             declarator->name.valueText() == symbol.name) {
           auto definition_range = declarator->name.range();
-          index_.get().semantic_entries_.push_back(
-              SemanticEntry::Make(
-                  symbol, symbol.name, definition_range, true, definition_range,
-                  symbol.getParentScope()));
+          AddDefinition(
+              symbol, symbol.name, definition_range, symbol.getParentScope());
           break;
         }
       }
@@ -516,19 +529,15 @@ void SemanticIndex::IndexVisitor::handle(
     case slang::syntax::SyntaxKind::ForVariableDeclaration:
     case slang::syntax::SyntaxKind::CheckerDataDeclaration: {
       auto definition_range = syntax->sourceRange();
-      index_.get().semantic_entries_.push_back(
-          SemanticEntry::Make(
-              symbol, symbol.name, definition_range, true, definition_range,
-              symbol.getParentScope()));
+      AddDefinition(
+          symbol, symbol.name, definition_range, symbol.getParentScope());
       break;
     }
     case slang::syntax::SyntaxKind::Declarator: {
       const auto& decl_syntax = syntax->as<slang::syntax::DeclaratorSyntax>();
       auto definition_range = decl_syntax.name.range();
-      index_.get().semantic_entries_.push_back(
-          SemanticEntry::Make(
-              symbol, symbol.name, definition_range, true, definition_range,
-              symbol.getParentScope()));
+      AddDefinition(
+          symbol, symbol.name, definition_range, symbol.getParentScope());
       break;
     }
     default:
@@ -565,10 +574,9 @@ void SemanticIndex::IndexVisitor::handle(
 
   auto definition_range =
       DefinitionExtractor::ExtractDefinitionRange(*package, *pkg_syntax);
-  index_.get().semantic_entries_.push_back(
-      SemanticEntry::Make(
-          *package, package->name, import_item.package.range(), false,
-          definition_range, package->getParentScope()));
+  AddReference(
+      *package, package->name, import_item.package.range(), definition_range,
+      package->getParentScope());
   this->visitDefault(import_symbol);
 }
 
@@ -597,10 +605,9 @@ void SemanticIndex::IndexVisitor::handle(
 
   auto definition_range =
       DefinitionExtractor::ExtractDefinitionRange(*package, *pkg_syntax);
-  index_.get().semantic_entries_.push_back(
-      SemanticEntry::Make(
-          *package, package->name, import_item.package.range(), false,
-          definition_range, package->getParentScope()));
+  AddReference(
+      *package, package->name, import_item.package.range(), definition_range,
+      package->getParentScope());
 
   // Create entry for the imported symbol name
   const auto* imported_symbol = import_symbol.importedSymbol();
@@ -610,11 +617,9 @@ void SemanticIndex::IndexVisitor::handle(
         auto imported_definition_range =
             DefinitionExtractor::ExtractDefinitionRange(
                 *imported_symbol, *imported_syntax);
-        index_.get().semantic_entries_.push_back(
-            SemanticEntry::Make(
-                *imported_symbol, imported_symbol->name,
-                import_item.item.range(), false, imported_definition_range,
-                imported_symbol->getParentScope()));
+        AddReference(
+            *imported_symbol, imported_symbol->name, import_item.item.range(),
+            imported_definition_range, imported_symbol->getParentScope());
       }
     }
   }
@@ -629,10 +634,8 @@ void SemanticIndex::IndexVisitor::handle(
       if (syntax->kind == slang::syntax::SyntaxKind::Declarator) {
         auto definition_range =
             syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
-        index_.get().semantic_entries_.push_back(
-            SemanticEntry::Make(
-                param, param.name, definition_range, true, definition_range,
-                param.getParentScope()));
+        AddDefinition(
+            param, param.name, definition_range, param.getParentScope());
       }
     }
   }
@@ -652,10 +655,9 @@ void SemanticIndex::IndexVisitor::handle(
         if ((func_syntax.prototype != nullptr) &&
             (func_syntax.prototype->name != nullptr)) {
           auto definition_range = func_syntax.prototype->name->sourceRange();
-          index_.get().semantic_entries_.push_back(
-              SemanticEntry::Make(
-                  subroutine, subroutine.name, definition_range, true,
-                  definition_range, subroutine.getParentScope()));
+          AddDefinition(
+              subroutine, subroutine.name, definition_range,
+              subroutine.getParentScope());
         }
       }
     }
@@ -673,10 +675,9 @@ void SemanticIndex::IndexVisitor::handle(
         const auto& decl_syntax =
             syntax->as<slang::syntax::ModuleDeclarationSyntax>();
         auto definition_range = decl_syntax.header->name.range();
-        index_.get().semantic_entries_.push_back(
-            SemanticEntry::Make(
-                definition, definition.name, definition_range, true,
-                definition_range, definition.getParentScope()));
+        AddDefinition(
+            definition, definition.name, definition_range,
+            definition.getParentScope());
       }
     }
   }
@@ -690,10 +691,9 @@ void SemanticIndex::IndexVisitor::handle(
       if (syntax->kind == slang::syntax::SyntaxKind::TypedefDeclaration) {
         auto definition_range =
             syntax->as<slang::syntax::TypedefDeclarationSyntax>().name.range();
-        index_.get().semantic_entries_.push_back(
-            SemanticEntry::Make(
-                type_alias, type_alias.name, definition_range, true,
-                definition_range, type_alias.getParentScope()));
+        AddDefinition(
+            type_alias, type_alias.name, definition_range,
+            type_alias.getParentScope());
       }
     }
   }
@@ -711,10 +711,9 @@ void SemanticIndex::IndexVisitor::handle(
       if (syntax->kind == slang::syntax::SyntaxKind::Declarator) {
         auto definition_range =
             syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
-        index_.get().semantic_entries_.push_back(
-            SemanticEntry::Make(
-                enum_value, enum_value.name, definition_range, true,
-                definition_range, enum_value.getParentScope()));
+        AddDefinition(
+            enum_value, enum_value.name, definition_range,
+            enum_value.getParentScope());
       }
     }
   }
@@ -727,10 +726,8 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::FieldSymbol& field) {
       if (syntax->kind == slang::syntax::SyntaxKind::Declarator) {
         auto definition_range =
             syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
-        index_.get().semantic_entries_.push_back(
-            SemanticEntry::Make(
-                field, field.name, definition_range, true, definition_range,
-                field.getParentScope()));
+        AddDefinition(
+            field, field.name, definition_range, field.getParentScope());
       }
     }
   }
@@ -745,10 +742,7 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::NetSymbol& net) {
       if (syntax->kind == slang::syntax::SyntaxKind::Declarator) {
         auto definition_range =
             syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
-        index_.get().semantic_entries_.push_back(
-            SemanticEntry::Make(
-                net, net.name, definition_range, true, definition_range,
-                net.getParentScope()));
+        AddDefinition(net, net.name, definition_range, net.getParentScope());
       }
     }
   }
@@ -768,10 +762,9 @@ void SemanticIndex::IndexVisitor::handle(
             syntax->as<slang::syntax::InterfacePortHeaderSyntax>()
                 .nameOrKeyword.range();
       }
-      index_.get().semantic_entries_.push_back(
-          SemanticEntry::Make(
-              interface_port, interface_port.name, definition_range, true,
-              definition_range, interface_port.getParentScope()));
+      AddDefinition(
+          interface_port, interface_port.name, definition_range,
+          interface_port.getParentScope());
 
       // Create cross-reference from interface name to interface definition
       if (interface_port.interfaceDef != nullptr &&
@@ -783,12 +776,10 @@ void SemanticIndex::IndexVisitor::handle(
             auto interface_definition_range =
                 DefinitionExtractor::ExtractDefinitionRange(
                     *interface_port.interfaceDef, *interface_syntax);
-            index_.get().semantic_entries_.push_back(
-                SemanticEntry::Make(
-                    *interface_port.interfaceDef,
-                    interface_port.interfaceDef->name, interface_name_range,
-                    false, interface_definition_range,
-                    interface_port.interfaceDef->getParentScope()));
+            AddReference(
+                *interface_port.interfaceDef, interface_port.interfaceDef->name,
+                interface_name_range, interface_definition_range,
+                interface_port.interfaceDef->getParentScope());
           }
         }
       }
@@ -804,11 +795,10 @@ void SemanticIndex::IndexVisitor::handle(
               auto modport_definition_range =
                   DefinitionExtractor::ExtractDefinitionRange(
                       *connection.second, *modport_syntax);
-              index_.get().semantic_entries_.push_back(
-                  SemanticEntry::Make(
-                      *connection.second, connection.second->name,
-                      modport_range, false, modport_definition_range,
-                      connection.second->getParentScope()));
+              AddReference(
+                  *connection.second, connection.second->name, modport_range,
+                  modport_definition_range,
+                  connection.second->getParentScope());
             }
           }
         }
@@ -825,10 +815,8 @@ void SemanticIndex::IndexVisitor::handle(
       if (syntax->kind == slang::syntax::SyntaxKind::ModportItem) {
         auto definition_range =
             syntax->as<slang::syntax::ModportItemSyntax>().name.range();
-        index_.get().semantic_entries_.push_back(
-            SemanticEntry::Make(
-                modport, modport.name, definition_range, true, definition_range,
-                modport.getParentScope()));
+        AddDefinition(
+            modport, modport.name, definition_range, modport.getParentScope());
       }
     }
   }
@@ -842,10 +830,9 @@ void SemanticIndex::IndexVisitor::handle(
       if (syntax->kind == slang::syntax::SyntaxKind::ModportNamedPort) {
         auto definition_range =
             syntax->as<slang::syntax::ModportNamedPortSyntax>().name.range();
-        index_.get().semantic_entries_.push_back(
-            SemanticEntry::Make(
-                modport_port, modport_port.name, definition_range, true,
-                definition_range, modport_port.getParentScope()));
+        AddDefinition(
+            modport_port, modport_port.name, definition_range,
+            modport_port.getParentScope());
       }
     }
   }
@@ -898,10 +885,8 @@ void SemanticIndex::IndexVisitor::handle(
             parent_scope = parent_scope->asSymbol().getParentScope();
           }
 
-          index_.get().semantic_entries_.push_back(
-              SemanticEntry::Make(
-                  generate_block, name_text, definition_range, true,
-                  definition_range, parent_scope));
+          AddDefinition(
+              generate_block, name_text, definition_range, parent_scope);
         }
         // For unnamed blocks (auto-generated names like "genblk1"), don't
         // create reference since users can't click on text that doesn't exist
@@ -919,10 +904,8 @@ void SemanticIndex::IndexVisitor::handle(
       // GenvarSymbol.getSyntax() returns IdentifierName - just use its range
       // The symbol itself already points to the precise genvar name location
       slang::SourceRange definition_range = syntax->sourceRange();
-      index_.get().semantic_entries_.push_back(
-          SemanticEntry::Make(
-              genvar, genvar.name, definition_range, true, definition_range,
-              genvar.getParentScope()));
+      AddDefinition(
+          genvar, genvar.name, definition_range, genvar.getParentScope());
     }
   }
 }
@@ -935,10 +918,8 @@ void SemanticIndex::IndexVisitor::handle(
         const auto& decl_syntax =
             syntax->as<slang::syntax::ModuleDeclarationSyntax>();
         auto definition_range = decl_syntax.header->name.range();
-        index_.get().semantic_entries_.push_back(
-            SemanticEntry::Make(
-                package, package.name, definition_range, true, definition_range,
-                package.getParentScope()));
+        AddDefinition(
+            package, package.name, definition_range, package.getParentScope());
       }
     }
   }
@@ -953,10 +934,9 @@ void SemanticIndex::IndexVisitor::handle(
     auto definition_range =
         slang::SourceRange{statement_block.location, statement_block.location};
 
-    index_.get().semantic_entries_.push_back(
-        SemanticEntry::Make(
-            statement_block, statement_block.name, definition_range, true,
-            definition_range, statement_block.getParentScope()));
+    AddDefinition(
+        statement_block, statement_block.name, definition_range,
+        statement_block.getParentScope());
   }
   this->visitDefault(statement_block);
 }

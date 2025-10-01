@@ -165,7 +165,18 @@ class SemanticIndex {
     std::reference_wrapper<const slang::SourceManager> source_manager_;
     std::string current_file_uri_;
 
-    // Helper methods
+    // Helper methods for adding semantic entries
+    void AddEntry(SemanticEntry entry);
+
+    void AddDefinition(
+        const slang::ast::Symbol& symbol, std::string_view name,
+        slang::SourceRange range, const slang::ast::Scope* parent_scope);
+
+    void AddReference(
+        const slang::ast::Symbol& symbol, std::string_view name,
+        slang::SourceRange source_range, slang::SourceRange definition_range,
+        const slang::ast::Scope* parent_scope);
+
     // Unified type traversal - handles all type structure recursively
     void TraverseType(const slang::ast::Type& type);
   };
