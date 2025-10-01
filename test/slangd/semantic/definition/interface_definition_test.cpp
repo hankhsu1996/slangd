@@ -112,12 +112,12 @@ TEST_CASE(
 
   // ✅ TEST: Interface member access - this is the main achievement!
   // Direct verification that our HierarchicalValueExpression handler works
-  auto references = index->GetReferences();
+  auto entries = index->GetSemanticEntries();
   bool found_interface_member_access = false;
-  for (const auto& ref : references) {
+  for (const auto& entry : entries) {
     // Look for the interface member access reference we created
-    if (ref.source_range.start().offset() == 171 &&
-        ref.source_range.end().offset() == 175) {
+    if (entry.source_range.start().offset() == 171 &&
+        entry.source_range.end().offset() == 175) {
       found_interface_member_access = true;
       spdlog::debug(
           "✅ SUCCESS: Found interface member access reference at 171..175");

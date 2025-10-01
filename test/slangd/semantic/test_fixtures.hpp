@@ -364,10 +364,12 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
 
   // Helper to check if cross-file references exist
   static auto HasCrossFileReferences(const SemanticIndex& index) -> bool {
-    const auto& references = index.GetReferences();
-    return std::ranges::any_of(references, [](const ReferenceEntry& entry) {
-      return entry.source_range.start().buffer().getId() !=
-             entry.target_range.start().buffer().getId();
+    const auto& entries = index.GetSemanticEntries();
+    return std::ranges::any_of(entries, [](const SemanticEntry& entry) {
+      // Check if source and definition are in different buffers
+      return !entry.is_definition &&
+             entry.source_range.start().buffer().getId() !=
+                 entry.definition_range.start().buffer().getId();
     });
   }
 };

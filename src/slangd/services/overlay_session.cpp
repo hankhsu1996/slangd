@@ -38,10 +38,8 @@ auto OverlaySession::Create(
 
   auto elapsed = timer.GetElapsed();
   logger->debug(
-      "Overlay session created with {} semantic entries, {} references, {} "
-      "diagnostics ({})",
+      "Overlay session created with {} semantic entries, {} diagnostics ({})",
       semantic_index->GetSemanticEntries().size(),
-      semantic_index->GetReferences().size(),
       diagnostic_index->GetDiagnostics().size(),
       utils::ScopedTimer::FormatDuration(elapsed));
 

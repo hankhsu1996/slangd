@@ -28,16 +28,6 @@ struct SymbolKey {
   }
 };
 
-// Unified storage for references with embedded definition information
-// Combines reference location and definition range for efficient lookups
-struct ReferenceEntry {
-  slang::SourceRange source_range;   // Where reference appears in source
-  slang::SourceLocation target_loc;  // Target symbol location (for dedup)
-  slang::SourceRange target_range;   // Definition range (captured immediately!)
-  lsp::SymbolKind symbol_kind;       // For rich LSP responses
-  std::string symbol_name;           // For debugging/logging
-};
-
 // Unified semantic entry combining both definitions and references
 // Replaces dual SymbolInfo/ReferenceEntry architecture with single model
 struct SemanticEntry {
@@ -103,11 +93,6 @@ class SemanticIndex {
   auto GetDocumentSymbols(const std::string& uri) const
       -> std::vector<lsp::DocumentSymbol>;
 
-  // Reference access for testing and debugging
-  auto GetReferences() const -> const std::vector<ReferenceEntry>& {
-    return references_;
-  }
-
   // Unified semantic entries access
   auto GetSemanticEntries() const -> const std::vector<SemanticEntry>& {
     return semantic_entries_;
@@ -126,11 +111,7 @@ class SemanticIndex {
   }
 
   // Core data storage
-  // Unified reference+definition storage for go-to-definition functionality
-  std::vector<ReferenceEntry> references_;
-
-  // New unified storage combining definitions and references (Phase 1)
-  // Will eventually replace symbols_ and references_
+  // Unified storage combining definitions and references
   std::vector<SemanticEntry> semantic_entries_;
 
   // Store source manager reference for symbol processing
@@ -187,11 +168,6 @@ class SemanticIndex {
     // Helper methods
     // Unified type traversal - handles all type structure recursively
     void TraverseType(const slang::ast::Type& type);
-
-    // Helper to create reference entries (source -> target)
-    void CreateReference(
-        slang::SourceRange source_range, slang::SourceRange definition_range,
-        const slang::ast::Symbol& target_symbol);
   };
 };
 
