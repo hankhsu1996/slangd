@@ -24,30 +24,6 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       break;
 
-    case SK::Definition: {
-      if (syntax.kind == SyntaxKind::ModuleDeclaration) {
-        return syntax.as<slang::syntax::ModuleDeclarationSyntax>()
-            .header->name.range();
-      }
-      break;
-    }
-
-    case SK::TypeAlias:
-      if (syntax.kind == SyntaxKind::TypedefDeclaration) {
-        return syntax.as<slang::syntax::TypedefDeclarationSyntax>()
-            .name.range();
-      }
-      break;
-
-    case SK::Variable:
-      return syntax.sourceRange();  // Variables use full declaration range
-
-    case SK::Parameter:
-      if (syntax.kind == SyntaxKind::Declarator) {
-        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
-      }
-      break;
-
     case SK::StatementBlock: {
       if (syntax.kind == SyntaxKind::SequentialBlockStatement ||
           syntax.kind == SyntaxKind::ParallelBlockStatement) {
@@ -69,27 +45,6 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       break;
 
-    case SK::EnumValue:
-      // Enum values use declarator syntax with name field
-      if (syntax.kind == SyntaxKind::Declarator) {
-        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
-      }
-      return syntax.sourceRange();
-
-    case SK::Field:
-      // Struct/union field symbols use declarator syntax with name field
-      if (syntax.kind == SyntaxKind::Declarator) {
-        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
-      }
-      return syntax.sourceRange();
-
-    case SK::Net:
-      // Net symbols - extract name from declarator syntax
-      if (syntax.kind == SyntaxKind::Declarator) {
-        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
-      }
-      return syntax.sourceRange();
-
     case SK::Port:
       // Port symbols - handle different ANSI and non-ANSI syntax types
       if (syntax.kind == SyntaxKind::ImplicitAnsiPort) {
@@ -106,38 +61,6 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       return syntax.sourceRange();
 
-    case SK::InterfacePort:
-      // Interface port symbols - extract name from interface port header
-      if (syntax.kind == SyntaxKind::InterfacePortHeader) {
-        return syntax.as<slang::syntax::InterfacePortHeaderSyntax>()
-            .nameOrKeyword.range();
-      }
-      return syntax.sourceRange();
-
-    case SK::Modport:
-      // Modport symbols - extract name from modport item
-      if (syntax.kind == SyntaxKind::ModportItem) {
-        return syntax.as<slang::syntax::ModportItemSyntax>().name.range();
-      }
-      return syntax.sourceRange();
-
-    case SK::ModportPort:
-      // Modport port symbols - extract name from modport named port
-      if (syntax.kind == SyntaxKind::ModportNamedPort) {
-        return syntax.as<slang::syntax::ModportNamedPortSyntax>().name.range();
-      }
-      return syntax.sourceRange();
-
-    case SK::GenerateBlock:
-      // Named generate block - extract name from begin block
-      if (syntax.kind == SyntaxKind::GenerateBlock) {
-        const auto& gen_block = syntax.as<slang::syntax::GenerateBlockSyntax>();
-        if (gen_block.beginName != nullptr) {
-          return gen_block.beginName->name.range();
-        }
-      }
-      return syntax.sourceRange();
-
     case SK::GenerateBlockArray:
       // Generate block array (for loop) - extract name from loop generate block
       if (syntax.kind == SyntaxKind::LoopGenerate) {
@@ -148,27 +71,6 @@ auto DefinitionExtractor::ExtractDefinitionRange(
           if (gen_block.beginName != nullptr) {
             return gen_block.beginName->name.range();
           }
-        }
-      }
-      return syntax.sourceRange();
-
-    case SK::Genvar:
-      // Genvar declaration - extract name from identifier list
-      if (syntax.kind == SyntaxKind::GenvarDeclaration) {
-        const auto& genvar_decl =
-            syntax.as<slang::syntax::GenvarDeclarationSyntax>();
-        // Find the specific genvar name by matching the symbol name
-        for (const auto& identifier : genvar_decl.identifiers) {
-          if (identifier->identifier.valueText() == symbol.name) {
-            return identifier->identifier.range();
-          }
-        }
-      }
-      // Handle inline genvar in loop generate
-      if (syntax.kind == SyntaxKind::LoopGenerate) {
-        const auto& loop_gen = syntax.as<slang::syntax::LoopGenerateSyntax>();
-        if (loop_gen.genvar.valueText() == "genvar") {
-          return loop_gen.identifier.range();
         }
       }
       return syntax.sourceRange();

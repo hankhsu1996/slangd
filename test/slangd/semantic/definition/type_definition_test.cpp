@@ -124,7 +124,7 @@ TEST_CASE(
   std::string code = R"(
     typedef union packed {
       logic [15:0] word;
-      logic [7:0]  bytes [2];
+      logic [15:0] bytes;
     } t_data_union;
 
     module data_processor();

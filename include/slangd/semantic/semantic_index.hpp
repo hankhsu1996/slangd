@@ -103,6 +103,9 @@ class SemanticIndex {
   auto LookupDefinitionAt(slang::SourceLocation loc) const
       -> std::optional<slang::SourceRange>;
 
+  // Validation method to check for overlapping ranges
+  void ValidateNoRangeOverlaps() const;
+
  private:
   explicit SemanticIndex() = default;
 
@@ -126,7 +129,6 @@ class SemanticIndex {
           current_file_uri_(std::move(current_file_uri)) {
     }
 
-    // Universal pre-visit hook for symbols
     template <typename T>
     void preVisit(const T& symbol) {
       if constexpr (std::is_base_of_v<slang::ast::Symbol, T>) {
@@ -134,28 +136,17 @@ class SemanticIndex {
       }
     }
 
-    // Reference tracking for NamedValueExpression
+    // Expression handlers
     void handle(const slang::ast::NamedValueExpression& expr);
-
-    // Reference tracking for CallExpression (function/task calls)
     void handle(const slang::ast::CallExpression& expr);
-
-    // Reference tracking for ConversionExpression (type casts)
     void handle(const slang::ast::ConversionExpression& expr);
-
-    // Reference tracking for MemberAccessExpression (struct/union field access)
     void handle(const slang::ast::MemberAccessExpression& expr);
+    void handle(const slang::ast::HierarchicalValueExpression& expr);
 
-    // Reference tracking for VariableSymbol (type references)
+    // Symbol handlers
     void handle(const slang::ast::VariableSymbol& symbol);
-
-    // Reference tracking for WildcardImportSymbol (package references)
     void handle(const slang::ast::WildcardImportSymbol& import_symbol);
-
-    // Reference tracking for ExplicitImportSymbol (package references)
     void handle(const slang::ast::ExplicitImportSymbol& import_symbol);
-
-    // Definition handlers for self-references
     void handle(const slang::ast::ParameterSymbol& param);
     void handle(const slang::ast::SubroutineSymbol& subroutine);
     void handle(const slang::ast::DefinitionSymbol& definition);
@@ -163,14 +154,13 @@ class SemanticIndex {
     void handle(const slang::ast::EnumValueSymbol& enum_value);
     void handle(const slang::ast::FieldSymbol& field);
     void handle(const slang::ast::NetSymbol& net);
-    void handle(const slang::ast::PortSymbol& port);
     void handle(const slang::ast::InterfacePortSymbol& interface_port);
     void handle(const slang::ast::ModportSymbol& modport);
     void handle(const slang::ast::ModportPortSymbol& modport_port);
+    void handle(const slang::ast::GenerateBlockArraySymbol& generate_array);
     void handle(const slang::ast::GenerateBlockSymbol& generate_block);
     void handle(const slang::ast::GenvarSymbol& genvar);
 
-    // Default traversal for unhandled node types
     template <typename T>
     void handle(const T& node) {
       this->visitDefault(node);
@@ -189,7 +179,7 @@ class SemanticIndex {
 
     // Helper to create reference entries (source -> target)
     void CreateReference(
-        slang::SourceRange source_range,
+        slang::SourceRange source_range, slang::SourceRange definition_range,
         const slang::ast::Symbol& target_symbol);
   };
 };

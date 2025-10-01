@@ -35,6 +35,15 @@ auto SimpleTestFixture::CompileSource(const std::string& code)
   compilation_ = std::make_unique<slang::ast::Compilation>(options);
   compilation_->addSyntaxTree(tree);
 
+  // Check for compilation errors that would make AST invalid
+  auto diagnostics = compilation_->getAllDiagnostics();
+  for (const auto& diag : diagnostics) {
+    if (diag.isError()) {
+      throw std::runtime_error(
+          fmt::format("CompileSource: Compilation failed with error"));
+    }
+  }
+
   auto index = semantic::SemanticIndex::FromCompilation(
       *compilation_, *source_manager_, test_uri);
 

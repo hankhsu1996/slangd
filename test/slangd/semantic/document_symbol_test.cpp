@@ -177,6 +177,7 @@ TEST_CASE(
   SimpleTestFixture fixture;
   std::string code = R"(
     module nested_test;
+      logic clk;
       if (1) begin : named_block
         logic nested_signal;
         always_ff @(posedge clk) begin
@@ -318,6 +319,7 @@ TEST_CASE(
     interface cpu_if;
       logic [31:0] addr;
       logic [31:0] data;
+      modport master(output addr, data);
     endinterface
 
     module cpu_core(cpu_if.master bus);

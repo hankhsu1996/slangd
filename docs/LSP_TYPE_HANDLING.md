@@ -161,4 +161,34 @@ const Type& Type::fromLookupResult(Compilation& compilation, const LookupResult&
 - `/home/shou-li/slang/source/ast/expressions/ConversionExpression.cpp` - Cast expression validation
 - Other expression handlers that use type validation
 
+## Critical Syntax Tree Limitations
+
+### Fundamental CST Grouping Issue
+
+**Root Cause**: Slang's Concrete Syntax Tree (CST) treats large chunks of different syntax as single syntax nodes, making precise range extraction impossible at the syntax level.
+
+**Core Problem**: The syntax tree level cannot distinguish between semantically different constructs:
+- Type array dimensions: `control_t [WIDTH-1:0]` 
+- Array element selection: `array[WIDTH-1:0]`
+
+Both create identical `IdentifierSelectName` syntax nodes despite having completely different semantic meanings.
+
+**Architectural Limitation**: LSP requires component-level ranges for precise navigation, but CST provides only composite ranges. This is not an AST issue - it's a fundamental limitation of how syntax trees group tokens.
+
+**Universal Impact**: This limitation affects any construct where multiple semantic components are grouped into single syntax nodes:
+- Typedef references with array dimensions
+- Interface port declarations with modport selection
+- Method calls with complex parameter expressions
+- Any syntax where precise sub-component ranges are needed for LSP navigation
+
+### TypeReferenceSymbol Range Trimming Solution
+
+**Workaround Strategy**: Since syntax-level extraction is fundamentally impossible, trim ranges using semantic information (symbol name length).
+
+**Implementation**: 5-line fix in `Type::fromLookupResult()` trims typedef ranges to exact name boundaries, bypassing syntax tree limitations entirely.
+
+**Design Principle**: When CST cannot provide precise ranges, use semantic analysis to reconstruct component boundaries rather than accepting broad composite ranges.
+
+**Impact**: Resolves typedef navigation issues by working around fundamental syntax tree grouping limitations.
+
 This architecture enables universal typedef go-to-definition across all SystemVerilog constructs while maintaining full compatibility with the existing Slang type system.
