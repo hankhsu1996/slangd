@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -361,18 +360,6 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
     // Use LookupDefinitionAt API
     auto def_range = index.LookupDefinitionAt(location);
     return def_range.has_value();
-  }
-
-  // Helper to count symbols from different buffers using symbol info
-  static auto CountBuffersWithSymbols(const SemanticIndex& index) -> size_t {
-    const auto& all_symbols = index.GetAllSymbols();
-    std::set<uint32_t> buffer_ids;
-    for (const auto& [loc, info] : all_symbols) {
-      if (info.symbol->location.valid()) {
-        buffer_ids.insert(info.buffer_id);
-      }
-    }
-    return buffer_ids.size();
   }
 
   // Helper to check if cross-file references exist

@@ -181,51 +181,6 @@ void SimpleTestFixture::AssertReferenceExists(
   }
 }
 
-void SimpleTestFixture::AssertHasSymbols(semantic::SemanticIndex& index) {
-  if (index.GetSymbolCount() == 0) {
-    throw std::runtime_error(
-        "AssertHasSymbols: Expected symbols but index is empty");
-  }
-}
-
-void SimpleTestFixture::AssertSymbolAtLocation(
-    semantic::SemanticIndex& index, const std::string& code,
-    const std::string& symbol_name, lsp::SymbolKind expected_kind) {
-  // Find symbol location (this makes the two-step process explicit)
-  auto location = FindSymbol(code, symbol_name);
-  if (!location.valid()) {
-    throw std::runtime_error(
-        fmt::format(
-            "AssertSymbolAtLocation: Invalid location for symbol '{}'",
-            symbol_name));
-  }
-
-  // Perform O(1) lookup
-  auto symbol_info = index.GetSymbolAt(location);
-  if (!symbol_info.has_value()) {
-    throw std::runtime_error(
-        fmt::format(
-            "AssertSymbolAtLocation: No symbol found at location for '{}'",
-            symbol_name));
-  }
-
-  // Verify symbol properties
-  if (std::string(symbol_info->symbol->name) != symbol_name) {
-    throw std::runtime_error(
-        fmt::format(
-            "AssertSymbolAtLocation: Expected symbol name '{}' but got '{}'",
-            symbol_name, std::string(symbol_info->symbol->name)));
-  }
-
-  if (symbol_info->lsp_kind != expected_kind) {
-    throw std::runtime_error(
-        fmt::format(
-            "AssertSymbolAtLocation: Expected symbol kind but got different "
-            "kind for '{}'",
-            symbol_name));
-  }
-}
-
 void SimpleTestFixture::AssertContainsSymbols(
     semantic::SemanticIndex& index,
     const std::vector<std::string>& expected_symbols) {
@@ -313,28 +268,6 @@ void SimpleTestFixture::AssertDefinitionRangeLength(
             "AssertDefinitionRangeLength: Expected length {} but got {} for "
             "'{}'",
             expected_length, actual_length, symbol_name));
-  }
-}
-
-void SimpleTestFixture::AssertValidDefinitionRanges(
-    semantic::SemanticIndex& index) {
-  const auto& all_symbols = index.GetAllSymbols();
-
-  if (all_symbols.empty()) {
-    throw std::runtime_error(
-        "AssertValidDefinitionRanges: No symbols found in index");
-  }
-
-  bool found_valid_definition =
-      std::ranges::any_of(all_symbols, [](const auto& symbol_pair) -> bool {
-        const auto& [location, info] = symbol_pair;
-        return info.is_definition && info.definition_range.start().valid();
-      });
-
-  if (!found_valid_definition) {
-    throw std::runtime_error(
-        "AssertValidDefinitionRanges: No symbols with valid definition ranges "
-        "found");
   }
 }
 

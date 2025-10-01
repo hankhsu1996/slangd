@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <optional>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -89,32 +88,12 @@ namespace slangd::semantic {
 // system that processes ALL symbol types for complete LSP coverage
 class SemanticIndex {
  public:
-  struct SymbolInfo {
-    const slang::ast::Symbol* symbol{};
-    slang::SourceLocation location;
-    lsp::SymbolKind lsp_kind{};
-    lsp::Range range{};
-    const slang::ast::Scope* parent{};
-    bool is_definition{false};
-    slang::SourceRange definition_range;
-    uint32_t buffer_id{};
-  };
-
   static auto FromCompilation(
       slang::ast::Compilation& compilation,
       const slang::SourceManager& source_manager,
       const std::string& current_file_uri) -> std::unique_ptr<SemanticIndex>;
 
   // Query methods
-  auto GetSymbolCount() const -> size_t {
-    return symbols_.size();
-  }
-
-  auto GetSymbolAt(slang::SourceLocation location) const
-      -> std::optional<SymbolInfo>;
-
-  auto GetAllSymbols() const
-      -> const std::unordered_map<slang::SourceLocation, SymbolInfo>&;
 
   auto GetSourceManager() const -> const slang::SourceManager& {
     return source_manager_.get();
@@ -147,8 +126,6 @@ class SemanticIndex {
   }
 
   // Core data storage
-  std::unordered_map<slang::SourceLocation, SymbolInfo> symbols_;
-
   // Unified reference+definition storage for go-to-definition functionality
   std::vector<ReferenceEntry> references_;
 

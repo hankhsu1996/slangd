@@ -175,19 +175,6 @@ auto SemanticEntry::Make(
       .buffer_id = unwrapped.location.buffer()};
 }
 
-auto SemanticIndex::GetSymbolAt(slang::SourceLocation location) const
-    -> std::optional<SymbolInfo> {
-  if (auto it = symbols_.find(location); it != symbols_.end()) {
-    return it->second;
-  }
-  return std::nullopt;
-}
-
-auto SemanticIndex::GetAllSymbols() const
-    -> const std::unordered_map<slang::SourceLocation, SymbolInfo>& {
-  return symbols_;
-}
-
 auto SemanticIndex::GetDocumentSymbols(const std::string& uri) const
     -> std::vector<lsp::DocumentSymbol> {
   return DocumentSymbolBuilder::BuildDocumentSymbolTree(uri, *this);
