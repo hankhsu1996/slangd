@@ -39,6 +39,29 @@ struct ReferenceEntry {
   std::string symbol_name;           // For debugging/logging
 };
 
+// Unified semantic entry combining both definitions and references
+// Replaces dual SymbolInfo/ReferenceEntry architecture with single model
+struct SemanticEntry {
+  // Identity & Location
+  slang::SourceRange source_range;  // Where this entry appears
+  slang::SourceLocation location;   // Unique key
+
+  // Symbol Information
+  const slang::ast::Symbol* symbol;  // The actual symbol
+  lsp::SymbolKind lsp_kind;          // LSP classification
+  std::string name;                  // Display name
+
+  // Hierarchy (DocumentSymbol tree)
+  const slang::ast::Scope* parent;  // Parent scope for tree building
+
+  // Reference Tracking (Go-to-definition)
+  bool is_definition;                   // true = self-ref, false = cross-ref
+  slang::SourceRange definition_range;  // Target definition location
+
+  // Metadata
+  slang::BufferID buffer_id;  // For file filtering
+};
+
 }  // namespace slangd::semantic
 
 namespace std {
@@ -115,6 +138,10 @@ class SemanticIndex {
   // Unified reference+definition storage for go-to-definition functionality
   std::vector<ReferenceEntry> references_;
 
+  // New unified storage combining definitions and references (Phase 1)
+  // Will eventually replace symbols_ and references_
+  std::vector<SemanticEntry> semantic_entries_;
+
   // Store source manager reference for symbol processing
   const slang::SourceManager* source_manager_ = nullptr;
 
@@ -181,6 +208,11 @@ class SemanticIndex {
     void CreateReference(
         slang::SourceRange source_range, slang::SourceRange definition_range,
         const slang::ast::Symbol& target_symbol);
+
+    // Helper to create unified semantic entries (Phase 1)
+    void CreateSemanticEntry(
+        const slang::ast::Symbol& symbol, slang::SourceRange source_range,
+        bool is_definition, slang::SourceRange definition_range);
   };
 };
 

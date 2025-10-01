@@ -382,6 +382,26 @@ void SemanticIndex::IndexVisitor::CreateReference(
   index_->references_.push_back(ref);
 }
 
+void SemanticIndex::IndexVisitor::CreateSemanticEntry(
+    const slang::ast::Symbol& symbol, slang::SourceRange source_range,
+    bool is_definition, slang::SourceRange definition_range) {
+  // Unwrap symbol to handle TransparentMember recursion
+  const auto& unwrapped = UnwrapSymbol(symbol);
+
+  SemanticEntry entry{
+      .source_range = source_range,
+      .location = unwrapped.location,
+      .symbol = &unwrapped,
+      .lsp_kind = ConvertToLspKind(unwrapped),
+      .name = std::string(unwrapped.name),
+      .parent = unwrapped.getParentScope(),
+      .is_definition = is_definition,
+      .definition_range = definition_range,
+      .buffer_id = unwrapped.location.buffer()};
+
+  index_->semantic_entries_.push_back(entry);
+}
+
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::NamedValueExpression& expr) {
   const slang::ast::Symbol* target_symbol = &expr.symbol;
