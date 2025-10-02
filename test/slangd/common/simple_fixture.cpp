@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <functional>
-#include <ranges>
 #include <regex>
 #include <stdexcept>
 
@@ -30,8 +29,9 @@ auto SimpleTestFixture::CompileSource(const std::string& code)
   slang::Bag options;
   // Enable LSP mode to activate expression preservation for typedef parameter
   // references
-  options.set<slang::ast::CompilationFlags>(
-      slang::ast::CompilationFlags::LanguageServerMode);
+  slang::ast::CompilationOptions comp_options;
+  comp_options.flags |= slang::ast::CompilationFlags::LanguageServerMode;
+  options.set(comp_options);
   compilation_ = std::make_unique<slang::ast::Compilation>(options);
   compilation_->addSyntaxTree(tree);
 
@@ -146,12 +146,20 @@ void SimpleTestFixture::AssertGoToDefinition(
             symbol_name, reference_index));
   }
 
-  if (!actual_def_range->contains(expected_def_loc)) {
+  // Verify exact range: must start at expected location and span exactly the
+  // symbol name length
+  auto expected_start = expected_def_loc.offset();
+  auto expected_end = expected_start + symbol_name.length();
+  auto actual_start = actual_def_range->start().offset();
+  auto actual_end = actual_def_range->end().offset();
+
+  if (actual_start != expected_start || actual_end != expected_end) {
     throw std::runtime_error(
         fmt::format(
-            "AssertGoToDefinition: definition range does not contain expected "
-            "location for symbol '{}'",
-            symbol_name));
+            "AssertGoToDefinition: definition range mismatch for symbol '{}'. "
+            "Expected range [{}, {}), got [{}, {})",
+            symbol_name, expected_start, expected_end, actual_start,
+            actual_end));
   }
 }
 
@@ -182,59 +190,14 @@ void SimpleTestFixture::AssertReferenceExists(
   }
 }
 
-void SimpleTestFixture::AssertHasSymbols(semantic::SemanticIndex& index) {
-  if (index.GetSymbolCount() == 0) {
-    throw std::runtime_error(
-        "AssertHasSymbols: Expected symbols but index is empty");
-  }
-}
-
-void SimpleTestFixture::AssertSymbolAtLocation(
-    semantic::SemanticIndex& index, const std::string& code,
-    const std::string& symbol_name, lsp::SymbolKind expected_kind) {
-  // Find symbol location (this makes the two-step process explicit)
-  auto location = FindSymbol(code, symbol_name);
-  if (!location.valid()) {
-    throw std::runtime_error(
-        fmt::format(
-            "AssertSymbolAtLocation: Invalid location for symbol '{}'",
-            symbol_name));
-  }
-
-  // Perform O(1) lookup
-  auto symbol_info = index.GetSymbolAt(location);
-  if (!symbol_info.has_value()) {
-    throw std::runtime_error(
-        fmt::format(
-            "AssertSymbolAtLocation: No symbol found at location for '{}'",
-            symbol_name));
-  }
-
-  // Verify symbol properties
-  if (std::string(symbol_info->symbol->name) != symbol_name) {
-    throw std::runtime_error(
-        fmt::format(
-            "AssertSymbolAtLocation: Expected symbol name '{}' but got '{}'",
-            symbol_name, std::string(symbol_info->symbol->name)));
-  }
-
-  if (symbol_info->lsp_kind != expected_kind) {
-    throw std::runtime_error(
-        fmt::format(
-            "AssertSymbolAtLocation: Expected symbol kind but got different "
-            "kind for '{}'",
-            symbol_name));
-  }
-}
-
 void SimpleTestFixture::AssertContainsSymbols(
     semantic::SemanticIndex& index,
     const std::vector<std::string>& expected_symbols) {
-  const auto& all_symbols = index.GetAllSymbols();
+  const auto& semantic_entries = index.GetSemanticEntries();
   std::vector<std::string> found_symbol_names;
 
-  for (const auto& [loc, info] : all_symbols) {
-    found_symbol_names.emplace_back(info.symbol->name);
+  for (const auto& entry : semantic_entries) {
+    found_symbol_names.push_back(entry.name);
   }
 
   for (const auto& expected : expected_symbols) {
@@ -314,28 +277,6 @@ void SimpleTestFixture::AssertDefinitionRangeLength(
             "AssertDefinitionRangeLength: Expected length {} but got {} for "
             "'{}'",
             expected_length, actual_length, symbol_name));
-  }
-}
-
-void SimpleTestFixture::AssertValidDefinitionRanges(
-    semantic::SemanticIndex& index) {
-  const auto& all_symbols = index.GetAllSymbols();
-
-  if (all_symbols.empty()) {
-    throw std::runtime_error(
-        "AssertValidDefinitionRanges: No symbols found in index");
-  }
-
-  bool found_valid_definition =
-      std::ranges::any_of(all_symbols, [](const auto& symbol_pair) -> bool {
-        const auto& [location, info] = symbol_pair;
-        return info.is_definition && info.definition_range.start().valid();
-      });
-
-  if (!found_valid_definition) {
-    throw std::runtime_error(
-        "AssertValidDefinitionRanges: No symbols with valid definition ranges "
-        "found");
   }
 }
 

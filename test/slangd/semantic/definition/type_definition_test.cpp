@@ -399,3 +399,31 @@ TEST_CASE("SemanticIndex direct struct declaration works", "[definition]") {
   fixture.AssertGoToDefinition(*index, code, "x", 1, 0);
   fixture.AssertGoToDefinition(*index, code, "y", 1, 0);
 }
+
+TEST_CASE(
+    "SemanticIndex typedef used in both declaration and cast expression",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module test;
+      typedef logic [7:0] counter_t;
+
+      // Variable declarations using the typedef
+      counter_t count_a;
+      counter_t count_b, count_c;
+
+      // Assignment with type cast using same typedef
+      initial begin
+        count_a = counter_t'(5);
+        count_b = counter_t'(10);
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  fixture.AssertGoToDefinition(*index, code, "counter_t", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "counter_t", 2, 0);
+  fixture.AssertGoToDefinition(*index, code, "counter_t", 3, 0);
+  fixture.AssertGoToDefinition(*index, code, "counter_t", 4, 0);
+}

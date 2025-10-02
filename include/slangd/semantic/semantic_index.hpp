@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <optional>
-#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -29,14 +29,34 @@ struct SymbolKey {
   }
 };
 
-// Unified storage for references with embedded definition information
-// Combines reference location and definition range for efficient lookups
-struct ReferenceEntry {
-  slang::SourceRange source_range;   // Where reference appears in source
-  slang::SourceLocation target_loc;  // Target symbol location (for dedup)
-  slang::SourceRange target_range;   // Definition range (captured immediately!)
-  lsp::SymbolKind symbol_kind;       // For rich LSP responses
-  std::string symbol_name;           // For debugging/logging
+// Unified semantic entry combining both definitions and references
+// Replaces dual SymbolInfo/ReferenceEntry architecture with single model
+struct SemanticEntry {
+  // Identity & Location
+  slang::SourceRange source_range;  // Where this entry appears
+  slang::SourceLocation location;   // Unique key
+
+  // Symbol Information
+  const slang::ast::Symbol* symbol;  // The actual symbol
+  lsp::SymbolKind lsp_kind;          // LSP classification
+  std::string name;                  // Display name
+
+  // Hierarchy (DocumentSymbol tree)
+  const slang::ast::Scope* parent;  // Parent scope for tree building
+
+  // Reference Tracking (Go-to-definition)
+  bool is_definition;                   // true = self-ref, false = cross-ref
+  slang::SourceRange definition_range;  // Target definition location
+
+  // Metadata
+  slang::BufferID buffer_id;  // For file filtering
+
+  // Factory method to construct SemanticEntry from symbol
+  static auto Make(
+      const slang::ast::Symbol& symbol, std::string_view name,
+      slang::SourceRange source_range, bool is_definition,
+      slang::SourceRange definition_range,
+      const slang::ast::Scope* parent_scope) -> SemanticEntry;
 };
 
 }  // namespace slangd::semantic
@@ -59,44 +79,24 @@ namespace slangd::semantic {
 // system that processes ALL symbol types for complete LSP coverage
 class SemanticIndex {
  public:
-  struct SymbolInfo {
-    const slang::ast::Symbol* symbol{};
-    slang::SourceLocation location;
-    lsp::SymbolKind lsp_kind{};
-    lsp::Range range{};
-    const slang::ast::Scope* parent{};
-    bool is_definition{false};
-    slang::SourceRange definition_range;
-    uint32_t buffer_id{};
-  };
-
   static auto FromCompilation(
       slang::ast::Compilation& compilation,
       const slang::SourceManager& source_manager,
       const std::string& current_file_uri) -> std::unique_ptr<SemanticIndex>;
 
   // Query methods
-  auto GetSymbolCount() const -> size_t {
-    return symbols_.size();
-  }
 
-  auto GetSymbolAt(slang::SourceLocation location) const
-      -> std::optional<SymbolInfo>;
-
-  auto GetAllSymbols() const
-      -> const std::unordered_map<slang::SourceLocation, SymbolInfo>&;
-
-  auto GetSourceManager() const -> const slang::SourceManager* {
-    return source_manager_;
+  auto GetSourceManager() const -> const slang::SourceManager& {
+    return source_manager_.get();
   }
 
   // SymbolIndex-compatible API
   auto GetDocumentSymbols(const std::string& uri) const
       -> std::vector<lsp::DocumentSymbol>;
 
-  // Reference access for testing and debugging
-  auto GetReferences() const -> const std::vector<ReferenceEntry>& {
-    return references_;
+  // Unified semantic entries access
+  auto GetSemanticEntries() const -> const std::vector<SemanticEntry>& {
+    return semantic_entries_;
   }
 
   // Find definition range for the symbol at the given location
@@ -107,33 +107,26 @@ class SemanticIndex {
   void ValidateNoRangeOverlaps() const;
 
  private:
-  explicit SemanticIndex() = default;
+  explicit SemanticIndex(const slang::SourceManager& source_manager)
+      : source_manager_(source_manager) {
+  }
 
   // Core data storage
-  std::unordered_map<slang::SourceLocation, SymbolInfo> symbols_;
-
-  // Unified reference+definition storage for go-to-definition functionality
-  std::vector<ReferenceEntry> references_;
+  // Unified storage combining definitions and references
+  std::vector<SemanticEntry> semantic_entries_;
 
   // Store source manager reference for symbol processing
-  const slang::SourceManager* source_manager_ = nullptr;
+  std::reference_wrapper<const slang::SourceManager> source_manager_;
 
   // Visitor for symbol collection and reference tracking
   class IndexVisitor : public slang::ast::ASTVisitor<IndexVisitor, true, true> {
    public:
     explicit IndexVisitor(
-        SemanticIndex* index, const slang::SourceManager* source_manager,
+        SemanticIndex& index, const slang::SourceManager& source_manager,
         std::string current_file_uri)
         : index_(index),
           source_manager_(source_manager),
           current_file_uri_(std::move(current_file_uri)) {
-    }
-
-    template <typename T>
-    void preVisit(const T& symbol) {
-      if constexpr (std::is_base_of_v<slang::ast::Symbol, T>) {
-        ProcessSymbol(symbol);
-      }
     }
 
     // Expression handlers
@@ -160,6 +153,8 @@ class SemanticIndex {
     void handle(const slang::ast::GenerateBlockArraySymbol& generate_array);
     void handle(const slang::ast::GenerateBlockSymbol& generate_block);
     void handle(const slang::ast::GenvarSymbol& genvar);
+    void handle(const slang::ast::PackageSymbol& package);
+    void handle(const slang::ast::StatementBlockSymbol& statement_block);
 
     template <typename T>
     void handle(const T& node) {
@@ -167,20 +162,36 @@ class SemanticIndex {
     }
 
    private:
-    SemanticIndex* index_;
-    const slang::SourceManager* source_manager_;
+    std::reference_wrapper<SemanticIndex> index_;
+    std::reference_wrapper<const slang::SourceManager> source_manager_;
     std::string current_file_uri_;
 
-    // Helper methods
-    void ProcessSymbol(const slang::ast::Symbol& symbol);
+    // Track which type syntax nodes we've already traversed
+    // Prevents duplicate traversal when multiple symbols share the same type
+    // syntax (e.g., `logic [WIDTH-1:0] var_a, var_b;` - both variables share
+    // same type)
+    std::unordered_set<const slang::syntax::SyntaxNode*> visited_type_syntaxes_;
+
+    // Track visited generate condition expressions to avoid duplicates
+    // Multiple generate blocks (if/else branches, case branches) share the same
+    // condition expression pointer
+    std::unordered_set<const slang::ast::Expression*>
+        visited_generate_conditions_;
+
+    // Helper methods for adding semantic entries
+    void AddEntry(SemanticEntry entry);
+
+    void AddDefinition(
+        const slang::ast::Symbol& symbol, std::string_view name,
+        slang::SourceRange range, const slang::ast::Scope* parent_scope);
+
+    void AddReference(
+        const slang::ast::Symbol& symbol, std::string_view name,
+        slang::SourceRange source_range, slang::SourceRange definition_range,
+        const slang::ast::Scope* parent_scope);
 
     // Unified type traversal - handles all type structure recursively
     void TraverseType(const slang::ast::Type& type);
-
-    // Helper to create reference entries (source -> target)
-    void CreateReference(
-        slang::SourceRange source_range, slang::SourceRange definition_range,
-        const slang::ast::Symbol& target_symbol);
   };
 };
 

@@ -5,6 +5,7 @@
 The SemanticIndex is the core component that enables LSP features like go-to-definition, find references, and document symbols. It uses a unified architecture that combines symbol storage with reference tracking in a single pass.
 
 **Key Components:**
+
 - **SemanticIndex**: Main class that stores symbols and references
 - **IndexVisitor**: AST visitor that processes symbols and expressions
 - **DefinitionExtractor**: Extracts precise name ranges from syntax nodes
@@ -33,6 +34,7 @@ case SK::MySymbol:
 ```
 
 **Key Points:**
+
 - Extract the precise name token range, not the full declaration
 - Use appropriate syntax node type (check Slang's `AllSyntax.h`)
 - Handle null checks for optional syntax elements
@@ -56,21 +58,19 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::MySymbol& symbol) {
 ```
 
 **Determining Syntax Support:**
+
 1. **Check symbol's constructor or methods** in Slang library to identify the syntax class it uses
 2. **Search visitor dispatch** with `grep "SyntaxClass\*" AllSyntax.h` to find ALL syntax kinds that map to that class
 3. **Handle all relevant syntax kinds** in your handler for complete coverage
 4. **Use precise name ranges** (`name.range()`) not full syntax ranges to avoid overlaps
 
-**Reality Check & Bug Discovery:**
-5. **Generate test AST** with `slang --ast-json` to verify syntax kinds actually used
-6. **Add comprehensive logging** for unhandled syntax kinds in handlers
-7. **Let test failures guide discovery** - systematic approach can miss library quirks
-8. **Trace implementation details** - methods like `setFromDeclarator()` can change syntax references after creation
+**Reality Check & Bug Discovery:** 5. **Generate test AST** with `slang --ast-json` to verify syntax kinds actually used 6. **Add comprehensive logging** for unhandled syntax kinds in handlers 7. **Let test failures guide discovery** - systematic approach can miss library quirks 8. **Trace implementation details** - methods like `setFromDeclarator()` can change syntax references after creation
 
 **Example - Hidden Indirection Discovery:**
 Variables created via `fromSyntax(DataDeclarationSyntax)` call `setFromDeclarator()` internally, changing their syntax reference to `DeclaratorSyntax`. This means `getSyntax()` returns `Declarator`, not `DataDeclaration`, despite the creation path.
 
 **Don't forget:**
+
 - Add declaration to `semantic_index.hpp`
 - Call `visitDefault()` to continue AST traversal
 
@@ -88,6 +88,7 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::MyExpression& expr) {
 ```
 
 **Common Expression Types:**
+
 - `NamedValueExpression`: Variable/symbol references
 - `CallExpression`: Function/task calls
 - `ConversionExpression`: Type casts
@@ -113,43 +114,84 @@ TEST_CASE("SemanticIndex my_symbol self-definition lookup works") {
 }
 
 TEST_CASE("SemanticIndex my_symbol reference go-to-definition works") {
-  // Test go-to-definition on a usage/reference of the symbol  
+  // Test go-to-definition on a usage/reference of the symbol
   fixture.AssertGoToDefinition(*index, code, "my_symbol", 1, 0);
 }
 ```
 
 **Test Parameters:**
+
 - `reference_index`: Which occurrence to click on (0 = first, 1 = second, etc.)
 - `definition_index`: Which occurrence should be the target (usually 0 for definition)
 
 ## Architecture Patterns
 
 ### Symbol vs Reference Distinction
+
 - **Symbols** (`symbols_` map): Indexed by location, store symbol metadata
 - **References** (`references_` vector): Store source range → target definition mappings
 
 ### Handler Method Patterns
+
 - **Symbol handlers**: Process symbol definitions, create self-references
 - **Expression handlers**: Process symbol usage, create cross-references
 - **Always call** `visitDefault()` to continue traversal
 
 ### Definition Range Extraction
+
 - Prefer precise name token ranges over full syntax ranges
 - Handle optional syntax elements gracefully
 - Fall back to `syntax.sourceRange()` when precise extraction isn't possible
 
 ## Slang Fork Modifications for LSP
 
-### The Problem
+### 1. Compiler-Generated Variable Redirection
 
-Slang's `evalInteger()` converts parameter expressions to constants, losing symbol references needed for LSP go-to-definition:
+**Problem**: Slang creates compiler-generated temporary variables for certain constructs (e.g., genvar loop iteration variables, function return variables). When LSP encounters references to these temporaries, it should redirect to the actual user-visible symbols.
+
+**Example**:
+```systemverilog
+genvar idx;
+for (idx = 0; idx < COUNT; idx = idx + 1) begin
+//  (declaration)  (references to temp variable, should redirect to genvar)
+```
+
+**Root Cause**: Genvar loops require mutable iteration variables, but genvars are immutable constants. Slang creates a `VariableSymbol` with `CompilerGenerated` flag for loop iteration, then binds loop control expressions (`idx < COUNT`, `idx = idx + 1`) against this temporary variable instead of the genvar.
+
+**Solution**: Add symbol redirection infrastructure following Slang's existing patterns.
+
+**Implementation** (see BlockSymbols.cpp:760-768, VariableSymbols.h:55-58):
+
+1. Add `getDeclaredSymbol() / setDeclaredSymbol()` to `VariableSymbol` (similar to `ModportPortSymbol::internalSymbol`)
+2. Store genvar pointer in `GenerateBlockArraySymbol::genvar` field during construction
+3. Link temp variable to genvar via `local.setDeclaredSymbol(result->genvar)`
+4. In LSP, check `variable.getDeclaredSymbol()` and redirect references
+
+**Key Design Principles**:
+- Reuse what Slang already knows (the genvar was already looked up in `BlockSymbols.cpp:747`)
+- Follow existing Slang patterns (`ModportPortSymbol::internalSymbol` precedent)
+- No manual searching, no scope traversal, no visitor state tracking
+- Simple and extensible to other compiler-generated variable patterns
+
+**LSP Usage** (semantic_index.cpp:350-367):
+```cpp
+if (variable.flags.has(VariableFlags::CompilerGenerated)) {
+  if (const auto* declared = variable.getDeclaredSymbol()) {
+    target_symbol = declared;  // Redirect to actual symbol
+  }
+}
+```
+
+### 2. Parameter Expression Preservation
+
+**Problem**: Slang's `evalInteger()` converts parameter expressions to constants, losing symbol references needed for LSP go-to-definition:
 
 ```systemverilog
 parameter WIDTH = 8;
 logic [WIDTH-1:0] data;  // evalInteger converts WIDTH-1 to literal 7
 ```
 
-### The Solution: Symmetric Expression Storage
+**Solution**: Symmetric Expression Storage
 
 **Key Insight**: Store expressions **alongside the values they produce** for perfect symmetry:
 
@@ -161,13 +203,13 @@ struct SLANG_EXPORT EvaluatedDimension {
     ConstantRange range;
     const Type* associativeType = nullptr;
     uint32_t queueMaxSize = 0;
-    
+
     // Corresponding source expressions (symmetric!)
     const Expression* rangeLeftExpr = nullptr;        // → range.left
-    const Expression* rangeRightExpr = nullptr;       // → range.right  
+    const Expression* rangeRightExpr = nullptr;       // → range.right
     const Expression* associativeTypeExpr = nullptr;  // → associativeType
     const Expression* queueMaxSizeExpr = nullptr;     // → queueMaxSize
-    
+
     // Clean visitor pattern
     template<typename TVisitor>
     void visitExpressions(TVisitor&& visitor) const;
@@ -197,7 +239,7 @@ packedArrayType.evalDim.visitExpressions([this](const Expression& expr) {
 ### Benefits
 
 - **Zero re-evaluation**: Expressions stored once during compilation, accessed many times in LSP
-- **Trivially destructible**: Compatible with Slang's BumpAllocator memory management  
+- **Trivially destructible**: Compatible with Slang's BumpAllocator memory management
 - **Symmetric design**: Perfect correspondence between computed values and source expressions
 - **Direct type access**: No `evalPackedDimension()` calls needed in LSP code
 - **Universal coverage**: Handles all dimension types (ranges, queues, associative arrays)
@@ -205,7 +247,9 @@ packedArrayType.evalDim.visitExpressions([this](const Expression& expr) {
 ## Debugging Tips
 
 ### AST Investigation
+
 Use the debug directory for AST exploration:
+
 ```bash
 mkdir -p debug
 echo 'your test code' > debug/test.sv
@@ -214,12 +258,14 @@ slang debug/test.sv --ast-json debug/ast.json
 ```
 
 ### Common Issues
+
 1. **"LookupDefinitionAt failed"**: Missing reference creation (need expression handler)
 2. **"No symbol found"**: Missing symbol processing (need definition extraction)
 3. **Wrong definition target**: Check reference creation logic or test indices
 4. **Overlapping source ranges**: Fix the root cause in reference creation, don't add disambiguation logic
 
 ### Test Development
+
 1. Start with failing tests
 2. Add debug logging to understand AST structure
 3. Implement minimal changes to make tests pass
@@ -230,8 +276,9 @@ slang debug/test.sv --ast-json debug/ast.json
 For typedef and type reference handling, see the dedicated documentation: `LSP_TYPE_HANDLING.md`
 
 This covers:
+
 - TypeReferenceSymbol architecture
-- LSP vs Slang library differences  
+- LSP vs Slang library differences
 - Type system integration requirements
 - Debugging strategies for type-related issues
 
@@ -239,7 +286,8 @@ This covers:
 
 **Critical Rule**: Source ranges in `references_` should NEVER overlap. If they do, you have a bug in reference creation.
 
-**Wrong approach**: Add disambiguation logic to `LookupDefinitionAt()` 
+**Wrong approach**: Add disambiguation logic to `LookupDefinitionAt()`
+
 ```cpp
 // DON'T DO THIS - masks the real problem
 if (range_size < smallest_range_size) {
@@ -248,16 +296,19 @@ if (range_size < smallest_range_size) {
 ```
 
 **Correct approach**: Fix the root cause in reference creation
+
 - Use precise name token ranges, not full syntax ranges
 - For user-defined types: Use typedef name length for exact bounds
 - For overlapping contexts: Create separate, non-overlapping reference entries
 
-**Why this matters**: 
+**Why this matters**:
+
 - Overlaps indicate imprecise reference creation
 - Disambiguation logic becomes complex and brittle
 - The real issue is creating incorrect source ranges in the first place
 
 The `LookupDefinitionAt()` implementation should be simple:
+
 ```cpp
 for (const auto& ref_entry : references_) {
   if (ref_entry.source_range.contains(loc)) {
@@ -269,45 +320,12 @@ for (const auto& ref_entry : references_) {
 ## Examples
 
 See the subroutine implementation for a complete example:
+
 - **Definition extraction**: `SK::Subroutine` case in `definition_extractor.cpp`
-- **Self-references**: `handle(SubroutineSymbol&)` in `semantic_index.cpp`  
+- **Self-references**: `handle(SubroutineSymbol&)` in `semantic_index.cpp`
 - **Call references**: `handle(CallExpression&)` in `semantic_index.cpp`
 - **Test coverage**: Multiple test cases in `definition_test.cpp`
 
 ## Known Limitations
 
-### SystemVerilog Generate Variables (Genvar References)
-
-**Current Support**: 
-- Genvar self-definitions work (`genvar i;` - clicking on `i` goes to declaration)
-- Generate block self-definitions work (clicking on named generate blocks)
-- **Genvar references in expressions do NOT work**
-
-**Examples of unsupported references**:
-```systemverilog
-module example;
-  genvar i;
-  generate
-    for (i = 0; i < 4; i = i + 1) begin : gen_loop
-         ^     ^     ^           // ← These references fail
-      logic [i:0] bus;
-             ^                  // ← This reference also fails  
-    end
-  endgenerate
-  
-  always_comb begin
-    case (i)  // ← This reference fails too
-      // ...
-    endcase
-  end
-endmodule
-```
-
-**Root Cause**: Genvar references get resolved to constant literals (`IntegerLiteral`) during compilation, losing the original symbol reference information needed for go-to-definition.
-
-**Technical Challenge**: Unlike regular variables that use `NamedValueExpression` (preserving symbol references), genvars resolve directly to constants. The LSP-side replay approach used for parameters fails because:
-1. **Scope limitations**: Genvar references can appear anywhere, not just in type dimensions
-2. **Resolution timing**: Genvars are resolved during generate block elaboration, before LSP processing
-3. **Performance concerns**: Would require aggressive expression rebinding across entire syntax trees
-
-**Future Solution**: This limitation will likely require modifications to the Slang compiler library to preserve original genvar symbol references in an LSP-compatible way, following the existing LSP modifications in the Slang fork (`memberNameRange`, `LanguageServerMode`, etc.).
+None currently documented. Previous limitations with genvar loop control expression references have been resolved through the compiler-generated variable redirection infrastructure (see "Slang Fork Modifications for LSP" section).

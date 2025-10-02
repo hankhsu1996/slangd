@@ -191,4 +191,113 @@ Both create identical `IdentifierSelectName` syntax nodes despite having complet
 
 **Impact**: Resolves typedef navigation issues by working around fundamental syntax tree grouping limitations.
 
+## Type Traversal Strategy
+
+### TypeAlias vs TypeReference: Different Traversal Rules
+
+**Critical Distinction**: TypeAlias and TypeReference serve different purposes and require different traversal strategies in LSP.
+
+#### TypeReference (Variable/Cast Usage)
+```systemverilog
+typedef logic [7:0] byte_t;
+byte_t my_var;        // TypeReference
+byte_t'(some_value);  // TypeReference
+```
+
+**Traversal Rule**: **STOP at TypeReference - do NOT traverse resolved type**
+
+```cpp
+case SymbolKind::TypeReference: {
+  const auto& type_ref = type.as<TypeReferenceSymbol>();
+  // Create semantic entry for this usage
+  AddReference(type_ref.getUsageLocation(), typedef_definition);
+  // STOP HERE - do not traverse into resolved TypeAlias
+  break;  // No visitDefault or recursive traversal
+}
+```
+
+**Why**: TypeReference is a leaf node for LSP. It represents a user's reference to a typedef. Traversing further would create duplicate entries.
+
+#### TypeAlias (Typedef Declaration)
+```systemverilog
+typedef byte_t word_t;  // TypeAlias using another typedef
+```
+
+**Traversal Rule**: **DO traverse the target type** to find nested typedef references
+
+```cpp
+case SymbolKind::TypeAlias: {
+  const auto& type_alias = type.as<TypeAliasType>();
+  // Create self-definition entry
+  AddDefinition(type_alias, ...);
+  // CONTINUE - traverse target to find nested TypeReference
+  TraverseType(type_alias.targetType.getType());
+  break;
+}
+```
+
+**Why**: The target type may contain another TypeReference (e.g., `byte_t` in example). We need to index that reference so users can click `byte_t` and navigate to its definition.
+
+### Deduplication Strategy
+
+**Problem**: Multiple symbols can share the same type, causing duplicate traversals:
+
+```systemverilog
+typedef logic [7:0] byte_t;
+byte_t var_a, var_b;  // Same type, two variables
+```
+
+Without deduplication, we'd traverse `byte_t`'s type twice, creating duplicate semantic entries.
+
+**Solution**: Track visited type syntax nodes
+
+```cpp
+class IndexVisitor {
+  std::unordered_set<const syntax::SyntaxNode*> visited_type_syntaxes_;
+
+  void TraverseType(const Type& type) {
+    // Skip if already visited this type's syntax
+    if (const auto* syntax = type.getSyntax()) {
+      if (!visited_type_syntaxes_.insert(syntax).second) {
+        return;  // Already processed
+      }
+    }
+    // Continue with type traversal...
+  }
+};
+```
+
+**Key Insight**: Types created from the same source location share the same syntax node pointer. By tracking syntax nodes, we deduplicate at the source level.
+
+**Edge Case - Cast Expressions**: TypeReferences in casts initially lacked syntax (created dynamically). Fixed in Slang fork by passing syntax through `Expression::bindLookupResult()` → `Type::fromLookupResult()` → `TypeReferenceSymbol::create()`.
+
+### Slang Fork Modifications for Syntax Preservation
+
+**Problem**: TypeReferenceSymbol was created without syntax nodes, breaking deduplication.
+
+**Root Cause**: Type creation from expressions (casts) didn't have access to syntax context.
+
+**Solution**: Thread syntax through the call chain:
+
+1. **Expression.h/cpp**: Add `syntax` parameter to `bindLookupResult()`
+2. **Type.h/cpp**: Add `syntax` parameter to `fromLookupResult()`
+3. **AllTypes.h/cpp**: Add `syntax` parameter to `TypeReferenceSymbol` constructor, call `setSyntax(*syntax)`
+
+**Result**: ALL TypeReferenceSymbol instances now have syntax, enabling universal deduplication.
+
+```cpp
+// In Expression::bindLookupResult
+const Type& resultType = Type::fromLookupResult(comp, result, sourceRange, context, syntax);
+
+// In Type::fromLookupResult
+if (isTypedefUsage) {
+  finalType = &TypeReferenceSymbol::create(*finalType, sourceRange, syntax, compilation);
+}
+
+// In TypeReferenceSymbol constructor
+TypeReferenceSymbol::TypeReferenceSymbol(..., const syntax::SyntaxNode* syntax) {
+  setSyntax(*syntax);  // Preserve syntax for deduplication
+}
+```
+
 This architecture enables universal typedef go-to-definition across all SystemVerilog constructs while maintaining full compatibility with the existing Slang type system.

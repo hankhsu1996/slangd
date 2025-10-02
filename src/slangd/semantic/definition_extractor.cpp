@@ -13,9 +13,18 @@ auto DefinitionExtractor::ExtractDefinitionRange(
   using SyntaxKind = slang::syntax::SyntaxKind;
 
   // Extract precise name range based on symbol and syntax type.
+  //
+  // PURPOSE: This extractor is for POLYMORPHIC cases where the symbol type
+  // is not known at compile time (e.g., expressions that can reference
+  // variables, functions, or other symbol types).
+  //
+  // For symbol-specific handlers (like TypeAliasType::handle), prefer
+  // extracting the range directly in the handler since you already know
+  // the exact syntax type.
+  //
   // This function is safe to call with any symbol/syntax combination -
   // it will extract the precise range when possible, or fall back to
-  // the full syntax range, ensuring a valid range is always returned.
+  // symbol.location + name.length(), ensuring a valid range is always returned.
   switch (symbol.kind) {
     case SK::Package:
       if (syntax.kind == SyntaxKind::PackageDeclaration) {
@@ -75,15 +84,57 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       return syntax.sourceRange();
 
+    case SK::Field:
+      // Struct/union field declarators
+      if (syntax.kind == SyntaxKind::Declarator) {
+        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
+      }
+      break;
+
+    case SK::EnumValue:
+      // Enum member declarators
+      if (syntax.kind == SyntaxKind::Declarator) {
+        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
+      }
+      break;
+
+    case SK::Parameter:
+      // Parameter/localparam declarators
+      if (syntax.kind == SyntaxKind::Declarator) {
+        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
+      }
+      break;
+
+    case SK::TypeAlias:
+      // Typedef declarations
+      if (syntax.kind == SyntaxKind::TypedefDeclaration) {
+        return syntax.as<slang::syntax::TypedefDeclarationSyntax>()
+            .name.range();
+      }
+      break;
+
     default:
-      // For symbol types without specific handling, fall back to full syntax
-      // range
+      // Unhandled symbol type - log warning and use fallback
+      spdlog::warn(
+          "DefinitionExtractor: Unhandled symbol kind '{}' with syntax kind "
+          "'{}' for symbol '{}'. Using symbol.location + name.length() "
+          "fallback. Consider adding explicit handling.",
+          slang::ast::toString(symbol.kind),
+          slang::syntax::toString(syntax.kind), symbol.name);
       break;
   }
 
-  // Safe fallback: return the full syntax range when precise extraction isn't
-  // possible. This ensures every symbol gets a valid, clickable range for
-  // go-to-definition.
+  // Fallback: use symbol location + name length
+  // This should only trigger for unhandled symbol types (warning logged above)
+  if (symbol.location.valid()) {
+    return slang::SourceRange(
+        symbol.location, symbol.location + symbol.name.length());
+  }
+
+  // Should never reach here - symbol with syntax but no valid location
+  spdlog::error(
+      "DefinitionExtractor: Symbol '{}' has syntax but invalid location",
+      symbol.name);
   return syntax.sourceRange();
 }
 

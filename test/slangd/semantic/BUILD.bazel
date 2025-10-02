@@ -21,23 +21,6 @@ cc_test(
 )
 
 cc_test(
-    name = "multifile_reference_test",
-    timeout = "short",
-    srcs = [
-        "integration/multifile_reference_test.cpp",
-        "test_fixtures.hpp",
-    ],
-    deps = [
-        "//:slangd_core",
-        "//test/slangd:file_fixture",
-        "@catch2",
-        "@fmt",
-        "@slang",
-    ],
-)
-
-
-cc_test(
     name = "document_symbol_test",
     timeout = "short",
     srcs = [

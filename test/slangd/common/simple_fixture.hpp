@@ -43,14 +43,6 @@ class SimpleTestFixture {
       semantic::SemanticIndex& index, const std::string& code,
       const std::string& symbol_name, size_t reference_index);
 
-  // Assert that index has symbols (for tests expecting non-empty results)
-  static void AssertHasSymbols(semantic::SemanticIndex& index);
-
-  // High-level symbol lookup: find symbol by name and verify its properties
-  void AssertSymbolAtLocation(
-      semantic::SemanticIndex& index, const std::string& code,
-      const std::string& symbol_name, lsp::SymbolKind expected_kind);
-
   // Assert that index contains all the specified symbols
   static void AssertContainsSymbols(
       semantic::SemanticIndex& index,
@@ -71,9 +63,6 @@ class SimpleTestFixture {
   void AssertDefinitionRangeLength(
       semantic::SemanticIndex& index, const std::string& code,
       const std::string& symbol_name, size_t expected_length);
-
-  // Assert that semantic index has valid definition ranges for symbols
-  static void AssertValidDefinitionRanges(semantic::SemanticIndex& index);
 
  private:
   std::shared_ptr<slang::SourceManager> source_manager_;

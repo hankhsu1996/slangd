@@ -33,6 +33,23 @@ When adding support for new SystemVerilog constructs:
 **Design Principle:**
 Leverage existing Slang library infrastructure rather than overengineering. The best LSP solutions are simple and reuse Slang's existing resolution logic.
 
+## Design Principles (CRITICAL - Read Before Major Changes)
+
+Before implementing LSP features or modifying Slang integration, read `docs/DESIGN_PRINCIPLES.md` for detailed guidance and case studies.
+
+**Quick Checklist for New Features:**
+
+- [ ] Have you checked if Slang already provides this information?
+- [ ] Are you following existing patterns in Slang and slangd codebases?
+- [ ] Does your solution require manual searching or state tracking? (RED FLAG - rethink approach)
+- [ ] Can you explain why the current design exists before changing it?
+- [ ] Is the solution simple (typically <50 lines) and maintainable?
+- [ ] Does it feel elegant, or does it feel like a workaround?
+
+**If any checklist item fails, STOP and consult `docs/DESIGN_PRINCIPLES.md`**
+
+Key principle: Work with the system's design, not against it. Complexity is often self-inflicted from not understanding what the library already provides.
+
 **Pre-commit:**
 
 1. Format code, check build/test pass
