@@ -2,12 +2,12 @@ Create a git commit following the project conventions
 
 ## Steps
 
-1. Format code: `find src include test -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i`
-2. Build: `bazel build //...`
-3. Test: `bazel test //...`
-4. Check git status and diff. If we are on the main branch, stop and ask the user if they want to switch to a feature branch.
-5. Create commit following this format:
-   - Short summary + bullet points using `-`
-   - No Claude attribution
-   - Focus on what changed
-6. Commit messages: Short summary + 2–5 bullet points using `-` in details, no Claude attribution, focus on what changed, not process or steps
+1. Format, build, test: `find src include test -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i && bazel build //... && bazel test //...`
+2. Check status and style: `git status`, `git diff`, `git log --oneline -5`, `git show HEAD --stat`
+3. If on main branch, stop and ask user to switch to feature branch
+4. Create commit matching scope:
+   - **Simple changes** (1 file, doc updates): 1-2 bullets
+   - **Medium changes** (few files, features): 2-3 bullets
+   - **Major changes** (refactors, systems): 3-5 bullets
+   - Short summary line, bullet points using `-`
+   - No Claude attribution, focus on what changed
