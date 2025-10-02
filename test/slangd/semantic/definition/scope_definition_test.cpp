@@ -191,29 +191,16 @@ TEST_CASE(
   // variable, not the genvar declaration. This is a Slang limitation.
 }
 
-TEST_CASE("SemanticIndex multiple generate constructs work", "[definition]") {
+TEST_CASE(
+    "SemanticIndex external genvar loop references work", "[definition]") {
   SimpleTestFixture fixture;
   std::string code = R"(
-    module multi_gen_test;
-      // Named generate block
+    module external_genvar_test;
+      parameter int COUNT = 2;
+      genvar idx;
       generate
-        if (1) begin : conditional_gen
-          logic ctrl_signal;
-        end
-      endgenerate
-      
-      // Generate for loop
-      genvar i;
-      generate
-        for (i = 0; i < 2; i = i + 1) begin : array_gen
-          logic [i:0] indexed_bus;
-        end
-      endgenerate
-      
-      // Inline genvar 
-      generate
-        for (genvar k = 0; k < 3; k = k + 1) begin : inline_array_gen
-          logic [k+1:0] sized_bus;
+        for (idx = 0; idx < COUNT; idx = idx + 1) begin : array_gen
+          logic data;
         end
       endgenerate
     endmodule
@@ -221,17 +208,48 @@ TEST_CASE("SemanticIndex multiple generate constructs work", "[definition]") {
 
   auto index = fixture.CompileSource(code);
 
-  // Test generate block self-definitions (these work)
-  fixture.AssertGoToDefinition(*index, code, "conditional_gen", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "array_gen", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "inline_array_gen", 0, 0);
+  // Test genvar self-definition
+  fixture.AssertGoToDefinition(*index, code, "idx", 0, 0);
 
-  // Test genvar self-definitions (these work)
-  fixture.AssertGoToDefinition(*index, code, "i", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "k", 0, 0);
+  // Test parameter reference in loop control
+  fixture.AssertGoToDefinition(*index, code, "COUNT", 1, 0);
 
-  // NOTE: Genvar reference tests not included
-  // See docs/SEMANTIC_INDEXING.md "Known Limitations"
+  // Test genvar references in loop control expressions
+  // Note: idx = 0 is NOT indexed (it's syntax-only, not a bound expression)
+  // Occurrences: [0] genvar idx, [1] idx = 0 (skip), [2] idx < COUNT, [3]
+  // idx++, [4] idx + 1
+  fixture.AssertGoToDefinition(*index, code, "idx", 2, 0);  // idx < COUNT
+  fixture.AssertGoToDefinition(*index, code, "idx", 3, 0);  // idx++ (first idx)
+  fixture.AssertGoToDefinition(*index, code, "idx", 4, 0);  // idx + 1
+}
+
+TEST_CASE("SemanticIndex inline genvar loop references work", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module inline_genvar_test;
+      parameter int SIZE = 3;
+      generate
+        for (genvar entry = 0; entry < SIZE; entry = entry + 1) begin : inline_array_gen
+          logic value;
+        end
+      endgenerate
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test genvar self-definition
+  fixture.AssertGoToDefinition(*index, code, "entry", 0, 0);
+
+  // Test parameter reference in loop control
+  fixture.AssertGoToDefinition(*index, code, "SIZE", 1, 0);
+
+  // Test genvar references in loop control expressions
+  // Occurrences: [0] genvar entry, [1] entry < SIZE, [2] entry++, [3] entry + 1
+  fixture.AssertGoToDefinition(*index, code, "entry", 1, 0);  // entry < SIZE
+  fixture.AssertGoToDefinition(
+      *index, code, "entry", 2, 0);  // entry++ (first entry)
+  fixture.AssertGoToDefinition(*index, code, "entry", 3, 0);  // entry + 1
 }
 
 TEST_CASE("SemanticIndex nested generate blocks work", "[definition]") {

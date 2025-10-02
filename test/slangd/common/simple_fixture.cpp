@@ -29,8 +29,9 @@ auto SimpleTestFixture::CompileSource(const std::string& code)
   slang::Bag options;
   // Enable LSP mode to activate expression preservation for typedef parameter
   // references
-  options.set<slang::ast::CompilationFlags>(
-      slang::ast::CompilationFlags::LanguageServerMode);
+  slang::ast::CompilationOptions comp_options;
+  comp_options.flags |= slang::ast::CompilationFlags::LanguageServerMode;
+  options.set(comp_options);
   compilation_ = std::make_unique<slang::ast::Compilation>(options);
   compilation_->addSyntaxTree(tree);
 

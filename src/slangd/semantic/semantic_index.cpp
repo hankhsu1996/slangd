@@ -344,17 +344,23 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
 
-  // Handle compiler-generated function return variables
-  // When referencing the implicit return variable (e.g., my_func = value),
-  // redirect to the parent subroutine for better UX
+  // Handle compiler-generated variables
   if (expr.symbol.kind == slang::ast::SymbolKind::Variable) {
     const auto& variable = expr.symbol.as<slang::ast::VariableSymbol>();
     if (variable.flags.has(slang::ast::VariableFlags::CompilerGenerated)) {
-      const auto* parent_scope = variable.getParentScope();
-      if (parent_scope != nullptr) {
-        const auto& parent_symbol = parent_scope->asSymbol();
-        if (parent_symbol.kind == slang::ast::SymbolKind::Subroutine) {
-          target_symbol = &parent_symbol;
+      // Slang provides declaredSymbol pointer for compiler-generated variables
+      // (e.g., genvar loop iteration variables point to the actual genvar)
+      if (const auto* declared = variable.getDeclaredSymbol()) {
+        target_symbol = declared;
+      }
+      // Fallback: function return variables redirect to parent subroutine
+      else {
+        const auto* parent_scope = variable.getParentScope();
+        if (parent_scope != nullptr) {
+          const auto& parent_symbol = parent_scope->asSymbol();
+          if (parent_symbol.kind == slang::ast::SymbolKind::Subroutine) {
+            target_symbol = &parent_symbol;
+          }
         }
       }
     }
