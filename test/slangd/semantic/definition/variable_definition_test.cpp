@@ -262,7 +262,7 @@ TEST_CASE(
     module always_test;
       logic [7:0] my_var;
       logic [7:0] other_var;
-      
+
       always_comb begin
         other_var = my_var;
       end
@@ -271,4 +271,23 @@ TEST_CASE(
 
   auto index = fixture.CompileSource(code);
   fixture.AssertGoToDefinition(*index, code, "my_var", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex multiple variables on same line with parameter in type",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module multi_var_test;
+      parameter NUM_ENTRIES = 8;
+
+      // Two variables declared on same line with parameter in type
+      logic [NUM_ENTRIES-1:0] var_a, var_b;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test that clicking on NUM_ENTRIES in the shared type goes to parameter
+  fixture.AssertGoToDefinition(*index, code, "NUM_ENTRIES", 1, 0);
 }

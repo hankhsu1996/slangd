@@ -150,6 +150,22 @@ auto SemanticIndex::FromCompilation(
     // This is expected behavior when no matching symbols are found
   }
 
+  // Sort entries by source location for O(n) validation and potential lookup
+  // optimizations O(n log n) - trivially fast even for 100k entries
+  std::sort(
+      index->semantic_entries_.begin(), index->semantic_entries_.end(),
+      [](const SemanticEntry& a, const SemanticEntry& b) -> bool {
+        // Sort by buffer ID first, then by offset
+        if (a.source_range.start().buffer().getId() !=
+            b.source_range.start().buffer().getId()) {
+          return a.source_range.start().buffer().getId() <
+                 b.source_range.start().buffer().getId();
+        }
+        return a.source_range.start().offset() <
+               b.source_range.start().offset();
+      });
+
+  // Validate no overlaps using O(n) algorithm (entries are now sorted)
   index->ValidateNoRangeOverlaps();
 
   return index;
@@ -202,6 +218,13 @@ void SemanticIndex::IndexVisitor::AddReference(
 
 // IndexVisitor implementation
 void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
+  // Skip if already traversed - multiple symbols can share the same type syntax
+  if (const auto* type_syntax = type.getSyntax()) {
+    if (!visited_type_syntaxes_.insert(type_syntax).second) {
+      return;
+    }
+  }
+
   switch (type.kind) {
     case slang::ast::SymbolKind::PackedArrayType: {
       const auto& packed_array = type.as<slang::ast::PackedArrayType>();
@@ -252,12 +275,12 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
               type_ref.getResolvedType().as_if<slang::ast::TypeAliasType>()) {
         if (typedef_target->location.valid()) {
           if (const auto* syntax = typedef_target->getSyntax()) {
+            auto usage_loc = type_ref.getUsageLocation();
             auto definition_range = DefinitionExtractor::ExtractDefinitionRange(
                 *typedef_target, *syntax);
             AddReference(
-                *typedef_target, typedef_target->name,
-                type_ref.getUsageLocation(), definition_range,
-                typedef_target->getParentScope());
+                *typedef_target, typedef_target->name, usage_loc,
+                definition_range, typedef_target->getParentScope());
           }
         }
       }
@@ -944,33 +967,63 @@ void SemanticIndex::IndexVisitor::handle(
 // Go-to-definition implementation
 auto SemanticIndex::LookupDefinitionAt(slang::SourceLocation loc) const
     -> std::optional<slang::SourceRange> {
-  // Use unified semantic_entries_ index for go-to-definition
-  // NOTE: Ranges should NOT overlap - if they do, fix the root cause in
-  // entry creation
-  for (const auto& entry : semantic_entries_) {
-    if (entry.source_range.contains(loc)) {
-      return entry.definition_range;
+  // Binary search in sorted entries by (buffer_id, offset)
+  const auto target = std::pair{loc.buffer().getId(), loc.offset()};
+
+  const auto proj = [](const SemanticEntry& e) -> std::pair<unsigned, size_t> {
+    return std::pair{
+        e.source_range.start().buffer().getId(),
+        e.source_range.start().offset()};
+  };
+
+  // upper_bound returns the first entry whose start is AFTER target location
+  auto it = std::ranges::upper_bound(
+      semantic_entries_, target, std::ranges::less{}, proj);
+
+  // Move back one entry - this is the candidate that might contain our location
+  // (since its start is <= target, but the next entry's start is > target)
+  if (it != semantic_entries_.begin()) {
+    --it;
+    // Check if the candidate entry actually contains the target location
+    if (it->source_range.contains(loc)) {
+      return it->definition_range;
     }
   }
+
   return std::nullopt;
 }
 
 void SemanticIndex::ValidateNoRangeOverlaps() const {
-  for (size_t i = 0; i < semantic_entries_.size(); ++i) {
-    for (size_t j = i + 1; j < semantic_entries_.size(); ++j) {
-      const auto& entry1 = semantic_entries_[i];
-      const auto& entry2 = semantic_entries_[j];
+  if (semantic_entries_.empty()) {
+    return;
+  }
 
-      // Check if ranges overlap manually
-      bool overlap =
-          (entry1.source_range.start() < entry2.source_range.end() &&
-           entry2.source_range.start() < entry1.source_range.end());
+  // O(n) validation - entries are pre-sorted, so we only check adjacent pairs
+  // This is much faster than O(n²) and catches all overlaps in sorted data
+  for (size_t i = 1; i < semantic_entries_.size(); ++i) {
+    const auto& prev = semantic_entries_[i - 1];
+    const auto& curr = semantic_entries_[i];
 
-      if (overlap) {
-        // This is a critical bug - ranges should NEVER overlap
-        throw std::runtime_error(
-            "Range overlap detected - fix entry creation!");
-      }
+    // Check if current overlaps with previous (they should be disjoint)
+    // Two ranges [a,b) and [c,d) overlap if: a < d && c < b
+    bool overlap =
+        (prev.source_range.start() < curr.source_range.end() &&
+         curr.source_range.start() < prev.source_range.end());
+
+    if (overlap) {
+      // Log error but don't crash - LSP server should continue working
+      auto prev_loc = prev.source_range.start();
+      auto curr_loc = curr.source_range.start();
+      spdlog::error(
+          "Range overlap detected: prev=[{}:{}..{}:{}] '{}', "
+          "curr=[{}:{}..{}:{}] '{}'. Please report this bug.",
+          prev_loc.buffer().getId(), prev_loc.offset(),
+          prev.source_range.end().buffer().getId(),
+          prev.source_range.end().offset(), prev.name,
+          curr_loc.buffer().getId(), curr_loc.offset(),
+          curr.source_range.end().buffer().getId(),
+          curr.source_range.end().offset(), curr.name);
+      // Don't throw in production - continue processing
     }
   }
   // Range validation passed - no overlaps detected

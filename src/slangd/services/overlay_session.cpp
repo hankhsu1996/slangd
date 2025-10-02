@@ -37,11 +37,13 @@ auto OverlaySession::Create(
           *compilation, *source_manager, uri, logger));
 
   auto elapsed = timer.GetElapsed();
+  auto entry_count = semantic_index->GetSemanticEntries().size();
+  auto diag_count = diagnostic_index->GetDiagnostics().size();
+  logger->info("SEMANTIC_ENTRIES_COUNT: {}", entry_count);
+  logger->info("DIAGNOSTICS_COUNT: {}", diag_count);
   logger->debug(
       "Overlay session created with {} semantic entries, {} diagnostics ({})",
-      semantic_index->GetSemanticEntries().size(),
-      diagnostic_index->GetDiagnostics().size(),
-      utils::ScopedTimer::FormatDuration(elapsed));
+      entry_count, diag_count, utils::ScopedTimer::FormatDuration(elapsed));
 
   return std::shared_ptr<OverlaySession>(new OverlaySession(
       std::move(source_manager), std::move(compilation),

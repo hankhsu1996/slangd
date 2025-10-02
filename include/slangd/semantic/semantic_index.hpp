@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <optional>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -164,6 +165,12 @@ class SemanticIndex {
     std::reference_wrapper<SemanticIndex> index_;
     std::reference_wrapper<const slang::SourceManager> source_manager_;
     std::string current_file_uri_;
+
+    // Track which type syntax nodes we've already traversed
+    // Prevents duplicate traversal when multiple symbols share the same type
+    // syntax (e.g., `logic [WIDTH-1:0] var_a, var_b;` - both variables share
+    // same type)
+    std::unordered_set<const slang::syntax::SyntaxNode*> visited_type_syntaxes_;
 
     // Helper methods for adding semantic entries
     void AddEntry(SemanticEntry entry);
