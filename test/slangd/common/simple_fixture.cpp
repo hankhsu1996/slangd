@@ -145,12 +145,20 @@ void SimpleTestFixture::AssertGoToDefinition(
             symbol_name, reference_index));
   }
 
-  if (!actual_def_range->contains(expected_def_loc)) {
+  // Verify exact range: must start at expected location and span exactly the
+  // symbol name length
+  auto expected_start = expected_def_loc.offset();
+  auto expected_end = expected_start + symbol_name.length();
+  auto actual_start = actual_def_range->start().offset();
+  auto actual_end = actual_def_range->end().offset();
+
+  if (actual_start != expected_start || actual_end != expected_end) {
     throw std::runtime_error(
         fmt::format(
-            "AssertGoToDefinition: definition range does not contain expected "
-            "location for symbol '{}'",
-            symbol_name));
+            "AssertGoToDefinition: definition range mismatch for symbol '{}'. "
+            "Expected range [{}, {}), got [{}, {})",
+            symbol_name, expected_start, expected_end, actual_start,
+            actual_end));
   }
 }
 

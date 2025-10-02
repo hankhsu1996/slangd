@@ -39,8 +39,6 @@ auto OverlaySession::Create(
   auto elapsed = timer.GetElapsed();
   auto entry_count = semantic_index->GetSemanticEntries().size();
   auto diag_count = diagnostic_index->GetDiagnostics().size();
-  logger->info("SEMANTIC_ENTRIES_COUNT: {}", entry_count);
-  logger->info("DIAGNOSTICS_COUNT: {}", diag_count);
   logger->debug(
       "Overlay session created with {} semantic entries, {} diagnostics ({})",
       entry_count, diag_count, utils::ScopedTimer::FormatDuration(elapsed));

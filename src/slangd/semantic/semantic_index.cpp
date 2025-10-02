@@ -275,12 +275,15 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
               type_ref.getResolvedType().as_if<slang::ast::TypeAliasType>()) {
         if (typedef_target->location.valid()) {
           if (const auto* syntax = typedef_target->getSyntax()) {
-            auto usage_loc = type_ref.getUsageLocation();
-            auto definition_range = DefinitionExtractor::ExtractDefinitionRange(
-                *typedef_target, *syntax);
-            AddReference(
-                *typedef_target, typedef_target->name, usage_loc,
-                definition_range, typedef_target->getParentScope());
+            if (syntax->kind == slang::syntax::SyntaxKind::TypedefDeclaration) {
+              auto definition_range =
+                  syntax->as<slang::syntax::TypedefDeclarationSyntax>()
+                      .name.range();
+              AddReference(
+                  *typedef_target, typedef_target->name,
+                  type_ref.getUsageLocation(), definition_range,
+                  typedef_target->getParentScope());
+            }
           }
         }
       }
