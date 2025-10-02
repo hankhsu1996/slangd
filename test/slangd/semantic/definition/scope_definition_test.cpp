@@ -317,21 +317,27 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "SemanticIndex generate case condition expression indexed",
+    "SemanticIndex generate case condition and item expressions indexed",
     "[definition]") {
   SimpleTestFixture fixture;
   std::string code = R"(
     module gen_case_test;
-      parameter int MODE = 1;
+      parameter int MODE_A = 0;
+      parameter int MODE_B = 1;
+      parameter int MODE_C = 2;
+      parameter int SELECTOR = 1;
 
-      case (MODE)
-        0: begin : mode_0
-          logic signal_0;
+      case (SELECTOR)
+        MODE_A: begin : case_a
+          logic signal_a;
         end
-        1: begin : mode_1
-          logic signal_1;
+        MODE_B: begin : case_b
+          logic signal_b;
         end
-        default: begin : mode_default
+        MODE_C: begin : case_c
+          logic signal_c;
+        end
+        default: begin : case_default
           logic signal_default;
         end
       endcase
@@ -339,6 +345,17 @@ TEST_CASE(
   )";
 
   auto index = fixture.CompileSource(code);
-  // Test parameter in case condition is indexed
-  fixture.AssertGoToDefinition(*index, code, "MODE", 1, 0);
+  // Test case condition parameter is indexed
+  fixture.AssertGoToDefinition(*index, code, "SELECTOR", 1, 0);
+
+  // Test case item parameters are indexed (go-to-definition from case items)
+  fixture.AssertGoToDefinition(*index, code, "MODE_A", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "MODE_B", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "MODE_C", 1, 0);
+
+  // Test that symbols inside case branches are also indexed
+  fixture.AssertGoToDefinition(*index, code, "signal_a", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "signal_b", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "signal_c", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "signal_default", 0, 0);
 }

@@ -1017,6 +1017,14 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
 
+  // Visit case item expressions for case generate blocks
+  // For example: case (MODE) MODE_A: has a reference to MODE_A parameter
+  for (const auto* item_expr : generate_block.caseItemExpressions) {
+    if (item_expr != nullptr) {
+      item_expr->visit(*this);
+    }
+  }
+
   this->visitDefault(generate_block);
 }
 
