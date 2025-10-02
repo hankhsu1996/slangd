@@ -63,8 +63,8 @@ TEST_CASE(
       // Associative array dimension on variable (using type parameter)
       typedef bit [ASSOC_SIZE-1:0] assoc_key_t;
       int assoc_var[assoc_key_t];
-      
-      // Dynamic array dimension on variable  
+
+      // Dynamic array dimension on variable
       int dynamic_var[];
     endmodule
   )";
@@ -199,11 +199,7 @@ TEST_CASE(
   )";
 
   auto index = fixture.CompileSource(code);
-
-  // Test that clicking on the typedef reference goes to typedef definition
   fixture.AssertGoToDefinition(*index, code, "control_t", 1, 0);
-
-  // Test that clicking on the parameter reference goes to parameter definition
   fixture.AssertGoToDefinition(*index, code, "WIDTH", 1, 0);
 }
 
@@ -224,9 +220,7 @@ TEST_CASE(
   )";
 
   auto index = fixture.CompileSource(code);
-
   fixture.AssertGoToDefinition(*index, code, "packet_t", 1, 0);
-
   fixture.AssertGoToDefinition(*index, code, "packet_t", 2, 0);
 }
 
@@ -249,7 +243,6 @@ TEST_CASE(
   )";
 
   auto index = fixture.CompileSource(code);
-
   fixture.AssertGoToDefinition(*index, code, "data_t", 1, 0);
   fixture.AssertGoToDefinition(*index, code, "data_t", 2, 0);
   fixture.AssertGoToDefinition(*index, code, "data_t", 3, 0);
@@ -287,7 +280,52 @@ TEST_CASE(
   )";
 
   auto index = fixture.CompileSource(code);
-
-  // Test that clicking on NUM_ENTRIES in the shared type goes to parameter
   fixture.AssertGoToDefinition(*index, code, "NUM_ENTRIES", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex enum value in parameter initializer works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    typedef enum {
+      MODE_A,
+      MODE_B,
+      MODE_C
+    } mode_t;
+
+    module test #(
+      parameter mode_t DEFAULT_MODE = MODE_A
+    ) ();
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "MODE_A", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "MODE_A", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex parameter reference in ternary expression works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package config_pkg;
+      parameter int VAL_A = 4;
+      parameter int VAL_B = 8;
+    endpackage
+
+    module test
+      import config_pkg::*;
+    #(
+      parameter bit SELECT = 0,
+      localparam int RESULT = SELECT ? VAL_A : VAL_B
+    ) ();
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "VAL_A", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "VAL_B", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "VAL_A", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "VAL_B", 1, 0);
 }

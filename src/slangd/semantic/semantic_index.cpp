@@ -362,8 +362,79 @@ void SemanticIndex::IndexVisitor::handle(
 
   if (target_symbol->location.valid()) {
     if (const auto* syntax = target_symbol->getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(*target_symbol, *syntax);
+      using SK = slang::ast::SymbolKind;
+      using SyntaxKind = slang::syntax::SyntaxKind;
+
+      // Extract precise definition range based on symbol and syntax type
+      slang::SourceRange definition_range;
+      bool range_extracted = false;
+
+      switch (target_symbol->kind) {
+        case SK::Parameter:
+          // Parameter/localparam declarators
+          if (syntax->kind == SyntaxKind::Declarator) {
+            definition_range =
+                syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
+            range_extracted = true;
+          }
+          break;
+
+        case SK::EnumValue:
+          // Enum member declarators
+          if (syntax->kind == SyntaxKind::Declarator) {
+            definition_range =
+                syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
+            range_extracted = true;
+          }
+          break;
+
+        case SK::Subroutine:
+          // Function/task declarations
+          if (syntax->kind == SyntaxKind::TaskDeclaration ||
+              syntax->kind == SyntaxKind::FunctionDeclaration) {
+            const auto& func_syntax =
+                syntax->as<slang::syntax::FunctionDeclarationSyntax>();
+            if ((func_syntax.prototype != nullptr) &&
+                (func_syntax.prototype->name != nullptr)) {
+              definition_range = func_syntax.prototype->name->sourceRange();
+              range_extracted = true;
+            }
+          }
+          break;
+
+        case SK::StatementBlock:
+          // Named statement blocks (begin/end)
+          if (syntax->kind == SyntaxKind::SequentialBlockStatement ||
+              syntax->kind == SyntaxKind::ParallelBlockStatement) {
+            const auto& block_syntax =
+                syntax->as<slang::syntax::BlockStatementSyntax>();
+            if (block_syntax.blockName != nullptr) {
+              definition_range = block_syntax.blockName->name.range();
+              range_extracted = true;
+            }
+          }
+          break;
+
+        default:
+          // For other symbol kinds, use fallback
+          break;
+      }
+
+      // Fallback: use symbol location + name length
+      if (!range_extracted) {
+        if (target_symbol->location.valid()) {
+          definition_range = slang::SourceRange(
+              target_symbol->location,
+              target_symbol->location + target_symbol->name.length());
+        } else {
+          // Should never reach here - symbol with syntax but no valid location
+          spdlog::error(
+              "NamedValueExpression: Symbol '{}' (kind '{}') has syntax but "
+              "invalid location",
+              target_symbol->name, slang::ast::toString(target_symbol->kind));
+          definition_range = syntax->sourceRange();
+        }
+      }
 
       // Slang ARCHITECTURAL LIMITATION WORKAROUND:
       // For expressions like `data[i]`, Slang creates NamedValueExpression with

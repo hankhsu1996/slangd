@@ -91,6 +91,20 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       break;
 
+    case SK::EnumValue:
+      // Enum member declarators
+      if (syntax.kind == SyntaxKind::Declarator) {
+        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
+      }
+      break;
+
+    case SK::Parameter:
+      // Parameter/localparam declarators
+      if (syntax.kind == SyntaxKind::Declarator) {
+        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
+      }
+      break;
+
     default:
       // Unhandled symbol type - log warning and use fallback
       spdlog::warn(
