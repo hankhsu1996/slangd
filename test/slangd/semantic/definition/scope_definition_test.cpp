@@ -170,9 +170,26 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "j", 0, 0);
 }
 
-// NOTE: Genvar reference tests removed - genvar references in expressions
-// are not currently supported. See docs/SEMANTIC_INDEXING.md "Known
-// Limitations"
+TEST_CASE(
+    "SemanticIndex for-loop generate parameter references in loop expressions",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module loop_param_refs;
+      parameter int START = 0;
+      parameter int END = 4;
+      for (genvar i = START; i < END; i++) begin : gen_loop
+        logic data;
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "START", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "END", 1, 0);
+  // Note: genvar references in loop expressions resolve to temporary loop
+  // variable, not the genvar declaration. This is a Slang limitation.
+}
 
 TEST_CASE("SemanticIndex multiple generate constructs work", "[definition]") {
   SimpleTestFixture fixture;

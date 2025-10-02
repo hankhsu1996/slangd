@@ -946,6 +946,19 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
 
+  // Visit loop control expressions (initialization, condition, increment)
+  // For example: for (genvar i = INIT; i < NUM; i++) has references to INIT,
+  // NUM
+  if (generate_array.initialExpression != nullptr) {
+    generate_array.initialExpression->visit(*this);
+  }
+  if (generate_array.stopExpression != nullptr) {
+    generate_array.stopExpression->visit(*this);
+  }
+  if (generate_array.iterExpression != nullptr) {
+    generate_array.iterExpression->visit(*this);
+  }
+
   // Then process only the first entry to avoid duplicates
   // Generate for loops create multiple identical instances - we only need to
   // index the template
