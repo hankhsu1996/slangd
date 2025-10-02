@@ -172,6 +172,12 @@ class SemanticIndex {
     // same type)
     std::unordered_set<const slang::syntax::SyntaxNode*> visited_type_syntaxes_;
 
+    // Track visited generate condition expressions to avoid duplicates
+    // Multiple generate blocks (if/else branches, case branches) share the same
+    // condition expression pointer
+    std::unordered_set<const slang::ast::Expression*>
+        visited_generate_conditions_;
+
     // Helper methods for adding semantic entries
     void AddEntry(SemanticEntry entry);
 

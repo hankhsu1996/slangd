@@ -1007,8 +1007,14 @@ void SemanticIndex::IndexVisitor::handle(
 
   // Visit condition expression for if/case generate blocks
   // For example: if (ENABLE) has a reference to ENABLE parameter
+  // Multiple sibling blocks (if/else branches, case branches) share the same
+  // condition pointer, so we deduplicate to avoid visiting it multiple times
   if (generate_block.conditionExpression != nullptr) {
-    generate_block.conditionExpression->visit(*this);
+    auto [_, inserted] =
+        visited_generate_conditions_.insert(generate_block.conditionExpression);
+    if (inserted) {
+      generate_block.conditionExpression->visit(*this);
+    }
   }
 
   this->visitDefault(generate_block);
