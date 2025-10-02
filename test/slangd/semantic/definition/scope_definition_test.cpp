@@ -262,3 +262,56 @@ TEST_CASE("SemanticIndex nested generate blocks work", "[definition]") {
   // NOTE: Genvar reference tests not included
   // See docs/SEMANTIC_INDEXING.md "Known Limitations"
 }
+
+TEST_CASE(
+    "SemanticIndex generate if conditional parameter references",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module gen_if_param_test;
+      parameter int THRESHOLD = 2;
+      genvar i;
+      for (i = 0; i < 4; i++) begin : gen_loop
+        if (i >= THRESHOLD) begin
+          logic active;
+        end
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  // Test parameter reference in generate if condition
+  fixture.AssertGoToDefinition(*index, code, "THRESHOLD", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex generate if else condition expressions indexed",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module gen_if_else_test;
+      parameter bit ENABLE_A = 1;
+      parameter bit ENABLE_B = 0;
+
+      if (ENABLE_A) begin : mode_a
+        logic signal_a;
+      end
+      else if (ENABLE_B) begin : mode_b
+        logic signal_b;
+      end
+      else begin : mode_default
+        logic signal_default;
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  // Test parameters in if/else conditions are indexed
+  fixture.AssertGoToDefinition(*index, code, "ENABLE_A", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "ENABLE_B", 1, 0);
+
+  // Test that symbols in all branches are indexed (covered by visitDefault)
+  fixture.AssertGoToDefinition(*index, code, "signal_a", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "signal_b", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "signal_default", 0, 0);
+}

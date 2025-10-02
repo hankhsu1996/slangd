@@ -1004,6 +1004,13 @@ void SemanticIndex::IndexVisitor::handle(
       }
     }
   }
+
+  // Visit condition expression for if/case generate blocks
+  // For example: if (ENABLE) has a reference to ENABLE parameter
+  if (generate_block.conditionExpression != nullptr) {
+    generate_block.conditionExpression->visit(*this);
+  }
+
   this->visitDefault(generate_block);
 }
 
