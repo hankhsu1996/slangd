@@ -105,6 +105,14 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       break;
 
+    case SK::TypeAlias:
+      // Typedef declarations
+      if (syntax.kind == SyntaxKind::TypedefDeclaration) {
+        return syntax.as<slang::syntax::TypedefDeclarationSyntax>()
+            .name.range();
+      }
+      break;
+
     default:
       // Unhandled symbol type - log warning and use fallback
       spdlog::warn(
