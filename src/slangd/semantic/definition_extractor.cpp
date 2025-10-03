@@ -120,7 +120,9 @@ auto DefinitionExtractor::ExtractDefinitionRange(
           syntax.kind == SyntaxKind::ProgramDeclaration) {
         const auto& decl_syntax =
             syntax.as<slang::syntax::ModuleDeclarationSyntax>();
-        return decl_syntax.header->name.range();
+        if (decl_syntax.header != nullptr) {
+          return decl_syntax.header->name.range();
+        }
       }
       break;
 
