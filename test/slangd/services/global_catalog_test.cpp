@@ -11,6 +11,7 @@
 
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/utils/canonical_path.hpp"
+#include "test/slangd/common/async_fixture.hpp"
 
 constexpr auto kLogLevel = spdlog::level::debug;
 
@@ -18,7 +19,6 @@ auto main(int argc, char* argv[]) -> int {
   spdlog::set_level(kLogLevel);
   spdlog::set_pattern("[%l] %v");
 
-  // Suppress Bazel test sharding warnings
   setenv("TEST_SHARD_INDEX", "0", 0);
   setenv("TEST_TOTAL_SHARDS", "1", 0);
   setenv("TEST_SHARD_STATUS_FILE", "", 0);
@@ -26,37 +26,7 @@ auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
 }
 
-// Helper to run async test functions with coroutines
-template <typename F>
-void RunTest(F&& test_fn) {
-  asio::io_context io_context;
-  auto executor = io_context.get_executor();
-
-  bool completed = false;
-  std::exception_ptr exception;
-
-  asio::co_spawn(
-      io_context,
-      [fn = std::forward<F>(test_fn), &completed, &exception,
-       executor]() -> asio::awaitable<void> {
-        try {
-          co_await fn(executor);
-          completed = true;
-        } catch (...) {
-          exception = std::current_exception();
-          completed = true;
-        }
-      },
-      asio::detached);
-
-  io_context.run();
-
-  if (exception) {
-    std::rethrow_exception(exception);
-  }
-
-  REQUIRE(completed);
-}
+using slangd::test::RunAsyncTest;
 
 // Helper to create test files in temporary directory
 class GlobalCatalogTestFixture {
@@ -171,7 +141,7 @@ class GlobalCatalogTestFixture {
 };
 
 TEST_CASE("GlobalCatalog package discovery", "[global_catalog]") {
-  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     GlobalCatalogTestFixture fixture;
     fixture.CreateFile("math_pkg.sv", R"(
       package math_pkg;
@@ -192,7 +162,7 @@ TEST_CASE("GlobalCatalog package discovery", "[global_catalog]") {
 }
 
 TEST_CASE("GlobalCatalog interface discovery", "[global_catalog]") {
-  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     GlobalCatalogTestFixture fixture;
     fixture.CreateFile("test_interface.sv", R"(
       interface test_interface;
@@ -215,7 +185,7 @@ TEST_CASE("GlobalCatalog interface discovery", "[global_catalog]") {
 }
 
 TEST_CASE("GlobalCatalog mixed content discovery", "[global_catalog]") {
-  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     GlobalCatalogTestFixture fixture;
     fixture.CreateFile("types_pkg.sv", R"(
       package types_pkg;
@@ -253,7 +223,7 @@ TEST_CASE("GlobalCatalog mixed content discovery", "[global_catalog]") {
 }
 
 TEST_CASE("GlobalCatalog module discovery", "[global_catalog]") {
-  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     GlobalCatalogTestFixture fixture;
     fixture.CreateFile("alu_module.sv", R"(
       module ALU #(parameter WIDTH = 8) (
@@ -275,7 +245,7 @@ TEST_CASE("GlobalCatalog module discovery", "[global_catalog]") {
 }
 
 TEST_CASE("GlobalCatalog module parameter extraction", "[global_catalog]") {
-  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     GlobalCatalogTestFixture fixture;
     fixture.CreateFile("fifo_module.sv", R"(
       module FIFO #(
@@ -302,7 +272,7 @@ TEST_CASE("GlobalCatalog module parameter extraction", "[global_catalog]") {
 }
 
 TEST_CASE("GlobalCatalog module port extraction", "[global_catalog]") {
-  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     GlobalCatalogTestFixture fixture;
     fixture.CreateFile("register_module.sv", R"(
       module Register (
@@ -329,7 +299,7 @@ TEST_CASE("GlobalCatalog module port extraction", "[global_catalog]") {
 }
 
 TEST_CASE("GlobalCatalog GetModule lookup", "[global_catalog]") {
-  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     GlobalCatalogTestFixture fixture;
     fixture.CreateFile("counter.sv", R"(
       module Counter (

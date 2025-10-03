@@ -1,12 +1,15 @@
 #pragma once
 
 #include <algorithm>
+#include <fstream>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include <asio.hpp>
+#include <catch2/catch_all.hpp>
 #include <fmt/format.h>
 #include <slang/ast/Compilation.h>
 #include <slang/syntax/SyntaxTree.h>
@@ -15,7 +18,10 @@
 #include <slang/util/Bag.h>
 #include <spdlog/spdlog.h>
 
+#include "slangd/core/project_layout_service.hpp"
 #include "slangd/semantic/semantic_index.hpp"
+#include "slangd/services/global_catalog.hpp"
+#include "slangd/services/overlay_session.hpp"
 #include "test/slangd/common/file_fixture.hpp"
 
 namespace slangd::semantic::test {
@@ -371,6 +377,117 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
              entry.source_range.start().buffer().getId() !=
                  entry.definition_range.start().buffer().getId();
     });
+  }
+
+  // Build GlobalCatalog from temp directory files
+  // Requires files to be written via CreateFile() first
+  auto BuildCatalog(asio::any_io_executor executor) const
+      -> std::shared_ptr<slangd::services::GlobalCatalog> {
+    auto layout_service = slangd::ProjectLayoutService::Create(
+        executor, GetTempDir(), spdlog::default_logger());
+    return slangd::services::GlobalCatalog::CreateFromProjectLayout(
+        layout_service, spdlog::default_logger());
+  }
+
+  struct SessionWithCatalog {
+    std::shared_ptr<slangd::services::OverlaySession> session;
+    std::shared_ptr<slangd::services::GlobalCatalog> catalog;
+  };
+
+  // Build OverlaySession from disk files with GlobalCatalog
+  // Used for cross-file navigation tests
+  // Returns both session and catalog for test access
+  auto BuildSessionFromDiskWithCatalog(
+      std::string_view current_file_name, asio::any_io_executor executor)
+      -> SessionWithCatalog {
+    auto layout_service = slangd::ProjectLayoutService::Create(
+        executor, GetTempDir(), spdlog::default_logger());
+    auto catalog = slangd::services::GlobalCatalog::CreateFromProjectLayout(
+        layout_service, spdlog::default_logger());
+
+    // Read current file content from disk
+    auto current_path = GetTempDir().Path() / current_file_name;
+    std::ifstream file(current_path);
+    std::string content(
+        (std::istreambuf_iterator<char>(file)),
+        std::istreambuf_iterator<char>());
+
+    std::string uri = "file:///" + std::string(current_file_name);
+
+    // Create OverlaySession with catalog (handles all compilation setup)
+    auto session = slangd::services::OverlaySession::Create(
+        uri, content, layout_service, catalog);
+
+    return {.session = session, .catalog = catalog};
+  }
+
+  // Find location of text in session's SourceManager
+  static auto FindLocationInSession(
+      const slangd::services::OverlaySession& session,
+      std::string_view search_text) -> slang::SourceLocation {
+    const auto& source_mgr = session.GetSourceManager();
+
+    for (slang::BufferID buffer : source_mgr.getAllBuffers()) {
+      std::string_view buffer_content = source_mgr.getSourceText(buffer);
+      size_t offset = buffer_content.find(search_text);
+      if (offset != std::string_view::npos) {
+        return slang::SourceLocation{buffer, offset};
+      }
+    }
+
+    return {};
+  }
+
+  // High-level assertion helpers
+
+  void AssertCrossFileDefinition(
+      const SemanticIndex& index, const std::string& code,
+      const std::string& symbol) {
+    auto location = FindLocation(code, symbol);
+    REQUIRE(location.valid());
+
+    auto def_range = index.LookupDefinitionAt(location);
+    REQUIRE(def_range.has_value());
+    REQUIRE(def_range->start().buffer() != location.buffer());
+  }
+
+  static void AssertCrossFileDefinitionAsync(
+      const SessionWithCatalog& result, std::string_view symbol,
+      std::string_view expected_source_file,
+      std::string_view expected_def_file) {
+    auto location = FindLocationInSession(*result.session, symbol);
+    REQUIRE(location.valid());
+
+    auto def_range =
+        result.session->GetSemanticIndex().LookupDefinitionAt(location);
+    REQUIRE(def_range.has_value());
+
+    auto location_file =
+        result.session->GetSourceManager().getFileName(location);
+    auto def_file =
+        result.catalog->GetSourceManager().getFileName(def_range->start());
+
+    REQUIRE(location_file.find(expected_source_file) != std::string_view::npos);
+    REQUIRE(def_file.find(expected_def_file) != std::string_view::npos);
+  }
+
+  void AssertSameFileDefinition(
+      const SemanticIndex& index, const std::string& code,
+      const std::string& symbol) {
+    auto location = FindLocation(code, symbol);
+    REQUIRE(location.valid());
+
+    auto def_range = index.LookupDefinitionAt(location);
+    REQUIRE(def_range.has_value());
+  }
+
+  void AssertDefinitionNotCrash(
+      const SemanticIndex& index, const std::string& code,
+      const std::string& symbol) {
+    auto location = FindLocation(code, symbol);
+    REQUIRE(location.valid());
+
+    index.LookupDefinitionAt(location);
   }
 };
 

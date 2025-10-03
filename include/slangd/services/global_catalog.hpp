@@ -89,6 +89,9 @@ class GlobalCatalog {
       -> const std::vector<CanonicalPath>&;
   [[nodiscard]] auto GetDefines() const -> const std::vector<std::string>&;
 
+  // SourceManager accessor for resolving cross-file buffer IDs
+  [[nodiscard]] auto GetSourceManager() const -> const slang::SourceManager&;
+
   // Version tracking for cache invalidation
   [[nodiscard]] auto GetVersion() const -> uint64_t;
 

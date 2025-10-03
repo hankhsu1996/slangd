@@ -162,6 +162,7 @@ class SemanticIndex {
     void handle(const slang::ast::GenvarSymbol& genvar);
     void handle(const slang::ast::PackageSymbol& package);
     void handle(const slang::ast::StatementBlockSymbol& statement_block);
+    void handle(const slang::ast::UninstantiatedDefSymbol& symbol);
 
     template <typename T>
     void handle(const T& node) {

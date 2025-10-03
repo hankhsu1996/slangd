@@ -24,6 +24,7 @@
 #include "slangd/semantic/definition_extractor.hpp"
 #include "slangd/semantic/document_symbol_builder.hpp"
 #include "slangd/semantic/symbol_utils.hpp"
+#include "slangd/services/global_catalog.hpp"
 #include "slangd/utils/conversion.hpp"
 
 namespace slangd::semantic {
@@ -1078,6 +1079,46 @@ void SemanticIndex::IndexVisitor::handle(
         statement_block.getParentScope());
   }
   this->visitDefault(statement_block);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::UninstantiatedDefSymbol& symbol) {
+  if (catalog_ == nullptr) {
+    this->visitDefault(symbol);
+    return;
+  }
+
+  const auto* syntax = symbol.getSyntax();
+  if (syntax == nullptr) {
+    this->visitDefault(symbol);
+    return;
+  }
+
+  const auto* module_info = catalog_->GetModule(symbol.definitionName);
+  if (module_info == nullptr) {
+    this->visitDefault(symbol);
+    return;
+  }
+
+  // The syntax is HierarchicalInstanceSyntax, whose parent is
+  // HierarchyInstantiationSyntax We need to get the parent to access the type
+  // name range
+  if (syntax->kind == slang::syntax::SyntaxKind::HierarchicalInstance) {
+    const auto* parent_syntax = syntax->parent;
+    if (parent_syntax != nullptr &&
+        parent_syntax->kind ==
+            slang::syntax::SyntaxKind::HierarchyInstantiation) {
+      const auto& inst_syntax =
+          parent_syntax->as<slang::syntax::HierarchyInstantiationSyntax>();
+      auto type_range = inst_syntax.type.range();
+
+      AddReference(
+          symbol, symbol.definitionName, type_range,
+          module_info->definition_range, symbol.getParentScope());
+    }
+  }
+
+  this->visitDefault(symbol);
 }
 
 // Go-to-definition implementation

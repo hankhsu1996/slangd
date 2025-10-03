@@ -271,6 +271,10 @@ auto GlobalCatalog::GetDefines() const -> const std::vector<std::string>& {
   return defines_;
 }
 
+auto GlobalCatalog::GetSourceManager() const -> const slang::SourceManager& {
+  return *source_manager_;
+}
+
 auto GlobalCatalog::GetVersion() const -> uint64_t {
   return version_;
 }

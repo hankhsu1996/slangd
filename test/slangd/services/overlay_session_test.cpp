@@ -9,6 +9,7 @@
 
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/utils/canonical_path.hpp"
+#include "test/slangd/common/async_fixture.hpp"
 
 constexpr auto kLogLevel = spdlog::level::debug;
 
@@ -16,7 +17,6 @@ auto main(int argc, char* argv[]) -> int {
   spdlog::set_level(kLogLevel);
   spdlog::set_pattern("[%l] %v");
 
-  // Suppress Bazel test sharding warnings
   setenv("TEST_SHARD_INDEX", "0", 0);
   setenv("TEST_TOTAL_SHARDS", "1", 0);
   setenv("TEST_SHARD_STATUS_FILE", "", 0);
@@ -24,41 +24,11 @@ auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
 }
 
-// Helper to run async test functions with coroutines
-template <typename F>
-void RunTest(F&& test_fn) {
-  asio::io_context io_context;
-  auto executor = io_context.get_executor();
-
-  bool completed = false;
-  std::exception_ptr exception;
-
-  asio::co_spawn(
-      io_context,
-      [fn = std::forward<F>(test_fn), &completed, &exception,
-       executor]() -> asio::awaitable<void> {
-        try {
-          co_await fn(executor);
-          completed = true;
-        } catch (...) {
-          exception = std::current_exception();
-          completed = true;
-        }
-      },
-      asio::detached);
-
-  io_context.run();
-
-  if (exception) {
-    std::rethrow_exception(exception);
-  }
-
-  REQUIRE(completed);
-}
+using slangd::test::RunAsyncTest;
 
 TEST_CASE(
     "OverlaySession can be created with simple module", "[overlay_session]") {
-  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     // Setup test workspace
     auto workspace_root = slangd::CanonicalPath::CurrentPath();
     auto layout_service = slangd::ProjectLayoutService::Create(
@@ -90,7 +60,7 @@ TEST_CASE(
 }
 
 TEST_CASE("OverlaySession works without GlobalCatalog", "[overlay_session]") {
-  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     auto workspace_root = slangd::CanonicalPath::CurrentPath();
     auto layout_service = slangd::ProjectLayoutService::Create(
         executor, workspace_root, spdlog::default_logger());
@@ -121,7 +91,7 @@ TEST_CASE("OverlaySession works without GlobalCatalog", "[overlay_session]") {
 
 TEST_CASE(
     "OverlaySession handles syntax errors gracefully", "[overlay_session]") {
-  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     auto workspace_root = slangd::CanonicalPath::CurrentPath();
     auto layout_service = slangd::ProjectLayoutService::Create(
         executor, workspace_root, spdlog::default_logger());
@@ -151,7 +121,7 @@ TEST_CASE(
 TEST_CASE(
     "OverlaySession suppresses unknown module diagnostics",
     "[overlay_session]") {
-  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     auto workspace_root = slangd::CanonicalPath::CurrentPath();
     auto layout_service = slangd::ProjectLayoutService::Create(
         executor, workspace_root, spdlog::default_logger());
