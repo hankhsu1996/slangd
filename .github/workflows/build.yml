@@ -39,14 +39,14 @@ jobs:
           disk-cache: ${{ github.workflow }}
           repository-cache: true
 
-      - name: Install Clang 19
+      - name: Install Clang 20
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-19
-          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-19 100
-          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-19 100
-          sudo update-alternatives --set clang++ /usr/bin/clang++-19
-          sudo update-alternatives --set clang /usr/bin/clang-19
+          sudo apt-get install -y clang-20 libc++-20-dev libc++abi-20-dev
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-20 100
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-20 100
+          sudo update-alternatives --set clang++ /usr/bin/clang++-20
+          sudo update-alternatives --set clang /usr/bin/clang-20
 
       - name: Verify Clang version
         run: |

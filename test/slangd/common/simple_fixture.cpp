@@ -7,6 +7,7 @@
 
 #include <fmt/format.h>
 #include <slang/ast/Compilation.h>
+#include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/text/SourceManager.h>
 #include <slang/util/Bag.h>
@@ -37,11 +38,21 @@ auto SimpleTestFixture::CompileSource(const std::string& code)
 
   // Check for compilation errors that would make AST invalid
   auto diagnostics = compilation_->getAllDiagnostics();
+  std::string error_messages;
+  slang::DiagnosticEngine diag_engine(*source_manager_);
   for (const auto& diag : diagnostics) {
     if (diag.isError()) {
-      throw std::runtime_error(
-          fmt::format("CompileSource: Compilation failed with error"));
+      if (!error_messages.empty()) {
+        error_messages += "\n";
+      }
+      error_messages += diag_engine.formatMessage(diag);
     }
+  }
+  if (!error_messages.empty()) {
+    throw std::runtime_error(
+        fmt::format(
+            "CompileSource: Compilation failed with errors:\n{}",
+            error_messages));
   }
 
   auto index = semantic::SemanticIndex::FromCompilation(
