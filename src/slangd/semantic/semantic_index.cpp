@@ -191,6 +191,8 @@ auto SemanticEntry::Make(
       .parent = parent_scope,
       .is_definition = is_definition,
       .definition_range = definition_range,
+      .cross_file_path = std::nullopt,
+      .cross_file_range = std::nullopt,
       .buffer_id = unwrapped.location.buffer()};
 }
 
@@ -217,6 +219,25 @@ void SemanticIndex::IndexVisitor::AddReference(
   AddEntry(
       SemanticEntry::Make(
           symbol, name, source_range, false, definition_range, parent_scope));
+}
+
+void SemanticIndex::IndexVisitor::AddCrossFileReference(
+    const slang::ast::Symbol& symbol, std::string_view name,
+    slang::SourceRange source_range, slang::SourceRange definition_range,
+    const slang::SourceManager& catalog_source_manager,
+    const slang::ast::Scope* parent_scope) {
+  // Create base entry
+  auto entry = SemanticEntry::Make(
+      symbol, name, source_range, false, definition_range, parent_scope);
+
+  // Convert definition_range to compilation-independent format using catalog's
+  // source manager
+  auto file_name = catalog_source_manager.getFileName(definition_range.start());
+  entry.cross_file_path = CanonicalPath(std::filesystem::path(file_name));
+  entry.cross_file_range =
+      ConvertSlangRangeToLspRange(definition_range, catalog_source_manager);
+
+  AddEntry(std::move(entry));
 }
 
 // IndexVisitor implementation
@@ -1112,9 +1133,13 @@ void SemanticIndex::IndexVisitor::handle(
           parent_syntax->as<slang::syntax::HierarchyInstantiationSyntax>();
       auto type_range = inst_syntax.type.range();
 
-      AddReference(
+      // Module definitions are in GlobalCatalog's compilation, not
+      // OverlaySession Use AddCrossFileReference to store
+      // compilation-independent location
+      const auto& catalog_sm = catalog_->GetSourceManager();
+      AddCrossFileReference(
           symbol, symbol.definitionName, type_range,
-          module_info->definition_range, symbol.getParentScope());
+          module_info->definition_range, catalog_sm, symbol.getParentScope());
     }
   }
 
@@ -1123,7 +1148,7 @@ void SemanticIndex::IndexVisitor::handle(
 
 // Go-to-definition implementation
 auto SemanticIndex::LookupDefinitionAt(slang::SourceLocation loc) const
-    -> std::optional<slang::SourceRange> {
+    -> std::optional<DefinitionLocation> {
   // Binary search in sorted entries by (buffer_id, offset)
   const auto target = std::pair{loc.buffer().getId(), loc.offset()};
 
@@ -1143,7 +1168,17 @@ auto SemanticIndex::LookupDefinitionAt(slang::SourceLocation loc) const
     --it;
     // Check if the candidate entry actually contains the target location
     if (it->source_range.contains(loc)) {
-      return it->definition_range;
+      DefinitionLocation def_loc;
+
+      // Check if this is a cross-file reference (has cross_file_path set)
+      if (it->cross_file_path.has_value()) {
+        def_loc.cross_file_path = it->cross_file_path;
+        def_loc.cross_file_range = it->cross_file_range;
+      } else {
+        def_loc.same_file_range = it->definition_range;
+      }
+
+      return def_loc;
     }
   }
 

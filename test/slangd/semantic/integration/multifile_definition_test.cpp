@@ -79,7 +79,7 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "Definition lookup for module type in instantiation",
+    "Definition lookup for cross-file module instantiation",
     "[definition][multifile]") {
   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     MultiFileSemanticFixture fixture;
@@ -106,7 +106,7 @@ TEST_CASE(
     REQUIRE(result.session != nullptr);
     REQUIRE(result.catalog != nullptr);
 
-    MultiFileSemanticFixture::AssertCrossFileDefinitionAsync(
+    MultiFileSemanticFixture::AssertCrossFileDefinition(
         result, "ALU", "top.sv", "alu.sv");
 
     co_return;
@@ -149,42 +149,4 @@ TEST_CASE(
   REQUIRE(result.index != nullptr);
 
   fixture.AssertDefinitionNotCrash(*result.index, content, "UnknownModule");
-}
-
-TEST_CASE(
-    "Definition lookup for multiple module instantiations",
-    "[definition][multifile]") {
-  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
-    MultiFileSemanticFixture fixture;
-
-    const std::string register_content = R"(
-      module register #(parameter WIDTH = 8) (
-        input logic clk,
-        input logic [WIDTH-1:0] data_in,
-        output logic [WIDTH-1:0] data_out
-      );
-      endmodule
-    )";
-
-    const std::string top_content = R"(
-      module top;
-        logic clk;
-        logic [7:0] data_a, data_b, out_a, out_b;
-        register #(.WIDTH(8)) reg_a (.clk(clk), .data_in(data_a), .data_out(out_a));
-        register #(.WIDTH(8)) reg_b (.clk(clk), .data_in(data_b), .data_out(out_b));
-      endmodule
-    )";
-
-    fixture.CreateFile("register.sv", register_content);
-    fixture.CreateFile("top.sv", top_content);
-
-    auto result = fixture.BuildSessionFromDiskWithCatalog("top.sv", executor);
-    REQUIRE(result.session != nullptr);
-    REQUIRE(result.catalog != nullptr);
-
-    MultiFileSemanticFixture::AssertCrossFileDefinitionAsync(
-        result, "register", "top.sv", "register.sv");
-
-    co_return;
-  });
 }

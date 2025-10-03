@@ -79,7 +79,12 @@ auto SimpleTestFixture::FindSymbol(
 auto SimpleTestFixture::GetDefinitionRange(
     semantic::SemanticIndex& index, slang::SourceLocation loc)
     -> std::optional<slang::SourceRange> {
-  return index.LookupDefinitionAt(loc);
+  auto def_loc = index.LookupDefinitionAt(loc);
+  if (!def_loc) {
+    return std::nullopt;
+  }
+  // Return same_file_range for SimpleTestFixture (no cross-file)
+  return def_loc->same_file_range;
 }
 
 auto SimpleTestFixture::FindAllOccurrences(
@@ -150,8 +155,18 @@ void SimpleTestFixture::AssertGoToDefinition(
   // symbol name length
   auto expected_start = expected_def_loc.offset();
   auto expected_end = expected_start + symbol_name.length();
-  auto actual_start = actual_def_range->start().offset();
-  auto actual_end = actual_def_range->end().offset();
+
+  // Extract range from DefinitionLocation (should be same_file_range for
+  // SimpleTestFixture)
+  if (!actual_def_range->same_file_range.has_value()) {
+    throw std::runtime_error(
+        fmt::format(
+            "AssertGoToDefinition: Expected same_file_range for symbol '{}', "
+            "got cross_file instead",
+            symbol_name));
+  }
+  auto actual_start = actual_def_range->same_file_range->start().offset();
+  auto actual_end = actual_def_range->same_file_range->end().offset();
 
   if (actual_start != expected_start || actual_end != expected_end) {
     throw std::runtime_error(

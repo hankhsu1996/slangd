@@ -13,6 +13,8 @@
 #include <slang/text/SourceLocation.h>
 #include <slang/text/SourceManager.h>
 
+#include "slangd/utils/canonical_path.hpp"
+
 namespace slangd::services {
 class GlobalCatalog;
 }
@@ -52,6 +54,10 @@ struct SemanticEntry {
   bool is_definition;                   // true = self-ref, false = cross-ref
   slang::SourceRange definition_range;  // Target definition location
 
+  // Cross-file definitions (from GlobalCatalog, compilation-independent)
+  std::optional<CanonicalPath> cross_file_path;
+  std::optional<lsp::Range> cross_file_range;
+
   // Metadata
   slang::BufferID buffer_id;  // For file filtering
 
@@ -61,6 +67,16 @@ struct SemanticEntry {
       slang::SourceRange source_range, bool is_definition,
       slang::SourceRange definition_range,
       const slang::ast::Scope* parent_scope) -> SemanticEntry;
+};
+
+// Result of definition lookup - can be either same-file or cross-file
+struct DefinitionLocation {
+  // For same-file definitions (buffer exists in current compilation)
+  std::optional<slang::SourceRange> same_file_range;
+
+  // For cross-file definitions (from GlobalCatalog, compilation-independent)
+  std::optional<CanonicalPath> cross_file_path;
+  std::optional<lsp::Range> cross_file_range;
 };
 
 }  // namespace slangd::semantic
@@ -92,22 +108,23 @@ class SemanticIndex {
 
   // Query methods
 
-  auto GetSourceManager() const -> const slang::SourceManager& {
+  [[nodiscard]] auto GetSourceManager() const -> const slang::SourceManager& {
     return source_manager_.get();
   }
 
   // SymbolIndex-compatible API
-  auto GetDocumentSymbols(const std::string& uri) const
+  [[nodiscard]] auto GetDocumentSymbols(const std::string& uri) const
       -> std::vector<lsp::DocumentSymbol>;
 
   // Unified semantic entries access
-  auto GetSemanticEntries() const -> const std::vector<SemanticEntry>& {
+  [[nodiscard]] auto GetSemanticEntries() const
+      -> const std::vector<SemanticEntry>& {
     return semantic_entries_;
   }
 
-  // Find definition range for the symbol at the given location
-  auto LookupDefinitionAt(slang::SourceLocation loc) const
-      -> std::optional<slang::SourceRange>;
+  // Find definition location for the symbol at the given location
+  [[nodiscard]] auto LookupDefinitionAt(slang::SourceLocation loc) const
+      -> std::optional<DefinitionLocation>;
 
   // Validation method to check for overlapping ranges
   void ValidateNoRangeOverlaps() const;
@@ -197,6 +214,12 @@ class SemanticIndex {
     void AddReference(
         const slang::ast::Symbol& symbol, std::string_view name,
         slang::SourceRange source_range, slang::SourceRange definition_range,
+        const slang::ast::Scope* parent_scope);
+
+    void AddCrossFileReference(
+        const slang::ast::Symbol& symbol, std::string_view name,
+        slang::SourceRange source_range, slang::SourceRange definition_range,
+        const slang::SourceManager& catalog_source_manager,
         const slang::ast::Scope* parent_scope);
 
     // Unified type traversal - handles all type structure recursively

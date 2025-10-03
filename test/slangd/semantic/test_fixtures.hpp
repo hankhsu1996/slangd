@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <fstream>
 #include <memory>
+#include <regex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -112,6 +113,42 @@ class SemanticTestFixture {
       return {};
     }
     return slang::SourceLocation{buffer_id_, offset};
+  }
+
+  static auto FindSymbolOffsetsInText(
+      const std::string& text, std::string_view symbol_name)
+      -> std::vector<size_t> {
+    std::vector<size_t> offsets;
+    std::string pattern = R"(\b)" + std::string(symbol_name) + R"(\b)";
+    std::regex symbol_regex(pattern);
+
+    auto begin = std::sregex_iterator(text.begin(), text.end(), symbol_regex);
+    auto end = std::sregex_iterator();
+
+    for (auto it = begin; it != end; ++it) {
+      offsets.push_back(static_cast<size_t>(it->position()));
+    }
+
+    return offsets;
+  }
+
+  auto FindAllOccurrences(
+      const std::string& code, const std::string& symbol_name)
+      -> std::vector<slang::SourceLocation> {
+    auto offsets = FindSymbolOffsetsInText(code, symbol_name);
+
+    if (offsets.empty()) {
+      throw std::runtime_error(
+          fmt::format(
+              "FindAllOccurrences: No occurrences of '{}' found", symbol_name));
+    }
+
+    std::vector<slang::SourceLocation> occurrences;
+    for (size_t offset : offsets) {
+      occurrences.emplace_back(buffer_id_, offset);
+    }
+
+    return occurrences;
   }
 
   // Public accessors for derived classes and tests
@@ -421,21 +458,37 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
     return {.session = session, .catalog = catalog};
   }
 
-  // Find location of text in session's SourceManager
-  static auto FindLocationInSession(
+  static auto FindAllOccurrencesInSession(
       const slangd::services::OverlaySession& session,
-      std::string_view search_text) -> slang::SourceLocation {
+      std::string_view symbol_name) -> std::vector<slang::SourceLocation> {
     const auto& source_mgr = session.GetSourceManager();
+    std::vector<slang::SourceLocation> occurrences;
 
     for (slang::BufferID buffer : source_mgr.getAllBuffers()) {
       std::string_view buffer_content = source_mgr.getSourceText(buffer);
-      size_t offset = buffer_content.find(search_text);
-      if (offset != std::string_view::npos) {
-        return slang::SourceLocation{buffer, offset};
+      std::string buffer_str(buffer_content);
+
+      auto offsets = FindSymbolOffsetsInText(buffer_str, symbol_name);
+
+      for (size_t offset : offsets) {
+        occurrences.emplace_back(buffer, offset);
       }
     }
 
-    return {};
+    return occurrences;
+  }
+
+  static auto FindLocationInSession(
+      const slangd::services::OverlaySession& session,
+      std::string_view symbol_name, size_t occurrence_index = 0)
+      -> slang::SourceLocation {
+    auto occurrences = FindAllOccurrencesInSession(session, symbol_name);
+
+    if (occurrence_index >= occurrences.size()) {
+      return {};
+    }
+
+    return occurrences[occurrence_index];
   }
 
   // High-level assertion helpers
@@ -446,39 +499,77 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
     auto location = FindLocation(code, symbol);
     REQUIRE(location.valid());
 
-    auto def_range = index.LookupDefinitionAt(location);
-    REQUIRE(def_range.has_value());
-    REQUIRE(def_range->start().buffer() != location.buffer());
+    auto def_loc = index.LookupDefinitionAt(location);
+    REQUIRE(def_loc.has_value());
+
+    // For package imports, they're in overlay so should be same_file_range
+    // For modules, they should be cross_file_path
+    bool is_cross_file =
+        def_loc->cross_file_path.has_value() ||
+        (def_loc->same_file_range.has_value() &&
+         def_loc->same_file_range->start().buffer() != location.buffer());
+    REQUIRE(is_cross_file);
   }
 
-  static void AssertCrossFileDefinitionAsync(
+  static void AssertCrossFileDefinition(
       const SessionWithCatalog& result, std::string_view symbol,
       std::string_view expected_source_file,
       std::string_view expected_def_file) {
     auto location = FindLocationInSession(*result.session, symbol);
     REQUIRE(location.valid());
 
-    auto def_range =
+    auto def_loc =
         result.session->GetSemanticIndex().LookupDefinitionAt(location);
-    REQUIRE(def_range.has_value());
+    REQUIRE(def_loc.has_value());
 
     auto location_file =
         result.session->GetSourceManager().getFileName(location);
-    auto def_file =
-        result.catalog->GetSourceManager().getFileName(def_range->start());
-
     REQUIRE(location_file.find(expected_source_file) != std::string_view::npos);
+
+    REQUIRE(def_loc->cross_file_path.has_value());
+    REQUIRE(def_loc->cross_file_range.has_value());
+
+    auto def_file = def_loc->cross_file_path->String();
     REQUIRE(def_file.find(expected_def_file) != std::string_view::npos);
+
+    REQUIRE(def_loc->cross_file_range->start.line >= 0);
+    REQUIRE(def_loc->cross_file_range->start.character >= 0);
+    REQUIRE(def_loc->cross_file_range->end.line >= 0);
+    REQUIRE(def_loc->cross_file_range->end.character >= 0);
+
+    auto range_length = def_loc->cross_file_range->end.character -
+                        def_loc->cross_file_range->start.character;
+    REQUIRE(range_length == static_cast<int>(symbol.length()));
   }
 
   void AssertSameFileDefinition(
       const SemanticIndex& index, const std::string& code,
-      const std::string& symbol) {
-    auto location = FindLocation(code, symbol);
+      const std::string& symbol, size_t reference_index = 0) {
+    auto occurrences = FindAllOccurrences(code, symbol);
+
+    if (reference_index >= occurrences.size()) {
+      throw std::runtime_error(
+          fmt::format(
+              "AssertSameFileDefinition: reference_index {} out of range for "
+              "symbol '{}' (found {} occurrences)",
+              reference_index, symbol, occurrences.size()));
+    }
+
+    auto location = occurrences[reference_index];
     REQUIRE(location.valid());
 
-    auto def_range = index.LookupDefinitionAt(location);
-    REQUIRE(def_range.has_value());
+    auto def_loc = index.LookupDefinitionAt(location);
+    REQUIRE(def_loc.has_value());
+
+    REQUIRE(!def_loc->cross_file_path.has_value());
+    REQUIRE(def_loc->same_file_range.has_value());
+
+    auto actual_start = def_loc->same_file_range->start().offset();
+    auto actual_end = def_loc->same_file_range->end().offset();
+    auto expected_def_offset = occurrences[0].offset();
+
+    REQUIRE(actual_start == expected_def_offset);
+    REQUIRE(actual_end - actual_start == symbol.length());
   }
 
   void AssertDefinitionNotCrash(
@@ -487,7 +578,8 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
     auto location = FindLocation(code, symbol);
     REQUIRE(location.valid());
 
-    index.LookupDefinitionAt(location);
+    // Just check it doesn't crash - ignore return value
+    (void)index.LookupDefinitionAt(location);
   }
 };
 
