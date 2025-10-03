@@ -14,8 +14,8 @@ This fundamental difference requires a completely different approach to type han
 
 **Solution**: TypeReferenceSymbol wrapper that:
 
-- Wraps ONLY the typedef symbol (not composite types like arrays)
-- Preserves exact source location of typedef usage
+- Wraps typedefs (TypeAlias), class types (ClassType), and generic class definitions (GenericClassDef)
+- Preserves exact source location of type usage
 - Delegates all type system queries to the wrapped type
 - Integrates seamlessly with existing Slang type resolution
 
@@ -43,7 +43,7 @@ LSP LanguageServerMode has enhanced validation that can invalidate statements wh
 
 When adding TypeReferenceSymbol integration:
 
-1. **Creation Point**: `Type::fromLookupResult()` creates TypeReferenceSymbol for typedef usages
+1. **Creation Point**: `Type::fromLookupResult()` wraps TypeAlias, ClassType, and GenericClassDef in TypeReferenceSymbol
 2. **Method Delegation**: Add TypeReference cases to ALL Type class methods (isIntegral, isNumeric, etc.)
 3. **Canonical Resolution**: Ensure `resolveCanonical()` unwraps TypeReference in typedef chains
 4. **LSP Handlers**: Add IndexVisitor handlers for new expression types containing typedef references

@@ -10,6 +10,7 @@
 #include <slang/ast/expressions/MiscExpressions.h>
 #include <slang/ast/expressions/SelectExpressions.h>
 #include <slang/ast/symbols/BlockSymbols.h>
+#include <slang/ast/symbols/ClassSymbols.h>
 #include <slang/ast/symbols/CompilationUnitSymbols.h>
 #include <slang/ast/symbols/InstanceSymbols.h>
 #include <slang/ast/symbols/MemberSymbols.h>
@@ -295,8 +296,10 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
     }
     case slang::ast::SymbolKind::TypeReference: {
       const auto& type_ref = type.as<slang::ast::TypeReferenceSymbol>();
+      const auto& resolved_type = type_ref.getResolvedType();
+
       if (const auto* typedef_target =
-              type_ref.getResolvedType().as_if<slang::ast::TypeAliasType>()) {
+              resolved_type.as_if<slang::ast::TypeAliasType>()) {
         if (typedef_target->location.valid()) {
           if (const auto* syntax = typedef_target->getSyntax()) {
             if (syntax->kind == slang::syntax::SyntaxKind::TypedefDeclaration) {
@@ -307,6 +310,22 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
                   *typedef_target, typedef_target->name,
                   type_ref.getUsageLocation(), definition_range,
                   typedef_target->getParentScope());
+            }
+          }
+        }
+      } else if (
+          const auto* class_target =
+              resolved_type.as_if<slang::ast::ClassType>()) {
+        if (class_target->location.valid()) {
+          if (const auto* syntax = class_target->getSyntax()) {
+            if (syntax->kind == slang::syntax::SyntaxKind::ClassDeclaration) {
+              auto definition_range =
+                  syntax->as<slang::syntax::ClassDeclarationSyntax>()
+                      .name.range();
+              AddReference(
+                  *class_target, class_target->name,
+                  type_ref.getUsageLocation(), definition_range,
+                  class_target->getParentScope());
             }
           }
         }
@@ -348,6 +367,11 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
       for (const auto& field : union_type.fields) {
         this->visit(*field);
       }
+      break;
+    }
+    case slang::ast::SymbolKind::ClassType: {
+      // ClassType references are handled via TypeReference wrapping
+      // For now, we just skip traversal to avoid duplicate indexing
       break;
     }
     default:
@@ -528,6 +552,13 @@ void SemanticIndex::IndexVisitor::handle(
     return std::nullopt;
   };
 
+  // Helper to index class specialization (e.g., Class#(.PARAM(value)))
+  auto index_scoped_names = [&](const slang::syntax::NameSyntax* name) -> void {
+    // TODO: Traverse scoped names to index ClassName and parameter references
+    // For now, this is a placeholder for future implementation
+    (void)name;
+  };
+
   auto extract_call_range = [&]() -> std::optional<slang::SourceRange> {
     if (expr.syntax == nullptr) {
       return std::nullopt;
@@ -536,6 +567,19 @@ void SemanticIndex::IndexVisitor::handle(
     if (expr.syntax->kind == slang::syntax::SyntaxKind::InvocationExpression) {
       const auto& invocation =
           expr.syntax->as<slang::syntax::InvocationExpressionSyntax>();
+
+      // For ScopedName (e.g., pkg::Class#(...)::func), extract the rightmost
+      // name to get precise function name range, not the entire scope chain
+      if (invocation.left->kind == slang::syntax::SyntaxKind::ScopedName) {
+        const auto& scoped =
+            invocation.left->as<slang::syntax::ScopedNameSyntax>();
+
+        // Index any class specializations in the scoped chain
+        index_scoped_names(&scoped);
+
+        return scoped.right->sourceRange();
+      }
+
       return invocation.left->sourceRange();
     }
 
@@ -876,6 +920,38 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::NetSymbol& net) {
 
   TraverseType(net.getType());
   this->visitDefault(net);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::GenericClassDefSymbol& class_def) {
+  if (class_def.location.valid()) {
+    if (const auto* syntax = class_def.getSyntax()) {
+      if (syntax->kind == slang::syntax::SyntaxKind::ClassDeclaration) {
+        auto definition_range =
+            syntax->as<slang::syntax::ClassDeclarationSyntax>().name.range();
+        AddDefinition(
+            class_def, class_def.name, definition_range,
+            class_def.getParentScope());
+      }
+    }
+  }
+  this->visitDefault(class_def);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::ClassType& class_type) {
+  if (class_type.location.valid()) {
+    if (const auto* syntax = class_type.getSyntax()) {
+      if (syntax->kind == slang::syntax::SyntaxKind::ClassDeclaration) {
+        auto definition_range =
+            syntax->as<slang::syntax::ClassDeclarationSyntax>().name.range();
+        AddDefinition(
+            class_type, class_type.name, definition_range,
+            class_type.getParentScope());
+      }
+    }
+  }
+  this->visitDefault(class_type);
 }
 
 void SemanticIndex::IndexVisitor::handle(

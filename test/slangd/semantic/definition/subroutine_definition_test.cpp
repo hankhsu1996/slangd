@@ -208,3 +208,32 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "add_one", 2, 0);
   fixture.AssertGoToDefinition(*index, code, "increment_task", 2, 0);
 }
+
+TEST_CASE("SemanticIndex class static function call works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package counter_pkg;
+      virtual class CounterOps #(parameter int MAX_VAL = 10);
+        static function int saturate_add(int val);
+          return (val < MAX_VAL) ? val + 1 : val;
+        endfunction
+      endclass
+    endpackage
+
+    module test;
+      int result = counter_pkg::CounterOps#(.MAX_VAL(100))::saturate_add(50);
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test function definition
+  fixture.AssertGoToDefinition(*index, code, "saturate_add", 0, 0);
+
+  // Test function call - should jump to function definition, not class name
+  fixture.AssertGoToDefinition(*index, code, "saturate_add", 1, 0);
+
+  // TODO: Add tests for class name and parameter references
+  // fixture.AssertGoToDefinition(*index, code, "CounterOps", 1, 0);
+  // fixture.AssertGoToDefinition(*index, code, "MAX_VAL", 1, 0);
+}
