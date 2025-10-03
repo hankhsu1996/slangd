@@ -70,9 +70,16 @@ SystemVerilog LSP server with modular design:
 
 ## Development Tips
 
+**Requirements:**
+
+- Clang 20+ with libc++ 20+ (configured in `.bazelrc` with `-stdlib=libc++`)
+- Required for full C++23 standard library support (e.g., `std::ranges::contains`)
+- Ubuntu: `sudo apt install clang-20 libc++-20-dev libc++abi-20-dev`
+
 **Coding Standards:**
 
 - C++23, ASIO coroutines, `std::expected`, trailing return types
+- Use modern C++23 standard library features (e.g., `std::ranges::contains`)
 - Use `toString(symbol.kind) -> std::string_view` for Slang enum printing
 - Use `slang::syntax::toString(syntax.kind) -> std::string_view` for SyntaxKind printing
 
