@@ -21,19 +21,24 @@ Before adding new code or workarounds, thoroughly investigate what Slang already
 **Problem**: References to genvar loop iteration variables (e.g., `idx` in `for (idx = 0; idx < COUNT; idx++)`) need to resolve to the genvar declaration for go-to-definition.
 
 **What we tried**:
+
 1. **LSP Mode Approach**: Tried binding expressions in parent context to avoid temp variables
+
    - Failed: Violated SystemVerilog semantics (genvars are immutable, can't use in `idx++`)
 
 2. **Manual Scope Traversal**: Tried searching up the scope chain to find GenerateBlockArray
+
    - Failed: Scope hierarchy didn't match expectations (StatementBlock → InstanceBody, not GenerateBlockArray)
 
 3. **Location Matching**: Tried matching temp variable location with genvar location
+
    - Failed: GenerateBlockArray wasn't in the expected scope chain
 
 4. **Visitor State Tracking**: Tried storing current GenerateBlockArray in visitor
    - Would work but creates tight coupling and fragile state management
 
 **What worked**:
+
 - Discovered Slang already did genvar lookup at `BlockSymbols.cpp:747`
 - Found existing pattern: symbols can store pointers to related symbols (like how function parameters work)
 - Added `getDeclaredSymbol()` to `VariableSymbol` (3 lines in header)
@@ -49,12 +54,14 @@ Before adding new code or workarounds, thoroughly investigate what Slang already
 When you need to add new functionality, search the codebase for similar existing patterns.
 
 **How to find patterns**:
+
 - Search for similar functionality (e.g., "symbol redirection", "internal symbol")
 - Look at how related features are implemented
 - Check base classes and inheritance hierarchies
 - Read Slang's documentation and headers
 
 **Why this matters**:
+
 - Consistency makes code maintainable
 - Existing patterns are battle-tested
 - You leverage compiler infrastructure instead of reinventing it
@@ -64,11 +71,13 @@ When you need to add new functionality, search the codebase for similar existing
 Before changing or working around existing behavior, understand the reason for the current design.
 
 **Example - Genvar Temp Variables**:
+
 - We initially saw the temp variable as a "problem" to work around
 - Actually, it's necessary: genvar loops need mutable iteration, but genvars are immutable constants
 - The design is correct - we just needed to link temp variable back to genvar
 
 **Process**:
+
 1. Ask: "Why does Slang do it this way?"
 2. Read the code comments and surrounding context
 3. Check SystemVerilog specification if needed
@@ -81,6 +90,7 @@ Before changing or working around existing behavior, understand the reason for t
 These aren't vague aesthetic preferences - they're concrete quality criteria:
 
 **Elegant code**:
+
 - Follows existing patterns in the codebase
 - Minimal lines of code (usually <50 for a feature)
 - No special cases or conditional complexity
@@ -88,6 +98,7 @@ These aren't vague aesthetic preferences - they're concrete quality criteria:
 - Works with the system's design
 
 **Non-elegant code** (red flags):
+
 - Manual searching or lookup that duplicates library functionality
 - Visitor state tracking for context
 - Complex conditional logic with multiple fallbacks
@@ -99,12 +110,14 @@ These aren't vague aesthetic preferences - they're concrete quality criteria:
 If your solution feels like a workaround or band-aid, keep searching for the elegant approach.
 
 **Warning signs**:
+
 - "We'll track this in a member variable during traversal"
 - "We'll search up the scope chain to find..."
 - "We'll use location matching to identify..."
 - "We'll add a special case for..."
 
 **Better approach**:
+
 - "Where does Slang already store this relationship?"
 - "What existing pattern handles similar cases?"
 - "Can we save this information during construction?"
@@ -114,6 +127,7 @@ If your solution feels like a workaround or band-aid, keep searching for the ele
 When someone says "no manual searching" or "no state tracking", these aren't arbitrary restrictions - they're guideposts toward better design.
 
 **Constraints point toward**:
+
 - Using library-provided information instead of recreating it
 - Storing relationships directly in data structures
 - Stateless, declarative code
@@ -126,6 +140,7 @@ When someone says "no manual searching" or "no state tracking", these aren't arb
 During implementation, regularly pause to verify you're solving the right problem.
 
 **Questions to ask**:
+
 - What is the actual problem? (Not symptoms, but root cause)
 - Am I working with or against the system's design?
 - Does this feel simple and natural, or complex and forced?
@@ -136,6 +151,7 @@ During implementation, regularly pause to verify you're solving the right proble
 If debug output or tests show something unexpected, question your architectural assumptions rather than adding more complex logic.
 
 **Example**:
+
 - Expected: StatementBlock → GenerateBlockArray in scope chain
 - Debug showed: StatementBlock → InstanceBody → CompilationUnit
 - Wrong response: Add complex scope traversal logic
@@ -144,6 +160,7 @@ If debug output or tests show something unexpected, question your architectural 
 ### 3. Document the Journey
 
 When you solve a difficult problem:
+
 - Document what you tried and why it failed
 - Explain the breakthrough insight
 - Update architectural documentation
@@ -158,6 +175,7 @@ When you solve a difficult problem:
 See "Working with the Slang Library" section above for detailed case study.
 
 **Key files**:
+
 - `slang/include/slang/ast/symbols/VariableSymbols.h`: Added `getDeclaredSymbol()/setDeclaredSymbol()`
 - `slang/source/ast/symbols/BlockSymbols.cpp:760-768`: Links temp variable to genvar
 - `slangd/src/slangd/semantic/semantic_index.cpp:350-367`: Uses the link for redirection

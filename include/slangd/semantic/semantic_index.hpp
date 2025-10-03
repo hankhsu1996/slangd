@@ -171,6 +171,7 @@ class SemanticIndex {
     void handle(const slang::ast::EnumValueSymbol& enum_value);
     void handle(const slang::ast::FieldSymbol& field);
     void handle(const slang::ast::NetSymbol& net);
+    void handle(const slang::ast::ClassPropertySymbol& class_property);
     void handle(const slang::ast::GenericClassDefSymbol& class_def);
     void handle(const slang::ast::ClassType& class_type);
     void handle(const slang::ast::InterfacePortSymbol& interface_port);

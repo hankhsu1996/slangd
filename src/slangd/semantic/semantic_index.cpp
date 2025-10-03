@@ -923,7 +923,27 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::NetSymbol& net) {
 }
 
 void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::ClassPropertySymbol& class_property) {
+  if (class_property.location.valid()) {
+    if (const auto* syntax = class_property.getSyntax()) {
+      if (syntax->kind == slang::syntax::SyntaxKind::Declarator) {
+        auto definition_range =
+            syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
+        AddDefinition(
+            class_property, class_property.name, definition_range,
+            class_property.getParentScope());
+      }
+    }
+  }
+
+  TraverseType(class_property.getType());
+  this->visitDefault(class_property);
+}
+
+void SemanticIndex::IndexVisitor::handle(
     const slang::ast::GenericClassDefSymbol& class_def) {
+  // Parameterized classes: class C #(parameter P);
+  // Slang creates GenericClassDefSymbol as the definition symbol
   if (class_def.location.valid()) {
     if (const auto* syntax = class_def.getSyntax()) {
       if (syntax->kind == slang::syntax::SyntaxKind::ClassDeclaration) {
@@ -940,7 +960,15 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::ClassType& class_type) {
-  if (class_type.location.valid()) {
+  // ClassType serves dual roles in Slang's architecture:
+  // 1. Standalone definition for non-parameterized classes
+  // 2. Specialization container for parameterized classes (genericClass !=
+  // nullptr)
+  //
+  // We only create definition for role #1 to avoid duplicates with
+  // GenericClassDefSymbol This pattern respects Slang's compilation-optimized
+  // design while maintaining LSP correctness
+  if (class_type.location.valid() && class_type.genericClass == nullptr) {
     if (const auto* syntax = class_type.getSyntax()) {
       if (syntax->kind == slang::syntax::SyntaxKind::ClassDeclaration) {
         auto definition_range =
