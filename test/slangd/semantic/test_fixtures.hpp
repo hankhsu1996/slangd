@@ -119,14 +119,19 @@ class SemanticTestFixture {
       const std::string& text, std::string_view symbol_name)
       -> std::vector<size_t> {
     std::vector<size_t> offsets;
-    std::string pattern = R"(\b)" + std::string(symbol_name) + R"(\b)";
+    std::string pattern = R"((?:^|[\s.]))" + std::string(symbol_name) + R"(\b)";
     std::regex symbol_regex(pattern);
 
     auto begin = std::sregex_iterator(text.begin(), text.end(), symbol_regex);
     auto end = std::sregex_iterator();
 
     for (auto it = begin; it != end; ++it) {
-      offsets.push_back(static_cast<size_t>(it->position()));
+      auto match_pos = static_cast<size_t>(it->position());
+      if (match_pos < text.size() && (std::isalnum(text[match_pos]) == 0) &&
+          text[match_pos] != '_') {
+        match_pos += 1;
+      }
+      offsets.push_back(match_pos);
     }
 
     return offsets;
@@ -516,6 +521,67 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
       std::string_view expected_source_file,
       std::string_view expected_def_file) {
     auto location = FindLocationInSession(*result.session, symbol);
+    REQUIRE(location.valid());
+
+    auto def_loc =
+        result.session->GetSemanticIndex().LookupDefinitionAt(location);
+    REQUIRE(def_loc.has_value());
+
+    auto location_file =
+        result.session->GetSourceManager().getFileName(location);
+    REQUIRE(location_file.find(expected_source_file) != std::string_view::npos);
+
+    REQUIRE(def_loc->cross_file_path.has_value());
+    REQUIRE(def_loc->cross_file_range.has_value());
+
+    auto def_file = def_loc->cross_file_path->String();
+    REQUIRE(def_file.find(expected_def_file) != std::string_view::npos);
+
+    REQUIRE(def_loc->cross_file_range->start.line >= 0);
+    REQUIRE(def_loc->cross_file_range->start.character >= 0);
+    REQUIRE(def_loc->cross_file_range->end.line >= 0);
+    REQUIRE(def_loc->cross_file_range->end.character >= 0);
+
+    auto range_length = def_loc->cross_file_range->end.character -
+                        def_loc->cross_file_range->start.character;
+    REQUIRE(range_length == static_cast<int>(symbol.length()));
+  }
+
+  static void AssertCrossFileDef(
+      const SessionWithCatalog& result, std::string_view ref_content,
+      std::string_view def_content, std::string_view symbol, size_t ref_index,
+      size_t def_index) {
+    auto ref_offsets =
+        FindSymbolOffsetsInText(std::string(ref_content), symbol);
+    REQUIRE(ref_index < ref_offsets.size());
+
+    auto def_offsets =
+        FindSymbolOffsetsInText(std::string(def_content), symbol);
+    REQUIRE(def_index < def_offsets.size());
+
+    auto ref_location =
+        FindLocationInSession(*result.session, symbol, ref_index);
+    REQUIRE(ref_location.valid());
+
+    auto def_loc =
+        result.session->GetSemanticIndex().LookupDefinitionAt(ref_location);
+    REQUIRE(def_loc.has_value());
+    REQUIRE(def_loc->cross_file_path.has_value());
+    REQUIRE(def_loc->cross_file_range.has_value());
+
+    auto range_length = def_loc->cross_file_range->end.character -
+                        def_loc->cross_file_range->start.character;
+    REQUIRE(range_length == static_cast<int>(symbol.length()));
+  }
+
+  static void AssertCrossFileDefinitionAt(
+      const SessionWithCatalog& result, std::string_view symbol,
+      size_t occurrence_index, std::string_view expected_source_file,
+      std::string_view expected_def_file) {
+    auto occurrences = FindAllOccurrencesInSession(*result.session, symbol);
+    REQUIRE(occurrence_index < occurrences.size());
+
+    auto location = occurrences[occurrence_index];
     REQUIRE(location.valid());
 
     auto def_loc =

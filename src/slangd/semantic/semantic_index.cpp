@@ -1140,6 +1140,48 @@ void SemanticIndex::IndexVisitor::handle(
       AddCrossFileReference(
           symbol, symbol.definitionName, type_range,
           module_info->definition_range, catalog_sm, symbol.getParentScope());
+
+      // Handle port connections (named ports only, skip positional)
+      const auto& hier_inst_syntax =
+          syntax->as<slang::syntax::HierarchicalInstanceSyntax>();
+      for (const auto* port_conn : hier_inst_syntax.connections) {
+        if (port_conn->kind == slang::syntax::SyntaxKind::NamedPortConnection) {
+          const auto& npc =
+              port_conn->as<slang::syntax::NamedPortConnectionSyntax>();
+          std::string_view port_name = npc.name.valueText();
+
+          // O(1) lookup in port hash map
+          auto it = module_info->port_lookup.find(std::string(port_name));
+          if (it != module_info->port_lookup.end()) {
+            const auto* port_info = it->second;
+            AddCrossFileReference(
+                symbol, port_name, npc.name.range(), port_info->def_range,
+                catalog_sm, symbol.getParentScope());
+          }
+        }
+      }
+
+      // Handle parameter assignments (named parameters only)
+      if (inst_syntax.parameters != nullptr) {
+        const auto& param_assign = *inst_syntax.parameters;
+        for (const auto* param : param_assign.parameters) {
+          if (param->kind == slang::syntax::SyntaxKind::NamedParamAssignment) {
+            const auto& npa =
+                param->as<slang::syntax::NamedParamAssignmentSyntax>();
+            std::string_view param_name = npa.name.valueText();
+
+            // O(1) lookup in parameter hash map
+            auto it =
+                module_info->parameter_lookup.find(std::string(param_name));
+            if (it != module_info->parameter_lookup.end()) {
+              const auto* param_info = it->second;
+              AddCrossFileReference(
+                  symbol, param_name, npa.name.range(), param_info->def_range,
+                  catalog_sm, symbol.getParentScope());
+            }
+          }
+        }
+      }
     }
   }
 

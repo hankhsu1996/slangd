@@ -54,6 +54,10 @@ struct ModuleInfo {
   slang::SourceRange definition_range;
   std::vector<PortInfo> ports;
   std::vector<ParameterInfo> parameters;
+
+  // O(1) lookups (built during extraction in BuildFromLayout)
+  std::unordered_map<std::string, const PortInfo*> port_lookup;
+  std::unordered_map<std::string, const ParameterInfo*> parameter_lookup;
 };
 
 // GlobalCatalog: Immutable snapshot of package/interface metadata from global

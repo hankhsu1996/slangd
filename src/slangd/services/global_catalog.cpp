@@ -188,10 +188,12 @@ auto GlobalCatalog::BuildFromLayout(
         std::vector<ParameterInfo> parameters;
         parameters.reserve(definition.parameters.size());
         for (const auto& param : definition.parameters) {
+          auto end_offset = param.location.offset() + param.name.length();
+          auto end_loc =
+              slang::SourceLocation(param.location.buffer(), end_offset);
           parameters.push_back(
               {.name = std::string(param.name),
-               .def_range =
-                   slang::SourceRange(param.location, param.location)});
+               .def_range = slang::SourceRange(param.location, end_loc)});
         }
 
         // Extract ports (ANSI ports only for Phase 1)
@@ -222,15 +224,27 @@ auto GlobalCatalog::BuildFromLayout(
              .file_path = std::move(module_file_path),
              .definition_range = definition_range,
              .ports = std::move(ports),
-             .parameters = std::move(parameters)});
+             .parameters = std::move(parameters),
+             .port_lookup = {},
+             .parameter_lookup = {}});
       }
     }
   }
 
   // Build module lookup map for O(1) access
   module_lookup_.clear();
-  for (const auto& module : modules_) {
+  for (auto& module : modules_) {
     module_lookup_[module.name] = &module;
+
+    // Build port lookup map for O(1) access
+    for (const auto& port : module.ports) {
+      module.port_lookup[port.name] = &port;
+    }
+
+    // Build parameter lookup map for O(1) access
+    for (const auto& param : module.parameters) {
+      module.parameter_lookup[param.name] = &param;
+    }
   }
 
   auto elapsed = timer.GetElapsed();
