@@ -1104,13 +1104,38 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::UninstantiatedDefSymbol& symbol) {
-  if (catalog_ == nullptr) {
+  const auto* syntax = symbol.getSyntax();
+  if (syntax == nullptr) {
     this->visitDefault(symbol);
     return;
   }
 
-  const auto* syntax = symbol.getSyntax();
-  if (syntax == nullptr) {
+  // Always create self-definition for instance name (same-file and cross-file)
+  if (symbol.location.valid() &&
+      syntax->kind == slang::syntax::SyntaxKind::HierarchicalInstance) {
+    auto start_loc = symbol.location;
+    auto end_loc = start_loc + symbol.name.length();
+    auto name_range = slang::SourceRange{start_loc, end_loc};
+    AddDefinition(symbol, symbol.name, name_range, symbol.getParentScope());
+  }
+
+  // Visit parameter and port expressions (for same-file cases)
+  // UninstantiatedDefSymbol stores these expressions even without catalog
+  for (const auto* expr : symbol.paramExpressions) {
+    if (expr != nullptr) {
+      expr->visit(*this);
+    }
+  }
+
+  auto port_conns = symbol.getPortConnections();
+  for (const auto* port_conn : port_conns) {
+    if (port_conn != nullptr) {
+      port_conn->visit(*this);
+    }
+  }
+
+  // Cross-file handling requires catalog
+  if (catalog_ == nullptr) {
     this->visitDefault(symbol);
     return;
   }

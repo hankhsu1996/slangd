@@ -113,6 +113,31 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       break;
 
+    case SK::Definition:
+      // Module/Interface/Program definitions
+      if (syntax.kind == SyntaxKind::ModuleDeclaration ||
+          syntax.kind == SyntaxKind::InterfaceDeclaration ||
+          syntax.kind == SyntaxKind::ProgramDeclaration) {
+        const auto& decl_syntax =
+            syntax.as<slang::syntax::ModuleDeclarationSyntax>();
+        return decl_syntax.header->name.range();
+      }
+      break;
+
+    case SK::Modport:
+      // Interface modport declarations
+      if (syntax.kind == SyntaxKind::ModportItem) {
+        return syntax.as<slang::syntax::ModportItemSyntax>().name.range();
+      }
+      break;
+
+    case SK::Variable:
+      // Variable declarations
+      if (syntax.kind == SyntaxKind::Declarator) {
+        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
+      }
+      break;
+
     default:
       // Unhandled symbol type - log warning and use fallback
       spdlog::warn(
