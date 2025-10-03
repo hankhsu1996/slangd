@@ -83,17 +83,87 @@ class GlobalCatalogTestFixture {
   auto operator=(GlobalCatalogTestFixture&&)
       -> GlobalCatalogTestFixture& = delete;
 
-  [[nodiscard]] auto GetTempDir() const -> slangd::CanonicalPath {
-    return slangd::CanonicalPath(temp_dir_);
-  }
-
-  auto CreateFile(std::string_view filename, std::string_view content)
+  auto CreateFile(std::string_view filename, std::string_view content) const
       -> slangd::CanonicalPath {
     auto file_path = temp_dir_ / filename;
     std::ofstream file(file_path);
     file << content;
     file.close();
     return slangd::CanonicalPath(file_path);
+  }
+
+  [[nodiscard]] auto BuildCatalog(asio::any_io_executor executor) const
+      -> std::shared_ptr<slangd::services::GlobalCatalog> {
+    auto layout_service = slangd::ProjectLayoutService::Create(
+        executor, slangd::CanonicalPath(temp_dir_), spdlog::default_logger());
+    return slangd::services::GlobalCatalog::CreateFromProjectLayout(
+        layout_service, spdlog::default_logger());
+  }
+
+  static void AssertModuleExists(
+      const slangd::services::GlobalCatalog& catalog, std::string_view name,
+      std::string_view expected_filename) {
+    const auto& modules = catalog.GetModules();
+    for (const auto& mod : modules) {
+      if (mod.name == name) {
+        REQUIRE(mod.file_path.Path().filename() == expected_filename);
+        REQUIRE(mod.definition_range.start().valid());
+        return;
+      }
+    }
+    FAIL("Module '" << name << "' not found");
+  }
+
+  static void AssertPackageExists(
+      const slangd::services::GlobalCatalog& catalog, std::string_view name,
+      std::string_view expected_filename) {
+    const auto& packages = catalog.GetPackages();
+    for (const auto& pkg : packages) {
+      if (pkg.name == name) {
+        REQUIRE(pkg.file_path.Path().filename() == expected_filename);
+        return;
+      }
+    }
+    FAIL("Package '" << name << "' not found");
+  }
+
+  static void AssertInterfaceExists(
+      const slangd::services::GlobalCatalog& catalog, std::string_view name,
+      std::string_view expected_filename) {
+    const auto& interfaces = catalog.GetInterfaces();
+    for (const auto& iface : interfaces) {
+      if (iface.name == name) {
+        REQUIRE(iface.file_path.Path().filename() == expected_filename);
+        return;
+      }
+    }
+    FAIL("Interface '" << name << "' not found");
+  }
+
+  static void AssertParameterExists(
+      const slangd::services::ModuleInfo& module, std::string_view param_name) {
+    for (const auto& param : module.parameters) {
+      if (param.name == param_name) {
+        REQUIRE(param.def_range.start().valid());
+        return;
+      }
+    }
+    FAIL(
+        "Parameter '" << param_name << "' not found in module '" << module.name
+                      << "'");
+  }
+
+  static void AssertPortExists(
+      const slangd::services::ModuleInfo& module, std::string_view port_name) {
+    for (const auto& port : module.ports) {
+      if (port.name == port_name) {
+        REQUIRE(port.def_range.start().valid());
+        return;
+      }
+    }
+    FAIL(
+        "Port '" << port_name << "' not found in module '" << module.name
+                 << "'");
   }
 
  private:
@@ -103,9 +173,6 @@ class GlobalCatalogTestFixture {
 TEST_CASE("GlobalCatalog package discovery", "[global_catalog]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     GlobalCatalogTestFixture fixture;
-    auto workspace_root = fixture.GetTempDir();
-
-    // Create a package file
     fixture.CreateFile("math_pkg.sv", R"(
       package math_pkg;
         parameter BUS_WIDTH = 64;
@@ -113,28 +180,12 @@ TEST_CASE("GlobalCatalog package discovery", "[global_catalog]") {
       endpackage
     )");
 
-    // Create project layout service
-    auto layout_service = slangd::ProjectLayoutService::Create(
-        executor, workspace_root, spdlog::default_logger());
-
-    // Create GlobalCatalog
-    auto catalog = slangd::services::GlobalCatalog::CreateFromProjectLayout(
-        layout_service, spdlog::default_logger());
+    auto catalog = fixture.BuildCatalog(executor);
 
     REQUIRE(catalog != nullptr);
     REQUIRE(catalog->GetVersion() == 1);
-
-    // Verify package was discovered
-    const auto& packages = catalog->GetPackages();
-    bool found_math_pkg = false;
-    for (const auto& pkg : packages) {
-      if (pkg.name == "math_pkg") {
-        found_math_pkg = true;
-        REQUIRE(pkg.file_path.Path().filename() == "math_pkg.sv");
-        break;
-      }
-    }
-    REQUIRE(found_math_pkg);
+    GlobalCatalogTestFixture::AssertPackageExists(
+        *catalog, "math_pkg", "math_pkg.sv");
 
     co_return;
   });
@@ -143,9 +194,6 @@ TEST_CASE("GlobalCatalog package discovery", "[global_catalog]") {
 TEST_CASE("GlobalCatalog interface discovery", "[global_catalog]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     GlobalCatalogTestFixture fixture;
-    auto workspace_root = fixture.GetTempDir();
-
-    // Create an interface file
     fixture.CreateFile("test_interface.sv", R"(
       interface test_interface;
         logic [7:0] data;
@@ -155,28 +203,12 @@ TEST_CASE("GlobalCatalog interface discovery", "[global_catalog]") {
       endinterface
     )");
 
-    // Create project layout service
-    auto layout_service = slangd::ProjectLayoutService::Create(
-        executor, workspace_root, spdlog::default_logger());
-
-    // Create GlobalCatalog
-    auto catalog = slangd::services::GlobalCatalog::CreateFromProjectLayout(
-        layout_service, spdlog::default_logger());
+    auto catalog = fixture.BuildCatalog(executor);
 
     REQUIRE(catalog != nullptr);
     REQUIRE(catalog->GetVersion() == 1);
-
-    // Verify interface was discovered
-    const auto& interfaces = catalog->GetInterfaces();
-    bool found_test_interface = false;
-    for (const auto& iface : interfaces) {
-      if (iface.name == "test_interface") {
-        found_test_interface = true;
-        REQUIRE(iface.file_path.Path().filename() == "test_interface.sv");
-        break;
-      }
-    }
-    REQUIRE(found_test_interface);
+    GlobalCatalogTestFixture::AssertInterfaceExists(
+        *catalog, "test_interface", "test_interface.sv");
 
     co_return;
   });
@@ -185,9 +217,6 @@ TEST_CASE("GlobalCatalog interface discovery", "[global_catalog]") {
 TEST_CASE("GlobalCatalog mixed content discovery", "[global_catalog]") {
   RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     GlobalCatalogTestFixture fixture;
-    auto workspace_root = fixture.GetTempDir();
-
-    // Create files with packages, interfaces, and modules
     fixture.CreateFile("types_pkg.sv", R"(
       package types_pkg;
         typedef logic [31:0] word_t;
@@ -208,35 +237,128 @@ TEST_CASE("GlobalCatalog mixed content discovery", "[global_catalog]") {
       endmodule
     )");
 
-    // Create project layout service
-    auto layout_service = slangd::ProjectLayoutService::Create(
-        executor, workspace_root, spdlog::default_logger());
-
-    // Create GlobalCatalog
-    auto catalog = slangd::services::GlobalCatalog::CreateFromProjectLayout(
-        layout_service, spdlog::default_logger());
+    auto catalog = fixture.BuildCatalog(executor);
 
     REQUIRE(catalog != nullptr);
+    REQUIRE(catalog->GetPackages().size() == 2);
+    REQUIRE(catalog->GetInterfaces().size() == 1);
 
-    // Verify package was discovered (including std package that Slang adds
-    // automatically)
-    const auto& packages = catalog->GetPackages();
-    REQUIRE(packages.size() == 2);
+    GlobalCatalogTestFixture::AssertPackageExists(
+        *catalog, "types_pkg", "types_pkg.sv");
+    GlobalCatalogTestFixture::AssertInterfaceExists(
+        *catalog, "bus_interface", "bus_interface.sv");
 
-    // Find our package (not the std package)
-    bool found_types_pkg = false;
-    for (const auto& pkg : packages) {
-      if (pkg.name == "types_pkg") {
-        found_types_pkg = true;
-        break;
-      }
-    }
-    REQUIRE(found_types_pkg);
+    co_return;
+  });
+}
 
-    // Verify interface was discovered
-    const auto& interfaces = catalog->GetInterfaces();
-    REQUIRE(interfaces.size() == 1);
-    REQUIRE(interfaces[0].name == "bus_interface");
+TEST_CASE("GlobalCatalog module discovery", "[global_catalog]") {
+  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    GlobalCatalogTestFixture fixture;
+    fixture.CreateFile("alu_module.sv", R"(
+      module ALU #(parameter WIDTH = 8) (
+        input logic [WIDTH-1:0] a,
+        input logic [WIDTH-1:0] b,
+        output logic [WIDTH-1:0] result
+      );
+        assign result = a + b;
+      endmodule
+    )");
+
+    auto catalog = fixture.BuildCatalog(executor);
+    REQUIRE(catalog != nullptr);
+    GlobalCatalogTestFixture::AssertModuleExists(
+        *catalog, "ALU", "alu_module.sv");
+
+    co_return;
+  });
+}
+
+TEST_CASE("GlobalCatalog module parameter extraction", "[global_catalog]") {
+  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    GlobalCatalogTestFixture fixture;
+    fixture.CreateFile("fifo_module.sv", R"(
+      module FIFO #(
+        parameter DEPTH = 16,
+        parameter WIDTH = 32
+      ) (
+        input logic clk,
+        input logic [WIDTH-1:0] data_in,
+        output logic [WIDTH-1:0] data_out
+      );
+      endmodule
+    )");
+
+    auto catalog = fixture.BuildCatalog(executor);
+    const auto* fifo_module = catalog->GetModule("FIFO");
+    REQUIRE(fifo_module != nullptr);
+    REQUIRE(fifo_module->parameters.size() == 2);
+
+    GlobalCatalogTestFixture::AssertParameterExists(*fifo_module, "DEPTH");
+    GlobalCatalogTestFixture::AssertParameterExists(*fifo_module, "WIDTH");
+
+    co_return;
+  });
+}
+
+TEST_CASE("GlobalCatalog module port extraction", "[global_catalog]") {
+  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    GlobalCatalogTestFixture fixture;
+    fixture.CreateFile("register_module.sv", R"(
+      module Register (
+        input logic clk,
+        input logic reset,
+        input logic [7:0] data_in,
+        output logic [7:0] data_out
+      );
+      endmodule
+    )");
+
+    auto catalog = fixture.BuildCatalog(executor);
+    const auto* register_module = catalog->GetModule("Register");
+    REQUIRE(register_module != nullptr);
+    REQUIRE(register_module->ports.size() == 4);
+
+    GlobalCatalogTestFixture::AssertPortExists(*register_module, "clk");
+    GlobalCatalogTestFixture::AssertPortExists(*register_module, "reset");
+    GlobalCatalogTestFixture::AssertPortExists(*register_module, "data_in");
+    GlobalCatalogTestFixture::AssertPortExists(*register_module, "data_out");
+
+    co_return;
+  });
+}
+
+TEST_CASE("GlobalCatalog GetModule lookup", "[global_catalog]") {
+  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    GlobalCatalogTestFixture fixture;
+    fixture.CreateFile("counter.sv", R"(
+      module Counter (
+        input logic clk,
+        output logic [7:0] count
+      );
+      endmodule
+    )");
+
+    fixture.CreateFile("timer.sv", R"(
+      module Timer (
+        input logic clk,
+        input logic reset
+      );
+      endmodule
+    )");
+
+    auto catalog = fixture.BuildCatalog(executor);
+
+    const auto* counter = catalog->GetModule("Counter");
+    REQUIRE(counter != nullptr);
+    REQUIRE(counter->name == "Counter");
+
+    const auto* timer = catalog->GetModule("Timer");
+    REQUIRE(timer != nullptr);
+    REQUIRE(timer->name == "Timer");
+
+    const auto* nonexistent = catalog->GetModule("NonExistent");
+    REQUIRE(nonexistent == nullptr);
 
     co_return;
   });

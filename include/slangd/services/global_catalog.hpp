@@ -2,8 +2,10 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
+#include <slang/text/SourceLocation.h>
 #include <spdlog/spdlog.h>
 
 #include "slangd/core/project_layout_service.hpp"
@@ -33,6 +35,27 @@ struct InterfaceInfo {
   // Future: additional metadata like modports
 };
 
+// Port metadata extracted from module definitions
+struct PortInfo {
+  std::string name;
+  slang::SourceRange def_range;
+};
+
+// Parameter metadata extracted from module definitions
+struct ParameterInfo {
+  std::string name;
+  slang::SourceRange def_range;
+};
+
+// Module metadata extracted from global compilation
+struct ModuleInfo {
+  std::string name;
+  CanonicalPath file_path;
+  slang::SourceRange definition_range;
+  std::vector<PortInfo> ports;
+  std::vector<ParameterInfo> parameters;
+};
+
 // GlobalCatalog: Immutable snapshot of package/interface metadata from global
 // compilation. Use CreateFromProjectLayout() factory method for convenience.
 class GlobalCatalog {
@@ -57,6 +80,9 @@ class GlobalCatalog {
   // Accessors for catalog data
   [[nodiscard]] auto GetPackages() const -> const std::vector<PackageInfo>&;
   [[nodiscard]] auto GetInterfaces() const -> const std::vector<InterfaceInfo>&;
+  [[nodiscard]] auto GetModules() const -> const std::vector<ModuleInfo>&;
+  [[nodiscard]] auto GetModule(std::string_view name) const
+      -> const ModuleInfo*;
 
   // Include directories and defines from ProjectLayoutService
   [[nodiscard]] auto GetIncludeDirectories() const
@@ -75,6 +101,8 @@ class GlobalCatalog {
   // Catalog data
   std::vector<PackageInfo> packages_;
   std::vector<InterfaceInfo> interfaces_;  // Empty for MVP
+  std::vector<ModuleInfo> modules_;
+  std::unordered_map<std::string, const ModuleInfo*> module_lookup_;
   std::vector<CanonicalPath> include_directories_;
   std::vector<std::string> defines_;
   uint64_t version_ = 1;

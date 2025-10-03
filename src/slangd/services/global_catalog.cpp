@@ -4,6 +4,7 @@
 #include <slang/ast/SemanticFacts.h>
 #include <slang/ast/symbols/CompilationUnitSymbols.h>
 #include <slang/parsing/Preprocessor.h>
+#include <slang/syntax/AllSyntax.h>
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/util/Bag.h>
 
@@ -151,10 +152,92 @@ auto GlobalCatalog::BuildFromLayout(
     }
   }
 
+  // Extract module metadata using safe Slang API
+  logger_->debug("GlobalCatalog: Extracting modules from definitions");
+
+  modules_.clear();
+  modules_.reserve(definitions.size());  // Upper bound estimate
+
+  for (const auto* symbol : definitions) {
+    if (symbol == nullptr) {
+      continue;
+    }
+
+    // Check if this symbol is a DefinitionSymbol and if it's a module
+    if (symbol->kind == slang::ast::SymbolKind::Definition) {
+      const auto& definition = symbol->as<slang::ast::DefinitionSymbol>();
+
+      if (definition.definitionKind == slang::ast::DefinitionKind::Module) {
+        std::string module_name = std::string(definition.name);
+        auto file_path_str = source_manager_->getFileName(definition.location);
+        CanonicalPath module_file_path(file_path_str);
+
+        // Extract definition range from module declaration syntax
+        slang::SourceRange definition_range;
+        if (const auto* syntax = definition.getSyntax()) {
+          if (syntax->kind == slang::syntax::SyntaxKind::ModuleDeclaration) {
+            const auto& module_syntax =
+                syntax->as<slang::syntax::ModuleDeclarationSyntax>();
+            if (module_syntax.header != nullptr) {
+              definition_range = module_syntax.header->name.range();
+            }
+          }
+        }
+
+        // Extract parameters
+        std::vector<ParameterInfo> parameters;
+        parameters.reserve(definition.parameters.size());
+        for (const auto& param : definition.parameters) {
+          parameters.push_back(
+              {.name = std::string(param.name),
+               .def_range =
+                   slang::SourceRange(param.location, param.location)});
+        }
+
+        // Extract ports (ANSI ports only for Phase 1)
+        std::vector<PortInfo> ports;
+        if (definition.portList != nullptr &&
+            definition.portList->kind ==
+                slang::syntax::SyntaxKind::AnsiPortList) {
+          const auto& ansi_port_list =
+              definition.portList->as<slang::syntax::AnsiPortListSyntax>();
+          for (const auto* port : ansi_port_list.ports) {
+            if (port != nullptr &&
+                port->kind == slang::syntax::SyntaxKind::ImplicitAnsiPort) {
+              const auto& implicit_port =
+                  port->as<slang::syntax::ImplicitAnsiPortSyntax>();
+              if (implicit_port.declarator != nullptr &&
+                  implicit_port.declarator->name.valueText().length() > 0) {
+                ports.push_back(
+                    {.name = std::string(
+                         implicit_port.declarator->name.valueText()),
+                     .def_range = implicit_port.declarator->name.range()});
+              }
+            }
+          }
+        }
+
+        modules_.push_back(
+            {.name = std::move(module_name),
+             .file_path = std::move(module_file_path),
+             .definition_range = definition_range,
+             .ports = std::move(ports),
+             .parameters = std::move(parameters)});
+      }
+    }
+  }
+
+  // Build module lookup map for O(1) access
+  module_lookup_.clear();
+  for (const auto& module : modules_) {
+    module_lookup_[module.name] = &module;
+  }
+
   auto elapsed = timer.GetElapsed();
   logger_->info(
-      "GlobalCatalog: Build complete - {} packages, {} interfaces ({})",
-      packages_.size(), interfaces_.size(),
+      "GlobalCatalog: Build complete - {} packages, {} interfaces, {} modules "
+      "({})",
+      packages_.size(), interfaces_.size(), modules_.size(),
       utils::ScopedTimer::FormatDuration(elapsed));
 }
 
@@ -164,6 +247,19 @@ auto GlobalCatalog::GetPackages() const -> const std::vector<PackageInfo>& {
 
 auto GlobalCatalog::GetInterfaces() const -> const std::vector<InterfaceInfo>& {
   return interfaces_;
+}
+
+auto GlobalCatalog::GetModules() const -> const std::vector<ModuleInfo>& {
+  return modules_;
+}
+
+auto GlobalCatalog::GetModule(std::string_view name) const
+    -> const ModuleInfo* {
+  auto it = module_lookup_.find(std::string(name));
+  if (it != module_lookup_.end()) {
+    return it->second;
+  }
+  return nullptr;
 }
 
 auto GlobalCatalog::GetIncludeDirectories() const
