@@ -10,294 +10,84 @@ This fundamental difference requires a completely different approach to type han
 
 ## TypeReferenceSymbol Architecture
 
-### Core Problem
+**Core Problem**: Slang resolves typedefs to canonical types, losing usage locations needed for LSP go-to-definition.
 
-```systemverilog
-typedef logic [7:0] data_t;
-data_t my_var;  // User clicks here - must go to typedef definition, not logic[7:0]
-```
+**Solution**: TypeReferenceSymbol wrapper that:
 
-**Slang's Default Behavior**: `data_t` resolves directly to `PackedArrayType(ScalarType)`, losing the typedef reference.
-
-**LSP Requirement**: Preserve the typedef reference while maintaining type resolution functionality.
-
-### Solution: TypeReferenceSymbol Wrapper
-
-```cpp
-// LSP Type Structure
-data_t my_var → TypeReferenceSymbol(resolvedType: TypeAlias(name: "data_t"))
-
-// For arrays: data_t[3:0] my_array
-PackedArrayType(
-    elementType: TypeReferenceSymbol(resolvedType: TypeAlias(name: "data_t"))
-)
-```
-
-**Key Design Principles**:
-- TypeReferenceSymbol wraps ONLY the typedef, not composite types
+- Wraps ONLY the typedef symbol (not composite types like arrays)
 - Preserves exact source location of typedef usage
-- Delegates all type system operations to wrapped type
-- Maintains semantic correctness with existing Slang infrastructure
+- Delegates all type system queries to the wrapped type
+- Integrates seamlessly with existing Slang type resolution
 
 ## Critical Integration Requirements
 
-### Type System Method Delegation
+### 1. Type System Method Delegation
 
-TypeReferenceSymbol must integrate with ALL existing Slang type system methods. Cannot simply add `TypeReference` to boolean checks - must delegate appropriately:
+Every Type class method must delegate TypeReference cases to the wrapped type. Pattern: `return as<TypeReferenceSymbol>().getResolvedType().METHOD()`.
 
-```cpp
-// WRONG: Breaks semantic correctness
-bool Type::isSimpleType() const {
-    case SymbolKind::TypeReference:
-        return true;  // Too broad - breaks complex typedef validation
-}
+**Why TypeReferenceSymbol cannot simply return true for type checks**: It can wrap ANY typedef - both simple types (logic, int) AND complex types (structs, unions, multi-dimensional arrays). Delegation ensures semantic correctness.
 
-// CORRECT: Maintains semantic correctness  
-bool Type::isSimpleType() const {
-    case SymbolKind::TypeReference:
-        return as<TypeReferenceSymbol>().getResolvedType().isSimpleType();
-}
-```
+### 2. Canonical Type Resolution ⚠️ CRITICAL
 
-**Why This Matters**: TypeReferenceSymbol can wrap any typedef - simple types (logic, int) OR complex types (structs, multi-dimensional arrays). Delegation ensures validation remains semantically correct.
+**Issue**: Nested typedefs create chains like `TypeAlias(local_t) → TypeReference → TypeAlias(data_t) → PackedStruct`.
 
-## Compilation Mode Differences
+**Fix Required**: `Type::resolveCanonical()` must unwrap TypeReference wrappers in the resolution loop. Without this, canonical resolution stops at TypeReference instead of reaching the final type, breaking `isIntegral()`, `isNumeric()`, and other type system operations.
 
-### Standalone Slang vs LSP Mode
+**Location**: `slang/source/ast/types/Type.cpp::resolveCanonical()` - Add inner while loop to skip TypeReference kinds.
 
-**Standalone slang**: Basic compilation, minimal validation
-**LSP LanguageServerMode**: Enhanced validation that catches type system inconsistencies
+### 3. LSP Mode Enhanced Validation
 
-### LSP Mode Validation
-
-**Key Insight**: LSP LanguageServerMode has enhanced validation that can cause statements to become Invalid when TypeReferenceSymbol integration is incomplete. Invalid statements prevent IndexVisitor traversal, causing missing handler calls.
-
-**Critical Requirement**: TypeReferenceSymbol must integrate with ALL existing Slang type system methods to maintain validation compatibility.
-
-## Common Pitfalls
-
-### 1. Type System Integration Oversight
-
-**Problem**: Adding TypeReferenceSymbol without updating ALL type system methods
-
-**Symptom**: Compilation failures, validation errors in LSP mode
-
-**Solution**: Systematically audit all Type class methods for TypeReference support
-
-### 2. Syntax vs Symbol Confusion
-
-**Problem**: Using syntax-based approaches for typedef references
-
-**Why It Fails**: Syntax is ambiguous for complex array constructs. `data_t[3:0]` could be array dimensions or array element selection.
-
-**Solution**: Always use AST/Symbol approach with semantic analysis
+LSP LanguageServerMode has enhanced validation that can invalidate statements when TypeReferenceSymbol integration is incomplete. Invalid statements prevent IndexVisitor traversal, silently breaking LSP features. This is why integration must be complete across ALL type system methods.
 
 ## Implementation Checklist
 
-When adding new typedef usage support:
+When adding TypeReferenceSymbol integration:
 
-1. **Type Resolution**: Ensure TypeReferenceSymbol is created in `Type::fromLookupResult()`
-2. **Type System Integration**: Update relevant Type class methods for delegation
-3. **Handler Implementation**: Add IndexVisitor handlers for new expression types
-4. **Test Coverage**: Test both simple and complex typedef scenarios
+1. **Creation Point**: `Type::fromLookupResult()` creates TypeReferenceSymbol for typedef usages
+2. **Method Delegation**: Add TypeReference cases to ALL Type class methods (isIntegral, isNumeric, etc.)
+3. **Canonical Resolution**: Ensure `resolveCanonical()` unwraps TypeReference in typedef chains
+4. **LSP Handlers**: Add IndexVisitor handlers for new expression types containing typedef references
+5. **Test Coverage**: Test nested typedefs - they expose canonical resolution bugs
 
 ## Design Principles
 
-### Syntax vs Symbol Approach
+### Always Use Symbol-Based Approach
 
-**FUNDAMENTAL RULE**: Always use AST/Symbol approach, NEVER syntax for typedef references.
+Syntax is ambiguous for arrays - `data_t[3:0]` could be type dimensions or array selection. CST cannot distinguish these. Only AST/Symbol approach with semantic analysis works reliably.
 
-**The Problem**: Syntax is ambiguous for array constructs:
-```systemverilog
-typedef logic [7:0] data_t;
-input data_t [3:0][1:0] multi_array;  // Syntax: IdentifierSelectName (ambiguous)
-//    ^~~~~~~ AST: TypeAliasType (precise)
-```
+### TypeReferenceSymbol Creation Point
 
-**Why Syntax Fails**:
-- CST cannot distinguish array dimensions vs array selections
-- Both `data_t[3:0][1:0]` (dimensions) and `arr[3:0][1:0]` (selections) use identical syntax
-- Only semantic analysis resolves this ambiguity
+`Type::fromLookupResult()` is the universal intervention point - captures typedef usage locations before type resolution discards them. Symbol-based, works for all typedef patterns.
 
-**Correct Pattern**:
-```cpp
-// SAFE: Let AST traversal find TypeAliasType naturally
-TraverseType(type);  // Recursive, will encounter TypeAliasType
+## Key Implementation Files
 
-// DANGEROUS: Syntax-based extraction
-if (type_syntax->kind == SyntaxKind::NamedType) { /* FAILS for multi-dim */ }
-```
+**Slang Fork (type system integration)**:
 
-### Type::fromLookupResult() Integration Point
+- `source/ast/types/Type.cpp` - Canonical resolution with TypeReference unwrapping
+- `source/ast/types/AllTypes.h/cpp` - TypeReferenceSymbol implementation
+- `source/ast/Expression.h/cpp` - Syntax threading for cast expressions
 
-**Critical Discovery**: The exact point where typedef usage locations were lost:
+**slangd (LSP handlers)**:
 
-```cpp
-const Type& Type::fromLookupResult(Compilation& compilation, const LookupResult& result,
-                                   SourceRange sourceRange, const ASTContext& context) {
-    const Symbol* symbol = result.found;  // TypeAlias definition
-    // CRITICAL: Usage location (sourceRange) must be preserved here
-    return TypeReferenceSymbol::create(*symbol, sourceRange, compilation);
-}
-```
+- `src/slangd/semantic/semantic_index.cpp` - Type traversal and indexing
+- `test/slangd/semantic/type_reference_test.cpp` - Nested typedef regression test
 
-**Why This Works**:
-- Exact intervention point - captures usage before resolution discards it
-- Symbol-based - no syntax ambiguity issues
-- Universal - works for all typedef usage patterns
-- Minimal - integrates cleanly with existing type resolution
+## CST Range Limitations
 
-## Architecture Files
+CST groups semantically distinct constructs into single syntax nodes (e.g., type dimensions vs array selection both use `IdentifierSelectName`). LSP needs component-level ranges, but CST only provides composite ranges.
 
-**Core Type System**:
-- `/home/shou-li/slang/source/ast/types/Type.cpp` - Type system method delegation
-- `/home/shou-li/slang/include/slang/ast/symbols/TypeSymbols.h` - TypeReferenceSymbol definition
-
-**LSP Integration**:
-- `/home/shou-li/slangd/src/slangd/semantic/semantic_index.cpp` - IndexVisitor handlers
-- `/home/shou-li/slangd/include/slangd/semantic/semantic_index.hpp` - Handler declarations
-
-**Expression Validation**:
-- `/home/shou-li/slang/source/ast/expressions/ConversionExpression.cpp` - Cast expression validation
-- Other expression handlers that use type validation
-
-## Critical Syntax Tree Limitations
-
-### Fundamental CST Grouping Issue
-
-**Root Cause**: Slang's Concrete Syntax Tree (CST) treats large chunks of different syntax as single syntax nodes, making precise range extraction impossible at the syntax level.
-
-**Core Problem**: The syntax tree level cannot distinguish between semantically different constructs:
-- Type array dimensions: `control_t [WIDTH-1:0]` 
-- Array element selection: `array[WIDTH-1:0]`
-
-Both create identical `IdentifierSelectName` syntax nodes despite having completely different semantic meanings.
-
-**Architectural Limitation**: LSP requires component-level ranges for precise navigation, but CST provides only composite ranges. This is not an AST issue - it's a fundamental limitation of how syntax trees group tokens.
-
-**Universal Impact**: This limitation affects any construct where multiple semantic components are grouped into single syntax nodes:
-- Typedef references with array dimensions
-- Interface port declarations with modport selection
-- Method calls with complex parameter expressions
-- Any syntax where precise sub-component ranges are needed for LSP navigation
-
-### TypeReferenceSymbol Range Trimming Solution
-
-**Workaround Strategy**: Since syntax-level extraction is fundamentally impossible, trim ranges using semantic information (symbol name length).
-
-**Implementation**: 5-line fix in `Type::fromLookupResult()` trims typedef ranges to exact name boundaries, bypassing syntax tree limitations entirely.
-
-**Design Principle**: When CST cannot provide precise ranges, use semantic analysis to reconstruct component boundaries rather than accepting broad composite ranges.
-
-**Impact**: Resolves typedef navigation issues by working around fundamental syntax tree grouping limitations.
+**Workaround**: `Type::fromLookupResult()` trims typedef ranges using semantic information (symbol name length), bypassing syntax tree limitations. This enables precise LSP navigation despite CST grouping.
 
 ## Type Traversal Strategy
 
-### TypeAlias vs TypeReference: Different Traversal Rules
+### TypeReference vs TypeAlias Traversal
 
-**Critical Distinction**: TypeAlias and TypeReference serve different purposes and require different traversal strategies in LSP.
+**TypeReference**: STOP at usage - it's a leaf node representing user's typedef reference. Traversing further creates duplicates.
 
-#### TypeReference (Variable/Cast Usage)
-```systemverilog
-typedef logic [7:0] byte_t;
-byte_t my_var;        // TypeReference
-byte_t'(some_value);  // TypeReference
-```
+**TypeAlias**: CONTINUE traversal into target type - may contain nested TypeReferences that need indexing for go-to-definition.
 
-**Traversal Rule**: **STOP at TypeReference - do NOT traverse resolved type**
+### Deduplication
 
-```cpp
-case SymbolKind::TypeReference: {
-  const auto& type_ref = type.as<TypeReferenceSymbol>();
-  // Create semantic entry for this usage
-  AddReference(type_ref.getUsageLocation(), typedef_definition);
-  // STOP HERE - do not traverse into resolved TypeAlias
-  break;  // No visitDefault or recursive traversal
-}
-```
+Multiple symbols sharing the same type cause duplicate traversals. Track visited type syntax nodes to deduplicate at source level - types from the same location share syntax node pointers.
 
-**Why**: TypeReference is a leaf node for LSP. It represents a user's reference to a typedef. Traversing further would create duplicate entries.
-
-#### TypeAlias (Typedef Declaration)
-```systemverilog
-typedef byte_t word_t;  // TypeAlias using another typedef
-```
-
-**Traversal Rule**: **DO traverse the target type** to find nested typedef references
-
-```cpp
-case SymbolKind::TypeAlias: {
-  const auto& type_alias = type.as<TypeAliasType>();
-  // Create self-definition entry
-  AddDefinition(type_alias, ...);
-  // CONTINUE - traverse target to find nested TypeReference
-  TraverseType(type_alias.targetType.getType());
-  break;
-}
-```
-
-**Why**: The target type may contain another TypeReference (e.g., `byte_t` in example). We need to index that reference so users can click `byte_t` and navigate to its definition.
-
-### Deduplication Strategy
-
-**Problem**: Multiple symbols can share the same type, causing duplicate traversals:
-
-```systemverilog
-typedef logic [7:0] byte_t;
-byte_t var_a, var_b;  // Same type, two variables
-```
-
-Without deduplication, we'd traverse `byte_t`'s type twice, creating duplicate semantic entries.
-
-**Solution**: Track visited type syntax nodes
-
-```cpp
-class IndexVisitor {
-  std::unordered_set<const syntax::SyntaxNode*> visited_type_syntaxes_;
-
-  void TraverseType(const Type& type) {
-    // Skip if already visited this type's syntax
-    if (const auto* syntax = type.getSyntax()) {
-      if (!visited_type_syntaxes_.insert(syntax).second) {
-        return;  // Already processed
-      }
-    }
-    // Continue with type traversal...
-  }
-};
-```
-
-**Key Insight**: Types created from the same source location share the same syntax node pointer. By tracking syntax nodes, we deduplicate at the source level.
-
-**Edge Case - Cast Expressions**: TypeReferences in casts initially lacked syntax (created dynamically). Fixed in Slang fork by passing syntax through `Expression::bindLookupResult()` → `Type::fromLookupResult()` → `TypeReferenceSymbol::create()`.
-
-### Slang Fork Modifications for Syntax Preservation
-
-**Problem**: TypeReferenceSymbol was created without syntax nodes, breaking deduplication.
-
-**Root Cause**: Type creation from expressions (casts) didn't have access to syntax context.
-
-**Solution**: Thread syntax through the call chain:
-
-1. **Expression.h/cpp**: Add `syntax` parameter to `bindLookupResult()`
-2. **Type.h/cpp**: Add `syntax` parameter to `fromLookupResult()`
-3. **AllTypes.h/cpp**: Add `syntax` parameter to `TypeReferenceSymbol` constructor, call `setSyntax(*syntax)`
-
-**Result**: ALL TypeReferenceSymbol instances now have syntax, enabling universal deduplication.
-
-```cpp
-// In Expression::bindLookupResult
-const Type& resultType = Type::fromLookupResult(comp, result, sourceRange, context, syntax);
-
-// In Type::fromLookupResult
-if (isTypedefUsage) {
-  finalType = &TypeReferenceSymbol::create(*finalType, sourceRange, syntax, compilation);
-}
-
-// In TypeReferenceSymbol constructor
-TypeReferenceSymbol::TypeReferenceSymbol(..., const syntax::SyntaxNode* syntax) {
-  setSyntax(*syntax);  // Preserve syntax for deduplication
-}
-```
-
-This architecture enables universal typedef go-to-definition across all SystemVerilog constructs while maintaining full compatibility with the existing Slang type system.
+**Syntax Threading**: TypeReferences in cast expressions initially lacked syntax. Fixed by threading syntax parameter through `Expression::bindLookupResult()` → `Type::fromLookupResult()` → `TypeReferenceSymbol::create()`. All TypeReference instances now have syntax, enabling universal deduplication.
