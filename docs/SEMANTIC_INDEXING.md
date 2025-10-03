@@ -2,330 +2,206 @@
 
 ## Overview
 
-The SemanticIndex is the core component that enables LSP features like go-to-definition, find references, and document symbols. It uses a unified architecture that combines symbol storage with reference tracking in a single pass.
+SemanticIndex enables LSP features (go-to-definition, find references, document symbols) through unified symbol storage and reference tracking in a single AST pass.
 
 **Key Components:**
 
-- **SemanticIndex**: Main class that stores symbols and references
+- **SemanticIndex**: Stores symbols and references
 - **IndexVisitor**: AST visitor that processes symbols and expressions
 - **DefinitionExtractor**: Extracts precise name ranges from syntax nodes
-- **References Vector**: Stores source ranges and their target definitions
+- **References Vector**: Stores source range → target definition mappings
 
-## How Go-To-Definition Works
+**How It Works:**
 
-1. **Symbol Processing**: `ProcessSymbol()` creates `SymbolInfo` entries in `symbols_` map
-2. **Reference Creation**: Various `handle()` methods call `CreateReference()` to populate `references_` vector
-3. **Lookup**: `LookupDefinitionAt()` searches `references_` for ranges containing the cursor position
-4. **Result**: Returns the target definition range from the matching reference entry
+1. `ProcessSymbol()` creates entries in `symbols_` map
+2. `handle()` methods create reference entries in `references_` vector
+3. `LookupDefinitionAt()` searches `references_` for cursor position
+4. Returns target definition range from matching entry
 
 ## Adding New Symbol Support
 
 ### 1. Definition Extraction
 
-Add support in `DefinitionExtractor::ExtractDefinitionRange()`:
+Add to `DefinitionExtractor::ExtractDefinitionRange()`:
 
 ```cpp
 case SK::MySymbol:
   if (syntax.kind == SyntaxKind::MyDeclaration) {
-    return syntax.as<slang::syntax::MyDeclarationSyntax>()
-        .name.range();  // or .prototype->name->range() for complex cases
+    return syntax.as<MyDeclarationSyntax>().name.range();
   }
   break;
 ```
 
 **Key Points:**
 
-- Extract the precise name token range, not the full declaration
-- Use appropriate syntax node type (check Slang's `AllSyntax.h`)
+- Extract precise name token range, not full declaration
+- Check Slang's `AllSyntax.h` for syntax types
+- Use `slang --ast-json` to verify actual syntax kinds used
 - Handle null checks for optional syntax elements
+
+**Common Pitfall:** Methods like `setFromDeclarator()` can change syntax references after symbol creation. For example, variables created from `DataDeclarationSyntax` return `DeclaratorSyntax` from `getSyntax()`.
 
 ### 2. Self-Definition Handler
 
-Add a `handle()` method for the symbol type to enable go-to-definition on the symbol itself:
+Add handler method to enable go-to-definition on the symbol itself:
 
 ```cpp
-void SemanticIndex::IndexVisitor::handle(const slang::ast::MySymbol& symbol) {
-  if (symbol.location.valid()) {
-    if (const auto* syntax = symbol.getSyntax()) {
-      if (syntax->kind == slang::syntax::SyntaxKind::MyDeclaration) {
-        auto definition_range = syntax->as<slang::syntax::MyDeclarationSyntax>().name.range();
-        CreateReference(definition_range, definition_range, symbol);
-      }
+void IndexVisitor::handle(const MySymbol& symbol) {
+  if (const auto* syntax = symbol.getSyntax()) {
+    if (syntax->kind == SyntaxKind::MyDeclaration) {
+      auto range = syntax->as<MyDeclarationSyntax>().name.range();
+      CreateReference(range, range, symbol);
     }
   }
-  this->visitDefault(symbol);
+  this->visitDefault(symbol);  // Always call to continue traversal
 }
 ```
 
-**Determining Syntax Support:**
+### 3. Reference Handler
 
-1. **Check symbol's constructor or methods** in Slang library to identify the syntax class it uses
-2. **Search visitor dispatch** with `grep "SyntaxClass\*" AllSyntax.h` to find ALL syntax kinds that map to that class
-3. **Handle all relevant syntax kinds** in your handler for complete coverage
-4. **Use precise name ranges** (`name.range()`) not full syntax ranges to avoid overlaps
-
-**Reality Check & Bug Discovery:** 5. **Generate test AST** with `slang --ast-json` to verify syntax kinds actually used 6. **Add comprehensive logging** for unhandled syntax kinds in handlers 7. **Let test failures guide discovery** - systematic approach can miss library quirks 8. **Trace implementation details** - methods like `setFromDeclarator()` can change syntax references after creation
-
-**Example - Hidden Indirection Discovery:**
-Variables created via `fromSyntax(DataDeclarationSyntax)` call `setFromDeclarator()` internally, changing their syntax reference to `DeclaratorSyntax`. This means `getSyntax()` returns `Declarator`, not `DataDeclaration`, despite the creation path.
-
-**Don't forget:**
-
-- Add declaration to `semantic_index.hpp`
-- Call `visitDefault()` to continue AST traversal
-
-### 3. Reference Handler (for expressions that use the symbol)
-
-Add handlers for expression types that reference your symbol:
+Add handlers for expressions that reference your symbol:
 
 ```cpp
-void SemanticIndex::IndexVisitor::handle(const slang::ast::MyExpression& expr) {
-  // Extract target symbol from expression
+void IndexVisitor::handle(const MyExpression& expr) {
   const auto* target = expr.getTargetSymbol();
   CreateReference(expr.sourceRange, *target);
   this->visitDefault(expr);
 }
 ```
 
-**Common Expression Types:**
+**Common Expression Types:** `NamedValueExpression`, `CallExpression`, `ConversionExpression`
 
-- `NamedValueExpression`: Variable/symbol references
-- `CallExpression`: Function/task calls
-- `ConversionExpression`: Type casts
-- Custom expression types for specific language constructs
+### 4. Include Headers & Test
 
-### 4. Include Required Headers
-
-Add necessary includes to `semantic_index.cpp`:
+Add includes to `semantic_index.cpp` and create tests in `definition_test.cpp`:
 
 ```cpp
-#include <slang/ast/expressions/MyExpression.h>
-#include <slang/ast/symbols/MySymbols.h>
-```
-
-### 5. Test Coverage
-
-Create comprehensive tests in `definition_test.cpp`:
-
-```cpp
-TEST_CASE("SemanticIndex my_symbol self-definition lookup works") {
-  // Test go-to-definition on the symbol definition itself
+TEST_CASE("my_symbol self-definition") {
   fixture.AssertGoToDefinition(*index, code, "my_symbol", 0, 0);
 }
-
-TEST_CASE("SemanticIndex my_symbol reference go-to-definition works") {
-  // Test go-to-definition on a usage/reference of the symbol
-  fixture.AssertGoToDefinition(*index, code, "my_symbol", 1, 0);
-}
 ```
 
-**Test Parameters:**
+Test parameters: `reference_index` (which occurrence to click), `definition_index` (target occurrence)
 
-- `reference_index`: Which occurrence to click on (0 = first, 1 = second, etc.)
-- `definition_index`: Which occurrence should be the target (usually 0 for definition)
+## Cross-File Module Instantiation
 
-## Architecture Patterns
+Module navigation differs from other features due to cross-compilation metadata lookup.
 
-### Symbol vs Reference Distinction
+### Architecture
 
-- **Symbols** (`symbols_` map): Indexed by location, store symbol metadata
-- **References** (`references_` vector): Store source range → target definition mappings
+**Two-Compilation Design:**
 
-### Handler Method Patterns
+- **GlobalCatalog**: Compiles all files once, extracts module metadata (ModuleInfo with ports/parameters)
+- **OverlaySession**: Compiles current file + packages + interfaces only
+- **SemanticIndex**: Indexes local symbols, queries GlobalCatalog for cross-file metadata
 
-- **Symbol handlers**: Process symbol definitions, create self-references
-- **Expression handlers**: Process symbol usage, create cross-references
-- **Always call** `visitDefault()` to continue traversal
+### UninstantiatedDefSymbol Pattern
 
-### Definition Range Extraction
+When a module is instantiated but its definition is not in the current compilation, Slang creates `UninstantiatedDefSymbol` instead of `InstanceSymbol`.
 
-- Prefer precise name token ranges over full syntax ranges
-- Handle optional syntax elements gracefully
-- Fall back to `syntax.sourceRange()` when precise extraction isn't possible
+**LSP Mode Modification:** In LSP mode, all non-interface module/program instantiations are forced to use `UninstantiatedDefSymbol` for consistency (see `InstanceSymbols.cpp`). Exception: Interfaces require full elaboration for member access.
 
-## Slang Fork Modifications for LSP
+**Handler Features:**
+
+1. Instance name self-definition (via `AddDefinition`)
+2. Parameter expression navigation (visit `symbol.paramExpressions`)
+3. Port connection navigation (visit `symbol.getPortConnections()`)
+4. Cross-file module type navigation (query `catalog_->GetModule()`)
+
+**Pattern:** Following generate loop expression preservation, visit expressions stored in `UninstantiatedDefSymbol` directly without manual syntax parsing.
+
+**Integration:**
+
+- Add `CompilationFlags::IgnoreUnknownModules` to suppress unknown module diagnostics
+- SemanticIndex receives optional `GlobalCatalog*` parameter (nullptr for single-file mode)
+- O(1) module lookup via hash map, O(n) port/parameter lookup (~20 entries)
+
+**Cross-File Reference Resolution:**
+
+Module definitions exist in GlobalCatalog's compilation (different `SourceManager`), not OverlaySession's. Use `AddCrossFileReference()` to store compilation-independent `FilePosition` instead of compilation-specific `SourceLocation`. This enables go-to-definition across compilations by converting target ranges to file paths + line/column positions.
+
+## Slang Fork Modifications
 
 ### 1. Compiler-Generated Variable Redirection
 
-**Problem**: Slang creates compiler-generated temporary variables for certain constructs (e.g., genvar loop iteration variables, function return variables). When LSP encounters references to these temporaries, it should redirect to the actual user-visible symbols.
+**Problem:** Slang creates temporary variables for constructs like genvar loops. LSP should redirect to user-visible symbols.
 
-**Example**:
-```systemverilog
-genvar idx;
-for (idx = 0; idx < COUNT; idx = idx + 1) begin
-//  (declaration)  (references to temp variable, should redirect to genvar)
-```
+**Solution:** Add `getDeclaredSymbol()/setDeclaredSymbol()` to `VariableSymbol` (following `ModportPortSymbol::internalSymbol` pattern). Store genvar pointer during construction, redirect in LSP:
 
-**Root Cause**: Genvar loops require mutable iteration variables, but genvars are immutable constants. Slang creates a `VariableSymbol` with `CompilerGenerated` flag for loop iteration, then binds loop control expressions (`idx < COUNT`, `idx = idx + 1`) against this temporary variable instead of the genvar.
-
-**Solution**: Add symbol redirection infrastructure following Slang's existing patterns.
-
-**Implementation** (see BlockSymbols.cpp:760-768, VariableSymbols.h:55-58):
-
-1. Add `getDeclaredSymbol() / setDeclaredSymbol()` to `VariableSymbol` (similar to `ModportPortSymbol::internalSymbol`)
-2. Store genvar pointer in `GenerateBlockArraySymbol::genvar` field during construction
-3. Link temp variable to genvar via `local.setDeclaredSymbol(result->genvar)`
-4. In LSP, check `variable.getDeclaredSymbol()` and redirect references
-
-**Key Design Principles**:
-- Reuse what Slang already knows (the genvar was already looked up in `BlockSymbols.cpp:747`)
-- Follow existing Slang patterns (`ModportPortSymbol::internalSymbol` precedent)
-- No manual searching, no scope traversal, no visitor state tracking
-- Simple and extensible to other compiler-generated variable patterns
-
-**LSP Usage** (semantic_index.cpp:350-367):
 ```cpp
 if (variable.flags.has(VariableFlags::CompilerGenerated)) {
   if (const auto* declared = variable.getDeclaredSymbol()) {
-    target_symbol = declared;  // Redirect to actual symbol
+    target_symbol = declared;
   }
 }
 ```
 
 ### 2. Parameter Expression Preservation
 
-**Problem**: Slang's `evalInteger()` converts parameter expressions to constants, losing symbol references needed for LSP go-to-definition:
+**Problem:** Slang's `evalInteger()` converts parameter expressions to constants, losing symbol references.
 
-```systemverilog
-parameter WIDTH = 8;
-logic [WIDTH-1:0] data;  // evalInteger converts WIDTH-1 to literal 7
-```
-
-**Solution**: Symmetric Expression Storage
-
-**Key Insight**: Store expressions **alongside the values they produce** for perfect symmetry:
+**Solution:** Symmetric expression storage - store expressions alongside computed values in `EvaluatedDimension` struct:
 
 ```cpp
-// In ASTContext.h - Symmetric design
-struct SLANG_EXPORT EvaluatedDimension {
-    // Computed values
-    DimensionKind kind = DimensionKind::Unknown;
-    ConstantRange range;
-    const Type* associativeType = nullptr;
-    uint32_t queueMaxSize = 0;
-
-    // Corresponding source expressions (symmetric!)
-    const Expression* rangeLeftExpr = nullptr;        // → range.left
-    const Expression* rangeRightExpr = nullptr;       // → range.right
-    const Expression* associativeTypeExpr = nullptr;  // → associativeType
-    const Expression* queueMaxSizeExpr = nullptr;     // → queueMaxSize
-
-    // Clean visitor pattern
-    template<typename TVisitor>
-    void visitExpressions(TVisitor&& visitor) const;
+struct EvaluatedDimension {
+  ConstantRange range;
+  const Expression* rangeLeftExpr = nullptr;   // → range.left
+  const Expression* rangeRightExpr = nullptr;  // → range.right
+  // ... other fields
 };
 ```
 
-**Critical Discovery**: Slang's `BumpAllocator` requires **trivially destructible types**. Our symmetric approach using individual pointers (not `SmallVector`) satisfies this constraint.
+Store directly in type classes (e.g., `PackedArrayType::evalDim`) to eliminate re-evaluation. Compatible with Slang's `BumpAllocator` (trivially destructible).
 
-### Direct Type Storage
+## Design Principles
 
-Store `EvaluatedDimension` directly in types to eliminate re-evaluation:
+### No Overlapping Ranges
 
-```cpp
-// In AllTypes.h
-class PackedArrayType {
-    const Type& elementType;
-    ConstantRange range;
-    EvaluatedDimension evalDim;  // Direct storage - no pointers!
-};
+**Critical Rule:** Source ranges in `references_` should NEVER overlap. If they do, fix the root cause in reference creation.
 
-// LSP accesses expressions without re-evaluation
-packedArrayType.evalDim.visitExpressions([this](const Expression& expr) {
-    expr.visit(*this);  // Direct access to stored expressions
-});
-```
+**Wrong:** Add disambiguation logic to `LookupDefinitionAt()`
+**Correct:** Use precise name token ranges, not full syntax ranges
 
-### Benefits
+### Handler Patterns
 
-- **Zero re-evaluation**: Expressions stored once during compilation, accessed many times in LSP
-- **Trivially destructible**: Compatible with Slang's BumpAllocator memory management
-- **Symmetric design**: Perfect correspondence between computed values and source expressions
-- **Direct type access**: No `evalPackedDimension()` calls needed in LSP code
-- **Universal coverage**: Handles all dimension types (ranges, queues, associative arrays)
+- **Symbol handlers:** Process definitions, create self-references
+- **Expression handlers:** Process usage, create cross-references
+- **Always call** `visitDefault()` to continue traversal
 
-## Debugging Tips
+### Definition Range Extraction
 
-### AST Investigation
+- Prefer precise name token ranges
+- Handle optional syntax elements gracefully
+- Fallback to `syntax.sourceRange()` when precise extraction impossible
 
-Use the debug directory for AST exploration:
+## Debugging
+
+**AST Investigation:**
 
 ```bash
 mkdir -p debug
-echo 'your test code' > debug/test.sv
+echo 'test code' > debug/test.sv
 slang debug/test.sv --ast-json debug/ast.json
-# Search the JSON for symbol kinds and expression types
 ```
 
-### Common Issues
+**Common Issues:**
 
-1. **"LookupDefinitionAt failed"**: Missing reference creation (need expression handler)
-2. **"No symbol found"**: Missing symbol processing (need definition extraction)
-3. **Wrong definition target**: Check reference creation logic or test indices
-4. **Overlapping source ranges**: Fix the root cause in reference creation, don't add disambiguation logic
+- "LookupDefinitionAt failed": Missing expression handler
+- "No symbol found": Missing definition extraction
+- "Wrong definition target": Check reference creation logic
+- Overlapping ranges: Fix reference creation, don't add disambiguation
 
-### Test Development
-
-1. Start with failing tests
-2. Add debug logging to understand AST structure
-3. Implement minimal changes to make tests pass
-4. Clean up debug code
+**Test Development:** Start with failing tests, add logging, implement minimal fix, clean up.
 
 ## Type Reference Handling
 
-For typedef and type reference handling, see the dedicated documentation: `LSP_TYPE_HANDLING.md`
-
-This covers:
-
-- TypeReferenceSymbol architecture
-- LSP vs Slang library differences
-- Type system integration requirements
-- Debugging strategies for type-related issues
-
-## Important Design Principle: No Overlapping Ranges
-
-**Critical Rule**: Source ranges in `references_` should NEVER overlap. If they do, you have a bug in reference creation.
-
-**Wrong approach**: Add disambiguation logic to `LookupDefinitionAt()`
-
-```cpp
-// DON'T DO THIS - masks the real problem
-if (range_size < smallest_range_size) {
-  best_match = &ref_entry;  // Band-aid solution
-}
-```
-
-**Correct approach**: Fix the root cause in reference creation
-
-- Use precise name token ranges, not full syntax ranges
-- For user-defined types: Use typedef name length for exact bounds
-- For overlapping contexts: Create separate, non-overlapping reference entries
-
-**Why this matters**:
-
-- Overlaps indicate imprecise reference creation
-- Disambiguation logic becomes complex and brittle
-- The real issue is creating incorrect source ranges in the first place
-
-The `LookupDefinitionAt()` implementation should be simple:
-
-```cpp
-for (const auto& ref_entry : references_) {
-  if (ref_entry.source_range.contains(loc)) {
-    return ref_entry.target_range;  // First match wins - no overlap needed
-  }
-}
-```
+See `LSP_TYPE_HANDLING.md` for typedef and type reference details.
 
 ## Examples
 
-See the subroutine implementation for a complete example:
+See subroutine implementation:
 
-- **Definition extraction**: `SK::Subroutine` case in `definition_extractor.cpp`
-- **Self-references**: `handle(SubroutineSymbol&)` in `semantic_index.cpp`
-- **Call references**: `handle(CallExpression&)` in `semantic_index.cpp`
-- **Test coverage**: Multiple test cases in `definition_test.cpp`
-
-## Known Limitations
-
-None currently documented. Previous limitations with genvar loop control expression references have been resolved through the compiler-generated variable redirection infrastructure (see "Slang Fork Modifications for LSP" section).
+- Definition extraction: `SK::Subroutine` in `definition_extractor.cpp`
+- Self-references: `handle(SubroutineSymbol&)` in `semantic_index.cpp`
+- Call references: `handle(CallExpression&)` in `semantic_index.cpp`
+- Tests: `definition_test.cpp`
