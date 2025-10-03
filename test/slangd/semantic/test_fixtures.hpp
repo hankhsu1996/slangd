@@ -1,12 +1,16 @@
 #pragma once
 
 #include <algorithm>
+#include <fstream>
 #include <memory>
+#include <regex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include <asio.hpp>
+#include <catch2/catch_all.hpp>
 #include <fmt/format.h>
 #include <slang/ast/Compilation.h>
 #include <slang/syntax/SyntaxTree.h>
@@ -15,7 +19,10 @@
 #include <slang/util/Bag.h>
 #include <spdlog/spdlog.h>
 
+#include "slangd/core/project_layout_service.hpp"
 #include "slangd/semantic/semantic_index.hpp"
+#include "slangd/services/global_catalog.hpp"
+#include "slangd/services/overlay_session.hpp"
 #include "test/slangd/common/file_fixture.hpp"
 
 namespace slangd::semantic::test {
@@ -106,6 +113,47 @@ class SemanticTestFixture {
       return {};
     }
     return slang::SourceLocation{buffer_id_, offset};
+  }
+
+  static auto FindSymbolOffsetsInText(
+      const std::string& text, std::string_view symbol_name)
+      -> std::vector<size_t> {
+    std::vector<size_t> offsets;
+    std::string pattern = R"((?:^|[\s.]))" + std::string(symbol_name) + R"(\b)";
+    std::regex symbol_regex(pattern);
+
+    auto begin = std::sregex_iterator(text.begin(), text.end(), symbol_regex);
+    auto end = std::sregex_iterator();
+
+    for (auto it = begin; it != end; ++it) {
+      auto match_pos = static_cast<size_t>(it->position());
+      if (match_pos < text.size() && (std::isalnum(text[match_pos]) == 0) &&
+          text[match_pos] != '_') {
+        match_pos += 1;
+      }
+      offsets.push_back(match_pos);
+    }
+
+    return offsets;
+  }
+
+  auto FindAllOccurrences(
+      const std::string& code, const std::string& symbol_name)
+      -> std::vector<slang::SourceLocation> {
+    auto offsets = FindSymbolOffsetsInText(code, symbol_name);
+
+    if (offsets.empty()) {
+      throw std::runtime_error(
+          fmt::format(
+              "FindAllOccurrences: No occurrences of '{}' found", symbol_name));
+    }
+
+    std::vector<slang::SourceLocation> occurrences;
+    for (size_t offset : offsets) {
+      occurrences.emplace_back(buffer_id_, offset);
+    }
+
+    return occurrences;
   }
 
   // Public accessors for derived classes and tests
@@ -371,6 +419,233 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
              entry.source_range.start().buffer().getId() !=
                  entry.definition_range.start().buffer().getId();
     });
+  }
+
+  // Build GlobalCatalog from temp directory files
+  // Requires files to be written via CreateFile() first
+  auto BuildCatalog(asio::any_io_executor executor) const
+      -> std::shared_ptr<slangd::services::GlobalCatalog> {
+    auto layout_service = slangd::ProjectLayoutService::Create(
+        executor, GetTempDir(), spdlog::default_logger());
+    return slangd::services::GlobalCatalog::CreateFromProjectLayout(
+        layout_service, spdlog::default_logger());
+  }
+
+  struct SessionWithCatalog {
+    std::shared_ptr<slangd::services::OverlaySession> session;
+    std::shared_ptr<slangd::services::GlobalCatalog> catalog;
+  };
+
+  // Build OverlaySession from disk files with GlobalCatalog
+  // Used for cross-file navigation tests
+  // Returns both session and catalog for test access
+  auto BuildSessionFromDiskWithCatalog(
+      std::string_view current_file_name, asio::any_io_executor executor)
+      -> SessionWithCatalog {
+    auto layout_service = slangd::ProjectLayoutService::Create(
+        executor, GetTempDir(), spdlog::default_logger());
+    auto catalog = slangd::services::GlobalCatalog::CreateFromProjectLayout(
+        layout_service, spdlog::default_logger());
+
+    // Read current file content from disk
+    auto current_path = GetTempDir().Path() / current_file_name;
+    std::ifstream file(current_path);
+    std::string content(
+        (std::istreambuf_iterator<char>(file)),
+        std::istreambuf_iterator<char>());
+
+    std::string uri = "file:///" + std::string(current_file_name);
+
+    // Create OverlaySession with catalog (handles all compilation setup)
+    auto session = slangd::services::OverlaySession::Create(
+        uri, content, layout_service, catalog);
+
+    return {.session = session, .catalog = catalog};
+  }
+
+  static auto FindAllOccurrencesInSession(
+      const slangd::services::OverlaySession& session,
+      std::string_view symbol_name) -> std::vector<slang::SourceLocation> {
+    const auto& source_mgr = session.GetSourceManager();
+    std::vector<slang::SourceLocation> occurrences;
+
+    for (slang::BufferID buffer : source_mgr.getAllBuffers()) {
+      std::string_view buffer_content = source_mgr.getSourceText(buffer);
+      std::string buffer_str(buffer_content);
+
+      auto offsets = FindSymbolOffsetsInText(buffer_str, symbol_name);
+
+      for (size_t offset : offsets) {
+        occurrences.emplace_back(buffer, offset);
+      }
+    }
+
+    return occurrences;
+  }
+
+  static auto FindLocationInSession(
+      const slangd::services::OverlaySession& session,
+      std::string_view symbol_name, size_t occurrence_index = 0)
+      -> slang::SourceLocation {
+    auto occurrences = FindAllOccurrencesInSession(session, symbol_name);
+
+    if (occurrence_index >= occurrences.size()) {
+      return {};
+    }
+
+    return occurrences[occurrence_index];
+  }
+
+  // High-level assertion helpers
+
+  void AssertCrossFileDefinition(
+      const SemanticIndex& index, const std::string& code,
+      const std::string& symbol) {
+    auto location = FindLocation(code, symbol);
+    REQUIRE(location.valid());
+
+    auto def_loc = index.LookupDefinitionAt(location);
+    REQUIRE(def_loc.has_value());
+
+    // For package imports, they're in overlay so should be same_file_range
+    // For modules, they should be cross_file_path
+    bool is_cross_file =
+        def_loc->cross_file_path.has_value() ||
+        (def_loc->same_file_range.has_value() &&
+         def_loc->same_file_range->start().buffer() != location.buffer());
+    REQUIRE(is_cross_file);
+  }
+
+  static void AssertCrossFileDefinition(
+      const SessionWithCatalog& result, std::string_view symbol,
+      std::string_view expected_source_file,
+      std::string_view expected_def_file) {
+    auto location = FindLocationInSession(*result.session, symbol);
+    REQUIRE(location.valid());
+
+    auto def_loc =
+        result.session->GetSemanticIndex().LookupDefinitionAt(location);
+    REQUIRE(def_loc.has_value());
+
+    auto location_file =
+        result.session->GetSourceManager().getFileName(location);
+    REQUIRE(location_file.find(expected_source_file) != std::string_view::npos);
+
+    REQUIRE(def_loc->cross_file_path.has_value());
+    REQUIRE(def_loc->cross_file_range.has_value());
+
+    auto def_file = def_loc->cross_file_path->String();
+    REQUIRE(def_file.find(expected_def_file) != std::string_view::npos);
+
+    REQUIRE(def_loc->cross_file_range->start.line >= 0);
+    REQUIRE(def_loc->cross_file_range->start.character >= 0);
+    REQUIRE(def_loc->cross_file_range->end.line >= 0);
+    REQUIRE(def_loc->cross_file_range->end.character >= 0);
+
+    auto range_length = def_loc->cross_file_range->end.character -
+                        def_loc->cross_file_range->start.character;
+    REQUIRE(range_length == static_cast<int>(symbol.length()));
+  }
+
+  static void AssertCrossFileDef(
+      const SessionWithCatalog& result, std::string_view ref_content,
+      std::string_view def_content, std::string_view symbol, size_t ref_index,
+      size_t def_index) {
+    auto ref_offsets =
+        FindSymbolOffsetsInText(std::string(ref_content), symbol);
+    REQUIRE(ref_index < ref_offsets.size());
+
+    auto def_offsets =
+        FindSymbolOffsetsInText(std::string(def_content), symbol);
+    REQUIRE(def_index < def_offsets.size());
+
+    auto ref_location =
+        FindLocationInSession(*result.session, symbol, ref_index);
+    REQUIRE(ref_location.valid());
+
+    auto def_loc =
+        result.session->GetSemanticIndex().LookupDefinitionAt(ref_location);
+    REQUIRE(def_loc.has_value());
+    REQUIRE(def_loc->cross_file_path.has_value());
+    REQUIRE(def_loc->cross_file_range.has_value());
+
+    auto range_length = def_loc->cross_file_range->end.character -
+                        def_loc->cross_file_range->start.character;
+    REQUIRE(range_length == static_cast<int>(symbol.length()));
+  }
+
+  static void AssertCrossFileDefinitionAt(
+      const SessionWithCatalog& result, std::string_view symbol,
+      size_t occurrence_index, std::string_view expected_source_file,
+      std::string_view expected_def_file) {
+    auto occurrences = FindAllOccurrencesInSession(*result.session, symbol);
+    REQUIRE(occurrence_index < occurrences.size());
+
+    auto location = occurrences[occurrence_index];
+    REQUIRE(location.valid());
+
+    auto def_loc =
+        result.session->GetSemanticIndex().LookupDefinitionAt(location);
+    REQUIRE(def_loc.has_value());
+
+    auto location_file =
+        result.session->GetSourceManager().getFileName(location);
+    REQUIRE(location_file.find(expected_source_file) != std::string_view::npos);
+
+    REQUIRE(def_loc->cross_file_path.has_value());
+    REQUIRE(def_loc->cross_file_range.has_value());
+
+    auto def_file = def_loc->cross_file_path->String();
+    REQUIRE(def_file.find(expected_def_file) != std::string_view::npos);
+
+    REQUIRE(def_loc->cross_file_range->start.line >= 0);
+    REQUIRE(def_loc->cross_file_range->start.character >= 0);
+    REQUIRE(def_loc->cross_file_range->end.line >= 0);
+    REQUIRE(def_loc->cross_file_range->end.character >= 0);
+
+    auto range_length = def_loc->cross_file_range->end.character -
+                        def_loc->cross_file_range->start.character;
+    REQUIRE(range_length == static_cast<int>(symbol.length()));
+  }
+
+  void AssertSameFileDefinition(
+      const SemanticIndex& index, const std::string& code,
+      const std::string& symbol, size_t reference_index = 0) {
+    auto occurrences = FindAllOccurrences(code, symbol);
+
+    if (reference_index >= occurrences.size()) {
+      throw std::runtime_error(
+          fmt::format(
+              "AssertSameFileDefinition: reference_index {} out of range for "
+              "symbol '{}' (found {} occurrences)",
+              reference_index, symbol, occurrences.size()));
+    }
+
+    auto location = occurrences[reference_index];
+    REQUIRE(location.valid());
+
+    auto def_loc = index.LookupDefinitionAt(location);
+    REQUIRE(def_loc.has_value());
+
+    REQUIRE(!def_loc->cross_file_path.has_value());
+    REQUIRE(def_loc->same_file_range.has_value());
+
+    auto actual_start = def_loc->same_file_range->start().offset();
+    auto actual_end = def_loc->same_file_range->end().offset();
+    auto expected_def_offset = occurrences[0].offset();
+
+    REQUIRE(actual_start == expected_def_offset);
+    REQUIRE(actual_end - actual_start == symbol.length());
+  }
+
+  void AssertDefinitionNotCrash(
+      const SemanticIndex& index, const std::string& code,
+      const std::string& symbol) {
+    auto location = FindLocation(code, symbol);
+    REQUIRE(location.valid());
+
+    // Just check it doesn't crash - ignore return value
+    (void)index.LookupDefinitionAt(location);
   }
 };
 

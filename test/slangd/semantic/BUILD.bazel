@@ -13,6 +13,7 @@ cc_test(
     ],
     deps = [
         "//:slangd_core",
+        "//test/slangd:async_fixture",
         "//test/slangd:file_fixture",
         "@catch2",
         "@fmt",

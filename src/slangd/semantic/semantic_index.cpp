@@ -24,6 +24,7 @@
 #include "slangd/semantic/definition_extractor.hpp"
 #include "slangd/semantic/document_symbol_builder.hpp"
 #include "slangd/semantic/symbol_utils.hpp"
+#include "slangd/services/global_catalog.hpp"
 #include "slangd/utils/conversion.hpp"
 
 namespace slangd::semantic {
@@ -31,12 +32,14 @@ namespace slangd::semantic {
 auto SemanticIndex::FromCompilation(
     slang::ast::Compilation& compilation,
     const slang::SourceManager& source_manager,
-    const std::string& current_file_uri) -> std::unique_ptr<SemanticIndex> {
+    const std::string& current_file_uri, const services::GlobalCatalog* catalog)
+    -> std::unique_ptr<SemanticIndex> {
   auto index =
       std::unique_ptr<SemanticIndex>(new SemanticIndex(source_manager));
 
   // Create visitor for comprehensive symbol collection and reference tracking
-  auto visitor = IndexVisitor(*index, source_manager, current_file_uri);
+  auto visitor =
+      IndexVisitor(*index, source_manager, current_file_uri, catalog);
 
   const auto& root = compilation.getRoot();
 
@@ -188,6 +191,8 @@ auto SemanticEntry::Make(
       .parent = parent_scope,
       .is_definition = is_definition,
       .definition_range = definition_range,
+      .cross_file_path = std::nullopt,
+      .cross_file_range = std::nullopt,
       .buffer_id = unwrapped.location.buffer()};
 }
 
@@ -214,6 +219,25 @@ void SemanticIndex::IndexVisitor::AddReference(
   AddEntry(
       SemanticEntry::Make(
           symbol, name, source_range, false, definition_range, parent_scope));
+}
+
+void SemanticIndex::IndexVisitor::AddCrossFileReference(
+    const slang::ast::Symbol& symbol, std::string_view name,
+    slang::SourceRange source_range, slang::SourceRange definition_range,
+    const slang::SourceManager& catalog_source_manager,
+    const slang::ast::Scope* parent_scope) {
+  // Create base entry
+  auto entry = SemanticEntry::Make(
+      symbol, name, source_range, false, definition_range, parent_scope);
+
+  // Convert definition_range to compilation-independent format using catalog's
+  // source manager
+  auto file_name = catalog_source_manager.getFileName(definition_range.start());
+  entry.cross_file_path = CanonicalPath(std::filesystem::path(file_name));
+  entry.cross_file_range =
+      ConvertSlangRangeToLspRange(definition_range, catalog_source_manager);
+
+  AddEntry(std::move(entry));
 }
 
 // IndexVisitor implementation
@@ -1078,9 +1102,120 @@ void SemanticIndex::IndexVisitor::handle(
   this->visitDefault(statement_block);
 }
 
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::UninstantiatedDefSymbol& symbol) {
+  const auto* syntax = symbol.getSyntax();
+  if (syntax == nullptr) {
+    this->visitDefault(symbol);
+    return;
+  }
+
+  // Always create self-definition for instance name (same-file and cross-file)
+  if (symbol.location.valid() &&
+      syntax->kind == slang::syntax::SyntaxKind::HierarchicalInstance) {
+    auto start_loc = symbol.location;
+    auto end_loc = start_loc + symbol.name.length();
+    auto name_range = slang::SourceRange{start_loc, end_loc};
+    AddDefinition(symbol, symbol.name, name_range, symbol.getParentScope());
+  }
+
+  // Visit parameter and port expressions (for same-file cases)
+  // UninstantiatedDefSymbol stores these expressions even without catalog
+  for (const auto* expr : symbol.paramExpressions) {
+    if (expr != nullptr) {
+      expr->visit(*this);
+    }
+  }
+
+  auto port_conns = symbol.getPortConnections();
+  for (const auto* port_conn : port_conns) {
+    if (port_conn != nullptr) {
+      port_conn->visit(*this);
+    }
+  }
+
+  // Cross-file handling requires catalog
+  if (catalog_ == nullptr) {
+    this->visitDefault(symbol);
+    return;
+  }
+
+  const auto* module_info = catalog_->GetModule(symbol.definitionName);
+  if (module_info == nullptr) {
+    this->visitDefault(symbol);
+    return;
+  }
+
+  // The syntax is HierarchicalInstanceSyntax, whose parent is
+  // HierarchyInstantiationSyntax We need to get the parent to access the type
+  // name range
+  if (syntax->kind == slang::syntax::SyntaxKind::HierarchicalInstance) {
+    const auto* parent_syntax = syntax->parent;
+    if (parent_syntax != nullptr &&
+        parent_syntax->kind ==
+            slang::syntax::SyntaxKind::HierarchyInstantiation) {
+      const auto& inst_syntax =
+          parent_syntax->as<slang::syntax::HierarchyInstantiationSyntax>();
+      auto type_range = inst_syntax.type.range();
+
+      // Module definitions are in GlobalCatalog's compilation, not
+      // OverlaySession Use AddCrossFileReference to store
+      // compilation-independent location
+      const auto& catalog_sm = catalog_->GetSourceManager();
+      AddCrossFileReference(
+          symbol, symbol.definitionName, type_range,
+          module_info->definition_range, catalog_sm, symbol.getParentScope());
+
+      // Handle port connections (named ports only, skip positional)
+      const auto& hier_inst_syntax =
+          syntax->as<slang::syntax::HierarchicalInstanceSyntax>();
+      for (const auto* port_conn : hier_inst_syntax.connections) {
+        if (port_conn->kind == slang::syntax::SyntaxKind::NamedPortConnection) {
+          const auto& npc =
+              port_conn->as<slang::syntax::NamedPortConnectionSyntax>();
+          std::string_view port_name = npc.name.valueText();
+
+          // O(1) lookup in port hash map
+          auto it = module_info->port_lookup.find(std::string(port_name));
+          if (it != module_info->port_lookup.end()) {
+            const auto* port_info = it->second;
+            AddCrossFileReference(
+                symbol, port_name, npc.name.range(), port_info->def_range,
+                catalog_sm, symbol.getParentScope());
+          }
+        }
+      }
+
+      // Handle parameter assignments (named parameters only)
+      if (inst_syntax.parameters != nullptr) {
+        const auto& param_assign = *inst_syntax.parameters;
+        for (const auto* param : param_assign.parameters) {
+          if (param->kind == slang::syntax::SyntaxKind::NamedParamAssignment) {
+            const auto& npa =
+                param->as<slang::syntax::NamedParamAssignmentSyntax>();
+            std::string_view param_name = npa.name.valueText();
+
+            // O(1) lookup in parameter hash map
+            auto it =
+                module_info->parameter_lookup.find(std::string(param_name));
+            if (it != module_info->parameter_lookup.end()) {
+              const auto* param_info = it->second;
+              AddCrossFileReference(
+                  symbol, param_name, npa.name.range(), param_info->def_range,
+                  catalog_sm, symbol.getParentScope());
+            }
+          }
+        }
+      }
+    }
+  }
+
+  this->visitDefault(symbol);
+}
+
 // Go-to-definition implementation
 auto SemanticIndex::LookupDefinitionAt(slang::SourceLocation loc) const
-    -> std::optional<slang::SourceRange> {
+    -> std::optional<DefinitionLocation> {
   // Binary search in sorted entries by (buffer_id, offset)
   const auto target = std::pair{loc.buffer().getId(), loc.offset()};
 
@@ -1100,7 +1235,17 @@ auto SemanticIndex::LookupDefinitionAt(slang::SourceLocation loc) const
     --it;
     // Check if the candidate entry actually contains the target location
     if (it->source_range.contains(loc)) {
-      return it->definition_range;
+      DefinitionLocation def_loc;
+
+      // Check if this is a cross-file reference (has cross_file_path set)
+      if (it->cross_file_path.has_value()) {
+        def_loc.cross_file_path = it->cross_file_path;
+        def_loc.cross_file_range = it->cross_file_range;
+      } else {
+        def_loc.same_file_range = it->definition_range;
+      }
+
+      return def_loc;
     }
   }
 

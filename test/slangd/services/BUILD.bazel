@@ -12,6 +12,7 @@ cc_test(
     ],
     deps = [
         "//:slangd_core",
+        "//test/slangd:async_fixture",
         "@catch2",
         "@slang",
     ],
@@ -25,6 +26,7 @@ cc_test(
     ],
     deps = [
         "//:slangd_core",
+        "//test/slangd:async_fixture",
         "@catch2",
         "@slang",
     ],

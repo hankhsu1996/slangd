@@ -29,3 +29,12 @@ cc_library(
         "//:slangd_core",
     ],
 )
+
+cc_library(
+    name = "async_fixture",
+    hdrs = ["common/async_fixture.hpp"],
+    visibility = ["//test/slangd:__subpackages__"],
+    deps = [
+        "@catch2",
+    ],
+)

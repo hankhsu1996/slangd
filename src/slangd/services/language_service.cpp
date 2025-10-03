@@ -154,20 +154,27 @@ auto LanguageService::GetDefinitionsForPosition(
       position, target_buffer, source_manager);
 
   // Look up definition using semantic index
-  auto def_range_opt = session->GetSemanticIndex().LookupDefinitionAt(location);
-  if (!def_range_opt) {
+  auto def_loc_opt = session->GetSemanticIndex().LookupDefinitionAt(location);
+  if (!def_loc_opt) {
     logger_->debug(
         "No definition found at position {}:{} in {}", position.line,
         position.character, uri);
     co_return std::vector<lsp::Location>{};
   }
 
-  // Convert to LSP location with correct file URI
-  auto lsp_location =
-      ConvertSlangLocationToLspLocation(def_range_opt->start(), source_manager);
-  // Update range to use the full definition range
-  lsp_location.range =
-      ConvertSlangRangeToLspRange(*def_range_opt, source_manager);
+  // Convert to LSP location based on definition type
+  lsp::Location lsp_location;
+  if (def_loc_opt->cross_file_path.has_value()) {
+    // Cross-file definition - use pre-converted path and range
+    lsp_location.uri = def_loc_opt->cross_file_path->ToUri();
+    lsp_location.range = *def_loc_opt->cross_file_range;
+  } else {
+    // Same-file definition - convert using current source manager
+    lsp_location = ConvertSlangLocationToLspLocation(
+        def_loc_opt->same_file_range->start(), source_manager);
+    lsp_location.range = ConvertSlangRangeToLspRange(
+        *def_loc_opt->same_file_range, source_manager);
+  }
 
   logger_->debug(
       "Found definition at {}:{}-{}:{} in {}", lsp_location.range.start.line,
