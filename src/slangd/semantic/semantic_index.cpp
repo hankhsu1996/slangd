@@ -31,12 +31,14 @@ namespace slangd::semantic {
 auto SemanticIndex::FromCompilation(
     slang::ast::Compilation& compilation,
     const slang::SourceManager& source_manager,
-    const std::string& current_file_uri) -> std::unique_ptr<SemanticIndex> {
+    const std::string& current_file_uri, const services::GlobalCatalog* catalog)
+    -> std::unique_ptr<SemanticIndex> {
   auto index =
       std::unique_ptr<SemanticIndex>(new SemanticIndex(source_manager));
 
   // Create visitor for comprehensive symbol collection and reference tracking
-  auto visitor = IndexVisitor(*index, source_manager, current_file_uri);
+  auto visitor =
+      IndexVisitor(*index, source_manager, current_file_uri, catalog);
 
   const auto& root = compilation.getRoot();
 

@@ -29,7 +29,7 @@ auto OverlaySession::Create(
 
   // Create unified semantic index (replaces DefinitionIndex + SymbolIndex)
   auto semantic_index = semantic::SemanticIndex::FromCompilation(
-      *compilation, *source_manager, uri);
+      *compilation, *source_manager, uri, catalog.get());
 
   // Create diagnostic index for the current URI (kept separate)
   auto diagnostic_index = std::make_unique<semantic::DiagnosticIndex>(
@@ -97,6 +97,7 @@ auto OverlaySession::BuildCompilation(
   slang::ast::CompilationOptions comp_options;
   comp_options.flags |= slang::ast::CompilationFlags::LintMode;
   comp_options.flags |= slang::ast::CompilationFlags::LanguageServerMode;
+  comp_options.flags |= slang::ast::CompilationFlags::IgnoreUnknownModules;
   options.set(comp_options);
 
   // Create compilation with options

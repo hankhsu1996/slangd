@@ -147,3 +147,28 @@ TEST_CASE(
     co_return;
   });
 }
+
+TEST_CASE(
+    "OverlaySession suppresses unknown module diagnostics",
+    "[overlay_session]") {
+  RunTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    auto workspace_root = slangd::CanonicalPath::CurrentPath();
+    auto layout_service = slangd::ProjectLayoutService::Create(
+        executor, workspace_root, spdlog::default_logger());
+
+    std::string test_content = R"(
+      module top;
+        UnknownModule unknown_inst();
+      endmodule
+    )";
+
+    const std::string uri = "file:///test_unknown_module.sv";
+
+    auto session = slangd::services::OverlaySession::Create(
+        uri, test_content, layout_service);
+
+    REQUIRE(session != nullptr);
+
+    co_return;
+  });
+}

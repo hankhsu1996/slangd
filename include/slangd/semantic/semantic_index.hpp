@@ -13,6 +13,10 @@
 #include <slang/text/SourceLocation.h>
 #include <slang/text/SourceManager.h>
 
+namespace slangd::services {
+class GlobalCatalog;
+}
+
 namespace slangd::semantic {
 
 // Uniquely identifies a symbol by its declaration location
@@ -82,7 +86,9 @@ class SemanticIndex {
   static auto FromCompilation(
       slang::ast::Compilation& compilation,
       const slang::SourceManager& source_manager,
-      const std::string& current_file_uri) -> std::unique_ptr<SemanticIndex>;
+      const std::string& current_file_uri,
+      const services::GlobalCatalog* catalog = nullptr)
+      -> std::unique_ptr<SemanticIndex>;
 
   // Query methods
 
@@ -123,10 +129,11 @@ class SemanticIndex {
    public:
     explicit IndexVisitor(
         SemanticIndex& index, const slang::SourceManager& source_manager,
-        std::string current_file_uri)
+        std::string current_file_uri, const services::GlobalCatalog* catalog)
         : index_(index),
           source_manager_(source_manager),
-          current_file_uri_(std::move(current_file_uri)) {
+          current_file_uri_(std::move(current_file_uri)),
+          catalog_(catalog) {
     }
 
     // Expression handlers
@@ -165,6 +172,7 @@ class SemanticIndex {
     std::reference_wrapper<SemanticIndex> index_;
     std::reference_wrapper<const slang::SourceManager> source_manager_;
     std::string current_file_uri_;
+    const services::GlobalCatalog* catalog_;
 
     // Track which type syntax nodes we've already traversed
     // Prevents duplicate traversal when multiple symbols share the same type
