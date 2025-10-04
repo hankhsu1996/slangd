@@ -227,6 +227,24 @@ class SemanticIndex {
 
     // Unified type traversal - handles all type structure recursively
     void TraverseType(const slang::ast::Type& type);
+
+    // Helper for indexing class specialization (e.g., Class#(.PARAM(value)))
+    // Traverses call syntax to find ClassNameSyntax nodes and link to
+    // genericClass
+    void IndexClassSpecialization(
+        const slang::ast::ClassType& class_type,
+        const slang::syntax::SyntaxNode* call_syntax);
+
+    // Recursively traverse scoped names to find and index ClassName nodes
+    void TraverseClassNames(
+        const slang::syntax::SyntaxNode* node,
+        const slang::ast::ClassType& class_type,
+        slang::SourceRange definition_range);
+
+    // Helper for indexing class parameter names in specialization
+    void IndexClassParameters(
+        const slang::ast::ClassType& class_type,
+        const slang::syntax::ParameterValueAssignmentSyntax& params);
   };
 };
 

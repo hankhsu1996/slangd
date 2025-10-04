@@ -101,11 +101,8 @@ TEST_CASE(
   )";
 
   auto index = fixture.CompileSource(code);
-  // Click on "value" in declaration
   fixture.AssertGoToDefinition(*index, code, "value", 0, 0);
-  // Click on first "value" in method (left side of assignment)
   fixture.AssertGoToDefinition(*index, code, "value", 1, 0);
-  // Click on second "value" in method (right side of addition)
   fixture.AssertGoToDefinition(*index, code, "value", 2, 0);
 }
 
@@ -122,9 +119,8 @@ TEST_CASE("SemanticIndex class parameter reference works", "[definition]") {
   )";
 
   auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "SIZE", 0, 0);  // Self-definition
-  fixture.AssertGoToDefinition(
-      *index, code, "SIZE", 1, 0);  // Reference in array
+  fixture.AssertGoToDefinition(*index, code, "SIZE", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "SIZE", 1, 0);
 }
 
 TEST_CASE("SemanticIndex multiple class properties work", "[definition]") {
@@ -141,10 +137,122 @@ TEST_CASE("SemanticIndex multiple class properties work", "[definition]") {
   )";
 
   auto index = fixture.CompileSource(code);
-  // Test header property
   fixture.AssertGoToDefinition(*index, code, "header", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "header", 1, 0);
-  // Test payload property
   fixture.AssertGoToDefinition(*index, code, "payload", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "payload", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex class specialization name reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package pkg;
+      class Counter #(parameter int MAX_VAL = 100);
+        static function int saturate_add(int a);
+          return (a > MAX_VAL) ? MAX_VAL : a;
+        endfunction
+      endclass
+    endpackage
+
+    module test;
+      int x = pkg::Counter#(.MAX_VAL(50))::saturate_add(75);
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "Counter", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "Counter", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "saturate_add", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "saturate_add", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex class specialization parameter name reference works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package pkg;
+      class Counter #(parameter int MAX_VAL = 100);
+        static function int saturate_add(int a);
+          return (a > MAX_VAL) ? MAX_VAL : a;
+        endfunction
+      endclass
+    endpackage
+
+    module test;
+      int x = pkg::Counter#(.MAX_VAL(50))::saturate_add(75);
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "MAX_VAL", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "MAX_VAL", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "MAX_VAL", 2, 0);
+  fixture.AssertGoToDefinition(*index, code, "MAX_VAL", 3, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex class specialization same parameters cached",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package pkg;
+      class Config #(parameter int WIDTH = 16);
+        static function int get_width();
+          return WIDTH;
+        endfunction
+      endclass
+    endpackage
+
+    module test;
+      int x = pkg::Config#(.WIDTH(32))::get_width();
+      int y = pkg::Config#(.WIDTH(32))::get_width();
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 2, 0);
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 3, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex class specialization different parameters", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package pkg;
+      class Config #(parameter int WIDTH = 16);
+        static function int get_width();
+          return WIDTH;
+        endfunction
+      endclass
+    endpackage
+
+    module test;
+      int x = pkg::Config#(.WIDTH(32))::get_width();
+      int y = pkg::Config#(.WIDTH(64))::get_width();
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 2, 0);
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 3, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex class parameter without instantiation", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    class Buffer #(parameter int SIZE = 8);
+      int data[SIZE];
+    endclass
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "SIZE", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "SIZE", 1, 0);
 }

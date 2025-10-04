@@ -73,32 +73,40 @@ auto SemanticIndex::FromCompilation(
 
       auto normalized_member = normalize_uri(member_uri);
 
-      if (normalized_member == normalized_target) {
-        should_visit = true;
+      // Early filter: skip symbols from other files
+      if (normalized_member != normalized_target) {
+        continue;  // Skip this member entirely
       }
+
+      should_visit = true;
     } else if (member.kind == slang::ast::SymbolKind::CompilationUnit) {
-      // Visit CompilationUnits that might contain symbols from current file
-      // Check if any of the CompilationUnit's members are from the target file
-      bool contains_target_symbols = false;
+      // CompilationUnits can contain symbols from MULTIPLE files (e.g.,
+      // multiple packages) We must visit ONLY the children from the target
+      // file, not the entire CompilationUnit
 
       if (member.isScope()) {
         const auto& scope = member.as<slang::ast::Scope>();
+
         for (const auto& child : scope.members()) {
           if (child.location.valid()) {
             auto child_uri = std::string(ConvertSlangLocationToLspLocation(
                                              child.location, source_manager)
                                              .uri);
-            if (normalize_uri(child_uri) == normalized_target) {
-              contains_target_symbols = true;
-              break;
+            auto normalized_child_uri = normalize_uri(child_uri);
+
+            // Only process children from target file
+            if (normalized_child_uri == normalized_target) {
+              // Add ONLY this child, not the entire CompilationUnit
+              // Note: Packages are added here but their contents won't be
+              // visited (see PackageSymbol handler)
+              target_units.push_back(&child);
             }
           }
         }
       }
-
-      if (contains_target_symbols) {
-        should_visit = true;
-      }
+      // Don't add the CompilationUnit itself - we added individual children
+      // above
+      continue;
     }
 
     if (should_visit) {
@@ -122,16 +130,27 @@ auto SemanticIndex::FromCompilation(
     }
   }
 
-  if (!target_units.empty()) {
-    for (const auto* unit : target_units) {
-      unit->visit(visitor);
+  for (const auto* unit : target_units) {
+    unit->visit(visitor);
+  }
+
+  // Deduplicate: avoid visiting symbols that are already in target_units
+  // This happens when getDefinitions() returns symbols already added from
+  // CompilationUnit
+  std::unordered_set<const slang::ast::Symbol*> visited_symbols;
+  for (const auto* unit : target_units) {
+    visited_symbols.insert(unit);
+  }
+
+  std::vector<const slang::ast::Symbol*> unique_definitions;
+  for (const auto* def : target_definitions) {
+    if (!visited_symbols.contains(def)) {
+      unique_definitions.push_back(def);
     }
   }
 
-  if (!target_definitions.empty()) {
-    for (const auto* def : target_definitions) {
-      def->visit(visitor);
-    }
+  for (const auto* def : unique_definitions) {
+    def->visit(visitor);
   }
 
   // Also visit any instances in the compilation root that might have been
@@ -141,10 +160,26 @@ auto SemanticIndex::FromCompilation(
     if (member.kind == slang::ast::SymbolKind::Instance) {
       const auto& instance = member.as<slang::ast::InstanceSymbol>();
 
-      // Visit interface instances regardless of source location to capture
-      // auto-generated ones
+      // CRITICAL FIX: Only visit interface instances from current file OR
+      // auto-generated ones (which have no location)
       if (instance.isInterface()) {
-        instance.visit(visitor);
+        // Check if this interface definition is from the current file
+        // Use the definition location, not the instance location
+        const auto& definition = instance.getDefinition();
+        if (!definition.location.valid()) {
+          // Auto-generated - always visit
+          instance.visit(visitor);
+        } else {
+          // Check definition file URI
+          auto def_uri = std::string(ConvertSlangLocationToLspLocation(
+                                         definition.location, source_manager)
+                                         .uri);
+          if (normalize_uri(def_uri) == normalized_target) {
+            // Interface definition is in current file - index its contents
+            instance.visit(visitor);
+          }
+          // Otherwise skip - prevents indexing symbols from external interfaces
+        }
       }
     }
   }
@@ -194,7 +229,10 @@ auto SemanticEntry::Make(
       .definition_range = definition_range,
       .cross_file_path = std::nullopt,
       .cross_file_range = std::nullopt,
-      .buffer_id = unwrapped.location.buffer()};
+      // buffer_id should be the REFERENCE location (where it appears in code),
+      // not the definition location. This ensures file filtering works
+      // correctly.
+      .buffer_id = source_range.start().buffer()};
 }
 
 auto SemanticIndex::GetDocumentSymbols(const std::string& uri) const
@@ -379,6 +417,114 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
   }
 }
 
+void SemanticIndex::IndexVisitor::IndexClassSpecialization(
+    const slang::ast::ClassType& class_type,
+    const slang::syntax::SyntaxNode* call_syntax) {
+  if (class_type.genericClass == nullptr ||
+      !class_type.genericClass->location.valid()) {
+    return;
+  }
+
+  // Extract definition range from class declaration
+  const auto* class_def_syntax = class_type.genericClass->getSyntax();
+  if (class_def_syntax == nullptr ||
+      class_def_syntax->kind != slang::syntax::SyntaxKind::ClassDeclaration) {
+    return;
+  }
+
+  auto definition_range =
+      class_def_syntax->as<slang::syntax::ClassDeclarationSyntax>()
+          .name.range();
+
+  // Find ClassNameSyntax in the call syntax tree
+  if (call_syntax != nullptr &&
+      call_syntax->kind == slang::syntax::SyntaxKind::InvocationExpression) {
+    const auto& invocation =
+        call_syntax->as<slang::syntax::InvocationExpressionSyntax>();
+    TraverseClassNames(invocation.left, class_type, definition_range);
+  }
+}
+
+void SemanticIndex::IndexVisitor::TraverseClassNames(
+    const slang::syntax::SyntaxNode* node,
+    const slang::ast::ClassType& class_type,
+    slang::SourceRange definition_range) {
+  if (node == nullptr) {
+    return;
+  }
+
+  if (node->kind == slang::syntax::SyntaxKind::ClassName) {
+    const auto& class_name = node->as<slang::syntax::ClassNameSyntax>();
+
+    AddReference(
+        *class_type.genericClass, class_type.genericClass->name,
+        class_name.identifier.range(), definition_range,
+        class_type.genericClass->getParentScope());
+
+    // Index parameter names in specialization
+    if (class_name.parameters != nullptr) {
+      IndexClassParameters(class_type, *class_name.parameters);
+    }
+  } else if (node->kind == slang::syntax::SyntaxKind::ScopedName) {
+    const auto& scoped = node->as<slang::syntax::ScopedNameSyntax>();
+    TraverseClassNames(scoped.left, class_type, definition_range);
+    TraverseClassNames(scoped.right, class_type, definition_range);
+  }
+}
+
+void SemanticIndex::IndexVisitor::IndexClassParameters(
+    const slang::ast::ClassType& class_type,
+    const slang::syntax::ParameterValueAssignmentSyntax& params) {
+  // Parameter value assignments can be ordered or named
+  // For named assignments: .MAX_VAL(50) - we index the parameter name
+  // For ordered assignments: #(50, 100) - no names to index, only values
+
+  for (const auto* param_base : params.parameters) {
+    // Only process named parameter assignments
+    if (param_base->kind != slang::syntax::SyntaxKind::NamedParamAssignment) {
+      continue;
+    }
+
+    const auto& named_param =
+        param_base->as<slang::syntax::NamedParamAssignmentSyntax>();
+    std::string_view param_name = named_param.name.valueText();
+
+    // Find corresponding parameter symbol in genericParameters
+    for (const auto* generic_param : class_type.genericParameters) {
+      if (generic_param->name == param_name &&
+          generic_param->kind == slang::ast::SymbolKind::Parameter) {
+        const auto& param_symbol =
+            generic_param->as<slang::ast::ParameterSymbol>();
+        if (!param_symbol.location.valid()) {
+          continue;
+        }
+
+        // Extract parameter definition range from syntax
+        const auto* param_syntax = param_symbol.getSyntax();
+        if (param_syntax == nullptr) {
+          continue;
+        }
+
+        slang::SourceRange param_def_range;
+
+        // ParameterSymbol syntax can point to Declarator directly
+        if (param_syntax->kind == slang::syntax::SyntaxKind::Declarator) {
+          const auto& decl =
+              param_syntax->as<slang::syntax::DeclaratorSyntax>();
+          param_def_range = decl.name.range();
+        }
+
+        if (param_def_range.start().valid() && param_def_range.end().valid()) {
+          AddReference(
+              param_symbol, param_symbol.name, named_param.name.range(),
+              param_def_range, param_symbol.getParentScope());
+        }
+        break;
+      }
+    }
+  }
+}
+
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::NamedValueExpression& expr) {
   const slang::ast::Symbol* target_symbol = &expr.symbol;
@@ -552,12 +698,18 @@ void SemanticIndex::IndexVisitor::handle(
     return std::nullopt;
   };
 
-  // Helper to index class specialization (e.g., Class#(.PARAM(value)))
-  auto index_scoped_names = [&](const slang::syntax::NameSyntax* name) -> void {
-    // TODO: Traverse scoped names to index ClassName and parameter references
-    // For now, this is a placeholder for future implementation
-    (void)name;
-  };
+  // Check if calling a class static method with specialization
+  if (const auto* parent_scope = (*subroutine_symbol)->getParentScope()) {
+    if (parent_scope->asSymbol().kind == slang::ast::SymbolKind::ClassType) {
+      const auto& class_type =
+          parent_scope->asSymbol().as<slang::ast::ClassType>();
+
+      // Only index specialized classes (has genericClass pointer)
+      if (class_type.genericClass != nullptr) {
+        IndexClassSpecialization(class_type, expr.syntax);
+      }
+    }
+  }
 
   auto extract_call_range = [&]() -> std::optional<slang::SourceRange> {
     if (expr.syntax == nullptr) {
@@ -573,10 +725,6 @@ void SemanticIndex::IndexVisitor::handle(
       if (invocation.left->kind == slang::syntax::SyntaxKind::ScopedName) {
         const auto& scoped =
             invocation.left->as<slang::syntax::ScopedNameSyntax>();
-
-        // Index any class specializations in the scoped chain
-        index_scoped_names(&scoped);
-
         return scoped.right->sourceRange();
       }
 
@@ -852,7 +1000,13 @@ void SemanticIndex::IndexVisitor::handle(
       }
     }
   }
-  this->visitDefault(definition);
+
+  // Interfaces are handled differently - FromCompilation creates instances
+  // for them instead of visiting the DefinitionSymbol directly
+  // (see target_interface_instances in FromCompilation)
+  if (definition.definitionKind != slang::ast::DefinitionKind::Interface) {
+    this->visitDefault(definition);
+  }
 }
 
 void SemanticIndex::IndexVisitor::handle(
@@ -954,8 +1108,26 @@ void SemanticIndex::IndexVisitor::handle(
             class_def.getParentScope());
       }
     }
+
+    // CRITICAL: GenericClassDefSymbol does NOT expose class body as children
+    // (similar to ModuleSymbol vs InstanceSymbol pattern).
+    // We must get a ClassType specialization to access parameters and members.
+    // Use getDefaultSpecialization() to create a temporary instance with
+    // default parameter values.
+    //
+    // NOTE: No URI filtering needed here - FromCompilation() already filters
+    // symbols by file, so this handler only runs for classes in current file.
+    if (const auto* parent_scope = class_def.getParentScope()) {
+      if (const auto* default_type =
+              class_def.getDefaultSpecialization(*parent_scope)) {
+        // Visit the default specialization to index class body
+        default_type->visit(*this);
+      }
+    }
+
+    // Note: We don't call visitDefault(class_def) because it won't traverse
+    // into the class body (the body is only accessible via ClassType)
   }
-  this->visitDefault(class_def);
 }
 
 void SemanticIndex::IndexVisitor::handle(
@@ -979,6 +1151,20 @@ void SemanticIndex::IndexVisitor::handle(
       }
     }
   }
+
+  // DESIGN PRINCIPLE: ClassType body traversal should ONLY happen via explicit
+  // visit from GenericClassDefSymbol.getDefaultSpecialization().
+  // Type references to ClassType (variables, parameters) should NOT traverse
+  // the body - they're handled by TypeReferenceSymbol wrapping.
+  //
+  // This eliminates the need for:
+  // - Syntax-based deduplication (no duplicate traversal)
+  // - URI filtering (only explicit visits from current file's
+  // GenericClassDefSymbol)
+  // - visited_type_syntaxes_ tracking
+  //
+  // The body traversal happens in GenericClassDefSymbol handler via explicit
+  // default_type->visit(*this), which calls visitDefault() to index members.
   this->visitDefault(class_type);
 }
 
@@ -1059,11 +1245,22 @@ void SemanticIndex::IndexVisitor::handle(
   if (modport_port.location.valid()) {
     if (const auto* syntax = modport_port.getSyntax()) {
       if (syntax->kind == slang::syntax::SyntaxKind::ModportNamedPort) {
-        auto definition_range =
+        auto source_range =
             syntax->as<slang::syntax::ModportNamedPortSyntax>().name.range();
-        AddDefinition(
-            modport_port, modport_port.name, definition_range,
-            modport_port.getParentScope());
+
+        // ModportPortSymbol references the underlying interface member
+        // Create reference from modport port name to the actual signal
+        if (modport_port.internalSymbol != nullptr &&
+            modport_port.internalSymbol->location.valid()) {
+          if (const auto* internal_syntax =
+                  modport_port.internalSymbol->getSyntax()) {
+            auto target_range = DefinitionExtractor::ExtractDefinitionRange(
+                *modport_port.internalSymbol, *internal_syntax);
+            AddReference(
+                *modport_port.internalSymbol, modport_port.name, source_range,
+                target_range, modport_port.getParentScope());
+          }
+        }
       }
     }
   }
