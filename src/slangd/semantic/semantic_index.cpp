@@ -27,6 +27,7 @@
 #include "slangd/semantic/symbol_utils.hpp"
 #include "slangd/services/global_catalog.hpp"
 #include "slangd/utils/conversion.hpp"
+#include "slangd/utils/path_utils.hpp"
 
 namespace slangd::semantic {
 
@@ -42,151 +43,86 @@ auto SemanticIndex::FromCompilation(
   auto visitor =
       IndexVisitor(*index, source_manager, current_file_uri, catalog);
 
-  const auto& root = compilation.getRoot();
+  // Normalize current file URI for comparison
+  auto normalized_target = NormalizeUri(current_file_uri);
 
-  // OPTIMIZATION: Find and visit ALL compilation units from current file
-  std::vector<const slang::ast::Symbol*> target_units;
-
-  // Normalize URIs for comparison - handle relative paths from Slang
-  auto normalize_uri = [](const std::string& uri) -> std::string {
-    if (uri.starts_with("file://")) {
-      try {
-        auto path = std::filesystem::path(uri.substr(7));  // Remove "file://"
-        auto canonical = std::filesystem::weakly_canonical(path);
-        return "file://" + canonical.string();
-      } catch (...) {
-        return uri;  // Return original if normalization fails
-      }
+  // Helper function to check if a symbol's location matches the current file
+  auto matches_current_file = [&](slang::SourceLocation loc) -> bool {
+    if (!loc.valid()) {
+      return false;
     }
-    return uri;
+    auto uri =
+        std::string(ConvertSlangLocationToLspLocation(loc, source_manager).uri);
+    return NormalizeUri(uri) == normalized_target;
   };
 
-  auto normalized_target = normalize_uri(current_file_uri);
+  // FOUR-PATH TRAVERSAL APPROACH
+  // Slang's API provides disjoint symbol collections:
+  //
+  // PATH 1: Definitions (module/interface/program declarations)
+  // - getDefinitions() returns DefinitionSymbols (NOT Scopes, no body access)
+  // - Visit definition to index declaration syntax only
+  // - Body members are indexed via instances (PATH 4)
+  //
+  // PATH 2: Packages
+  // - getPackages() returns PackageSymbols (ARE Scopes)
+  // - Packages are in their own namespace, disjoint from definitions
+  // - Visiting packages automatically traverses their members
+  //
+  // PATH 3: Compilation Unit Members (classes, enums, typedefs, global vars)
+  // - CompilationUnits contain symbols not in definitions or packages
+  // - Includes: classes, enums, typedefs, global variables, etc.
+  // - Note: CompilationUnits can aggregate symbols from multiple files
+  //
+  // PATH 4: Definition bodies via instances
+  // - getRoot() triggers LSP mode elaboration
+  // - In LanguageServerMode, modules/programs auto-instantiate
+  // - Interfaces auto-instantiate during port resolution
+  // - InstanceSymbol.body provides access to definition members
+  // - This is the ONLY way to index definition body members
 
-  for (const auto& member : root.members()) {
-    bool should_visit = false;
-
-    if (member.location.valid()) {
-      auto member_uri = std::string(
-          ConvertSlangLocationToLspLocation(member.location, source_manager)
-              .uri);
-
-      auto normalized_member = normalize_uri(member_uri);
-
-      // Early filter: skip symbols from other files
-      if (normalized_member != normalized_target) {
-        continue;  // Skip this member entirely
-      }
-
-      should_visit = true;
-    } else if (member.kind == slang::ast::SymbolKind::CompilationUnit) {
-      // CompilationUnits can contain symbols from MULTIPLE files (e.g.,
-      // multiple packages) We must visit ONLY the children from the target
-      // file, not the entire CompilationUnit
-
-      if (member.isScope()) {
-        const auto& scope = member.as<slang::ast::Scope>();
-
-        for (const auto& child : scope.members()) {
-          if (child.location.valid()) {
-            auto child_uri = std::string(ConvertSlangLocationToLspLocation(
-                                             child.location, source_manager)
-                                             .uri);
-            auto normalized_child_uri = normalize_uri(child_uri);
-
-            // Only process children from target file
-            if (normalized_child_uri == normalized_target) {
-              // Add ONLY this child, not the entire CompilationUnit
-              // Note: Packages are added here but their contents won't be
-              // visited (see PackageSymbol handler)
-              target_units.push_back(&child);
-            }
-          }
-        }
-      }
-      // Don't add the CompilationUnit itself - we added individual children
-      // above
-      continue;
-    }
-
-    if (should_visit) {
-      target_units.push_back(&member);
+  // PATH 1: Index definition headers (modules, interfaces, programs)
+  for (const auto* def : compilation.getDefinitions()) {
+    if (matches_current_file(def->location)) {
+      def->visit(visitor);  // Index declaration syntax only, no body
     }
   }
 
-  // Also look for Definition symbols (interfaces, modules) using
-  // compilation.getDefinitions()
-  std::vector<const slang::ast::Symbol*> target_definitions;
-  auto definitions = compilation.getDefinitions();
-  for (const auto* def : definitions) {
-    if (def->location.valid()) {
-      auto def_uri = std::string(
-          ConvertSlangLocationToLspLocation(def->location, source_manager).uri);
-      auto normalized_def = normalize_uri(def_uri);
+  // PATH 2: Index packages
+  for (const auto* pkg : compilation.getPackages()) {
+    if (matches_current_file(pkg->location)) {
+      pkg->visit(visitor);  // Packages are Scopes, members auto-traversed
+    }
+  }
 
-      if (normalized_def == normalized_target) {
-        target_definitions.push_back(def);
+  // PATH 3: Index compilation unit members (classes, enums, typedefs, etc.)
+  // CompilationUnits can contain symbols from MULTIPLE files, so we must
+  // filter children by file URI
+  for (const auto* unit : compilation.getCompilationUnits()) {
+    for (const auto& child : unit->members()) {
+      if (matches_current_file(child.location)) {
+        child.visit(visitor);
       }
     }
   }
 
-  for (const auto* unit : target_units) {
-    unit->visit(visitor);
-  }
+  // PATH 4: Index definition bodies via instances
+  // CRITICAL: getRoot() triggers LSP mode elaboration which creates instances.
+  // DefinitionSymbols have NO body access - must use InstanceBodySymbol.
+  const auto& root = compilation.getRoot();
 
-  // Deduplicate: avoid visiting symbols that are already in target_units
-  // This happens when getDefinitions() returns symbols already added from
-  // CompilationUnit
-  std::unordered_set<const slang::ast::Symbol*> visited_symbols;
-  for (const auto* unit : target_units) {
-    visited_symbols.insert(unit);
-  }
-
-  std::vector<const slang::ast::Symbol*> unique_definitions;
-  for (const auto* def : target_definitions) {
-    if (!visited_symbols.contains(def)) {
-      unique_definitions.push_back(def);
-    }
-  }
-
-  for (const auto* def : unique_definitions) {
-    def->visit(visitor);
-  }
-
-  // Also visit any instances in the compilation root that might have been
-  // auto-generated This is specifically needed for LSP mode where interface
-  // instances are auto-created
   for (const auto& member : root.members()) {
     if (member.kind == slang::ast::SymbolKind::Instance) {
       const auto& instance = member.as<slang::ast::InstanceSymbol>();
+      const auto& definition = instance.getDefinition();
 
-      // CRITICAL FIX: Only visit interface instances from current file OR
-      // auto-generated ones (which have no location)
-      if (instance.isInterface()) {
-        // Check if this interface definition is from the current file
-        // Use the definition location, not the instance location
-        const auto& definition = instance.getDefinition();
-        if (!definition.location.valid()) {
-          // Auto-generated - always visit
-          instance.visit(visitor);
-        } else {
-          // Check definition file URI
-          auto def_uri = std::string(ConvertSlangLocationToLspLocation(
-                                         definition.location, source_manager)
-                                         .uri);
-          if (normalize_uri(def_uri) == normalized_target) {
-            // Interface definition is in current file - index its contents
-            instance.visit(visitor);
-          }
-          // Otherwise skip - prevents indexing symbols from external interfaces
-        }
+      // Only visit instances whose definition is from the current file
+      // Note: Check definition location, not instance location
+      if (matches_current_file(definition.location)) {
+        // Visit instance body to index members (signals, ports, modports, etc.)
+        instance.visit(visitor);
       }
     }
-  }
-
-  if (target_units.empty() && target_definitions.empty()) {
-    // Don't visit anything - return empty index for performance
-    // This is expected behavior when no matching symbols are found
   }
 
   // Sort entries by source location for O(n) validation and potential lookup

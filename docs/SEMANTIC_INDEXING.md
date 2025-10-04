@@ -18,6 +18,39 @@ SemanticIndex enables LSP features (go-to-definition, find references, document 
 3. `LookupDefinitionAt()` searches `references_` for cursor position
 4. Returns target definition range from matching entry
 
+## Slang Symbol Organization (Library Constraints)
+
+Critical knowledge about Slang's architecture that impacts LSP implementation.
+
+### DefinitionSymbol Has No Body
+
+**Constraint:** `DefinitionSymbol` is NOT a `Scope` - it's only a template/declaration.
+
+- Cannot call `.members()` on DefinitionSymbol
+- Body members only exist in `InstanceBodySymbol` (after elaboration)
+- Must call `compilation.getRoot()` to trigger elaboration
+
+### Symbol Namespaces are Disjoint
+
+Slang organizes symbols into separate collections with no overlap:
+
+- `getDefinitions()` - Module/interface/program headers
+- `getPackages()` - Package scopes
+- `getCompilationUnits()` - $unit scope (classes/enums/typedefs)
+- `getRoot().members()` - Elaborated instances
+
+This means no deduplication needed when traversing all collections.
+
+### LSP Mode Elaboration
+
+Calling `getRoot()` in `LanguageServerMode`:
+
+- Treats each file as standalone (no top-module requirement)
+- Auto-instantiates modules/programs as root members
+- Auto-instantiates interfaces during port resolution (nested in modules)
+
+This is how definition bodies become accessible for indexing.
+
 ## Adding New Symbol Support
 
 ### 1. Definition Extraction
