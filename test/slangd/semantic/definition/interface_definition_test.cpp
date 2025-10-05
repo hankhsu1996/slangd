@@ -115,8 +115,7 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "addr", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "data", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "cpu", 0, 0);
-  // fixture.AssertGoToDefinition(*index, code, "addr", 1, 0);  // TODO: Member
-  // access in expression
+  fixture.AssertGoToDefinition(*index, code, "addr", 1, 0);
   // TODO: Interface member access (mem_if.addr) not yet indexed
 }
 

@@ -1519,7 +1519,32 @@ void SemanticIndex::IndexVisitor::handle(
       }
     }
   }
-  this->visitDefault(modport_port);
+  // Skip visitDefault - ModportPortSymbol is just a reference wrapper around
+  // internalSymbol, no meaningful children to traverse
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::InstanceSymbol& instance) {
+  // Only traverse interface instances when in standalone interface definition
+  // mode (parent = CompilationUnit). This is when we process the interface
+  // definition itself in PATH 1. Interface instances nested inside modules
+  // (parent != CompilationUnit) should not be traversed - we only care about
+  // the interface reference/port name, not re-indexing the interface body.
+  if (instance.isInterface()) {
+    const auto* parent = instance.getParentScope();
+    if (parent != nullptr &&
+        parent->asSymbol().kind == slang::ast::SymbolKind::CompilationUnit) {
+      // Standalone interface instance - traverse the body to index interface
+      // members
+      this->visitDefault(instance);
+      return;
+    }
+    // Nested interface instance (e.g., inside a module) - skip body traversal
+    return;
+  }
+
+  // For non-interface instances (modules/programs), continue normal traversal
+  this->visitDefault(instance);
 }
 
 void SemanticIndex::IndexVisitor::handle(

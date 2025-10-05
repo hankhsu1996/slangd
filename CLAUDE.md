@@ -24,6 +24,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 **Adding new language features:**
 
 When adding support for new SystemVerilog constructs:
+
 1. Add tests first (TDD approach)
 2. Check `docs/SEMANTIC_INDEXING.md` for implementation patterns
 3. **Check existing Slang infrastructure** - look for `get*()`, `find()`, or resolution methods before building custom solutions
@@ -82,6 +83,7 @@ SystemVerilog LSP server with modular design:
 - Use modern C++23 standard library features (e.g., `std::ranges::contains`)
 - Use `toString(symbol.kind) -> std::string_view` for Slang enum printing
 - Use `slang::syntax::toString(syntax.kind) -> std::string_view` for SyntaxKind printing
+- Print source ranges: `range.start().offset()..range.end().offset()` for offsets, or use `source_manager.getLineNumber(range.start())` for line numbers
 
 **General Debugging:**
 

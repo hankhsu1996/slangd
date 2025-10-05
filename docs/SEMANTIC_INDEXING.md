@@ -90,6 +90,7 @@ This is how definition bodies become accessible for indexing.
 `InstanceBodySymbol::fromDefinition()` creates a body with `parentInstance = nullptr`. During visitor traversal, when expressions are evaluated (required for LSP to index all symbol references), Slang performs lazy elaboration. For interface ports, this triggers `InterfacePortSymbol::getConnectionAndExpr()` which requires a valid `parentInstance` pointer to resolve port connections.
 
 **Consequences of Incorrect Usage**:
+
 - Segmentation fault in `InterfacePortSymbol::getConnectionAndExpr()` at PortSymbols.cpp:1676
 - Crash occurs during expression evaluation, not during initial symbol creation
 - Affects any module/interface with interface ports or expressions referencing interface members
@@ -102,9 +103,26 @@ This is how definition bodies become accessible for indexing.
 4. In LSP mode, `connectDefaultIfacePorts()` automatically creates default interface instances for port resolution
 
 **When This Applies**:
+
 - All module/interface definition body traversal
 - Any code path that visits expressions containing interface port references
 - Generic traversal infrastructure that must handle all SystemVerilog constructs
+
+### Preventing Duplicate Interface Traversal
+
+**Problem**: Interface instances appear twice during indexing - once as standalone (when processing interface definition) and once nested in modules (Slang creates full instances for port resolution).
+
+**Why interfaces differ from sub-modules**:
+
+- Sub-modules use `UninstantiatedDefSymbol` in LSP mode → visitor doesn't traverse them
+- Interfaces use full `InstanceSymbol` → visitor traverses them by default → causes duplicates
+
+**Solution**: Add `handle(InstanceSymbol&)` that checks parent scope:
+
+- Parent = `CompilationUnit` → standalone interface definition → traverse body
+- Parent ≠ `CompilationUnit` → nested in module → skip body (already indexed)
+
+**Implementation**: `semantic_index.cpp:1549-1570`
 
 ## Adding New Symbol Support
 
