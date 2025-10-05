@@ -133,6 +133,18 @@ When someone says "no manual searching" or "no state tracking", these aren't arb
 - Stateless, declarative code
 - Simple, composable solutions
 
+### Prefer Positive Conditions
+
+Write conditions that express WHEN to do something, not when to skip.
+
+**Why this matters**:
+
+- Positive conditions document intent: "traverse when in standalone mode" vs "skip when nested"
+- Easier to verify correctness: check the main case is handled, not all exclusions
+- Reduces cognitive load: reader knows when action happens
+
+**When to use**: If a condition needs comments to clarify what it means, rewrite as positive.
+
 ## Problem-Solving Process
 
 ### 1. Periodically Stop and Verify
@@ -187,6 +199,17 @@ See "Working with the Slang Library" section above for detailed case study.
 See `docs/SEMANTIC_INDEXING.md` for details on symmetric expression storage pattern.
 
 **Pattern**: Store expressions alongside computed values for LSP access without re-evaluation.
+
+### Interface Instance Deduplication
+
+Interfaces are fully elaborated when nested in modules, creating duplicate instances pointing to same syntax. Check parent scope to distinguish standalone (parent=CompilationUnit) vs nested. Only traverse standalone instances.
+
+**Pattern**: Use positive conditions to express intent directly.
+
+**Key files**:
+
+- `slangd/include/slangd/semantic/semantic_index.hpp:185`: Handler declaration
+- `slangd/src/slangd/semantic/semantic_index.cpp:1549-1570`: Parent scope check
 
 ## For AI Agents and Junior Engineers
 

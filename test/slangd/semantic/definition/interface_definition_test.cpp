@@ -9,7 +9,7 @@
 
 #include "../../common/simple_fixture.hpp"
 
-constexpr auto kLogLevel = spdlog::level::debug;  // Always debug for tests
+constexpr auto kLogLevel = spdlog::level::debug;
 
 auto main(int argc, char* argv[]) -> int {
   spdlog::set_level(kLogLevel);
@@ -24,6 +24,18 @@ auto main(int argc, char* argv[]) -> int {
 }
 
 using slangd::test::SimpleTestFixture;
+
+TEST_CASE("SemanticIndex interface end label reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    interface TestIf;
+    endinterface : TestIf
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "TestIf", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "TestIf", 1, 0);
+}
 
 TEST_CASE(
     "SemanticIndex interface modport self-definition works", "[definition]") {
@@ -105,4 +117,22 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "cpu", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "addr", 1, 0);
   // TODO: Interface member access (mem_if.addr) not yet indexed
+}
+
+TEST_CASE(
+    "SemanticIndex interface parameter in packed dimension works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    interface test_if #(
+      parameter int WIDTH = 8
+    ) ();
+      logic [WIDTH-1:0] data_signal;
+    endinterface
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 1, 0);
 }

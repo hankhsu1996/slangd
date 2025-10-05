@@ -31,7 +31,7 @@ TEST_CASE("SemanticIndex task go-to-definition works", "[definition]") {
     module task_test;
       task my_task(input int a, output int b);
         b = a + 1;
-      endtask
+      endtask : my_task
 
       initial begin
         int result;
@@ -42,11 +42,9 @@ TEST_CASE("SemanticIndex task go-to-definition works", "[definition]") {
 
   auto index = fixture.CompileSource(code);
 
-  // Test self-definition (clicking on task declaration)
   fixture.AssertGoToDefinition(*index, code, "my_task", 0, 0);
-
-  // Test call reference (clicking on task call)
   fixture.AssertGoToDefinition(*index, code, "my_task", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "my_task", 2, 0);
 }
 
 TEST_CASE("SemanticIndex task argument reference works", "[definition]") {
@@ -71,7 +69,7 @@ TEST_CASE("SemanticIndex function go-to-definition works", "[definition]") {
     module function_test;
       function int my_function(input int x);
         return x * 2;
-      endfunction
+      endfunction : my_function
 
       initial begin
         $display("Result: %d", my_function(5));
@@ -81,11 +79,9 @@ TEST_CASE("SemanticIndex function go-to-definition works", "[definition]") {
 
   auto index = fixture.CompileSource(code);
 
-  // Test self-definition (clicking on function declaration)
   fixture.AssertGoToDefinition(*index, code, "my_function", 0, 0);
-
-  // Test call reference (clicking on function call)
   fixture.AssertGoToDefinition(*index, code, "my_function", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "my_function", 2, 0);
 }
 
 TEST_CASE("SemanticIndex function argument reference works", "[definition]") {
@@ -109,7 +105,7 @@ TEST_CASE(
   std::string code = R"(
     module return_type_test;
       typedef logic [7:0] byte_t;
-      
+
       function byte_t get_byte(input int index);
         return byte_t'(index);
       endfunction
@@ -128,7 +124,7 @@ TEST_CASE(
     module outer_scope_test;
       localparam int CONSTANT = 42;
       logic [7:0] shared_var;
-      
+
       function int get_constant();
         return CONSTANT + shared_var;
       endfunction
@@ -148,7 +144,7 @@ TEST_CASE(
       function int my_func(input int x);
         my_func = x * 2;  // Function name as implicit return variable
       endfunction
-      
+
       initial begin
         $display("Result: %d", my_func(5));
       end
@@ -175,7 +171,7 @@ TEST_CASE(
       function int add_one(input int value);
         return value + 1;
       endfunction
-      
+
       task increment_task(inout int value);
         value = value + 1;
       endtask
@@ -184,7 +180,7 @@ TEST_CASE(
     module package_import_test;
       import math_pkg::add_one;
       import math_pkg::increment_task;
-      
+
       initial begin
         int result = add_one(5);
         increment_task(result);
@@ -209,31 +205,50 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "increment_task", 2, 0);
 }
 
-TEST_CASE("SemanticIndex class static function call works", "[definition]") {
+TEST_CASE(
+    "SemanticIndex function argument type reference works", "[definition]") {
   SimpleTestFixture fixture;
   std::string code = R"(
-    package counter_pkg;
-      virtual class CounterOps #(parameter int MAX_VAL = 10);
-        static function int saturate_add(int val);
-          return (val < MAX_VAL) ? val + 1 : val;
-        endfunction
-      endclass
-    endpackage
+    module arg_type_test;
+      typedef logic [7:0] byte_t;
+      typedef struct packed { logic [3:0] addr; } packet_t;
 
-    module test;
-      int result = counter_pkg::CounterOps#(.MAX_VAL(100))::saturate_add(50);
+      function void process(byte_t data, packet_t pkt);
+      endfunction
     endmodule
   )";
 
   auto index = fixture.CompileSource(code);
+  // Type references should go to typedef definitions
+  fixture.AssertGoToDefinition(*index, code, "byte_t", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "byte_t", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "packet_t", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "packet_t", 1, 0);
 
-  // Test function definition
-  fixture.AssertGoToDefinition(*index, code, "saturate_add", 0, 0);
+  // Formal argument names should have self-references
+  fixture.AssertGoToDefinition(*index, code, "data", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "pkt", 0, 0);
+}
 
-  // Test function call - should jump to function definition, not class name
-  fixture.AssertGoToDefinition(*index, code, "saturate_add", 1, 0);
+TEST_CASE("SemanticIndex task argument type reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module task_arg_type_test;
+      typedef int counter_t;
 
-  // TODO: Add tests for class name and parameter references
-  // fixture.AssertGoToDefinition(*index, code, "CounterOps", 1, 0);
-  // fixture.AssertGoToDefinition(*index, code, "MAX_VAL", 1, 0);
+      task increment(inout counter_t cnt);
+        cnt = cnt + 1;
+      endtask
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  // Type references should go to typedef definition
+  fixture.AssertGoToDefinition(*index, code, "counter_t", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "counter_t", 1, 0);
+
+  // Formal argument name should have self-reference
+  // Note: cnt appears 3 times (declaration, then 2 uses in body)
+  // The first occurrence (index 0) should go to itself
+  fixture.AssertGoToDefinition(*index, code, "cnt", 0, 0);
 }

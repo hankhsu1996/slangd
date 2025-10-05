@@ -56,13 +56,13 @@ auto SemanticIndex::FromCompilation(
     return NormalizeUri(uri) == normalized_target;
   };
 
-  // FOUR-PATH TRAVERSAL APPROACH
+  // THREE-PATH TRAVERSAL APPROACH
   // Slang's API provides disjoint symbol collections:
   //
   // PATH 1: Definitions (module/interface/program declarations)
   // - getDefinitions() returns DefinitionSymbols (NOT Scopes, no body access)
-  // - Visit definition to index declaration syntax only
-  // - Body members are indexed via instances (PATH 4)
+  // - Visit definition header to index declaration syntax
+  // - Body members are indexed by creating full instance via createDefault()
   //
   // PATH 2: Packages
   // - getPackages() returns PackageSymbols (ARE Scopes)
@@ -73,18 +73,58 @@ auto SemanticIndex::FromCompilation(
   // - CompilationUnits contain symbols not in definitions or packages
   // - Includes: classes, enums, typedefs, global variables, etc.
   // - Note: CompilationUnits can aggregate symbols from multiple files
-  //
-  // PATH 4: Definition bodies via instances
-  // - getRoot() triggers LSP mode elaboration
-  // - In LanguageServerMode, modules/programs auto-instantiate
-  // - Interfaces auto-instantiate during port resolution
-  // - InstanceSymbol.body provides access to definition members
-  // - This is the ONLY way to index definition body members
 
-  // PATH 1: Index definition headers (modules, interfaces, programs)
+  // PATH 1: Index definitions (headers + bodies)
+  // PURE DEFINITION-BASED MODEL: Same for modules AND interfaces.
+  // 1. See definition → Create instance via createDefault() → Traverse body
+  // 2. During traversal, nested instances (interface ports, sub-modules) create
+  //    instance symbols but DON'T traverse their bodies (already done in their
+  //    definition files)
+  //
+  // No ordering needed - instances are independent of traversal order
   for (const auto* def : compilation.getDefinitions()) {
-    if (matches_current_file(def->location)) {
-      def->visit(visitor);  // Index declaration syntax only, no body
+    if (def->kind != slang::ast::SymbolKind::Definition) {
+      continue;
+    }
+
+    const auto& definition = def->as<slang::ast::DefinitionSymbol>();
+    if (!matches_current_file(definition.location)) {
+      continue;
+    }
+
+    // Visit definition header (creates self-definition for the definition name)
+    definition.visit(visitor);
+
+    // Check if all parameters have defaults (required for fromDefinition)
+    bool has_all_defaults = true;
+    for (const auto& param : definition.parameters) {
+      if (!param.hasDefault()) {
+        has_all_defaults = false;
+        break;
+      }
+    }
+
+    if (has_all_defaults) {
+      // Create a full InstanceSymbol (not just InstanceBodySymbol) to enable
+      // proper interface port connection resolution via getConnection().
+      // Using createDefault() ensures parentInstance is set correctly.
+      auto& instance = slang::ast::InstanceSymbol::createDefault(
+          compilation, definition, nullptr, nullptr, nullptr,
+          definition.location);
+
+      // Set parent scope for the instance - required for proper symbol
+      // resolution
+      if (const auto* parent_scope = definition.getParentScope()) {
+        instance.setParent(*parent_scope);
+      }
+
+      // Trigger port connection resolution (including modport caching)
+      // In LSP mode, this calls connectDefaultIfacePorts() which resolves
+      // modports and caches them in InterfacePortSymbol::modportSymbol
+      instance.getPortConnections();
+
+      // Traverse the instance body to index all members
+      instance.body.visit(visitor);
     }
   }
 
@@ -135,25 +175,6 @@ auto SemanticIndex::FromCompilation(
           }
         }
         child.visit(visitor);
-      }
-    }
-  }
-
-  // PATH 4: Index definition bodies via instances
-  // CRITICAL: getRoot() triggers LSP mode elaboration which creates instances.
-  // DefinitionSymbols have NO body access - must use InstanceBodySymbol.
-  const auto& root = compilation.getRoot();
-
-  for (const auto& member : root.members()) {
-    if (member.kind == slang::ast::SymbolKind::Instance) {
-      const auto& instance = member.as<slang::ast::InstanceSymbol>();
-      const auto& definition = instance.getDefinition();
-
-      // Only visit instances whose definition is from the current file
-      // Note: Check definition location, not instance location
-      if (matches_current_file(definition.location)) {
-        // Visit instance body to index members (signals, ports, modports, etc.)
-        instance.visit(visitor);
       }
     }
   }
@@ -317,10 +338,22 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
               auto definition_range =
                   syntax->as<slang::syntax::TypedefDeclarationSyntax>()
                       .name.range();
+              // Index package name if this is a scoped type reference
+              if (type_ref.getSyntax() != nullptr) {
+                IndexPackageInScopedName(type_ref.getSyntax(), *typedef_target);
+              }
+              // For scoped names, extract just the typedef name part
+              auto usage_range = type_ref.getUsageLocation();
+              if (type_ref.getSyntax() != nullptr &&
+                  type_ref.getSyntax()->kind ==
+                      slang::syntax::SyntaxKind::ScopedName) {
+                const auto& scoped =
+                    type_ref.getSyntax()->as<slang::syntax::ScopedNameSyntax>();
+                usage_range = scoped.right->sourceRange();
+              }
               AddReference(
-                  *typedef_target, typedef_target->name,
-                  type_ref.getUsageLocation(), definition_range,
-                  typedef_target->getParentScope());
+                  *typedef_target, typedef_target->name, usage_range,
+                  definition_range, typedef_target->getParentScope());
             }
           }
         }
@@ -333,10 +366,22 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
               auto definition_range =
                   syntax->as<slang::syntax::ClassDeclarationSyntax>()
                       .name.range();
+              // Index package name if this is a scoped type reference
+              if (type_ref.getSyntax() != nullptr) {
+                IndexPackageInScopedName(type_ref.getSyntax(), *class_target);
+              }
+              // For scoped names, extract just the class name part
+              auto usage_range = type_ref.getUsageLocation();
+              if (type_ref.getSyntax() != nullptr &&
+                  type_ref.getSyntax()->kind ==
+                      slang::syntax::SyntaxKind::ScopedName) {
+                const auto& scoped =
+                    type_ref.getSyntax()->as<slang::syntax::ScopedNameSyntax>();
+                usage_range = scoped.right->sourceRange();
+              }
               AddReference(
-                  *class_target, class_target->name,
-                  type_ref.getUsageLocation(), definition_range,
-                  class_target->getParentScope());
+                  *class_target, class_target->name, usage_range,
+                  definition_range, class_target->getParentScope());
             }
           }
         }
@@ -506,6 +551,46 @@ void SemanticIndex::IndexVisitor::IndexClassParameters(
   }
 }
 
+void SemanticIndex::IndexVisitor::IndexPackageInScopedName(
+    const slang::syntax::SyntaxNode* syntax,
+    const slang::ast::Symbol& target_symbol) {
+  // Check if this is a scoped name (pkg::item)
+  if (syntax == nullptr ||
+      syntax->kind != slang::syntax::SyntaxKind::ScopedName) {
+    return;
+  }
+
+  const auto& scoped = syntax->as<slang::syntax::ScopedNameSyntax>();
+  // Only handle :: separator (package scope), not . (hierarchical)
+  if (scoped.separator.kind != slang::parsing::TokenKind::DoubleColon) {
+    return;
+  }
+
+  // Check if left part is a simple identifier
+  if (scoped.left->kind != slang::syntax::SyntaxKind::IdentifierName) {
+    return;
+  }
+
+  const auto& ident = scoped.left->as<slang::syntax::IdentifierNameSyntax>();
+
+  // Check if target symbol's parent is a package
+  const auto* parent = target_symbol.getParentScope();
+  if (parent != nullptr &&
+      parent->asSymbol().kind == slang::ast::SymbolKind::Package) {
+    const auto& pkg = parent->asSymbol().as<slang::ast::PackageSymbol>();
+    if (const auto* pkg_syntax = pkg.getSyntax()) {
+      if (pkg_syntax->kind == slang::syntax::SyntaxKind::PackageDeclaration) {
+        const auto& decl_syntax =
+            pkg_syntax->as<slang::syntax::ModuleDeclarationSyntax>();
+        auto pkg_def_range = decl_syntax.header->name.range();
+        AddReference(
+            pkg, pkg.name, ident.identifier.range(), pkg_def_range,
+            pkg.getParentScope());
+      }
+    }
+  }
+}
+
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::NamedValueExpression& expr) {
   const slang::ast::Symbol* target_symbol = &expr.symbol;
@@ -539,6 +624,11 @@ void SemanticIndex::IndexVisitor::handle(
         }
       }
     }
+  }
+
+  // Index package name in scoped references (e.g., pkg::PARAM)
+  if (expr.syntax != nullptr) {
+    IndexPackageInScopedName(expr.syntax, *target_symbol);
   }
 
   if (target_symbol->location.valid()) {
@@ -633,10 +723,18 @@ void SemanticIndex::IndexVisitor::handle(
 
       // Universal path: always use symbol name length for precise reference
       // ranges
+      // For scoped names (pkg::item), use the rightmost part for reference
+      // range
+      slang::SourceLocation ref_start = expr.sourceRange.start();
+      if (expr.syntax != nullptr &&
+          expr.syntax->kind == slang::syntax::SyntaxKind::ScopedName) {
+        const auto& scoped = expr.syntax->as<slang::syntax::ScopedNameSyntax>();
+        ref_start = scoped.right->sourceRange().start();
+      }
+
       auto reference_range = slang::SourceRange(
-          expr.sourceRange.start(),
-          expr.sourceRange.start() +
-              static_cast<uint32_t>(target_symbol->name.length()));
+          ref_start,
+          ref_start + static_cast<uint32_t>(target_symbol->name.length()));
 
       AddReference(
           *target_symbol, target_symbol->name, reference_range,
@@ -733,6 +831,14 @@ void SemanticIndex::IndexVisitor::handle(
     return;
   }
 
+  // Index package names in scoped references (e.g., pkg::func())
+  if (expr.syntax != nullptr &&
+      expr.syntax->kind == slang::syntax::SyntaxKind::InvocationExpression) {
+    const auto& invocation =
+        expr.syntax->as<slang::syntax::InvocationExpressionSyntax>();
+    IndexPackageInScopedName(invocation.left, **subroutine_symbol);
+  }
+
   AddReference(
       **subroutine_symbol, (*subroutine_symbol)->name, *call_range,
       *definition_range, (*subroutine_symbol)->getParentScope());
@@ -741,10 +847,19 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::ConversionExpression& expr) {
-  // Only process explicit user-written type casts (e.g., type_name'(value))
-  // Skip implicit compiler-generated conversions to avoid duplicates
+  // Only process explicit user-written casts (e.g., type_name'(value) or
+  // NUM'(value)) Skip implicit compiler-generated conversions to avoid
+  // duplicates
   if (!expr.isImplicit()) {
+    // Handle type casts (e.g., typedef_t'(value))
     TraverseType(*expr.type);
+
+    // Handle size casts (e.g., NUM_ENTRIES'(value))
+    // castWidthExpr stores the width expression (NUM_ENTRIES) for LSP
+    // navigation
+    if (const auto* width_expr = expr.getCastWidthExpr()) {
+      width_expr->visit(*this);
+    }
   }
   this->visitDefault(expr);
 }
@@ -792,6 +907,42 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
   this->visitDefault(expr);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::FormalArgumentSymbol& formal_arg) {
+  // Formal arguments need their own handler because they're dispatched
+  // separately from VariableSymbol in the visitor.
+
+  // Add self-definition if we have valid location and syntax
+  if (formal_arg.location.valid()) {
+    if (const auto* syntax = formal_arg.getSyntax()) {
+      // Function/task formal arguments use DeclaratorSyntax (not
+      // PortDeclarationSyntax) This is because Slang calls setSyntax() with the
+      // declarator in VariableSymbols.cpp
+      if (syntax->kind == slang::syntax::SyntaxKind::Declarator) {
+        const auto& declarator = syntax->as<slang::syntax::DeclaratorSyntax>();
+        auto definition_range = declarator.name.range();
+        AddDefinition(
+            formal_arg, formal_arg.name, definition_range,
+            formal_arg.getParentScope());
+      } else if (syntax->kind == slang::syntax::SyntaxKind::PortDeclaration) {
+        // Module ports use PortDeclarationSyntax
+        const auto& port_decl =
+            syntax->as<slang::syntax::PortDeclarationSyntax>();
+        if (!port_decl.declarators.empty()) {
+          auto definition_range = port_decl.declarators[0]->name.range();
+          AddDefinition(
+              formal_arg, formal_arg.name, definition_range,
+              formal_arg.getParentScope());
+        }
+      }
+    }
+  }
+
+  // Traverse the type to index type references in argument declarations
+  TraverseType(formal_arg.getType());
+  this->visitDefault(formal_arg);
 }
 
 void SemanticIndex::IndexVisitor::handle(
@@ -958,6 +1109,14 @@ void SemanticIndex::IndexVisitor::handle(
           AddDefinition(
               subroutine, subroutine.name, definition_range,
               subroutine.getParentScope());
+
+          // Add reference for end label (e.g., "endfunction : my_func")
+          if (func_syntax.endBlockName != nullptr) {
+            AddReference(
+                subroutine, subroutine.name,
+                func_syntax.endBlockName->name.range(), definition_range,
+                subroutine.getParentScope());
+          }
         }
       }
     }
@@ -978,6 +1137,13 @@ void SemanticIndex::IndexVisitor::handle(
         AddDefinition(
             definition, definition.name, definition_range,
             definition.getParentScope());
+
+        // Add reference for end label (e.g., "endmodule : Test")
+        if (decl_syntax.blockName != nullptr) {
+          AddReference(
+              definition, definition.name, decl_syntax.blockName->name.range(),
+              definition_range, definition.getParentScope());
+        }
       }
     }
   }
@@ -1110,6 +1276,14 @@ void SemanticIndex::IndexVisitor::handle(
         AddDefinition(
             class_def, class_def.name, definition_range,
             class_def.getParentScope(), class_type_scope);
+
+        // Add reference for end label (e.g., "endclass : MyClass")
+        if (class_syntax.endBlockName != nullptr) {
+          AddReference(
+              class_def, class_def.name,
+              class_syntax.endBlockName->name.range(), definition_range,
+              class_def.getParentScope());
+        }
       }
     }
 
@@ -1193,6 +1367,14 @@ void SemanticIndex::IndexVisitor::handle(
             class_type, class_type.name, definition_range,
             class_type.getParentScope());
 
+        // Add reference for end label (e.g., "endclass : MyClass")
+        if (class_syntax.endBlockName != nullptr) {
+          AddReference(
+              class_type, class_type.name,
+              class_syntax.endBlockName->name.range(), definition_range,
+              class_type.getParentScope());
+        }
+
         // Index base class reference using stored range from Slang
         if (const auto* base = class_type.getBaseClass()) {
           auto base_ref_range = class_type.getBaseClassRefRange();
@@ -1246,7 +1428,7 @@ void SemanticIndex::IndexVisitor::handle(
     const slang::ast::InterfacePortSymbol& interface_port) {
   if (interface_port.location.valid()) {
     if (const auto* syntax = interface_port.getSyntax()) {
-      // Create self-reference for interface port
+      // Create self-definition for interface port name
       slang::SourceRange definition_range = syntax->sourceRange();
       if (syntax->kind == slang::syntax::SyntaxKind::InterfacePortHeader) {
         definition_range =
@@ -1276,27 +1458,26 @@ void SemanticIndex::IndexVisitor::handle(
       }
 
       // Create cross-reference from modport name to modport definition
-      if (!interface_port.modport.empty()) {
-        auto modport_range = interface_port.modportNameRange();
-        if (modport_range.start().valid()) {
-          auto connection = interface_port.getConnection();
-          if (connection.second != nullptr &&
-              connection.second->location.valid()) {
-            if (const auto* modport_syntax = connection.second->getSyntax()) {
-              auto modport_definition_range =
-                  DefinitionExtractor::ExtractDefinitionRange(
-                      *connection.second, *modport_syntax);
-              AddReference(
-                  *connection.second, connection.second->name, modport_range,
-                  modport_definition_range,
-                  connection.second->getParentScope());
-            }
+      // modportSymbol was cached by connectDefaultIfacePorts()
+      if (interface_port.modportSymbol != nullptr) {
+        auto modport_name_range = interface_port.modportNameRange();
+        if (modport_name_range.start().valid()) {
+          if (const auto* modport_syntax =
+                  interface_port.modportSymbol->getSyntax()) {
+            auto modport_definition_range =
+                DefinitionExtractor::ExtractDefinitionRange(
+                    *interface_port.modportSymbol, *modport_syntax);
+            AddReference(
+                *interface_port.modportSymbol,
+                interface_port.modportSymbol->name, modport_name_range,
+                modport_definition_range,
+                interface_port.modportSymbol->getParentScope());
           }
         }
       }
     }
   }
-  this->visitDefault(interface_port);
+  // Skip visitDefault to avoid traversing interface port's nested scope
 }
 
 void SemanticIndex::IndexVisitor::handle(
@@ -1338,7 +1519,32 @@ void SemanticIndex::IndexVisitor::handle(
       }
     }
   }
-  this->visitDefault(modport_port);
+  // Skip visitDefault - ModportPortSymbol is just a reference wrapper around
+  // internalSymbol, no meaningful children to traverse
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::InstanceSymbol& instance) {
+  // Only traverse interface instances when in standalone interface definition
+  // mode (parent = CompilationUnit). This is when we process the interface
+  // definition itself in PATH 1. Interface instances nested inside modules
+  // (parent != CompilationUnit) should not be traversed - we only care about
+  // the interface reference/port name, not re-indexing the interface body.
+  if (instance.isInterface()) {
+    const auto* parent = instance.getParentScope();
+    if (parent != nullptr &&
+        parent->asSymbol().kind == slang::ast::SymbolKind::CompilationUnit) {
+      // Standalone interface instance - traverse the body to index interface
+      // members
+      this->visitDefault(instance);
+      return;
+    }
+    // Nested interface instance (e.g., inside a module) - skip body traversal
+    return;
+  }
+
+  // For non-interface instances (modules/programs), continue normal traversal
+  this->visitDefault(instance);
 }
 
 void SemanticIndex::IndexVisitor::handle(
@@ -1456,6 +1662,13 @@ void SemanticIndex::IndexVisitor::handle(
         auto definition_range = decl_syntax.header->name.range();
         AddDefinition(
             package, package.name, definition_range, package.getParentScope());
+
+        // Add reference for end label (e.g., "endpackage : TestPkg")
+        if (decl_syntax.blockName != nullptr) {
+          AddReference(
+              package, package.name, decl_syntax.blockName->name.range(),
+              definition_range, package.getParentScope());
+        }
       }
     }
   }

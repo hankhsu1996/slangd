@@ -165,6 +165,7 @@ class SemanticIndex {
     void handle(const slang::ast::HierarchicalValueExpression& expr);
 
     // Symbol handlers
+    void handle(const slang::ast::FormalArgumentSymbol& formal_arg);
     void handle(const slang::ast::VariableSymbol& symbol);
     void handle(const slang::ast::WildcardImportSymbol& import_symbol);
     void handle(const slang::ast::ExplicitImportSymbol& import_symbol);
@@ -181,6 +182,7 @@ class SemanticIndex {
     void handle(const slang::ast::InterfacePortSymbol& interface_port);
     void handle(const slang::ast::ModportSymbol& modport);
     void handle(const slang::ast::ModportPortSymbol& modport_port);
+    void handle(const slang::ast::InstanceSymbol& instance);
     void handle(const slang::ast::GenerateBlockArraySymbol& generate_array);
     void handle(const slang::ast::GenerateBlockSymbol& generate_block);
     void handle(const slang::ast::GenvarSymbol& genvar);
@@ -250,6 +252,12 @@ class SemanticIndex {
     void IndexClassParameters(
         const slang::ast::ClassType& class_type,
         const slang::syntax::ParameterValueAssignmentSyntax& params);
+
+    // Helper for indexing package names in scoped references
+    // (e.g., pkg::PARAM, pkg::func())
+    void IndexPackageInScopedName(
+        const slang::syntax::SyntaxNode* syntax,
+        const slang::ast::Symbol& target_symbol);
   };
 };
 

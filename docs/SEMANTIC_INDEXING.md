@@ -81,6 +81,49 @@ Calling `getRoot()` in `LanguageServerMode`:
 
 This is how definition bodies become accessible for indexing.
 
+### Critical: Proper Instance Creation for Body Traversal
+
+**Requirement**: When indexing definition bodies, create full `InstanceSymbol` objects via `createDefault()`, not standalone `InstanceBodySymbol` via `fromDefinition()`.
+
+**Technical Reason**:
+
+`InstanceBodySymbol::fromDefinition()` creates a body with `parentInstance = nullptr`. During visitor traversal, when expressions are evaluated (required for LSP to index all symbol references), Slang performs lazy elaboration. For interface ports, this triggers `InterfacePortSymbol::getConnectionAndExpr()` which requires a valid `parentInstance` pointer to resolve port connections.
+
+**Consequences of Incorrect Usage**:
+
+- Segmentation fault in `InterfacePortSymbol::getConnectionAndExpr()` at PortSymbols.cpp:1676
+- Crash occurs during expression evaluation, not during initial symbol creation
+- Affects any module/interface with interface ports or expressions referencing interface members
+
+**Correct Implementation**:
+
+1. Use `InstanceSymbol::createDefault()` to create instances with proper parent linkage
+2. Call `instance.setParent(*definition.getParentScope())` to establish scope hierarchy
+3. Traverse `instance.body` (not a standalone body)
+4. In LSP mode, `connectDefaultIfacePorts()` automatically creates default interface instances for port resolution
+
+**When This Applies**:
+
+- All module/interface definition body traversal
+- Any code path that visits expressions containing interface port references
+- Generic traversal infrastructure that must handle all SystemVerilog constructs
+
+### Preventing Duplicate Interface Traversal
+
+**Problem**: Interface instances appear twice during indexing - once as standalone (when processing interface definition) and once nested in modules (Slang creates full instances for port resolution).
+
+**Why interfaces differ from sub-modules**:
+
+- Sub-modules use `UninstantiatedDefSymbol` in LSP mode → visitor doesn't traverse them
+- Interfaces use full `InstanceSymbol` → visitor traverses them by default → causes duplicates
+
+**Solution**: Add `handle(InstanceSymbol&)` that checks parent scope:
+
+- Parent = `CompilationUnit` → standalone interface definition → traverse body
+- Parent ≠ `CompilationUnit` → nested in module → skip body (already indexed)
+
+**Implementation**: `semantic_index.cpp:1549-1570`
+
 ## Adding New Symbol Support
 
 ### 1. Definition Extraction
@@ -106,19 +149,7 @@ case SK::MySymbol:
 
 ### 2. Self-Definition Handler
 
-Add handler method to enable go-to-definition on the symbol itself:
-
-```cpp
-void IndexVisitor::handle(const MySymbol& symbol) {
-  if (const auto* syntax = symbol.getSyntax()) {
-    if (syntax->kind == SyntaxKind::MyDeclaration) {
-      auto range = syntax->as<MyDeclarationSyntax>().name.range();
-      CreateReference(range, range, symbol);
-    }
-  }
-  this->visitDefault(symbol);  // Always call to continue traversal
-}
-```
+Use `AddDefinition()` to create symbol definitions. For end labels (e.g., `endmodule : Test`), use `AddReference()` with `syntax->endBlockName->name.range()`.
 
 ### 3. Reference Handler
 
