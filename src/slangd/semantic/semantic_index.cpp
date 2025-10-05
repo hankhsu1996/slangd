@@ -118,6 +118,11 @@ auto SemanticIndex::FromCompilation(
         instance.setParent(*parent_scope);
       }
 
+      // Trigger port connection resolution (including modport caching)
+      // In LSP mode, this calls connectDefaultIfacePorts() which resolves
+      // modports and caches them in InterfacePortSymbol::modportSymbol
+      instance.getPortConnections();
+
       // Traverse the instance body to index all members
       instance.body.visit(visitor);
     }
@@ -1452,8 +1457,24 @@ void SemanticIndex::IndexVisitor::handle(
         }
       }
 
-      // TODO: Create cross-reference from modport name to modport definition
-      // This requires finding the modport in the interface definition
+      // Create cross-reference from modport name to modport definition
+      // modportSymbol was cached by connectDefaultIfacePorts()
+      if (interface_port.modportSymbol != nullptr) {
+        auto modport_name_range = interface_port.modportNameRange();
+        if (modport_name_range.start().valid()) {
+          if (const auto* modport_syntax =
+                  interface_port.modportSymbol->getSyntax()) {
+            auto modport_definition_range =
+                DefinitionExtractor::ExtractDefinitionRange(
+                    *interface_port.modportSymbol, *modport_syntax);
+            AddReference(
+                *interface_port.modportSymbol,
+                interface_port.modportSymbol->name, modport_name_range,
+                modport_definition_range,
+                interface_port.modportSymbol->getParentScope());
+          }
+        }
+      }
     }
   }
   // Skip visitDefault to avoid traversing interface port's nested scope

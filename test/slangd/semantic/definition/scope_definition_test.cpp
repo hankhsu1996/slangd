@@ -9,7 +9,7 @@
 
 #include "../../common/simple_fixture.hpp"
 
-constexpr auto kLogLevel = spdlog::level::debug;  // Always debug for tests
+constexpr auto kLogLevel = spdlog::level::debug;
 
 auto main(int argc, char* argv[]) -> int {
   spdlog::set_level(kLogLevel);

@@ -9,7 +9,7 @@
 
 #include "../../common/simple_fixture.hpp"
 
-constexpr auto kLogLevel = spdlog::level::debug;  // Always debug for tests
+constexpr auto kLogLevel = spdlog::level::debug;
 
 auto main(int argc, char* argv[]) -> int {
   spdlog::set_level(kLogLevel);
@@ -55,7 +55,7 @@ TEST_CASE(
       supply0 gnd;
       supply1 vdd;
       wire result;
-      
+
       // Net usage in assign statements
       assign bus_data = 32'h1234;
       assign tri_signal = bus_data[15:0];
@@ -81,11 +81,11 @@ TEST_CASE("SemanticIndex complex net expressions work", "[definition]") {
       wire [7:0] addr;
       tri enable;
       supply0 gnd;
-      
+
       // Complex expressions with multiple net references
       assign data_out = enable ? data_in : 32'h0;
       assign addr = data_in[7:0] & 8'hFF;
-      
+
       // Nested expressions
       wire intermediate;
       assign intermediate = (data_in != 32'h0) && enable;
@@ -115,12 +115,12 @@ TEST_CASE("SemanticIndex multiple net declarations work", "[definition]") {
       wire a, b, c;
       tri [7:0] x, y, z;
       supply0 gnd0, gnd1;
-      
+
       // References to each net
       assign a = 1'b1;
       assign b = a;
       assign c = b;
-      
+
       assign x = 8'h01;
       assign y = x + 1;
       assign z = y & 8'hF0;
