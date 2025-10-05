@@ -826,10 +826,19 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::ConversionExpression& expr) {
-  // Only process explicit user-written type casts (e.g., type_name'(value))
-  // Skip implicit compiler-generated conversions to avoid duplicates
+  // Only process explicit user-written casts (e.g., type_name'(value) or
+  // NUM'(value)) Skip implicit compiler-generated conversions to avoid
+  // duplicates
   if (!expr.isImplicit()) {
+    // Handle type casts (e.g., typedef_t'(value))
     TraverseType(*expr.type);
+
+    // Handle size casts (e.g., NUM_ENTRIES'(value))
+    // castWidthExpr stores the width expression (NUM_ENTRIES) for LSP
+    // navigation
+    if (const auto* width_expr = expr.getCastWidthExpr()) {
+      width_expr->visit(*this);
+    }
   }
   this->visitDefault(expr);
 }

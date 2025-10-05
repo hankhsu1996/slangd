@@ -63,10 +63,10 @@ TEST_CASE(
   SimpleTestFixture fixture;
   std::string code = R"(
     typedef struct packed { logic [7:0] x, y; } complex_t;
-    
+
     module complex_test;
       complex_t result;
-      
+
       always_comb begin
         result = complex_t'(16'h1234);
       end
@@ -75,6 +75,24 @@ TEST_CASE(
 
   auto index = fixture.CompileSource(code);
   fixture.AssertGoToDefinition(*index, code, "complex_t", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex constant size cast reference lookup works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module sizecast_test;
+      parameter WIDTH = 8;
+      logic [7:0] result;
+
+      always_comb begin
+        result = WIDTH'(4);
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 1, 0);
 }
 
 TEST_CASE(
