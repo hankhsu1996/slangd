@@ -317,10 +317,22 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
               auto definition_range =
                   syntax->as<slang::syntax::TypedefDeclarationSyntax>()
                       .name.range();
+              // Index package name if this is a scoped type reference
+              if (type_ref.getSyntax() != nullptr) {
+                IndexPackageInScopedName(type_ref.getSyntax(), *typedef_target);
+              }
+              // For scoped names, extract just the typedef name part
+              auto usage_range = type_ref.getUsageLocation();
+              if (type_ref.getSyntax() != nullptr &&
+                  type_ref.getSyntax()->kind ==
+                      slang::syntax::SyntaxKind::ScopedName) {
+                const auto& scoped =
+                    type_ref.getSyntax()->as<slang::syntax::ScopedNameSyntax>();
+                usage_range = scoped.right->sourceRange();
+              }
               AddReference(
-                  *typedef_target, typedef_target->name,
-                  type_ref.getUsageLocation(), definition_range,
-                  typedef_target->getParentScope());
+                  *typedef_target, typedef_target->name, usage_range,
+                  definition_range, typedef_target->getParentScope());
             }
           }
         }
@@ -333,10 +345,22 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
               auto definition_range =
                   syntax->as<slang::syntax::ClassDeclarationSyntax>()
                       .name.range();
+              // Index package name if this is a scoped type reference
+              if (type_ref.getSyntax() != nullptr) {
+                IndexPackageInScopedName(type_ref.getSyntax(), *class_target);
+              }
+              // For scoped names, extract just the class name part
+              auto usage_range = type_ref.getUsageLocation();
+              if (type_ref.getSyntax() != nullptr &&
+                  type_ref.getSyntax()->kind ==
+                      slang::syntax::SyntaxKind::ScopedName) {
+                const auto& scoped =
+                    type_ref.getSyntax()->as<slang::syntax::ScopedNameSyntax>();
+                usage_range = scoped.right->sourceRange();
+              }
               AddReference(
-                  *class_target, class_target->name,
-                  type_ref.getUsageLocation(), definition_range,
-                  class_target->getParentScope());
+                  *class_target, class_target->name, usage_range,
+                  definition_range, class_target->getParentScope());
             }
           }
         }
@@ -506,6 +530,46 @@ void SemanticIndex::IndexVisitor::IndexClassParameters(
   }
 }
 
+void SemanticIndex::IndexVisitor::IndexPackageInScopedName(
+    const slang::syntax::SyntaxNode* syntax,
+    const slang::ast::Symbol& target_symbol) {
+  // Check if this is a scoped name (pkg::item)
+  if (syntax == nullptr ||
+      syntax->kind != slang::syntax::SyntaxKind::ScopedName) {
+    return;
+  }
+
+  const auto& scoped = syntax->as<slang::syntax::ScopedNameSyntax>();
+  // Only handle :: separator (package scope), not . (hierarchical)
+  if (scoped.separator.kind != slang::parsing::TokenKind::DoubleColon) {
+    return;
+  }
+
+  // Check if left part is a simple identifier
+  if (scoped.left->kind != slang::syntax::SyntaxKind::IdentifierName) {
+    return;
+  }
+
+  const auto& ident = scoped.left->as<slang::syntax::IdentifierNameSyntax>();
+
+  // Check if target symbol's parent is a package
+  const auto* parent = target_symbol.getParentScope();
+  if (parent != nullptr &&
+      parent->asSymbol().kind == slang::ast::SymbolKind::Package) {
+    const auto& pkg = parent->asSymbol().as<slang::ast::PackageSymbol>();
+    if (const auto* pkg_syntax = pkg.getSyntax()) {
+      if (pkg_syntax->kind == slang::syntax::SyntaxKind::PackageDeclaration) {
+        const auto& decl_syntax =
+            pkg_syntax->as<slang::syntax::ModuleDeclarationSyntax>();
+        auto pkg_def_range = decl_syntax.header->name.range();
+        AddReference(
+            pkg, pkg.name, ident.identifier.range(), pkg_def_range,
+            pkg.getParentScope());
+      }
+    }
+  }
+}
+
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::NamedValueExpression& expr) {
   const slang::ast::Symbol* target_symbol = &expr.symbol;
@@ -539,6 +603,11 @@ void SemanticIndex::IndexVisitor::handle(
         }
       }
     }
+  }
+
+  // Index package name in scoped references (e.g., pkg::PARAM)
+  if (expr.syntax != nullptr) {
+    IndexPackageInScopedName(expr.syntax, *target_symbol);
   }
 
   if (target_symbol->location.valid()) {
@@ -633,10 +702,18 @@ void SemanticIndex::IndexVisitor::handle(
 
       // Universal path: always use symbol name length for precise reference
       // ranges
+      // For scoped names (pkg::item), use the rightmost part for reference
+      // range
+      slang::SourceLocation ref_start = expr.sourceRange.start();
+      if (expr.syntax != nullptr &&
+          expr.syntax->kind == slang::syntax::SyntaxKind::ScopedName) {
+        const auto& scoped = expr.syntax->as<slang::syntax::ScopedNameSyntax>();
+        ref_start = scoped.right->sourceRange().start();
+      }
+
       auto reference_range = slang::SourceRange(
-          expr.sourceRange.start(),
-          expr.sourceRange.start() +
-              static_cast<uint32_t>(target_symbol->name.length()));
+          ref_start,
+          ref_start + static_cast<uint32_t>(target_symbol->name.length()));
 
       AddReference(
           *target_symbol, target_symbol->name, reference_range,
@@ -731,6 +808,14 @@ void SemanticIndex::IndexVisitor::handle(
   if (!definition_range || !call_range) {
     this->visitDefault(expr);
     return;
+  }
+
+  // Index package names in scoped references (e.g., pkg::func())
+  if (expr.syntax != nullptr &&
+      expr.syntax->kind == slang::syntax::SyntaxKind::InvocationExpression) {
+    const auto& invocation =
+        expr.syntax->as<slang::syntax::InvocationExpressionSyntax>();
+    IndexPackageInScopedName(invocation.left, **subroutine_symbol);
   }
 
   AddReference(

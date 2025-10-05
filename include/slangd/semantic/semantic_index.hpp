@@ -250,6 +250,12 @@ class SemanticIndex {
     void IndexClassParameters(
         const slang::ast::ClassType& class_type,
         const slang::syntax::ParameterValueAssignmentSyntax& params);
+
+    // Helper for indexing package names in scoped references
+    // (e.g., pkg::PARAM, pkg::func())
+    void IndexPackageInScopedName(
+        const slang::syntax::SyntaxNode* syntax,
+        const slang::ast::Symbol& target_symbol);
   };
 };
 

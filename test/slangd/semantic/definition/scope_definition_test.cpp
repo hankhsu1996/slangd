@@ -377,3 +377,81 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "signal_c", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "signal_default", 0, 0);
 }
+
+TEST_CASE("SemanticIndex package name in function call works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package util_pkg;
+      function automatic bit is_valid(int val);
+        return val > 0;
+      endfunction
+    endpackage
+
+    module test;
+      parameter int SIZE = 10;
+      if (util_pkg::is_valid(SIZE)) begin
+        logic data;
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  // Test clicking on package name in function call
+  fixture.AssertGoToDefinition(*index, code, "util_pkg", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex package name in parameter reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package cfg_pkg;
+      parameter int BUS_WIDTH = 32;
+    endpackage
+
+    module test;
+      logic [cfg_pkg::BUS_WIDTH-1:0] bus;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  // Test clicking on package name when accessing parameter
+  fixture.AssertGoToDefinition(*index, code, "cfg_pkg", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex package name in typedef reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package types_pkg;
+      typedef logic [7:0] byte_t;
+    endpackage
+
+    module test;
+      types_pkg::byte_t data;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  // Test clicking on package name when using typedef
+  fixture.AssertGoToDefinition(*index, code, "types_pkg", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex package name in class reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package class_pkg;
+      class Transaction;
+        int id;
+      endclass
+    endpackage
+
+    module test;
+      class_pkg::Transaction txn;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  // Test clicking on package name when using class type
+  fixture.AssertGoToDefinition(*index, code, "class_pkg", 1, 0);
+}
