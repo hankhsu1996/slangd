@@ -165,6 +165,7 @@ class SemanticIndex {
     void handle(const slang::ast::HierarchicalValueExpression& expr);
 
     // Symbol handlers
+    void handle(const slang::ast::FormalArgumentSymbol& formal_arg);
     void handle(const slang::ast::VariableSymbol& symbol);
     void handle(const slang::ast::WildcardImportSymbol& import_symbol);
     void handle(const slang::ast::ExplicitImportSymbol& import_symbol);

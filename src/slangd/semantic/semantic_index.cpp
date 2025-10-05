@@ -880,6 +880,32 @@ void SemanticIndex::IndexVisitor::handle(
 }
 
 void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::FormalArgumentSymbol& formal_arg) {
+  // Formal arguments need their own handler because they're dispatched
+  // separately from VariableSymbol in the visitor.
+
+  // Add self-definition if we have valid location and syntax
+  if (formal_arg.location.valid()) {
+    if (const auto* syntax = formal_arg.getSyntax()) {
+      if (syntax->kind == slang::syntax::SyntaxKind::PortDeclaration) {
+        const auto& port_decl =
+            syntax->as<slang::syntax::PortDeclarationSyntax>();
+        if (!port_decl.declarators.empty()) {
+          auto definition_range = port_decl.declarators[0]->name.range();
+          AddDefinition(
+              formal_arg, formal_arg.name, definition_range,
+              formal_arg.getParentScope());
+        }
+      }
+    }
+  }
+
+  // Traverse the type to index type references in argument declarations
+  TraverseType(formal_arg.getType());
+  this->visitDefault(formal_arg);
+}
+
+void SemanticIndex::IndexVisitor::handle(
     const slang::ast::VariableSymbol& symbol) {
   if (!symbol.location.valid()) {
     TraverseType(symbol.getType());
