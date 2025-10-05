@@ -811,6 +811,51 @@ TEST_CASE(
 }
 
 TEST_CASE(
+    "SemanticIndex class in package has correct parent-child hierarchy",
+    "[document_symbols]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package test_pkg;
+      class Buffer #(parameter int SIZE = 8);
+        int data;
+      endclass
+    endpackage
+  )";
+
+  auto index = fixture.CompileSource(code);
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
+
+  // Should have exactly 1 root symbol (the package)
+  REQUIRE(symbols.size() == 1);
+  REQUIRE(symbols[0].name == "test_pkg");
+  REQUIRE(symbols[0].kind == lsp::SymbolKind::kPackage);
+
+  // Package should have children
+  REQUIRE(symbols[0].children.has_value());
+
+  // Find the class as a child of the package
+  auto class_symbol = std::find_if(
+      symbols[0].children->begin(), symbols[0].children->end(),
+      [](const auto& s) { return s.name == "Buffer"; });
+  REQUIRE(class_symbol != symbols[0].children->end());
+  REQUIRE(class_symbol->kind == lsp::SymbolKind::kClass);
+
+  // Class should have children (SIZE parameter and data field)
+  REQUIRE(class_symbol->children.has_value());
+
+  // Verify class members are children of the class
+  auto size_param = std::find_if(
+      class_symbol->children->begin(), class_symbol->children->end(),
+      [](const auto& s) { return s.name == "SIZE"; });
+  REQUIRE(size_param != class_symbol->children->end());
+
+  auto data_field = std::find_if(
+      class_symbol->children->begin(), class_symbol->children->end(),
+      [](const auto& s) { return s.name == "data"; });
+  REQUIRE(data_field != class_symbol->children->end());
+}
+
+TEST_CASE(
     "SemanticIndex class function internals not in document symbols",
     "[document_symbols]") {
   SimpleTestFixture fixture;
