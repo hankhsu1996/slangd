@@ -8,7 +8,6 @@
 #include <spdlog/spdlog.h>
 
 #include "slangd/core/project_layout_service.hpp"
-#include "slangd/semantic/diagnostic_index.hpp"
 #include "slangd/semantic/semantic_index.hpp"
 #include "slangd/services/global_catalog.hpp"
 
@@ -41,13 +40,7 @@ class OverlaySession {
     return *semantic_index_;
   }
 
-  // Access to diagnostic index for LSP diagnostics
-  [[nodiscard]] auto GetDiagnosticIndex() const
-      -> const semantic::DiagnosticIndex& {
-    return *diagnostic_index_;
-  }
-
-  // Access to compilation for advanced queries
+  // Access to compilation for advanced queries (used for diagnostic extraction)
   [[nodiscard]] auto GetCompilation() const -> slang::ast::Compilation& {
     return *compilation_;
   }
@@ -63,7 +56,6 @@ class OverlaySession {
       std::shared_ptr<slang::SourceManager> source_manager,
       std::unique_ptr<slang::ast::Compilation> compilation,
       std::unique_ptr<semantic::SemanticIndex> semantic_index,
-      std::unique_ptr<semantic::DiagnosticIndex> diagnostic_index,
       std::shared_ptr<spdlog::logger> logger);
 
   // Build fresh compilation with current buffer and optional catalog files
@@ -80,7 +72,6 @@ class OverlaySession {
   std::shared_ptr<slang::SourceManager> source_manager_;
   std::unique_ptr<slang::ast::Compilation> compilation_;
   std::unique_ptr<semantic::SemanticIndex> semantic_index_;
-  std::unique_ptr<semantic::DiagnosticIndex> diagnostic_index_;
   std::shared_ptr<spdlog::logger> logger_;
 };
 

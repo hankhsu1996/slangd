@@ -52,6 +52,26 @@ VSCode Response ← JSON-RPC ← LSP Handler ← Result ← Computation Complete
 
 **Key insight**: Main thread handles protocol coordination while background threads handle computation. This prevents LSP timeouts during heavy SystemVerilog processing.
 
+## Diagnostic Publishing Strategy
+
+**Two-phase approach**: Parse diagnostics (syntax errors) publish immediately, then full diagnostics (semantic analysis) publish after elaboration.
+
+```
+File Save → Parse Diagnostics (fast) → Publish → Full Diagnostics (slow) → Publish
+```
+
+### Key Architectural Decisions
+
+**Lazy elaboration**: OverlaySession creation does NOT trigger elaboration. Semantic indexing uses `compilation.getDefinitions()` and `compilation.getPackages()` - simple map lookups, no analysis.
+
+**On-demand extraction**: Diagnostics extracted only when requested, not pre-computed during session creation. Two extraction methods:
+- `getParseDiagnostics()`: Fast, no elaboration triggered
+- `getAllDiagnostics()`: Triggers elaboration for semantic analysis
+
+**Cache reuse**: Both diagnostic phases use the same cached OverlaySession. First phase may create session, second phase reuses it.
+
+**Why this works**: Separating diagnostic extraction from session creation follows Slang's lazy evaluation pattern. Users get immediate syntax error feedback while semantic analysis runs in background.
+
 ## Executor & Threading Model
 
 ### Main Event Loop (io_context)

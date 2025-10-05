@@ -135,27 +135,21 @@ auto SlangdLspServer::OnDidOpenTextDocument(
 
   AddOpenFile(uri, text, language_id, version);
 
-  // Compute and publish initial diagnostics via facade
+  // Compute and publish initial diagnostics
   asio::co_spawn(
       strand_,
       [this, uri, text, version]() -> asio::awaitable<void> {
-        Logger()->debug("SlangdLspServer starting document parse for: {}", uri);
+        // Phase 1: Parse diagnostics (syntax errors only)
+        auto parse_diags =
+            co_await language_service_->ComputeParseDiagnostics(uri, text);
+        co_await PublishDiagnostics(
+            {.uri = uri, .version = version, .diagnostics = parse_diags});
 
-        // Use facade to compute diagnostics
-        auto diagnostics =
+        // Phase 2: Full diagnostics (includes semantic analysis)
+        auto all_diags =
             co_await language_service_->ComputeDiagnostics(uri, text);
-
-        Logger()->debug(
-            "SlangdLspServer publishing {} diagnostics for document: {}",
-            diagnostics.size(), uri);
-
-        // Publish diagnostics
-        lsp::PublishDiagnosticsParams diag_params{
-            .uri = uri, .version = version, .diagnostics = diagnostics};
-        co_await PublishDiagnostics(diag_params);
-
-        Logger()->debug(
-            "SlangdLspServer completed publishing diagnostics for: {}", uri);
+        co_await PublishDiagnostics(
+            {.uri = uri, .version = version, .diagnostics = all_diags});
       },
       asio::detached);
 
@@ -350,20 +344,18 @@ auto SlangdLspServer::ProcessDiagnosticsForUri(std::string uri)
   }
 
   const auto& file = file_opt->get();
-  Logger()->debug("Processing diagnostics for: {}", uri);
 
-  // Use facade to compute diagnostics
-  auto diagnostics =
+  // Phase 1: Parse diagnostics (syntax errors only)
+  auto parse_diags =
+      co_await language_service_->ComputeParseDiagnostics(uri, file.content);
+  co_await PublishDiagnostics(
+      {.uri = uri, .version = file.version, .diagnostics = parse_diags});
+
+  // Phase 2: Full diagnostics (includes semantic analysis)
+  auto all_diags =
       co_await language_service_->ComputeDiagnostics(uri, file.content);
-
-  Logger()->debug("Publishing {} diagnostics for: {}", diagnostics.size(), uri);
-
-  // Publish diagnostics as a single batch
-  lsp::PublishDiagnosticsParams diag_params{
-      .uri = uri, .version = file.version, .diagnostics = diagnostics};
-  co_await PublishDiagnostics(diag_params);
-
-  Logger()->debug("Completed publishing diagnostics for: {}", uri);
+  co_await PublishDiagnostics(
+      {.uri = uri, .version = file.version, .diagnostics = all_diags});
 
   // Remove the pending request if it exists
   pending_diagnostics_.erase(uri);

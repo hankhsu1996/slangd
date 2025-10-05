@@ -23,6 +23,11 @@ class LanguageServiceBase {
   virtual ~LanguageServiceBase() = default;
 
   // Diagnostics computation - async because may need parsing/compilation
+  // Parse diagnostics only - syntax errors without elaboration
+  virtual auto ComputeParseDiagnostics(std::string uri, std::string content)
+      -> asio::awaitable<std::vector<lsp::Diagnostic>> = 0;
+
+  // Full diagnostics including semantic analysis
   virtual auto ComputeDiagnostics(std::string uri, std::string content)
       -> asio::awaitable<std::vector<lsp::Diagnostic>> = 0;
 

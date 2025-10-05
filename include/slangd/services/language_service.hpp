@@ -50,12 +50,13 @@ class LanguageService : public LanguageServiceBase {
       asio::any_io_executor executor,
       std::shared_ptr<spdlog::logger> logger = nullptr);
 
-  // Initialize with workspace folder (called during LSP initialize)
-  // Initialize workspace for LSP operations
+  // LanguageServiceBase implementation
   auto InitializeWorkspace(std::string workspace_uri)
       -> asio::awaitable<void> override;
 
-  // LanguageServiceBase implementation using overlay sessions
+  auto ComputeParseDiagnostics(std::string uri, std::string content)
+      -> asio::awaitable<std::vector<lsp::Diagnostic>> override;
+
   auto ComputeDiagnostics(std::string uri, std::string content)
       -> asio::awaitable<std::vector<lsp::Diagnostic>> override;
 

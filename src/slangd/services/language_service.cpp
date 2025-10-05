@@ -7,6 +7,7 @@
 #include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/syntax/SyntaxTree.h>
 
+#include "slangd/semantic/diagnostic_converter.hpp"
 #include "slangd/services/global_catalog.hpp"
 #include "slangd/utils/canonical_path.hpp"
 #include "slangd/utils/conversion.hpp"
@@ -53,14 +54,64 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
       utils::ScopedTimer::FormatDuration(elapsed));
 }
 
-auto LanguageService::ComputeDiagnostics(std::string uri, std::string content)
+auto LanguageService::ComputeParseDiagnostics(
+    std::string uri, std::string content)
     -> asio::awaitable<std::vector<lsp::Diagnostic>> {
+  utils::ScopedTimer timer("ComputeParseDiagnostics", logger_);
+
   if (!layout_service_) {
     logger_->error("LanguageService: Workspace not initialized");
     co_return std::vector<lsp::Diagnostic>{};
   }
 
-  logger_->debug("LanguageService computing diagnostics for: {}", uri);
+  logger_->debug("LanguageService computing parse diagnostics for: {}", uri);
+
+  // Create cache key with catalog version and content hash
+  uint64_t catalog_version =
+      global_catalog_ ? global_catalog_->GetVersion() : 0;
+  size_t content_hash = std::hash<std::string>{}(content);
+  OverlayCacheKey cache_key{
+      .doc_uri = uri,
+      .content_hash = content_hash,
+      .catalog_version = catalog_version};
+
+  // Get or create overlay session from cache (fast - no elaboration)
+  auto session = co_await GetOrCreateOverlay(cache_key, content);
+  if (!session) {
+    logger_->error("Failed to create overlay session for: {}", uri);
+    co_return std::vector<lsp::Diagnostic>{};
+  }
+
+  // Extract parse diagnostics in background thread pool
+  auto diagnostics = co_await asio::co_spawn(
+      compilation_pool_->get_executor(),
+      [session, uri, this]() -> asio::awaitable<std::vector<lsp::Diagnostic>> {
+        co_return semantic::DiagnosticConverter::ExtractParseDiagnostics(
+            session->GetCompilation(), session->GetSourceManager(), uri,
+            logger_);
+      },
+      asio::use_awaitable);
+
+  // Post result back to main strand
+  co_await asio::post(executor_, asio::use_awaitable);
+
+  logger_->debug(
+      "LanguageService computed {} parse diagnostics for: {}",
+      diagnostics.size(), uri);
+
+  co_return diagnostics;
+}
+
+auto LanguageService::ComputeDiagnostics(std::string uri, std::string content)
+    -> asio::awaitable<std::vector<lsp::Diagnostic>> {
+  utils::ScopedTimer timer("ComputeDiagnostics", logger_);
+
+  if (!layout_service_) {
+    logger_->error("LanguageService: Workspace not initialized");
+    co_return std::vector<lsp::Diagnostic>{};
+  }
+
+  logger_->debug("LanguageService computing full diagnostics for: {}", uri);
 
   // Create cache key with catalog version and content hash
   uint64_t catalog_version =
@@ -78,12 +129,22 @@ auto LanguageService::ComputeDiagnostics(std::string uri, std::string content)
     co_return std::vector<lsp::Diagnostic>{};
   }
 
-  // Get diagnostics directly from DiagnosticIndex - consistent pattern!
-  const auto& diagnostics = session->GetDiagnosticIndex().GetDiagnostics();
+  // Extract all diagnostics in background thread pool (triggers elaboration)
+  auto diagnostics = co_await asio::co_spawn(
+      compilation_pool_->get_executor(),
+      [session, uri, this]() -> asio::awaitable<std::vector<lsp::Diagnostic>> {
+        co_return semantic::DiagnosticConverter::ExtractAllDiagnostics(
+            session->GetCompilation(), session->GetSourceManager(), uri,
+            logger_);
+      },
+      asio::use_awaitable);
+
+  // Post result back to main strand
+  co_await asio::post(executor_, asio::use_awaitable);
 
   logger_->debug(
-      "LanguageService computed {} diagnostics for: {}", diagnostics.size(),
-      uri);
+      "LanguageService computed {} full diagnostics for: {}",
+      diagnostics.size(), uri);
 
   co_return diagnostics;
 }

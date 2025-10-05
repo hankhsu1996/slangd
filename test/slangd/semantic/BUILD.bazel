@@ -36,10 +36,10 @@ cc_test(
 )
 
 cc_test(
-    name = "diagnostic_index_test",
+    name = "diagnostic_converter_test",
     timeout = "short",
     srcs = [
-        "diagnostic_index_test.cpp",
+        "diagnostic_converter_test.cpp",
     ],
     deps = [
         "//:slangd_core",

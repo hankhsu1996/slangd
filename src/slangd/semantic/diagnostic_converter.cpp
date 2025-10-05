@@ -1,4 +1,4 @@
-#include "slangd/semantic/diagnostic_index.hpp"
+#include "slangd/semantic/diagnostic_converter.hpp"
 
 #include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/diagnostics/Diagnostics.h>
@@ -8,96 +8,60 @@
 
 namespace slangd::semantic {
 
-auto DiagnosticIndex::FromCompilation(
+auto DiagnosticConverter::ExtractParseDiagnostics(
     slang::ast::Compilation& compilation,
     const slang::SourceManager& source_manager, const std::string& uri,
-    std::shared_ptr<spdlog::logger> logger) -> DiagnosticIndex {
+    std::shared_ptr<spdlog::logger> logger) -> std::vector<lsp::Diagnostic> {
   if (!logger) {
     logger = spdlog::default_logger();
   }
 
-  logger->debug("Creating DiagnosticIndex for: {}", uri);
-
-  // Extract diagnostics from compilation
-  auto diagnostics = ExtractDiagnosticsFromCompilation(
-      compilation, source_manager, uri, logger);
-
-  // Apply filtering and modification
-  auto filtered_diagnostics = FilterAndModifyDiagnostics(diagnostics, logger);
-
-  logger->debug(
-      "DiagnosticIndex created with {} diagnostics for: {}",
-      filtered_diagnostics.size(), uri);
-
-  return {std::move(filtered_diagnostics), uri, std::move(logger)};
+  auto slang_diagnostics = compilation.getParseDiagnostics();
+  auto diagnostics = ExtractDiagnostics(slang_diagnostics, source_manager, uri);
+  return FilterAndModifyDiagnostics(diagnostics);
 }
 
-DiagnosticIndex::DiagnosticIndex(
-    std::vector<lsp::Diagnostic> diagnostics, std::string uri,
-    std::shared_ptr<spdlog::logger> logger)
-    : diagnostics_(std::move(diagnostics)),
-      uri_(std::move(uri)),
-      logger_(std::move(logger)) {
-}
-
-auto DiagnosticIndex::PrintInfo() const -> void {
-  logger_->info(
-      "DiagnosticIndex for {}: {} diagnostics", uri_, diagnostics_.size());
-  for (const auto& diag : diagnostics_) {
-    int severity_value = static_cast<int>(
-        diag.severity.value_or(lsp::DiagnosticSeverity::kError));
-    logger_->info(
-        "  {} at {}:{}-{}:{}: {}", severity_value, diag.range.start.line,
-        diag.range.start.character, diag.range.end.line,
-        diag.range.end.character, diag.message);
-  }
-}
-
-auto DiagnosticIndex::ExtractDiagnosticsFromCompilation(
+auto DiagnosticConverter::ExtractAllDiagnostics(
     slang::ast::Compilation& compilation,
     const slang::SourceManager& source_manager, const std::string& uri,
     std::shared_ptr<spdlog::logger> logger) -> std::vector<lsp::Diagnostic> {
-  std::vector<lsp::Diagnostic> diagnostics;
+  if (!logger) {
+    logger = spdlog::default_logger();
+  }
 
+  auto slang_diagnostics = compilation.getAllDiagnostics();
+  auto diagnostics = ExtractDiagnostics(slang_diagnostics, source_manager, uri);
+  return FilterAndModifyDiagnostics(diagnostics);
+}
+
+auto DiagnosticConverter::ExtractDiagnostics(
+    const slang::Diagnostics& slang_diagnostics,
+    const slang::SourceManager& source_manager, const std::string& uri)
+    -> std::vector<lsp::Diagnostic> {
   // Create a diagnostic engine using the source manager
-  // This ensures proper location information for diagnostics
   slang::DiagnosticEngine diagnostic_engine(source_manager);
 
-  // Disable unnamed-generate warnings by default: start with "none"
-  // then enable only the default group with "default"
+  // Disable unnamed-generate warnings by default
   std::vector<std::string> warning_options = {"none", "default"};
   diagnostic_engine.setWarningOptions(warning_options);
 
-  // Extract semantic diagnostics from compilation
-  // This includes both syntax and semantic diagnostics
-  auto slang_diagnostics = compilation.getAllDiagnostics();
-
-  auto lsp_diagnostics = ConvertSlangDiagnosticsToLsp(
+  return ConvertSlangDiagnosticsToLsp(
       slang_diagnostics, source_manager, diagnostic_engine, uri);
-
-  logger->debug(
-      "Extracted {} diagnostics from compilation for: {}",
-      lsp_diagnostics.size(), uri);
-
-  return lsp_diagnostics;
 }
 
-auto DiagnosticIndex::FilterAndModifyDiagnostics(
-    std::vector<lsp::Diagnostic> diagnostics,
-    std::shared_ptr<spdlog::logger> logger) -> std::vector<lsp::Diagnostic> {
+auto DiagnosticConverter::FilterAndModifyDiagnostics(
+    std::vector<lsp::Diagnostic> diagnostics) -> std::vector<lsp::Diagnostic> {
   std::vector<lsp::Diagnostic> result;
   result.reserve(diagnostics.size());
 
   for (auto& diag : diagnostics) {
-    // 1. Check for diagnostics to completely exclude
+    // Check for diagnostics to completely exclude
     if (diag.code == "InfoTask") {
-      // Skip these diagnostics entirely
       continue;
     }
 
-    // 2. Check for diagnostics to demote and enhance
+    // Check for diagnostics to demote and enhance
     if (diag.code == "CouldNotOpenIncludeFile") {
-      // Demote to warning
       diag.severity = lsp::DiagnosticSeverity::kWarning;
 
       // Replace original message with more helpful one
@@ -115,28 +79,20 @@ auto DiagnosticIndex::FilterAndModifyDiagnostics(
         diag.message = "Cannot find include file " + original_path;
       }
 
-      // Add hint about configuration
       diag.message +=
           " (Consider configuring include directories in a .slangd file)";
     } else if (diag.code == "UnknownDirective") {
-      // Demote to warning
       diag.severity = lsp::DiagnosticSeverity::kWarning;
-
-      // Add hint about configuration
       diag.message += " (Add defines in .slangd file if needed)";
     }
 
     result.push_back(diag);
   }
 
-  logger->debug(
-      "DiagnosticIndex filtered {} diagnostics",
-      diagnostics.size() - result.size());
-
   return result;
 }
 
-auto DiagnosticIndex::ConvertSlangDiagnosticsToLsp(
+auto DiagnosticConverter::ConvertSlangDiagnosticsToLsp(
     const slang::Diagnostics& slang_diagnostics,
     const slang::SourceManager& source_manager,
     const slang::DiagnosticEngine& diag_engine, const std::string& uri)
@@ -186,8 +142,8 @@ auto DiagnosticIndex::ConvertSlangDiagnosticsToLsp(
   return result;
 }
 
-// Helper functions - need to be static members to avoid linking issues
-auto DiagnosticIndex::ConvertDiagnosticSeverityToLsp(
+// Helper functions - static members for conversion utilities
+auto DiagnosticConverter::ConvertDiagnosticSeverityToLsp(
     slang::DiagnosticSeverity severity) -> lsp::DiagnosticSeverity {
   switch (severity) {
     case slang::DiagnosticSeverity::Ignored:
@@ -203,7 +159,7 @@ auto DiagnosticIndex::ConvertDiagnosticSeverityToLsp(
   }
 }
 
-auto DiagnosticIndex::IsDiagnosticInUriDocument(
+auto DiagnosticConverter::IsDiagnosticInUriDocument(
     const slang::Diagnostic& diag, const slang::SourceManager& source_manager,
     const std::string& uri) -> bool {
   if (!diag.location) {
