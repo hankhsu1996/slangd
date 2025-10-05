@@ -405,3 +405,27 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "Base", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "Base", 1, 0);
 }
+
+TEST_CASE(
+    "SemanticIndex class specialization with symbol parameter works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package pkg;
+      class Config #(parameter int WIDTH = 16);
+        static function int get_width();
+          return WIDTH;
+        endfunction
+      endclass
+    endpackage
+
+    module test;
+      parameter int BUS_WIDTH = 32;
+      int x = pkg::Config#(.WIDTH(BUS_WIDTH))::get_width();
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "BUS_WIDTH", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "BUS_WIDTH", 1, 0);
+}

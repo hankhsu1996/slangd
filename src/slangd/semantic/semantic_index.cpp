@@ -415,6 +415,14 @@ void SemanticIndex::IndexVisitor::IndexClassParameters(
   // For named assignments: .MAX_VAL(50) - we index the parameter name
   // For ordered assignments: #(50, 100) - no names to index, only values
 
+  // Visit parameter value expressions to index symbol references (e.g.,
+  // BUS_WIDTH)
+  for (const auto* expr : class_type.parameterAssignmentExpressions) {
+    if (expr != nullptr) {
+      expr->visit(*this);
+    }
+  }
+
   for (const auto* param_base : params.parameters) {
     // Only process named parameter assignments
     if (param_base->kind != slang::syntax::SyntaxKind::NamedParamAssignment) {
@@ -1087,6 +1095,17 @@ void SemanticIndex::IndexVisitor::handle(
                   }
                 }
               }
+            }
+          }
+        }
+
+        // Visit parameter assignment expressions to index symbol references
+        if (default_type->isClass()) {
+          const auto& class_type =
+              default_type->getCanonicalType().as<slang::ast::ClassType>();
+          for (const auto* expr : class_type.parameterAssignmentExpressions) {
+            if (expr != nullptr) {
+              expr->visit(*this);
             }
           }
         }
