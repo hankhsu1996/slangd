@@ -256,3 +256,85 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "SIZE", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "SIZE", 1, 0);
 }
+
+TEST_CASE("SemanticIndex class instance member access works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    class Packet;
+      int data;
+    endclass
+
+    module test;
+      Packet pkt = new;
+      initial pkt.data = 5;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "data", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "data", 1, 0);
+}
+
+TEST_CASE("SemanticIndex class member access via this works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    class Counter;
+      int value;
+      function void set(int v);
+        this.value = v;
+      endfunction
+    endclass
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "value", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "value", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex class constructor argument navigation works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    class Buffer;
+      function new(int size);
+      endfunction
+    endclass
+
+    module test;
+      int sz = 16;
+      Buffer b = new(sz);
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "sz", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "sz", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex multiple class instances member access works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    class Point;
+      int x;
+      int y;
+    endclass
+
+    module test;
+      Point p1 = new;
+      Point p2 = new;
+      initial begin
+        p1.x = 10;
+        p2.y = 20;
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "x", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "x", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "y", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "y", 1, 0);
+}
