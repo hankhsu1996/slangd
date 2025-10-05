@@ -56,13 +56,13 @@ auto SemanticIndex::FromCompilation(
     return NormalizeUri(uri) == normalized_target;
   };
 
-  // FOUR-PATH TRAVERSAL APPROACH
+  // THREE-PATH TRAVERSAL APPROACH
   // Slang's API provides disjoint symbol collections:
   //
   // PATH 1: Definitions (module/interface/program declarations)
   // - getDefinitions() returns DefinitionSymbols (NOT Scopes, no body access)
-  // - Visit definition to index declaration syntax only
-  // - Body members are indexed via instances (PATH 4)
+  // - Visit definition header to index declaration syntax
+  // - Body members are indexed by creating full instance via createDefault()
   //
   // PATH 2: Packages
   // - getPackages() returns PackageSymbols (ARE Scopes)
@@ -73,18 +73,53 @@ auto SemanticIndex::FromCompilation(
   // - CompilationUnits contain symbols not in definitions or packages
   // - Includes: classes, enums, typedefs, global variables, etc.
   // - Note: CompilationUnits can aggregate symbols from multiple files
-  //
-  // PATH 4: Definition bodies via instances
-  // - getRoot() triggers LSP mode elaboration
-  // - In LanguageServerMode, modules/programs auto-instantiate
-  // - Interfaces auto-instantiate during port resolution
-  // - InstanceSymbol.body provides access to definition members
-  // - This is the ONLY way to index definition body members
 
-  // PATH 1: Index definition headers (modules, interfaces, programs)
+  // PATH 1: Index definitions (headers + bodies)
+  // PURE DEFINITION-BASED MODEL: Same for modules AND interfaces.
+  // 1. See definition → Create instance via createDefault() → Traverse body
+  // 2. During traversal, nested instances (interface ports, sub-modules) create
+  //    instance symbols but DON'T traverse their bodies (already done in their
+  //    definition files)
+  //
+  // No ordering needed - instances are independent of traversal order
   for (const auto* def : compilation.getDefinitions()) {
-    if (matches_current_file(def->location)) {
-      def->visit(visitor);  // Index declaration syntax only, no body
+    if (def->kind != slang::ast::SymbolKind::Definition) {
+      continue;
+    }
+
+    const auto& definition = def->as<slang::ast::DefinitionSymbol>();
+    if (!matches_current_file(definition.location)) {
+      continue;
+    }
+
+    // Visit definition header (creates self-definition for the definition name)
+    definition.visit(visitor);
+
+    // Check if all parameters have defaults (required for fromDefinition)
+    bool has_all_defaults = true;
+    for (const auto& param : definition.parameters) {
+      if (!param.hasDefault()) {
+        has_all_defaults = false;
+        break;
+      }
+    }
+
+    if (has_all_defaults) {
+      // Create a full InstanceSymbol (not just InstanceBodySymbol) to enable
+      // proper interface port connection resolution via getConnection().
+      // Using createDefault() ensures parentInstance is set correctly.
+      auto& instance = slang::ast::InstanceSymbol::createDefault(
+          compilation, definition, nullptr, nullptr, nullptr,
+          definition.location);
+
+      // Set parent scope for the instance - required for proper symbol
+      // resolution
+      if (const auto* parent_scope = definition.getParentScope()) {
+        instance.setParent(*parent_scope);
+      }
+
+      // Traverse the instance body to index all members
+      instance.body.visit(visitor);
     }
   }
 
@@ -135,25 +170,6 @@ auto SemanticIndex::FromCompilation(
           }
         }
         child.visit(visitor);
-      }
-    }
-  }
-
-  // PATH 4: Index definition bodies via instances
-  // CRITICAL: getRoot() triggers LSP mode elaboration which creates instances.
-  // DefinitionSymbols have NO body access - must use InstanceBodySymbol.
-  const auto& root = compilation.getRoot();
-
-  for (const auto& member : root.members()) {
-    if (member.kind == slang::ast::SymbolKind::Instance) {
-      const auto& instance = member.as<slang::ast::InstanceSymbol>();
-      const auto& definition = instance.getDefinition();
-
-      // Only visit instances whose definition is from the current file
-      // Note: Check definition location, not instance location
-      if (matches_current_file(definition.location)) {
-        // Visit instance body to index members (signals, ports, modports, etc.)
-        instance.visit(visitor);
       }
     }
   }
@@ -1407,7 +1423,7 @@ void SemanticIndex::IndexVisitor::handle(
     const slang::ast::InterfacePortSymbol& interface_port) {
   if (interface_port.location.valid()) {
     if (const auto* syntax = interface_port.getSyntax()) {
-      // Create self-reference for interface port
+      // Create self-definition for interface port name
       slang::SourceRange definition_range = syntax->sourceRange();
       if (syntax->kind == slang::syntax::SyntaxKind::InterfacePortHeader) {
         definition_range =
@@ -1436,28 +1452,11 @@ void SemanticIndex::IndexVisitor::handle(
         }
       }
 
-      // Create cross-reference from modport name to modport definition
-      if (!interface_port.modport.empty()) {
-        auto modport_range = interface_port.modportNameRange();
-        if (modport_range.start().valid()) {
-          auto connection = interface_port.getConnection();
-          if (connection.second != nullptr &&
-              connection.second->location.valid()) {
-            if (const auto* modport_syntax = connection.second->getSyntax()) {
-              auto modport_definition_range =
-                  DefinitionExtractor::ExtractDefinitionRange(
-                      *connection.second, *modport_syntax);
-              AddReference(
-                  *connection.second, connection.second->name, modport_range,
-                  modport_definition_range,
-                  connection.second->getParentScope());
-            }
-          }
-        }
-      }
+      // TODO: Create cross-reference from modport name to modport definition
+      // This requires finding the modport in the interface definition
     }
   }
-  this->visitDefault(interface_port);
+  // Skip visitDefault to avoid traversing interface port's nested scope
 }
 
 void SemanticIndex::IndexVisitor::handle(

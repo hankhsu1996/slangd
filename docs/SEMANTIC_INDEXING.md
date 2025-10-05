@@ -81,6 +81,31 @@ Calling `getRoot()` in `LanguageServerMode`:
 
 This is how definition bodies become accessible for indexing.
 
+### Critical: Proper Instance Creation for Body Traversal
+
+**Requirement**: When indexing definition bodies, create full `InstanceSymbol` objects via `createDefault()`, not standalone `InstanceBodySymbol` via `fromDefinition()`.
+
+**Technical Reason**:
+
+`InstanceBodySymbol::fromDefinition()` creates a body with `parentInstance = nullptr`. During visitor traversal, when expressions are evaluated (required for LSP to index all symbol references), Slang performs lazy elaboration. For interface ports, this triggers `InterfacePortSymbol::getConnectionAndExpr()` which requires a valid `parentInstance` pointer to resolve port connections.
+
+**Consequences of Incorrect Usage**:
+- Segmentation fault in `InterfacePortSymbol::getConnectionAndExpr()` at PortSymbols.cpp:1676
+- Crash occurs during expression evaluation, not during initial symbol creation
+- Affects any module/interface with interface ports or expressions referencing interface members
+
+**Correct Implementation**:
+
+1. Use `InstanceSymbol::createDefault()` to create instances with proper parent linkage
+2. Call `instance.setParent(*definition.getParentScope())` to establish scope hierarchy
+3. Traverse `instance.body` (not a standalone body)
+4. In LSP mode, `connectDefaultIfacePorts()` automatically creates default interface instances for port resolution
+
+**When This Applies**:
+- All module/interface definition body traversal
+- Any code path that visits expressions containing interface port references
+- Generic traversal infrastructure that must handle all SystemVerilog constructs
+
 ## Adding New Symbol Support
 
 ### 1. Definition Extraction
