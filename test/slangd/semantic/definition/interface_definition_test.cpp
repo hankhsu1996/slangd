@@ -25,6 +25,18 @@ auto main(int argc, char* argv[]) -> int {
 
 using slangd::test::SimpleTestFixture;
 
+TEST_CASE("SemanticIndex interface end label reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    interface TestIf;
+    endinterface : TestIf
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "TestIf", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "TestIf", 1, 0);
+}
+
 TEST_CASE(
     "SemanticIndex interface modport self-definition works", "[definition]") {
   SimpleTestFixture fixture;

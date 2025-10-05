@@ -31,7 +31,7 @@ TEST_CASE("SemanticIndex task go-to-definition works", "[definition]") {
     module task_test;
       task my_task(input int a, output int b);
         b = a + 1;
-      endtask
+      endtask : my_task
 
       initial begin
         int result;
@@ -42,11 +42,9 @@ TEST_CASE("SemanticIndex task go-to-definition works", "[definition]") {
 
   auto index = fixture.CompileSource(code);
 
-  // Test self-definition (clicking on task declaration)
   fixture.AssertGoToDefinition(*index, code, "my_task", 0, 0);
-
-  // Test call reference (clicking on task call)
   fixture.AssertGoToDefinition(*index, code, "my_task", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "my_task", 2, 0);
 }
 
 TEST_CASE("SemanticIndex task argument reference works", "[definition]") {
@@ -71,7 +69,7 @@ TEST_CASE("SemanticIndex function go-to-definition works", "[definition]") {
     module function_test;
       function int my_function(input int x);
         return x * 2;
-      endfunction
+      endfunction : my_function
 
       initial begin
         $display("Result: %d", my_function(5));
@@ -81,11 +79,9 @@ TEST_CASE("SemanticIndex function go-to-definition works", "[definition]") {
 
   auto index = fixture.CompileSource(code);
 
-  // Test self-definition (clicking on function declaration)
   fixture.AssertGoToDefinition(*index, code, "my_function", 0, 0);
-
-  // Test call reference (clicking on function call)
   fixture.AssertGoToDefinition(*index, code, "my_function", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "my_function", 2, 0);
 }
 
 TEST_CASE("SemanticIndex function argument reference works", "[definition]") {

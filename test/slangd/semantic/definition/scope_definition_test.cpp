@@ -25,6 +25,30 @@ auto main(int argc, char* argv[]) -> int {
 
 using slangd::test::SimpleTestFixture;
 
+TEST_CASE("SemanticIndex module end label reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module Test;
+    endmodule : Test
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "Test", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "Test", 1, 0);
+}
+
+TEST_CASE("SemanticIndex package end label reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package TestPkg;
+    endpackage : TestPkg
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "TestPkg", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "TestPkg", 1, 0);
+}
+
 TEST_CASE("SemanticIndex wildcard import reference works", "[definition]") {
   SimpleTestFixture fixture;
   std::string code = R"(

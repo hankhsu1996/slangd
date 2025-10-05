@@ -29,11 +29,12 @@ TEST_CASE("SemanticIndex class self-definition works", "[definition]") {
   SimpleTestFixture fixture;
   std::string code = R"(
     class Counter;
-    endclass
+    endclass : Counter
   )";
 
   auto index = fixture.CompileSource(code);
   fixture.AssertGoToDefinition(*index, code, "Counter", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "Counter", 1, 0);
 }
 
 TEST_CASE("SemanticIndex class reference in variable works", "[definition]") {

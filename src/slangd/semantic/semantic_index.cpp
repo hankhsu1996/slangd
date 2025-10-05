@@ -1088,6 +1088,14 @@ void SemanticIndex::IndexVisitor::handle(
           AddDefinition(
               subroutine, subroutine.name, definition_range,
               subroutine.getParentScope());
+
+          // Add reference for end label (e.g., "endfunction : my_func")
+          if (func_syntax.endBlockName != nullptr) {
+            AddReference(
+                subroutine, subroutine.name,
+                func_syntax.endBlockName->name.range(), definition_range,
+                subroutine.getParentScope());
+          }
         }
       }
     }
@@ -1108,6 +1116,13 @@ void SemanticIndex::IndexVisitor::handle(
         AddDefinition(
             definition, definition.name, definition_range,
             definition.getParentScope());
+
+        // Add reference for end label (e.g., "endmodule : Test")
+        if (decl_syntax.blockName != nullptr) {
+          AddReference(
+              definition, definition.name, decl_syntax.blockName->name.range(),
+              definition_range, definition.getParentScope());
+        }
       }
     }
   }
@@ -1240,6 +1255,14 @@ void SemanticIndex::IndexVisitor::handle(
         AddDefinition(
             class_def, class_def.name, definition_range,
             class_def.getParentScope(), class_type_scope);
+
+        // Add reference for end label (e.g., "endclass : MyClass")
+        if (class_syntax.endBlockName != nullptr) {
+          AddReference(
+              class_def, class_def.name,
+              class_syntax.endBlockName->name.range(), definition_range,
+              class_def.getParentScope());
+        }
       }
     }
 
@@ -1322,6 +1345,14 @@ void SemanticIndex::IndexVisitor::handle(
         AddDefinition(
             class_type, class_type.name, definition_range,
             class_type.getParentScope());
+
+        // Add reference for end label (e.g., "endclass : MyClass")
+        if (class_syntax.endBlockName != nullptr) {
+          AddReference(
+              class_type, class_type.name,
+              class_syntax.endBlockName->name.range(), definition_range,
+              class_type.getParentScope());
+        }
 
         // Index base class reference using stored range from Slang
         if (const auto* base = class_type.getBaseClass()) {
@@ -1586,6 +1617,13 @@ void SemanticIndex::IndexVisitor::handle(
         auto definition_range = decl_syntax.header->name.range();
         AddDefinition(
             package, package.name, definition_range, package.getParentScope());
+
+        // Add reference for end label (e.g., "endpackage : TestPkg")
+        if (decl_syntax.blockName != nullptr) {
+          AddReference(
+              package, package.name, decl_syntax.blockName->name.range(),
+              definition_range, package.getParentScope());
+        }
       }
     }
   }

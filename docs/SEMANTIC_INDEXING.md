@@ -106,19 +106,7 @@ case SK::MySymbol:
 
 ### 2. Self-Definition Handler
 
-Add handler method to enable go-to-definition on the symbol itself:
-
-```cpp
-void IndexVisitor::handle(const MySymbol& symbol) {
-  if (const auto* syntax = symbol.getSyntax()) {
-    if (syntax->kind == SyntaxKind::MyDeclaration) {
-      auto range = syntax->as<MyDeclarationSyntax>().name.range();
-      CreateReference(range, range, symbol);
-    }
-  }
-  this->visitDefault(symbol);  // Always call to continue traversal
-}
-```
+Use `AddDefinition()` to create symbol definitions. For end labels (e.g., `endmodule : Test`), use `AddReference()` with `syntax->endBlockName->name.range()`.
 
 ### 3. Reference Handler
 
