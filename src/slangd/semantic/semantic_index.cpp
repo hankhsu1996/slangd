@@ -101,6 +101,39 @@ auto SemanticIndex::FromCompilation(
   for (const auto* unit : compilation.getCompilationUnits()) {
     for (const auto& child : unit->members()) {
       if (matches_current_file(child.location)) {
+        // Skip packages - already handled in PATH 2
+        if (child.kind == slang::ast::SymbolKind::Package) {
+          continue;
+        }
+
+        // Handle classes specially: visit top-level classes (parent is
+        // CompilationUnit), skip package-nested classes (visited via package's
+        // visitDefault)
+        if (child.kind == slang::ast::SymbolKind::GenericClassDef ||
+            child.kind == slang::ast::SymbolKind::ClassType) {
+          const auto* parent = child.getParentScope();
+          if (parent != nullptr &&
+              parent->asSymbol().kind !=
+                  slang::ast::SymbolKind::CompilationUnit) {
+            // Skip class nested in package - already visited via parent
+            continue;
+          }
+          // Top-level class in compilation unit - visit it
+          child.visit(visitor);
+          continue;
+        }
+
+        // Skip members of packages or classes - they're already visited
+        // via their parent's visitDefault()
+        const auto* parent = child.getParentScope();
+        if (parent != nullptr) {
+          const auto& parent_symbol = parent->asSymbol();
+          if (parent_symbol.kind == slang::ast::SymbolKind::Package ||
+              parent_symbol.kind == slang::ast::SymbolKind::ClassType ||
+              parent_symbol.kind == slang::ast::SymbolKind::GenericClassDef) {
+            continue;
+          }
+        }
         child.visit(visitor);
       }
     }
@@ -149,8 +182,8 @@ auto SemanticIndex::FromCompilation(
 auto SemanticEntry::Make(
     const slang::ast::Symbol& symbol, std::string_view name,
     slang::SourceRange source_range, bool is_definition,
-    slang::SourceRange definition_range, const slang::ast::Scope* parent_scope)
-    -> SemanticEntry {
+    slang::SourceRange definition_range, const slang::ast::Scope* parent_scope,
+    const slang::ast::Scope* children_scope) -> SemanticEntry {
   // Unwrap symbol to handle TransparentMember recursion
   const auto& unwrapped = UnwrapSymbol(symbol);
 
@@ -161,6 +194,7 @@ auto SemanticEntry::Make(
       .lsp_kind = ConvertToLspKind(unwrapped),
       .name = std::string(name),
       .parent = parent_scope,
+      .children_scope = children_scope,
       .is_definition = is_definition,
       .definition_range = definition_range,
       .cross_file_path = std::nullopt,
@@ -183,8 +217,11 @@ void SemanticIndex::IndexVisitor::AddEntry(SemanticEntry entry) {
 
 void SemanticIndex::IndexVisitor::AddDefinition(
     const slang::ast::Symbol& symbol, std::string_view name,
-    slang::SourceRange range, const slang::ast::Scope* parent_scope) {
-  AddEntry(SemanticEntry::Make(symbol, name, range, true, range, parent_scope));
+    slang::SourceRange range, const slang::ast::Scope* parent_scope,
+    const slang::ast::Scope* children_scope) {
+  AddEntry(
+      SemanticEntry::Make(
+          symbol, name, range, true, range, parent_scope, children_scope));
 }
 
 void SemanticIndex::IndexVisitor::AddReference(
@@ -1043,6 +1080,28 @@ void SemanticIndex::IndexVisitor::handle(
   // Parameterized classes: class C #(parameter P);
   // Slang creates GenericClassDefSymbol as the definition symbol
   if (class_def.location.valid()) {
+    // CRITICAL: GenericClassDefSymbol does NOT expose class body as children
+    // (similar to ModuleSymbol vs InstanceSymbol pattern).
+    // We must get a ClassType specialization to access parameters and members.
+    // Use getDefaultSpecialization() to create a temporary instance with
+    // default parameter values.
+    //
+    // Get the ClassType scope first so we can store it in the semantic entry
+    // for DocumentSymbolBuilder to use (avoids calling getDefaultSpecialization
+    // again in DocumentSymbolBuilder).
+    const slang::ast::Scope* class_type_scope = nullptr;
+    if (const auto* parent_scope = class_def.getParentScope()) {
+      if (const auto* default_type =
+              class_def.getDefaultSpecialization(*parent_scope)) {
+        if (default_type->isClass()) {
+          const auto& class_type =
+              default_type->getCanonicalType().as<slang::ast::ClassType>();
+          class_type_scope = &class_type.as<slang::ast::Scope>();
+        }
+      }
+    }
+
+    // Add GenericClassDef definition with ClassType scope as children_scope
     if (const auto* syntax = class_def.getSyntax()) {
       if (syntax->kind == slang::syntax::SyntaxKind::ClassDeclaration) {
         const auto& class_syntax =
@@ -1050,16 +1109,10 @@ void SemanticIndex::IndexVisitor::handle(
         auto definition_range = class_syntax.name.range();
         AddDefinition(
             class_def, class_def.name, definition_range,
-            class_def.getParentScope());
+            class_def.getParentScope(), class_type_scope);
       }
     }
 
-    // CRITICAL: GenericClassDefSymbol does NOT expose class body as children
-    // (similar to ModuleSymbol vs InstanceSymbol pattern).
-    // We must get a ClassType specialization to access parameters and members.
-    // Use getDefaultSpecialization() to create a temporary instance with
-    // default parameter values.
-    //
     // NOTE: No URI filtering needed here - FromCompilation() already filters
     // symbols by file, so this handler only runs for classes in current file.
     if (const auto* parent_scope = class_def.getParentScope()) {

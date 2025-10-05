@@ -18,6 +18,36 @@ SemanticIndex enables LSP features (go-to-definition, find references, document 
 3. `LookupDefinitionAt()` searches `references_` for cursor position
 4. Returns target definition range from matching entry
 
+## DocumentSymbol Architecture
+
+**Separation of Concerns:**
+
+- **SemanticIndex** performs all semantic analysis (symbol resolution, scope traversal, specialization)
+- **DocumentSymbolBuilder** performs pure data transformation (SemanticEntry[] → DocumentSymbol[])
+
+**Critical Rule:** DocumentSymbolBuilder must never call Slang semantic APIs. All computed information must be stored in SemanticEntry during indexing.
+
+### Non-Scope Symbols with Children
+
+Some symbols are not Scopes but have children in a related Scope (e.g., GenericClassDefSymbol has members in its ClassType specialization).
+
+**Solution:** Store children lookup scope in SemanticEntry:
+
+```cpp
+struct SemanticEntry {
+  const Scope* parent;           // Where this symbol belongs in tree
+  const Scope* children_scope;   // Where to find children (for non-Scope symbols)
+};
+```
+
+**Pattern:**
+
+- Semantic work (e.g., `getDefaultSpecialization()`) done once in handler
+- Store resulting scope pointer in `children_scope` field
+- DocumentSymbolBuilder uses stored pointer for children lookup
+
+**Example:** GenericClassDefSymbol stores ClassType scope from `getDefaultSpecialization()` to avoid re-computation in DocumentSymbolBuilder.
+
 ## Slang Symbol Organization (Library Constraints)
 
 Critical knowledge about Slang's architecture that impacts LSP implementation.

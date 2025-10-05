@@ -50,12 +50,14 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
     }
 
     // Treat top-level symbols as roots, others as children
-    // Package, Module, Interface are typically top-level even with non-null
-    // parent
+    // Package, Module, Interface, Class are typically top-level even with
+    // non-null parent
     if (entry.parent == nullptr ||
         entry.symbol->kind == slang::ast::SymbolKind::Package ||
         entry.symbol->kind == slang::ast::SymbolKind::Definition ||
-        entry.symbol->kind == slang::ast::SymbolKind::InstanceBody) {
+        entry.symbol->kind == slang::ast::SymbolKind::InstanceBody ||
+        entry.symbol->kind == slang::ast::SymbolKind::GenericClassDef ||
+        entry.symbol->kind == slang::ast::SymbolKind::ClassType) {
       roots.push_back(&entry);
     } else {
       // Skip symbols that are children of functions/tasks for document symbols
@@ -77,9 +79,11 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
 
     auto doc_symbol = std::move(*doc_symbol_opt);
 
-    // For symbols, we need to check if the symbol itself is a scope
-    const slang::ast::Scope* symbol_as_scope = nullptr;
-    if (root_entry->symbol->isScope()) {
+    // Determine where to find children:
+    // 1. If children_scope is set (for GenericClassDef), use that
+    // 2. Otherwise, use the symbol itself if it's a Scope
+    const slang::ast::Scope* symbol_as_scope = root_entry->children_scope;
+    if (symbol_as_scope == nullptr && root_entry->symbol->isScope()) {
       symbol_as_scope = &root_entry->symbol->as<slang::ast::Scope>();
     }
 

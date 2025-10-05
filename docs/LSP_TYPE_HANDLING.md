@@ -58,10 +58,12 @@ Multiple symbols sharing same type syntax → duplicate traversal. Track `visite
 ### ClassType Traversal Strategy
 
 **Design Principle**: ClassType body traversal happens via two paths:
+
 - **PATH 3**: Non-parameterized ClassType (`genericClass == nullptr`) visited directly from CompilationUnit
 - **GenericClassDefSymbol**: Parameterized classes call `getDefaultSpecialization()` and explicitly visit the resulting ClassType
 
 **Why This Works**:
+
 - Type references (variables, parameters) don't need body traversal - handled by TypeReferenceSymbol wrapping
 - TraverseType() already skips ClassType traversal (no automatic body traversal from type usage)
 - No syntax deduplication needed (each definition visited once from its source file)
@@ -78,6 +80,7 @@ Multiple symbols sharing same type syntax → duplicate traversal. Track `visite
 - GenericClassDefSymbol creates default ClassType and explicitly visits it
 - Module/class bodies only indexed when definition is in current file
 - No automatic traversal from type references
+- Store ClassType scope in SemanticEntry to avoid re-computing `getDefaultSpecialization()` in DocumentSymbolBuilder
 
 ## Design Principles
 

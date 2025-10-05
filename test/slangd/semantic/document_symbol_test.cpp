@@ -728,3 +728,201 @@ TEST_CASE(
   SimpleTestFixture::AssertContainsSymbols(
       *index, {"local_var", "local_array"});
 }
+
+TEST_CASE(
+    "SemanticIndex non-parameterized class shows in document symbols with "
+    "correct kind",
+    "[document_symbols]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    class SimpleClass;
+      int data;
+      function int get_data();
+        return data;
+      endfunction
+    endclass
+  )";
+
+  auto index = fixture.CompileSource(code);
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
+
+  // Class should appear with kClass kind
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "SimpleClass", lsp::SymbolKind::kClass);
+
+  // Class members should appear
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "data", lsp::SymbolKind::kField);
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "get_data", lsp::SymbolKind::kFunction);
+}
+
+TEST_CASE(
+    "SemanticIndex parameterized class shows in document symbols with members",
+    "[document_symbols]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package test_pkg;
+      class Buffer #(parameter int SIZE = 8, parameter int WIDTH = 32);
+        localparam int ADDR_WIDTH = $clog2(SIZE);
+        typedef logic [WIDTH-1:0] data_t;
+
+        data_t memory[SIZE];
+
+        function data_t read(int addr);
+          return memory[addr];
+        endfunction
+      endclass
+    endpackage
+  )";
+
+  auto index = fixture.CompileSource(code);
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
+
+  // Package should exist
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "test_pkg", lsp::SymbolKind::kPackage);
+
+  // Class should appear with kClass kind (not kObject)
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "Buffer", lsp::SymbolKind::kClass);
+
+  // Class parameters should appear as constants
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "SIZE", lsp::SymbolKind::kConstant);
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "WIDTH", lsp::SymbolKind::kConstant);
+
+  // localparam should appear
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "ADDR_WIDTH", lsp::SymbolKind::kConstant);
+
+  // typedef should appear
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "data_t", lsp::SymbolKind::kTypeParameter);
+
+  // Class property should appear as field
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "memory", lsp::SymbolKind::kField);
+
+  // Function should appear
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "read", lsp::SymbolKind::kFunction);
+}
+
+TEST_CASE(
+    "SemanticIndex class function internals not in document symbols",
+    "[document_symbols]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    class Counter;
+      int value;
+
+      function void increment();
+        int temp;
+        logic [7:0] local_array;
+        temp = value + 1;
+        value = temp;
+      endfunction
+    endclass
+  )";
+
+  auto index = fixture.CompileSource(code);
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
+
+  // Class and its members should appear
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "Counter", lsp::SymbolKind::kClass);
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "value", lsp::SymbolKind::kField);
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "increment", lsp::SymbolKind::kFunction);
+
+  // Function internals should NOT appear in document symbols
+  std::function<bool(
+      const std::vector<lsp::DocumentSymbol>&, const std::string&)>
+      has_symbol;
+  has_symbol = [&](const std::vector<lsp::DocumentSymbol>& syms,
+                   const std::string& name) -> bool {
+    return std::ranges::any_of(syms, [&](const auto& sym) -> bool {
+      return sym.name == name ||
+             (sym.children.has_value() && has_symbol(*sym.children, name));
+    });
+  };
+
+  REQUIRE(!has_symbol(symbols, "temp"));
+  REQUIRE(!has_symbol(symbols, "local_array"));
+
+  // But function internals should still be in semantic index for
+  // go-to-definition
+  SimpleTestFixture::AssertContainsSymbols(*index, {"temp", "local_array"});
+}
+
+TEST_CASE(
+    "SemanticIndex virtual class shows correctly in document symbols",
+    "[document_symbols]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    virtual class BaseClass #(parameter type T = int);
+      T data;
+      pure virtual function T get_value();
+    endclass
+
+    class DerivedClass extends BaseClass #(.T(logic [7:0]));
+      function logic [7:0] get_value();
+        return data;
+      endfunction
+    endclass
+  )";
+
+  auto index = fixture.CompileSource(code);
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
+
+  // Both classes should appear with kClass kind
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "BaseClass", lsp::SymbolKind::kClass);
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "DerivedClass", lsp::SymbolKind::kClass);
+
+  // BaseClass members
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "data", lsp::SymbolKind::kField);
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "get_value", lsp::SymbolKind::kFunction);
+}
+
+TEST_CASE(
+    "SemanticIndex nested classes appear in document symbols hierarchy",
+    "[document_symbols]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    class Outer #(parameter int SIZE = 10);
+      int outer_data;
+
+      class Inner #(parameter int WIDTH = 8);
+        int inner_data[WIDTH];
+      endclass
+
+      Inner inner_inst;
+    endclass
+  )";
+
+  auto index = fixture.CompileSource(code);
+  auto symbols = index->GetDocumentSymbols(GetTestUri());
+
+  // Outer class should appear
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "Outer", lsp::SymbolKind::kClass);
+
+  // Nested Inner class should appear
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "Inner", lsp::SymbolKind::kClass);
+
+  // Both classes should have their members
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "outer_data", lsp::SymbolKind::kField);
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "inner_data", lsp::SymbolKind::kField);
+  SimpleTestFixture::AssertDocumentSymbolExists(
+      symbols, "inner_inst", lsp::SymbolKind::kField);
+}

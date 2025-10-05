@@ -191,6 +191,7 @@ auto ConvertToLspKind(const slang::ast::Symbol& symbol) -> lsp::SymbolKind {
       return LK::kClass;
 
     case SK::ClassType:
+    case SK::GenericClassDef:
       return LK::kClass;
 
     // Interface-related

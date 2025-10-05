@@ -48,7 +48,10 @@ struct SemanticEntry {
   std::string name;                  // Display name
 
   // Hierarchy (DocumentSymbol tree)
-  const slang::ast::Scope* parent;  // Parent scope for tree building
+  const slang::ast::Scope* parent;          // Parent scope for tree building
+  const slang::ast::Scope* children_scope;  // Where to find children (for
+                                            // non-Scope symbols like
+                                            // GenericClassDef)
 
   // Reference Tracking (Go-to-definition)
   bool is_definition;                   // true = self-ref, false = cross-ref
@@ -66,7 +69,8 @@ struct SemanticEntry {
       const slang::ast::Symbol& symbol, std::string_view name,
       slang::SourceRange source_range, bool is_definition,
       slang::SourceRange definition_range,
-      const slang::ast::Scope* parent_scope) -> SemanticEntry;
+      const slang::ast::Scope* parent_scope,
+      const slang::ast::Scope* children_scope = nullptr) -> SemanticEntry;
 };
 
 // Result of definition lookup - can be either same-file or cross-file
@@ -212,7 +216,8 @@ class SemanticIndex {
 
     void AddDefinition(
         const slang::ast::Symbol& symbol, std::string_view name,
-        slang::SourceRange range, const slang::ast::Scope* parent_scope);
+        slang::SourceRange range, const slang::ast::Scope* parent_scope,
+        const slang::ast::Scope* children_scope = nullptr);
 
     void AddReference(
         const slang::ast::Symbol& symbol, std::string_view name,
