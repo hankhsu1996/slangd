@@ -223,10 +223,15 @@ TEST_CASE(
   )";
 
   auto index = fixture.CompileSource(code);
+  // Type references should go to typedef definitions
   fixture.AssertGoToDefinition(*index, code, "byte_t", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "byte_t", 1, 0);
   fixture.AssertGoToDefinition(*index, code, "packet_t", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "packet_t", 1, 0);
+
+  // Formal argument names should have self-references
+  fixture.AssertGoToDefinition(*index, code, "data", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "pkt", 0, 0);
 }
 
 TEST_CASE("SemanticIndex task argument type reference works", "[definition]") {
@@ -242,6 +247,12 @@ TEST_CASE("SemanticIndex task argument type reference works", "[definition]") {
   )";
 
   auto index = fixture.CompileSource(code);
+  // Type references should go to typedef definition
   fixture.AssertGoToDefinition(*index, code, "counter_t", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "counter_t", 1, 0);
+
+  // Formal argument name should have self-reference
+  // Note: cnt appears 3 times (declaration, then 2 uses in body)
+  // The first occurrence (index 0) should go to itself
+  fixture.AssertGoToDefinition(*index, code, "cnt", 0, 0);
 }

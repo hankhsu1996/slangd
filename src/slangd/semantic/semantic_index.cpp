@@ -896,7 +896,17 @@ void SemanticIndex::IndexVisitor::handle(
   // Add self-definition if we have valid location and syntax
   if (formal_arg.location.valid()) {
     if (const auto* syntax = formal_arg.getSyntax()) {
-      if (syntax->kind == slang::syntax::SyntaxKind::PortDeclaration) {
+      // Function/task formal arguments use DeclaratorSyntax (not
+      // PortDeclarationSyntax) This is because Slang calls setSyntax() with the
+      // declarator in VariableSymbols.cpp
+      if (syntax->kind == slang::syntax::SyntaxKind::Declarator) {
+        const auto& declarator = syntax->as<slang::syntax::DeclaratorSyntax>();
+        auto definition_range = declarator.name.range();
+        AddDefinition(
+            formal_arg, formal_arg.name, definition_range,
+            formal_arg.getParentScope());
+      } else if (syntax->kind == slang::syntax::SyntaxKind::PortDeclaration) {
+        // Module ports use PortDeclarationSyntax
         const auto& port_decl =
             syntax->as<slang::syntax::PortDeclarationSyntax>();
         if (!port_decl.declarators.empty()) {
