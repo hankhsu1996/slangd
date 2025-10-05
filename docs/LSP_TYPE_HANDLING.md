@@ -48,25 +48,23 @@ Multiple symbols sharing same type syntax → duplicate traversal. Track `visite
 
 **Critical Discovery**: Just like ModuleSymbol (template) vs InstanceSymbol (elaborated body), Slang separates class definitions from instances:
 
-- **GenericClassDefSymbol**: Template only - does NOT expose class body as children
-- **ClassType**: Elaborated instance - contains parameters, properties, methods as visitable children
+- **GenericClassDefSymbol**: Parameterized class template (e.g., `class C #(int P);`) - does NOT expose body
+- **ClassType**: Serves dual roles depending on context:
+  1. **Standalone definition** for non-parameterized classes (e.g., `class C;`) - visited via PATH 3 (CompilationUnit)
+  2. **Specialization instance** for parameterized classes - visited via GenericClassDefSymbol's `getDefaultSpecialization()`
 
-**LSP Solution**: GenericClassDefSymbol handler calls `getDefaultSpecialization()` to create temporary ClassType with default parameters, then explicitly visits it to index the body.
+**Why ClassType handlers need duplicate logic**: Class-level features (extends, members) can appear in both parameterized and non-parameterized class definitions, requiring handlers in both `ClassType` (role #1) and `GenericClassDefSymbol` (role #2 via default specialization).
 
 ### ClassType Traversal Strategy
 
-**Design Principle**: ClassType body traversal ONLY via explicit visit from GenericClassDefSymbol handler.
+**Design Principle**: ClassType body traversal happens via two paths:
+- **PATH 3**: Non-parameterized ClassType (`genericClass == nullptr`) visited directly from CompilationUnit
+- **GenericClassDefSymbol**: Parameterized classes call `getDefaultSpecialization()` and explicitly visit the resulting ClassType
 
 **Why This Works**:
 - Type references (variables, parameters) don't need body traversal - handled by TypeReferenceSymbol wrapping
-- TraverseType() already skips ClassType traversal (line 415-419 in semantic_index.cpp)
-- Only GenericClassDefSymbol calls `default_type->visit(*this)` to index body members
-- This eliminates need for syntax deduplication in ClassType handler (no duplicate traversal possible)
-
-**Benefits**:
-- No URI filtering needed (only explicit visits from current file's GenericClassDefSymbol)
-- No `visited_type_syntaxes_` tracking for ClassType (still used for other types like PackedArrayType)
-- Cleaner separation: definition indexing vs. type reference handling
+- TraverseType() already skips ClassType traversal (no automatic body traversal from type usage)
+- No syntax deduplication needed (each definition visited once from its source file)
 
 ### Pattern Categories
 

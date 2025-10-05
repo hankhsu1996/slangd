@@ -1037,8 +1037,9 @@ void SemanticIndex::IndexVisitor::handle(
   if (class_def.location.valid()) {
     if (const auto* syntax = class_def.getSyntax()) {
       if (syntax->kind == slang::syntax::SyntaxKind::ClassDeclaration) {
-        auto definition_range =
-            syntax->as<slang::syntax::ClassDeclarationSyntax>().name.range();
+        const auto& class_syntax =
+            syntax->as<slang::syntax::ClassDeclarationSyntax>();
+        auto definition_range = class_syntax.name.range();
         AddDefinition(
             class_def, class_def.name, definition_range,
             class_def.getParentScope());
@@ -1056,6 +1057,40 @@ void SemanticIndex::IndexVisitor::handle(
     if (const auto* parent_scope = class_def.getParentScope()) {
       if (const auto* default_type =
               class_def.getDefaultSpecialization(*parent_scope)) {
+        // Index base class reference using stored range from Slang
+        if (default_type->isClass()) {
+          const auto& class_type =
+              default_type->getCanonicalType().as<slang::ast::ClassType>();
+          if (const auto* base = class_type.getBaseClass()) {
+            auto base_ref_range = class_type.getBaseClassRefRange();
+            if (base->isClass() && base_ref_range.start().valid()) {
+              const auto& base_class =
+                  base->getCanonicalType().as<slang::ast::ClassType>();
+              // For parameterized classes, use genericClass as the definition
+              // symbol
+              const auto* base_symbol =
+                  (base_class.genericClass != nullptr)
+                      ? static_cast<const slang::ast::Symbol*>(
+                            base_class.genericClass)
+                      : static_cast<const slang::ast::Symbol*>(&base_class);
+
+              if (base_symbol->location.valid()) {
+                if (const auto* base_syntax = base_symbol->getSyntax()) {
+                  if (base_syntax->kind ==
+                      slang::syntax::SyntaxKind::ClassDeclaration) {
+                    auto base_def_range =
+                        base_syntax->as<slang::syntax::ClassDeclarationSyntax>()
+                            .name.range();
+                    AddReference(
+                        *base_symbol, base_symbol->name, base_ref_range,
+                        base_def_range, base_symbol->getParentScope());
+                  }
+                }
+              }
+            }
+          }
+        }
+
         // Visit the default specialization to index class body
         default_type->visit(*this);
       }
@@ -1079,11 +1114,42 @@ void SemanticIndex::IndexVisitor::handle(
   if (class_type.location.valid() && class_type.genericClass == nullptr) {
     if (const auto* syntax = class_type.getSyntax()) {
       if (syntax->kind == slang::syntax::SyntaxKind::ClassDeclaration) {
-        auto definition_range =
-            syntax->as<slang::syntax::ClassDeclarationSyntax>().name.range();
+        const auto& class_syntax =
+            syntax->as<slang::syntax::ClassDeclarationSyntax>();
+        auto definition_range = class_syntax.name.range();
         AddDefinition(
             class_type, class_type.name, definition_range,
             class_type.getParentScope());
+
+        // Index base class reference using stored range from Slang
+        if (const auto* base = class_type.getBaseClass()) {
+          auto base_ref_range = class_type.getBaseClassRefRange();
+          if (base->isClass() && base_ref_range.start().valid()) {
+            const auto& base_class =
+                base->getCanonicalType().as<slang::ast::ClassType>();
+            // For parameterized classes, use genericClass as the definition
+            // symbol
+            const auto* base_symbol =
+                (base_class.genericClass != nullptr)
+                    ? static_cast<const slang::ast::Symbol*>(
+                          base_class.genericClass)
+                    : static_cast<const slang::ast::Symbol*>(&base_class);
+
+            if (base_symbol->location.valid()) {
+              if (const auto* base_syntax = base_symbol->getSyntax()) {
+                if (base_syntax->kind ==
+                    slang::syntax::SyntaxKind::ClassDeclaration) {
+                  auto base_def_range =
+                      base_syntax->as<slang::syntax::ClassDeclarationSyntax>()
+                          .name.range();
+                  AddReference(
+                      *base_symbol, base_symbol->name, base_ref_range,
+                      base_def_range, base_symbol->getParentScope());
+                }
+              }
+            }
+          }
+        }
       }
     }
   }

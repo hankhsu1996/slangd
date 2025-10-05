@@ -338,3 +338,70 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "y", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "y", 1, 0);
 }
+
+TEST_CASE(
+    "SemanticIndex class extends clause navigation works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    class Base;
+    endclass
+
+    class Derived extends Base;
+    endclass
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "Base", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "Base", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex parameterized class extends clause works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    class Base #(parameter int WIDTH = 8);
+    endclass
+
+    class Derived extends Base;
+    endclass
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "Base", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "Base", 1, 0);
+}
+
+TEST_CASE("SemanticIndex class extends with members works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    class Base;
+      int base_value;
+    endclass
+
+    class Derived extends Base;
+      int derived_value;
+    endclass
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "Base", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "Base", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "base_value", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "derived_value", 0, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex parameterized class with extends works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    class Base;
+    endclass
+
+    class Derived #(parameter int SIZE = 10) extends Base;
+    endclass
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "Base", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "Base", 1, 0);
+}
