@@ -48,7 +48,10 @@ struct SemanticEntry {
   std::string name;                  // Display name
 
   // Hierarchy (DocumentSymbol tree)
-  const slang::ast::Scope* parent;  // Parent scope for tree building
+  const slang::ast::Scope* parent;          // Parent scope for tree building
+  const slang::ast::Scope* children_scope;  // Where to find children (for
+                                            // non-Scope symbols like
+                                            // GenericClassDef)
 
   // Reference Tracking (Go-to-definition)
   bool is_definition;                   // true = self-ref, false = cross-ref
@@ -66,7 +69,8 @@ struct SemanticEntry {
       const slang::ast::Symbol& symbol, std::string_view name,
       slang::SourceRange source_range, bool is_definition,
       slang::SourceRange definition_range,
-      const slang::ast::Scope* parent_scope) -> SemanticEntry;
+      const slang::ast::Scope* parent_scope,
+      const slang::ast::Scope* children_scope = nullptr) -> SemanticEntry;
 };
 
 // Result of definition lookup - can be either same-file or cross-file
@@ -171,6 +175,9 @@ class SemanticIndex {
     void handle(const slang::ast::EnumValueSymbol& enum_value);
     void handle(const slang::ast::FieldSymbol& field);
     void handle(const slang::ast::NetSymbol& net);
+    void handle(const slang::ast::ClassPropertySymbol& class_property);
+    void handle(const slang::ast::GenericClassDefSymbol& class_def);
+    void handle(const slang::ast::ClassType& class_type);
     void handle(const slang::ast::InterfacePortSymbol& interface_port);
     void handle(const slang::ast::ModportSymbol& modport);
     void handle(const slang::ast::ModportPortSymbol& modport_port);
@@ -209,7 +216,8 @@ class SemanticIndex {
 
     void AddDefinition(
         const slang::ast::Symbol& symbol, std::string_view name,
-        slang::SourceRange range, const slang::ast::Scope* parent_scope);
+        slang::SourceRange range, const slang::ast::Scope* parent_scope,
+        const slang::ast::Scope* children_scope = nullptr);
 
     void AddReference(
         const slang::ast::Symbol& symbol, std::string_view name,
@@ -224,6 +232,24 @@ class SemanticIndex {
 
     // Unified type traversal - handles all type structure recursively
     void TraverseType(const slang::ast::Type& type);
+
+    // Helper for indexing class specialization (e.g., Class#(.PARAM(value)))
+    // Traverses call syntax to find ClassNameSyntax nodes and link to
+    // genericClass
+    void IndexClassSpecialization(
+        const slang::ast::ClassType& class_type,
+        const slang::syntax::SyntaxNode* call_syntax);
+
+    // Recursively traverse scoped names to find and index ClassName nodes
+    void TraverseClassNames(
+        const slang::syntax::SyntaxNode* node,
+        const slang::ast::ClassType& class_type,
+        slang::SourceRange definition_range);
+
+    // Helper for indexing class parameter names in specialization
+    void IndexClassParameters(
+        const slang::ast::ClassType& class_type,
+        const slang::syntax::ParameterValueAssignmentSyntax& params);
   };
 };
 

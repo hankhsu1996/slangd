@@ -17,6 +17,7 @@ namespace slangd {
 [[nodiscard]] auto PathToUri(std::filesystem::path path) -> std::string;
 [[nodiscard]] auto NormalizePath(std::filesystem::path path)
     -> std::filesystem::path;
+[[nodiscard]] auto NormalizeUri(std::string_view uri) -> std::string;
 
 // Source location operations
 // TODO(hankhsu1996) find a better place for this

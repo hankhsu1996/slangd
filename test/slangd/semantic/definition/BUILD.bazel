@@ -101,3 +101,17 @@ cc_test(
         "@slang",
     ],
 )
+
+cc_test(
+    name = "class_definition_test",
+    timeout = "short",
+    srcs = [
+        "class_definition_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "//test/slangd:simple_fixture",
+        "@catch2",
+        "@slang",
+    ],
+)

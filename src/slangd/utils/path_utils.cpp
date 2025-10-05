@@ -103,6 +103,20 @@ auto NormalizePath(std::filesystem::path path) -> std::filesystem::path {
   }
 }
 
+auto NormalizeUri(std::string_view uri) -> std::string {
+  if (!uri.starts_with("file://")) {
+    return std::string(uri);
+  }
+
+  try {
+    auto path = std::filesystem::path(uri.substr(7));  // Remove "file://"
+    auto canonical = std::filesystem::weakly_canonical(path);
+    return "file://" + canonical.string();
+  } catch (...) {
+    return std::string(uri);  // Return original if normalization fails
+  }
+}
+
 auto IsLocationInDocument(
     const slang::SourceLocation& location,
     const slang::SourceManager& source_manager, std::string_view uri) -> bool {

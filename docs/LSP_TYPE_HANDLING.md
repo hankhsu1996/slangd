@@ -1,93 +1,91 @@
 # LSP Type Handling Architecture
 
-## Fundamental Difference: LSP vs Original Slang Library
+## Core Architectural Difference
 
-**Original Slang Library Philosophy**: Resolve types to their final canonical form. Type resolution discards intermediate information and focuses only on the resolved result.
+**Slang Library**: Resolves types to canonical form, discarding intermediate typedef information.
 
-**LSP Requirements**: Preserve usage locations and reference chains for go-to-definition. Cannot discard intermediate type information because users need to navigate to original typedef definitions, not final resolved types.
+**LSP Requirement**: Preserve typedef usage locations for go-to-definition navigation.
 
-This fundamental difference requires a completely different approach to type handling in LSP servers.
+This fundamental mismatch drives all type handling patterns in slangd.
 
-## TypeReferenceSymbol Architecture
+## TypeReferenceSymbol: Preserving Type Usage Locations
 
-**Core Problem**: Slang resolves typedefs to canonical types, losing usage locations needed for LSP go-to-definition.
+**Problem**: Slang's `Type::fromLookupResult()` resolves typedefs to canonical types, losing the usage location needed for LSP navigation.
 
-**Solution**: TypeReferenceSymbol wrapper that:
+**Solution**: Lightweight wrapper that:
 
-- Wraps ONLY the typedef symbol (not composite types like arrays)
-- Preserves exact source location of typedef usage
-- Delegates all type system queries to the wrapped type
-- Integrates seamlessly with existing Slang type resolution
+- Wraps TypeAlias/ClassType/GenericClassDef at usage sites
+- Stores precise source location of the type reference
+- Delegates all type system queries to wrapped type (maintains semantic correctness)
 
-## Critical Integration Requirements
+**Integration Requirements**:
 
-### 1. Type System Method Delegation
+1. **Method Delegation**: Every Type method must delegate TypeReference cases: `return as<TypeReferenceSymbol>().getResolvedType().METHOD()`
+2. **Canonical Resolution**: `Type::resolveCanonical()` must unwrap TypeReference in resolution loop (critical for nested typedefs)
+3. **LSP Mode Validation**: Incomplete integration breaks statement validation, silently preventing IndexVisitor traversal
 
-Every Type class method must delegate TypeReference cases to the wrapped type. Pattern: `return as<TypeReferenceSymbol>().getResolvedType().METHOD()`.
+**Creation Point**: `Type::fromLookupResult()` - universal intervention before type resolution
 
-**Why TypeReferenceSymbol cannot simply return true for type checks**: It can wrap ANY typedef - both simple types (logic, int) AND complex types (structs, unions, multi-dimensional arrays). Delegation ensures semantic correctness.
+**Files**:
 
-### 2. Canonical Type Resolution ⚠️ CRITICAL
+- `slang/source/ast/types/Type.cpp` - canonical resolution
+- `slang/source/ast/types/AllTypes.{h,cpp}` - TypeReferenceSymbol implementation
 
-**Issue**: Nested typedefs create chains like `TypeAlias(local_t) → TypeReference → TypeAlias(data_t) → PackedStruct`.
+## Type Traversal Patterns
 
-**Fix Required**: `Type::resolveCanonical()` must unwrap TypeReference wrappers in the resolution loop. Without this, canonical resolution stops at TypeReference instead of reaching the final type, breaking `isIntegral()`, `isNumeric()`, and other type system operations.
+### TypeReference vs TypeAlias
 
-**Location**: `slang/source/ast/types/Type.cpp::resolveCanonical()` - Add inner while loop to skip TypeReference kinds.
+- **TypeReference**: Leaf node (usage location) - STOP traversal to avoid duplicates
+- **TypeAlias**: Definition node - CONTINUE into target type (may contain nested TypeReferences)
 
-### 3. LSP Mode Enhanced Validation
+### Syntax-Based Deduplication
 
-LSP LanguageServerMode has enhanced validation that can invalidate statements when TypeReferenceSymbol integration is incomplete. Invalid statements prevent IndexVisitor traversal, silently breaking LSP features. This is why integration must be complete across ALL type system methods.
+Multiple symbols sharing same type syntax → duplicate traversal. Track `visited_type_syntaxes_` to deduplicate at source level (types from same location share syntax pointers).
 
-## Implementation Checklist
+**Syntax Threading**: Cast expressions lacked syntax initially. Fixed by threading syntax through `Expression::bindLookupResult()` → `Type::fromLookupResult()` → `TypeReferenceSymbol::create()`.
 
-When adding TypeReferenceSymbol integration:
+## Elaborated Types: Module/Instance Pattern
 
-1. **Creation Point**: `Type::fromLookupResult()` creates TypeReferenceSymbol for typedef usages
-2. **Method Delegation**: Add TypeReference cases to ALL Type class methods (isIntegral, isNumeric, etc.)
-3. **Canonical Resolution**: Ensure `resolveCanonical()` unwraps TypeReference in typedef chains
-4. **LSP Handlers**: Add IndexVisitor handlers for new expression types containing typedef references
-5. **Test Coverage**: Test nested typedefs - they expose canonical resolution bugs
+**Critical Discovery**: Just like ModuleSymbol (template) vs InstanceSymbol (elaborated body), Slang separates class definitions from instances:
+
+- **GenericClassDefSymbol**: Parameterized class template (e.g., `class C #(int P);`) - does NOT expose body
+- **ClassType**: Serves dual roles depending on context:
+  1. **Standalone definition** for non-parameterized classes (e.g., `class C;`) - visited via PATH 3 (CompilationUnit)
+  2. **Specialization instance** for parameterized classes - visited via GenericClassDefSymbol's `getDefaultSpecialization()`
+
+**Why ClassType handlers need duplicate logic**: Class-level features (extends, members) can appear in both parameterized and non-parameterized class definitions, requiring handlers in both `ClassType` (role #1) and `GenericClassDefSymbol` (role #2 via default specialization).
+
+### ClassType Traversal Strategy
+
+**Design Principle**: ClassType body traversal happens via two paths:
+
+- **PATH 3**: Non-parameterized ClassType (`genericClass == nullptr`) visited directly from CompilationUnit
+- **GenericClassDefSymbol**: Parameterized classes call `getDefaultSpecialization()` and explicitly visit the resulting ClassType
+
+**Why This Works**:
+
+- Type references (variables, parameters) don't need body traversal - handled by TypeReferenceSymbol wrapping
+- TraverseType() already skips ClassType traversal (no automatic body traversal from type usage)
+- No syntax deduplication needed (each definition visited once from its source file)
+
+### Pattern Categories
+
+**TypeReferenceSymbol** (lightweight wrapper pattern):
+
+- Created per-usage, never cached
+- Variable declarations, typedef references, type casts
+
+**Explicit Visit Pattern** (elaborated types):
+
+- GenericClassDefSymbol creates default ClassType and explicitly visits it
+- Module/class bodies only indexed when definition is in current file
+- No automatic traversal from type references
+- Store ClassType scope in SemanticEntry to avoid re-computing `getDefaultSpecialization()` in DocumentSymbolBuilder
 
 ## Design Principles
 
-### Always Use Symbol-Based Approach
+**Symbol-Based Approach**: Syntax is ambiguous (`data_t[3:0]` = type dimension or array selection?). Only AST/Symbol with semantic analysis works reliably.
 
-Syntax is ambiguous for arrays - `data_t[3:0]` could be type dimensions or array selection. CST cannot distinguish these. Only AST/Symbol approach with semantic analysis works reliably.
+**CST Range Limitations**: CST groups semantic constructs into composite nodes. `Type::fromLookupResult()` trims ranges using symbol name length to achieve precise navigation.
 
-### TypeReferenceSymbol Creation Point
-
-`Type::fromLookupResult()` is the universal intervention point - captures typedef usage locations before type resolution discards them. Symbol-based, works for all typedef patterns.
-
-## Key Implementation Files
-
-**Slang Fork (type system integration)**:
-
-- `source/ast/types/Type.cpp` - Canonical resolution with TypeReference unwrapping
-- `source/ast/types/AllTypes.h/cpp` - TypeReferenceSymbol implementation
-- `source/ast/Expression.h/cpp` - Syntax threading for cast expressions
-
-**slangd (LSP handlers)**:
-
-- `src/slangd/semantic/semantic_index.cpp` - Type traversal and indexing
-- `test/slangd/semantic/type_reference_test.cpp` - Nested typedef regression test
-
-## CST Range Limitations
-
-CST groups semantically distinct constructs into single syntax nodes (e.g., type dimensions vs array selection both use `IdentifierSelectName`). LSP needs component-level ranges, but CST only provides composite ranges.
-
-**Workaround**: `Type::fromLookupResult()` trims typedef ranges using semantic information (symbol name length), bypassing syntax tree limitations. This enables precise LSP navigation despite CST grouping.
-
-## Type Traversal Strategy
-
-### TypeReference vs TypeAlias Traversal
-
-**TypeReference**: STOP at usage - it's a leaf node representing user's typedef reference. Traversing further creates duplicates.
-
-**TypeAlias**: CONTINUE traversal into target type - may contain nested TypeReferences that need indexing for go-to-definition.
-
-### Deduplication
-
-Multiple symbols sharing the same type cause duplicate traversals. Track visited type syntax nodes to deduplicate at source level - types from the same location share syntax node pointers.
-
-**Syntax Threading**: TypeReferences in cast expressions initially lacked syntax. Fixed by threading syntax parameter through `Expression::bindLookupResult()` → `Type::fromLookupResult()` → `TypeReferenceSymbol::create()`. All TypeReference instances now have syntax, enabling universal deduplication.
+**No Overlapping Ranges**: Fix root cause in reference creation, not disambiguation logic in lookup.
