@@ -136,7 +136,7 @@ auto SlangdLspServer::OnDidOpenTextDocument(
   AddOpenFile(uri, text, language_id, version);
 
   // Create session in SessionManager (must complete before features can run)
-  co_await language_service_->UpdateSession(uri, text);
+  co_await language_service_->UpdateSession(uri, text, version);
   Logger()->debug("SessionManager created session for: {}", uri);
 
   // Compute and publish initial diagnostics (background)
@@ -204,8 +204,9 @@ auto SlangdLspServer::OnDidSaveTextDocument(
     const auto& file = file_opt->get();
     asio::co_spawn(
         strand_,
-        [this, uri, content = file.content]() -> asio::awaitable<void> {
-          co_await language_service_->UpdateSession(uri, content);
+        [this, uri, content = file.content,
+         version = file.version]() -> asio::awaitable<void> {
+          co_await language_service_->UpdateSession(uri, content, version);
           Logger()->debug("SessionManager updated for: {}", uri);
         },
         asio::detached);

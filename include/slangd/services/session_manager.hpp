@@ -42,7 +42,7 @@ class SessionManager {
   auto operator=(SessionManager&&) -> SessionManager& = delete;
 
   // Document event handlers (ONLY these create/invalidate sessions)
-  auto UpdateSession(std::string uri, std::string content)
+  auto UpdateSession(std::string uri, std::string content, int version)
       -> asio::awaitable<void>;
 
   auto RemoveSession(std::string uri) -> void;
@@ -81,11 +81,13 @@ class SessionManager {
     std::shared_ptr<CompilationChannel> compilation_ready;
     // Signal 2: Full session ready (after indexing)
     std::shared_ptr<SessionChannel> session_ready;
+    // LSP document version - used to prevent race conditions
+    int version;
 
-    explicit PendingCreation(asio::any_io_executor executor);
+    explicit PendingCreation(asio::any_io_executor executor, int doc_version);
   };
 
-  auto StartSessionCreation(std::string uri, std::string content)
+  auto StartSessionCreation(std::string uri, std::string content, int version)
       -> std::shared_ptr<PendingCreation>;
 
   // Cache by URI only (no content_hash!)

@@ -11,9 +11,11 @@
 
 namespace slangd::services {
 
-SessionManager::PendingCreation::PendingCreation(asio::any_io_executor executor)
+SessionManager::PendingCreation::PendingCreation(
+    asio::any_io_executor executor, int doc_version)
     : compilation_ready(std::make_shared<CompilationChannel>(executor, 10)),
-      session_ready(std::make_shared<SessionChannel>(executor, 10)) {
+      session_ready(std::make_shared<SessionChannel>(executor, 10)),
+      version(doc_version) {
 }
 
 SessionManager::SessionManager(
@@ -34,19 +36,23 @@ SessionManager::~SessionManager() {
   compilation_pool_->join();
 }
 
-auto SessionManager::UpdateSession(std::string uri, std::string content)
+auto SessionManager::UpdateSession(
+    std::string uri, std::string content, int version)
     -> asio::awaitable<void> {
-  logger_->debug("SessionManager::UpdateSession: {}", uri);
+  logger_->debug(
+      "SessionManager::UpdateSession: {} (version {})", uri, version);
 
   active_sessions_.erase(uri);
 
   if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
-    logger_->debug("Canceling pending session creation for: {}", uri);
+    logger_->debug(
+        "Canceling pending session creation for: {} (old version {})", uri,
+        it->second->version);
     it->second->session_ready->close();
     pending_sessions_.erase(it);
   }
 
-  auto pending = StartSessionCreation(uri, content);
+  auto pending = StartSessionCreation(uri, content, version);
   pending_sessions_[uri] = pending;
 
   co_return;
@@ -143,9 +149,10 @@ auto SessionManager::GetSessionForDiagnostics(std::string uri)
   co_return CompilationState{};
 }
 
-auto SessionManager::StartSessionCreation(std::string uri, std::string content)
+auto SessionManager::StartSessionCreation(
+    std::string uri, std::string content, int version)
     -> std::shared_ptr<PendingCreation> {
-  auto pending = std::make_shared<PendingCreation>(executor_);
+  auto pending = std::make_shared<PendingCreation>(executor_, version);
 
   asio::co_spawn(
       executor_,
@@ -215,14 +222,20 @@ auto SessionManager::StartSessionCreation(std::string uri, std::string content)
 
           active_sessions_[uri] = session;
           logger_->debug(
-              "SessionManager added session to cache: {} ({} active)", uri,
-              active_sessions_.size());
+              "SessionManager added session to cache: {} version {} ({} "
+              "active)",
+              uri, pending->version, active_sessions_.size());
         } else {
           pending->session_ready->close();
           logger_->error("SessionManager failed to create session: {}", uri);
         }
 
-        pending_sessions_.erase(uri);
+        // Only erase if this pending creation is still current
+        if (auto it = pending_sessions_.find(uri);
+            it != pending_sessions_.end() &&
+            it->second->version == pending->version) {
+          pending_sessions_.erase(it);
+        }
       },
       asio::detached);
 

@@ -254,16 +254,15 @@ auto LanguageService::HandleSourceFileChange(
   }
 }
 
-auto LanguageService::UpdateSession(std::string uri, std::string content)
+auto LanguageService::UpdateSession(
+    std::string uri, std::string content, int version)
     -> asio::awaitable<void> {
   if (!session_manager_) {
     logger_->error("LanguageService: SessionManager not initialized");
     co_return;
   }
 
-  logger_->debug("LanguageService::UpdateSession: {}", uri);
-  co_await session_manager_->UpdateSession(uri, content);
-  logger_->debug("SessionManager cache updated for: {}", uri);
+  co_await session_manager_->UpdateSession(uri, content, version);
 }
 
 auto LanguageService::RemoveSession(std::string uri) -> void {

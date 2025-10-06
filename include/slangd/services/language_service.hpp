@@ -51,7 +51,7 @@ class LanguageService : public LanguageServiceBase {
       -> void override;
 
   // Session lifecycle management
-  auto UpdateSession(std::string uri, std::string content)
+  auto UpdateSession(std::string uri, std::string content, int version)
       -> asio::awaitable<void> override;
 
   auto RemoveSession(std::string uri) -> void override;

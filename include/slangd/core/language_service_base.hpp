@@ -53,7 +53,8 @@ class LanguageServiceBase {
 
   // Session lifecycle management
   // Update/create session for document (called on save/open)
-  virtual auto UpdateSession(std::string uri, std::string content)
+  // version: LSP document version for tracking concurrent updates
+  virtual auto UpdateSession(std::string uri, std::string content, int version)
       -> asio::awaitable<void> = 0;
 
   // Remove session for closed document
