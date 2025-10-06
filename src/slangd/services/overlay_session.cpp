@@ -38,13 +38,14 @@ auto OverlaySession::Create(
       utils::ScopedTimer::FormatDuration(elapsed));
 
   return std::shared_ptr<OverlaySession>(new OverlaySession(
-      std::move(source_manager), std::move(compilation),
+      std::move(source_manager),
+      std::shared_ptr<slang::ast::Compilation>(std::move(compilation)),
       std::move(semantic_index), main_buffer_id, logger));
 }
 
 auto OverlaySession::CreateFromParts(
     std::shared_ptr<slang::SourceManager> source_manager,
-    std::unique_ptr<slang::ast::Compilation> compilation,
+    std::shared_ptr<slang::ast::Compilation> compilation,
     std::unique_ptr<semantic::SemanticIndex> semantic_index,
     slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger)
     -> std::shared_ptr<OverlaySession> {
@@ -55,7 +56,7 @@ auto OverlaySession::CreateFromParts(
 
 OverlaySession::OverlaySession(
     std::shared_ptr<slang::SourceManager> source_manager,
-    std::unique_ptr<slang::ast::Compilation> compilation,
+    std::shared_ptr<slang::ast::Compilation> compilation,
     std::unique_ptr<semantic::SemanticIndex> semantic_index,
     slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger)
     : source_manager_(std::move(source_manager)),

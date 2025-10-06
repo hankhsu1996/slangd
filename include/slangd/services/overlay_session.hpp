@@ -43,7 +43,7 @@ class OverlaySession {
   // creation)
   static auto CreateFromParts(
       std::shared_ptr<slang::SourceManager> source_manager,
-      std::unique_ptr<slang::ast::Compilation> compilation,
+      std::shared_ptr<slang::ast::Compilation> compilation,
       std::unique_ptr<semantic::SemanticIndex> semantic_index,
       slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger)
       -> std::shared_ptr<OverlaySession>;
@@ -79,12 +79,12 @@ class OverlaySession {
  private:
   OverlaySession(
       std::shared_ptr<slang::SourceManager> source_manager,
-      std::unique_ptr<slang::ast::Compilation> compilation,
+      std::shared_ptr<slang::ast::Compilation> compilation,
       std::unique_ptr<semantic::SemanticIndex> semantic_index,
       slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger);
 
   std::shared_ptr<slang::SourceManager> source_manager_;
-  std::unique_ptr<slang::ast::Compilation> compilation_;
+  std::shared_ptr<slang::ast::Compilation> compilation_;
   std::unique_ptr<semantic::SemanticIndex> semantic_index_;
   slang::BufferID main_buffer_id_;
   std::shared_ptr<spdlog::logger> logger_;
