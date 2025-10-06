@@ -37,7 +37,8 @@ SystemVerilog LSP Server (domain-specific handlers)
 ### Business Logic Layer
 
 - **LanguageServiceBase**: Abstract interface for all LSP operations
-- **LanguageService**: Concrete implementation using overlay sessions
+- **LanguageService**: Concrete implementation using SessionManager for lifecycle
+- **SessionManager**: Centralized session creation, caching, and invalidation
 - **Extensible design**: Supports future implementations (e.g., persistent indexing)
 
 ### Computation Layer
@@ -128,40 +129,72 @@ co_await asio::post(main_executor_, asio::use_awaitable);
 - **Strand serialization**: Ensures consistent state access across async operations
 - **Background isolation**: Computation threads access only immutable data
 
-### Caching Pattern
+### Session Lifecycle Management
 
-- **LRU overlay cache**: Avoids recompilation of frequently accessed files
-- **Version-aware keys**: Invalidates cache when content or configuration changes
-- **Main thread coordination**: All cache operations happen on protocol thread
+**Ownership Hierarchy**:
+```
+SlangdLspServer (LSP protocol layer)
+    │ owns
+    └── LanguageService (business logic - public API)
+            │ owns (private implementation detail)
+            └── SessionManager (resource lifecycle management)
+                    │ creates/caches
+                    └── OverlaySession (data: compilation + index)
+```
 
-### Pending Session Tracking
+**Responsibilities**:
+- **SlangdLspServer**: LSP protocol, delegates to LanguageService
+- **LanguageService**: Public API, feature implementations, owns SessionManager
+- **SessionManager**: Session lifecycle (create/cache/invalidate), returns OverlaySession
+- **OverlaySession**: Data class (Compilation + SemanticIndex + SourceManager)
 
-**Problem**: Concurrent requests for the same file create duplicate sessions. When a file save triggers parse diagnostics and VSCode simultaneously requests document symbols, both check cache (miss), both dispatch session creation to thread pool, resulting in duplicate 500ms compilations.
+**Architecture**: SessionManager centralizes all session lifecycle (create/cache/invalidate). LanguageService features are read-only consumers.
 
-**Solution**: Track pending session creations using `asio::experimental::channel` for async signaling.
+**Event-driven model**:
+```
+SlangdLspServer
+  ├─ Document Events (trigger session updates)
+  │   ├─ OnDidOpen(uri, content) → SessionManager.UpdateSession()
+  │   ├─ OnDidSave(uri, content) → SessionManager.UpdateSession()
+  │   ├─ OnDidClose(uri) → SessionManager.RemoveSession()
+  │   └─ OnDidChange(uri) → (no session update - typing is fast!)
+  │
+  └─ LSP Feature Handlers (read-only)
+      ├─ OnDocumentSymbols(uri) → SessionManager.GetSession(uri)
+      ├─ OnDefinition(uri, pos) → SessionManager.GetSession(uri)
+      └─ OnDiagnostics(uri) → SessionManager.GetSessionForDiagnostics(uri)
+
+SessionManager
+  ├─ active_sessions_: map<uri, OverlaySession>  ← Cache by URI only
+  ├─ pending_sessions_: map<uri, PendingCreation>  ← Being created
+  └─ Cache key: URI (not content hash) - stable during typing
+```
+
+**Why this matters**: Prevents expensive rebuilds on every keystroke. Typing reuses cached session (0ms), saving triggers rebuild (~500ms, expected).
+
+### Two-Phase Session Creation
+
+**Problem**: Diagnostics need compilation (~126ms) but go-to-def/symbols need indexing (+455ms). Waiting for full session delays diagnostic feedback.
+
+**Solution**: SessionManager uses two-phase channels to signal completion at different stages.
 
 ```cpp
-// First request: registers pending creation
-pending_creations_[key] = PendingCreation{channel};
-auto session = co_await CreateOverlaySession(...);
-channel->try_send(session);  // Signal all waiters
-channel->close();
+struct PendingCreation {
+  channel<CompilationState> compilation_ready;  // Phase 1: After elaboration
+  channel<OverlaySession> session_ready;        // Phase 2: After indexing
+};
 
-// Second request: waits for completion
-if (pending = pending_creations_[key]) {
-    auto session = co_await channel->async_receive();  // Suspends until signaled
-    return session;
-}
+// Diagnostics: Wait for compilation only (fast)
+auto state = co_await pending->compilation_ready.receive();  // ~126ms
+
+// Symbols/definitions: Wait for full session (slower)
+auto session = co_await pending->session_ready.receive();    // ~581ms
 ```
 
 **Key benefits**:
-
-- **Event-driven waiting**: Uses channel signaling instead of polling, true async coordination
-- **No duplicate work**: Second request receives result from first, saving 500ms compilation time
-- **Thread-safe**: All pending tracking happens on main strand, channel provides async notification
-- **Minimal overhead**: Waiters resume immediately when channel signals completion
-
-**Design rationale**: Follows async-first principle by leveraging ASIO's channel primitive for coroutine coordination. The channel acts as a one-shot completion event, allowing multiple waiters to efficiently suspend until session creation completes.
+- **Fast diagnostics**: 126ms vs 581ms (4.6x faster)
+- **No duplicate work**: Multiple requests wait on same channels
+- **Event-driven coordination**: Async channels avoid polling
 
 ## Extension Patterns
 
