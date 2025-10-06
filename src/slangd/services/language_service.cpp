@@ -76,13 +76,21 @@ auto LanguageService::ComputeParseDiagnostics(
       .catalog_version = catalog_version};
 
   // Get or create overlay session from cache (fast - no elaboration)
+  auto overlay_start = std::chrono::steady_clock::now();
   auto session = co_await GetOrCreateOverlay(cache_key, content);
+  auto overlay_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - overlay_start);
+  logger_->debug(
+      "GetOrCreateOverlay completed ({})",
+      utils::ScopedTimer::FormatDuration(overlay_elapsed));
+
   if (!session) {
     logger_->error("Failed to create overlay session for: {}", uri);
     co_return std::vector<lsp::Diagnostic>{};
   }
 
   // Extract parse diagnostics in background thread pool
+  auto extract_start = std::chrono::steady_clock::now();
   auto diagnostics = co_await asio::co_spawn(
       compilation_pool_->get_executor(),
       [session, uri, this]() -> asio::awaitable<std::vector<lsp::Diagnostic>> {
@@ -91,6 +99,11 @@ auto LanguageService::ComputeParseDiagnostics(
             logger_);
       },
       asio::use_awaitable);
+  auto extract_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - extract_start);
+  logger_->debug(
+      "ExtractParseDiagnostics completed ({})",
+      utils::ScopedTimer::FormatDuration(extract_elapsed));
 
   // Post result back to main strand
   co_await asio::post(executor_, asio::use_awaitable);
@@ -266,14 +279,29 @@ auto LanguageService::GetDocumentSymbols(std::string uri, std::string content)
       .catalog_version = catalog_version};
 
   // Get or create overlay session from cache
+  auto overlay_start = std::chrono::steady_clock::now();
   auto session = co_await GetOrCreateOverlay(cache_key, content);
+  auto overlay_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - overlay_start);
+  logger_->debug(
+      "GetOrCreateOverlay completed ({})",
+      utils::ScopedTimer::FormatDuration(overlay_elapsed));
+
   if (!session) {
     logger_->error("Failed to create overlay session for: {}", uri);
     co_return std::vector<lsp::DocumentSymbol>{};
   }
 
   // Use the unified SemanticIndex for document symbols
-  co_return session->GetSemanticIndex().GetDocumentSymbols(uri);
+  auto symbols_start = std::chrono::steady_clock::now();
+  auto symbols = session->GetSemanticIndex().GetDocumentSymbols(uri);
+  auto symbols_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - symbols_start);
+  logger_->debug(
+      "GetDocumentSymbols from index completed ({})",
+      utils::ScopedTimer::FormatDuration(symbols_elapsed));
+
+  co_return symbols;
 }
 
 auto LanguageService::HandleConfigChange() -> void {
@@ -343,15 +371,63 @@ auto LanguageService::GetOrCreateOverlay(
     }
   }
 
-  // Cache miss - create new overlay session
+  // Check if creation is already pending for this key
+  size_t key_hash = key.Hash();
+  if (auto it = pending_creations_.find(key_hash);
+      it != pending_creations_.end()) {
+    auto pending = it->second;
+    logger_->debug(
+        "Waiting for pending session creation: {}:hash{}", key.doc_uri,
+        key_hash);
+
+    // Wait for the pending creation to complete via channel
+    std::error_code ec;
+    auto result = co_await pending->channel->async_receive(
+        asio::redirect_error(asio::use_awaitable, ec));
+
+    if (!ec) {
+      logger_->debug(
+          "Received completed session from pending creation: {}:hash{}",
+          key.doc_uri, key_hash);
+      co_return result;
+    }
+
+    // Channel closed without sending - fall through to check cache
+    logger_->debug(
+        "Channel closed, checking cache: {}:hash{}", key.doc_uri, key_hash);
+    for (auto& entry : overlay_cache_) {
+      if (entry.key == key) {
+        entry.last_access = now;
+        co_return entry.session;
+      }
+    }
+    co_return nullptr;
+  }
+
+  // Cache miss and no pending creation - we'll create it
+  // Register as pending so other requests can wait
+  auto pending = std::make_shared<PendingCreation>(executor_);
+  pending_creations_[key_hash] = pending;
+  logger_->debug(
+      "Starting new overlay session creation: {}:hash{}", key.doc_uri,
+      key_hash);
 
   auto shared_session = co_await CreateOverlaySession(key.doc_uri, content);
   if (!shared_session) {
     logger_->error(
         "Failed to create overlay session for {}:hash{}", key.doc_uri,
         key.content_hash);
+    // Signal failure and cleanup
+    pending->channel->close();
+    pending_creations_.erase(key_hash);
     co_return nullptr;
   }
+
+  // Send result to all waiting coroutines
+  std::error_code ec;
+  pending->channel->try_send(ec, shared_session);
+  pending->channel->close();  // Close channel after sending
+  pending_creations_.erase(key_hash);
 
   // Add to cache
   CacheEntry entry{.key = key, .session = shared_session, .last_access = now};

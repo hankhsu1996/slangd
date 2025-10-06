@@ -4,9 +4,11 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <asio.hpp>
+#include <asio/experimental/channel.hpp>
 #include <spdlog/spdlog.h>
 
 #include "slangd/core/language_service_base.hpp"
@@ -80,6 +82,18 @@ class LanguageService : public LanguageServiceBase {
     std::chrono::steady_clock::time_point last_access;
   };
 
+  // Pending session creation - allows concurrent requests to wait for
+  // completion
+  struct PendingCreation {
+    using CompletionChannel = asio::experimental::channel<void(
+        std::error_code, std::shared_ptr<OverlaySession>)>;
+    std::shared_ptr<CompletionChannel> channel;
+
+    explicit PendingCreation(asio::any_io_executor executor)
+        : channel(std::make_shared<CompletionChannel>(executor, 10)) {
+    }
+  };
+
   // Create overlay session for the given URI and content
   auto CreateOverlaySession(std::string uri, std::string content)
       -> asio::awaitable<std::shared_ptr<OverlaySession>>;
@@ -103,6 +117,10 @@ class LanguageService : public LanguageServiceBase {
   // LRU cache for overlay sessions
   std::vector<CacheEntry> overlay_cache_;
   static constexpr size_t kMaxCacheSize = 16;
+
+  // Track pending overlay session creations to avoid duplicate work
+  std::unordered_map<size_t, std::shared_ptr<PendingCreation>>
+      pending_creations_;
 
   // Background thread pool for overlay compilation
   std::unique_ptr<asio::thread_pool> compilation_pool_;
