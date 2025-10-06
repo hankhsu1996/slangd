@@ -257,9 +257,6 @@ class LspServer {
   // PublishDiagnostics Notification
   auto PublishDiagnostics(PublishDiagnosticsParams params)
       -> asio::awaitable<std::expected<void, LspError>> {
-    Logger()->debug(
-        "LspServer publishing {} diagnostics for {}", params.diagnostics.size(),
-        params.uri);
     auto result =
         co_await endpoint_->SendNotification<PublishDiagnosticsParams>(
             "textDocument/publishDiagnostics", params);

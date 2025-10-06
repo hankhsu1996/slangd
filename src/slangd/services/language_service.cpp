@@ -1,12 +1,10 @@
 #include "slangd/services/language_service.hpp"
 
-#include <algorithm>
-#include <ranges>
-
 #include <slang/ast/symbols/CompilationUnitSymbols.h>
 #include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/syntax/SyntaxTree.h>
 
+#include "slangd/semantic/diagnostic_converter.hpp"
 #include "slangd/services/global_catalog.hpp"
 #include "slangd/utils/canonical_path.hpp"
 #include "slangd/utils/conversion.hpp"
@@ -29,13 +27,11 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
   utils::ScopedTimer timer("Workspace initialization", logger_);
   logger_->debug("LanguageService initializing workspace: {}", workspace_uri);
 
-  // Create project layout service
   auto workspace_path = CanonicalPath::FromUri(workspace_uri);
   layout_service_ =
       ProjectLayoutService::Create(executor_, workspace_path, logger_);
   co_await layout_service_->LoadConfig(workspace_path);
 
-  // Phase 2: Create GlobalCatalog from ProjectLayoutService
   global_catalog_ =
       GlobalCatalog::CreateFromProjectLayout(layout_service_, logger_);
 
@@ -47,14 +43,60 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
     logger_->error("LanguageService failed to create GlobalCatalog");
   }
 
+  session_manager_ = std::make_unique<SessionManager>(
+      executor_, layout_service_, global_catalog_, logger_);
+
   auto elapsed = timer.GetElapsed();
   logger_->info(
       "LanguageService workspace initialized: {} ({})", workspace_uri,
       utils::ScopedTimer::FormatDuration(elapsed));
 }
 
-auto LanguageService::ComputeDiagnostics(std::string uri, std::string content)
+auto LanguageService::ComputeParseDiagnostics(
+    std::string uri, std::string content)
     -> asio::awaitable<std::vector<lsp::Diagnostic>> {
+  utils::ScopedTimer timer("ComputeParseDiagnostics", logger_);
+
+  if (!layout_service_) {
+    logger_->error("LanguageService: Workspace not initialized");
+    co_return std::vector<lsp::Diagnostic>{};
+  }
+
+  logger_->debug(
+      "LanguageService computing parse diagnostics (single-file mode): {}",
+      uri);
+
+  // Build single-file compilation and extract diagnostics in thread pool
+  auto diagnostics = co_await asio::co_spawn(
+      compilation_pool_->get_executor(),
+      [this, uri, content]() -> asio::awaitable<std::vector<lsp::Diagnostic>> {
+        // Build parse-only compilation (no catalog → single file only)
+        auto [source_manager, compilation, main_buffer_id] =
+            OverlaySession::BuildCompilation(
+                uri, content, layout_service_,
+                nullptr,  // Single-file mode
+                logger_);
+
+        // Extract parse diagnostics using BufferID for fast filtering
+        co_return semantic::DiagnosticConverter::ExtractParseDiagnostics(
+            *compilation, *source_manager, main_buffer_id, logger_);
+      },
+      asio::use_awaitable);
+
+  // Post result back to main strand
+  co_await asio::post(executor_, asio::use_awaitable);
+
+  logger_->debug(
+      "LanguageService computed {} parse diagnostics for: {}",
+      diagnostics.size(), uri);
+
+  co_return diagnostics;
+}
+
+auto LanguageService::ComputeDiagnostics(std::string uri)
+    -> asio::awaitable<std::vector<lsp::Diagnostic>> {
+  utils::ScopedTimer timer("ComputeDiagnostics", logger_);
+
   if (!layout_service_) {
     logger_->error("LanguageService: Workspace not initialized");
     co_return std::vector<lsp::Diagnostic>{};
@@ -62,34 +104,25 @@ auto LanguageService::ComputeDiagnostics(std::string uri, std::string content)
 
   logger_->debug("LanguageService computing diagnostics for: {}", uri);
 
-  // Create cache key with catalog version and content hash
-  uint64_t catalog_version =
-      global_catalog_ ? global_catalog_->GetVersion() : 0;
-  size_t content_hash = std::hash<std::string>{}(content);
-  OverlayCacheKey cache_key{
-      .doc_uri = uri,
-      .content_hash = content_hash,
-      .catalog_version = catalog_version};
+  // Get compilation state from SessionManager (waits for compilation only, not
+  // indexing)
+  auto state = co_await session_manager_->GetSessionForDiagnostics(uri);
 
-  // Get or create overlay session from cache
-  auto session = co_await GetOrCreateOverlay(cache_key, content);
-  if (!session) {
-    logger_->error("Failed to create overlay session for: {}", uri);
-    co_return std::vector<lsp::Diagnostic>{};
-  }
-
-  // Get diagnostics directly from DiagnosticIndex - consistent pattern!
-  const auto& diagnostics = session->GetDiagnosticIndex().GetDiagnostics();
+  // Extract diagnostics from CompilationState (already elaborated)
+  auto diagnostics = semantic::DiagnosticConverter::ExtractDiagnostics(
+      state.diagnostics, *state.source_manager, state.buffer_id);
+  auto filtered = semantic::DiagnosticConverter::FilterAndModifyDiagnostics(
+      std::move(diagnostics));
 
   logger_->debug(
-      "LanguageService computed {} diagnostics for: {}", diagnostics.size(),
-      uri);
+      "LanguageService computed {} diagnostics for: {} ({})", filtered.size(),
+      uri, utils::ScopedTimer::FormatDuration(timer.GetElapsed()));
 
-  co_return diagnostics;
+  co_return filtered;
 }
 
 auto LanguageService::GetDefinitionsForPosition(
-    std::string uri, lsp::Position position, std::string content)
+    std::string uri, lsp::Position position)
     -> asio::awaitable<std::vector<lsp::Location>> {
   utils::ScopedTimer timer("GetDefinitionsForPosition", logger_);
 
@@ -98,24 +131,9 @@ auto LanguageService::GetDefinitionsForPosition(
     co_return std::vector<lsp::Location>{};
   }
 
-  logger_->debug(
-      "LanguageService getting definitions for: {} at {}:{}", uri,
-      position.line, position.character);
-
-  // Create cache key with catalog version and content hash
-  uint64_t catalog_version =
-      global_catalog_ ? global_catalog_->GetVersion() : 0;
-  size_t content_hash = std::hash<std::string>{}(content);
-  OverlayCacheKey cache_key{
-      .doc_uri = uri,
-      .content_hash = content_hash,
-      .catalog_version = catalog_version};
-
-  // Get or create overlay session from cache
-  auto session = co_await GetOrCreateOverlay(cache_key, content);
-
+  auto session = co_await session_manager_->GetSession(uri);
   if (!session) {
-    logger_->error("Failed to create overlay session for: {}", uri);
+    logger_->debug("No session for {}, returning empty definitions", uri);
     co_return std::vector<lsp::Location>{};
   }
 
@@ -184,7 +202,7 @@ auto LanguageService::GetDefinitionsForPosition(
   co_return std::vector<lsp::Location>{lsp_location};
 }
 
-auto LanguageService::GetDocumentSymbols(std::string uri, std::string content)
+auto LanguageService::GetDocumentSymbols(std::string uri)
     -> asio::awaitable<std::vector<lsp::DocumentSymbol>> {
   utils::ScopedTimer timer("GetDocumentSymbols", logger_);
 
@@ -193,33 +211,19 @@ auto LanguageService::GetDocumentSymbols(std::string uri, std::string content)
     co_return std::vector<lsp::DocumentSymbol>{};
   }
 
-  logger_->debug("LanguageService getting document symbols for: {}", uri);
-
-  // Create cache key with catalog version and content hash
-  uint64_t catalog_version =
-      global_catalog_ ? global_catalog_->GetVersion() : 0;
-  size_t content_hash = std::hash<std::string>{}(content);
-  OverlayCacheKey cache_key{
-      .doc_uri = uri,
-      .content_hash = content_hash,
-      .catalog_version = catalog_version};
-
-  // Get or create overlay session from cache
-  auto session = co_await GetOrCreateOverlay(cache_key, content);
+  auto session = co_await session_manager_->GetSession(uri);
   if (!session) {
-    logger_->error("Failed to create overlay session for: {}", uri);
+    logger_->debug("No session for {}, returning empty symbols", uri);
     co_return std::vector<lsp::DocumentSymbol>{};
   }
 
-  // Use the unified SemanticIndex for document symbols
   co_return session->GetSemanticIndex().GetDocumentSymbols(uri);
 }
 
 auto LanguageService::HandleConfigChange() -> void {
   if (layout_service_) {
     layout_service_->RebuildLayout();
-    // Clear cache when layout changes (catalog version will change)
-    ClearCache();
+    session_manager_->InvalidateAllSessions();
     logger_->debug("LanguageService handled config change");
   }
 }
@@ -235,7 +239,7 @@ auto LanguageService::HandleSourceFileChange(
     case lsp::FileChangeType::kDeleted:
       // Structural changes require layout rebuild
       layout_service_->ScheduleDebouncedRebuild();
-      ClearCache();  // Clear all cache since catalog will change
+      session_manager_->InvalidateAllSessions();
       logger_->debug(
           "LanguageService handled structural change: {} ({})", uri,
           static_cast<int>(change_type));
@@ -250,91 +254,50 @@ auto LanguageService::HandleSourceFileChange(
   }
 }
 
-auto LanguageService::CreateOverlaySession(std::string uri, std::string content)
-    -> asio::awaitable<std::shared_ptr<OverlaySession>> {
-  // Dispatch compilation to background thread pool
-  auto session = co_await asio::co_spawn(
-      compilation_pool_->get_executor(),
-      [uri, content,
-       this]() -> asio::awaitable<std::shared_ptr<OverlaySession>> {
-        // SystemVerilog compilation runs on background thread
-        co_return OverlaySession::Create(
-            uri, content, layout_service_, global_catalog_, logger_);
-      },
-      asio::use_awaitable);
-
-  // Post result back to main strand before returning
-  co_await asio::post(executor_, asio::use_awaitable);
-  co_return session;
-}
-
-auto LanguageService::GetOrCreateOverlay(
-    OverlayCacheKey key, std::string content)
-    -> asio::awaitable<std::shared_ptr<OverlaySession>> {
-  auto now = std::chrono::steady_clock::now();
-
-  // Check if we already have this overlay in cache
-  for (auto& entry : overlay_cache_) {
-    if (entry.key == key) {
-      // Cache hit! Update access time and return
-      entry.last_access = now;
-      co_return entry.session;
-    }
+// Document lifecycle events (protocol-level API)
+auto LanguageService::OnDocumentOpened(
+    std::string uri, std::string content, int version)
+    -> asio::awaitable<void> {
+  if (!session_manager_) {
+    logger_->error("LanguageService: SessionManager not initialized");
+    co_return;
   }
 
-  // Cache miss - create new overlay session
-
-  auto shared_session = co_await CreateOverlaySession(key.doc_uri, content);
-  if (!shared_session) {
-    logger_->error(
-        "Failed to create overlay session for {}:hash{}", key.doc_uri,
-        key.content_hash);
-    co_return nullptr;
-  }
-
-  // Add to cache
-  CacheEntry entry{.key = key, .session = shared_session, .last_access = now};
-
-  // If cache is full, remove oldest entry (simple LRU)
-  if (overlay_cache_.size() >= kMaxCacheSize) {
-    // Find oldest entry
-    auto oldest_it = std::ranges::min_element(
-        overlay_cache_, [](const CacheEntry& a, const CacheEntry& b) -> bool {
-          return a.last_access < b.last_access;
-        });
-
-    if (oldest_it != overlay_cache_.end()) {
-      logger_->debug(
-          "Evicting oldest overlay from cache: {}:hash{}",
-          oldest_it->key.doc_uri, oldest_it->key.content_hash);
-      *oldest_it = std::move(entry);
-    }
-  } else {
-    overlay_cache_.push_back(std::move(entry));
-  }
-
-  logger_->debug(
-      "Added overlay to cache for {}:hash{} (cache size: {})", key.doc_uri,
-      key.content_hash, overlay_cache_.size());
-  co_return shared_session;
+  co_await session_manager_->UpdateSession(uri, content, version);
 }
 
-auto LanguageService::ClearCache() -> void {
-  logger_->debug("Clearing overlay cache ({} entries)", overlay_cache_.size());
-  overlay_cache_.clear();
+auto LanguageService::OnDocumentSaved(
+    std::string uri, std::string content, int version)
+    -> asio::awaitable<void> {
+  if (!session_manager_) {
+    logger_->error("LanguageService: SessionManager not initialized");
+    co_return;
+  }
+
+  co_await session_manager_->UpdateSession(uri, content, version);
 }
 
-auto LanguageService::ClearCacheForFile(const std::string& uri) -> void {
-  auto it = std::ranges::remove_if(
-      overlay_cache_, [&uri](const CacheEntry& entry) -> bool {
-        return entry.key.doc_uri == uri;
-      });
+auto LanguageService::OnDocumentClosed(std::string uri) -> void {
+  if (!session_manager_) {
+    logger_->error("LanguageService: SessionManager not initialized");
+    return;
+  }
 
-  size_t removed_count = std::distance(it.begin(), overlay_cache_.end());
-  overlay_cache_.erase(it.begin(), overlay_cache_.end());
+  logger_->debug("LanguageService::OnDocumentClosed: {}", uri);
+  session_manager_->RemoveSession(uri);
+  logger_->debug("SessionManager cache cleared for: {}", uri);
+}
 
-  logger_->debug(
-      "Cleared {} overlay cache entries for file: {}", removed_count, uri);
+auto LanguageService::OnDocumentsChanged(std::vector<std::string> uris)
+    -> void {
+  if (!session_manager_) {
+    logger_->error("LanguageService: SessionManager not initialized");
+    return;
+  }
+
+  logger_->debug("LanguageService::OnDocumentsChanged: {} files", uris.size());
+  session_manager_->InvalidateSessions(uris);
+  logger_->debug("SessionManager cache invalidated for {} files", uris.size());
 }
 
 }  // namespace slangd::services

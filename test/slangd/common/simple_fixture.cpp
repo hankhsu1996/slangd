@@ -306,4 +306,61 @@ void SimpleTestFixture::AssertDefinitionRangeLength(
   }
 }
 
+void SimpleTestFixture::AssertDiagnosticsSubset(
+    const std::vector<lsp::Diagnostic>& subset,
+    const std::vector<lsp::Diagnostic>& superset) {
+  // Helper to check if two diagnostics match
+  auto diagnostics_match = [](const lsp::Diagnostic& a,
+                              const lsp::Diagnostic& b) -> bool {
+    return a.message == b.message && a.range.start.line == b.range.start.line &&
+           a.range.start.character == b.range.start.character;
+  };
+
+  // Check that all subset diagnostics appear in superset using ranges
+  bool all_found = std::ranges::all_of(subset, [&](const auto& sub_diag) {
+    return std::ranges::any_of(superset, [&](const auto& super_diag) {
+      return diagnostics_match(sub_diag, super_diag);
+    });
+  });
+
+  if (!all_found) {
+    throw std::runtime_error(
+        "AssertDiagnosticsSubset: Not all subset diagnostics found in "
+        "superset");
+  }
+}
+
+void SimpleTestFixture::AssertDiagnosticsValid(
+    const std::vector<lsp::Diagnostic>& diagnostics,
+    lsp::DiagnosticSeverity severity) {
+  // Use ranges to find first diagnostic with matching severity
+  auto matching_diag = std::ranges::find_if(
+      diagnostics,
+      [severity](const auto& diag) { return diag.severity == severity; });
+
+  if (matching_diag == diagnostics.end()) {
+    throw std::runtime_error(
+        "AssertDiagnosticsValid: No diagnostic found with specified severity");
+  }
+
+  // Validate properties of the found diagnostic
+  if (matching_diag->range.start.line < 0 ||
+      matching_diag->range.start.character < 0) {
+    throw std::runtime_error(
+        "AssertDiagnosticsValid: Diagnostic has invalid range");
+  }
+
+  if (matching_diag->message.empty()) {
+    throw std::runtime_error(
+        "AssertDiagnosticsValid: Diagnostic has empty message");
+  }
+
+  if (matching_diag->source != "slang") {
+    throw std::runtime_error(
+        fmt::format(
+            "AssertDiagnosticsValid: Expected source 'slang', got '{}'",
+            matching_diag->source.value_or("")));
+  }
+}
+
 }  // namespace slangd::test

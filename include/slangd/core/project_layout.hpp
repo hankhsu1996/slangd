@@ -9,8 +9,8 @@ namespace slangd {
 
 // ProjectLayout represents the final authoritative view of a project's
 // configuration and discovered files. This is the data structure that
-// downstream services (WorkspaceManager, DocumentManager, GlobalIndexService,
-// OverlaySessionService) consume.
+// downstream services consume (primarily GlobalCatalog for cross-file
+// compilation and OverlaySession for file resolution).
 class ProjectLayout {
  public:
   // Constructors

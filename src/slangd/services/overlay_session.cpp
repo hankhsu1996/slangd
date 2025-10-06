@@ -24,40 +24,45 @@ auto OverlaySession::Create(
   logger->debug("Creating overlay session for: {}", uri);
 
   // Build fresh compilation with current buffer and optional catalog files
-  auto [source_manager, compilation] =
+  auto [source_manager, compilation, main_buffer_id] =
       BuildCompilation(uri, content, layout_service, catalog, logger);
 
   // Create unified semantic index (replaces DefinitionIndex + SymbolIndex)
   auto semantic_index = semantic::SemanticIndex::FromCompilation(
       *compilation, *source_manager, uri, catalog.get());
 
-  // Create diagnostic index for the current URI (kept separate)
-  auto diagnostic_index = std::make_unique<semantic::DiagnosticIndex>(
-      semantic::DiagnosticIndex::FromCompilation(
-          *compilation, *source_manager, uri, logger));
-
   auto elapsed = timer.GetElapsed();
   auto entry_count = semantic_index->GetSemanticEntries().size();
-  auto diag_count = diagnostic_index->GetDiagnostics().size();
   logger->debug(
-      "Overlay session created with {} semantic entries, {} diagnostics ({})",
-      entry_count, diag_count, utils::ScopedTimer::FormatDuration(elapsed));
+      "Overlay session created with {} semantic entries ({})", entry_count,
+      utils::ScopedTimer::FormatDuration(elapsed));
 
   return std::shared_ptr<OverlaySession>(new OverlaySession(
+      std::move(source_manager),
+      std::shared_ptr<slang::ast::Compilation>(std::move(compilation)),
+      std::move(semantic_index), main_buffer_id, logger));
+}
+
+auto OverlaySession::CreateFromParts(
+    std::shared_ptr<slang::SourceManager> source_manager,
+    std::shared_ptr<slang::ast::Compilation> compilation,
+    std::unique_ptr<semantic::SemanticIndex> semantic_index,
+    slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger)
+    -> std::shared_ptr<OverlaySession> {
+  return std::shared_ptr<OverlaySession>(new OverlaySession(
       std::move(source_manager), std::move(compilation),
-      std::move(semantic_index), std::move(diagnostic_index), logger));
+      std::move(semantic_index), main_buffer_id, logger));
 }
 
 OverlaySession::OverlaySession(
     std::shared_ptr<slang::SourceManager> source_manager,
-    std::unique_ptr<slang::ast::Compilation> compilation,
+    std::shared_ptr<slang::ast::Compilation> compilation,
     std::unique_ptr<semantic::SemanticIndex> semantic_index,
-    std::unique_ptr<semantic::DiagnosticIndex> diagnostic_index,
-    std::shared_ptr<spdlog::logger> logger)
+    slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger)
     : source_manager_(std::move(source_manager)),
       compilation_(std::move(compilation)),
       semantic_index_(std::move(semantic_index)),
-      diagnostic_index_(std::move(diagnostic_index)),
+      main_buffer_id_(main_buffer_id),
       logger_(std::move(logger)) {
 }
 
@@ -68,7 +73,7 @@ auto OverlaySession::BuildCompilation(
     std::shared_ptr<spdlog::logger> logger)
     -> std::tuple<
         std::shared_ptr<slang::SourceManager>,
-        std::unique_ptr<slang::ast::Compilation>> {
+        std::unique_ptr<slang::ast::Compilation>, slang::BufferID> {
   // Create fresh source manager
   auto source_manager = std::make_shared<slang::SourceManager>();
 
@@ -106,6 +111,7 @@ auto OverlaySession::BuildCompilation(
   // Add current buffer content (authoritative)
   auto file_path = CanonicalPath::FromUri(uri);
   auto buffer = source_manager->assignText(file_path.String(), content);
+  auto main_buffer_id = buffer.id;
   auto buffer_tree =
       slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager, options);
 
@@ -123,9 +129,6 @@ auto OverlaySession::BuildCompilation(
     for (const auto& package_info : catalog->GetPackages()) {
       // Skip if this is the same file as our buffer (deduplication)
       if (package_info.file_path.Path() == file_path.Path()) {
-        logger->debug(
-            "Skipping buffer file from catalog: {}",
-            package_info.file_path.Path().string());
         continue;
       }
 
@@ -157,7 +160,8 @@ auto OverlaySession::BuildCompilation(
     logger->debug("No catalog provided - single-file mode");
   }
 
-  return std::make_tuple(std::move(source_manager), std::move(compilation));
+  return std::make_tuple(
+      std::move(source_manager), std::move(compilation), main_buffer_id);
 }
 
 }  // namespace slangd::services

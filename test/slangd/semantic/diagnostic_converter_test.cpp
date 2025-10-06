@@ -1,4 +1,4 @@
-#include "slangd/semantic/diagnostic_index.hpp"
+#include "slangd/semantic/diagnostic_converter.hpp"
 
 #include <cstdlib>
 #include <memory>
@@ -25,7 +25,7 @@ auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
 }
 
-using slangd::semantic::DiagnosticIndex;
+using slangd::semantic::DiagnosticConverter;
 using slangd::test::SimpleTestFixture;
 
 // Helper function to get consistent test URI
@@ -33,7 +33,7 @@ inline auto GetTestUri() -> std::string {
   return "file:///test.sv";
 }
 
-TEST_CASE("DiagnosticIndex basic functionality", "[diagnostic_index]") {
+TEST_CASE("DiagnosticConverter basic functionality", "[diagnostic_converter]") {
   std::string code = R"(
     module test_module;
       logic signal;
@@ -54,18 +54,15 @@ TEST_CASE("DiagnosticIndex basic functionality", "[diagnostic_index]") {
     compilation->addSyntaxTree(tree);
   }
 
-  auto diagnostic_index =
-      DiagnosticIndex::FromCompilation(*compilation, *source_manager, test_uri);
-
-  // Basic API functionality
-  REQUIRE(diagnostic_index.GetUri() == test_uri);
+  auto diagnostics = DiagnosticConverter::ExtractAllDiagnostics(
+      *compilation, *source_manager, buffer.id);
 
   // Valid code should have few or no diagnostics
-  const auto& diagnostics = diagnostic_index.GetDiagnostics();
   REQUIRE(diagnostics.size() >= 0);  // May have warnings but shouldn't fail
 }
 
-TEST_CASE("DiagnosticIndex detects syntax errors", "[diagnostic_index]") {
+TEST_CASE(
+    "DiagnosticConverter detects syntax errors", "[diagnostic_converter]") {
   std::string code = R"(
     module test_module;
       logic signal  // Missing semicolon
@@ -87,31 +84,22 @@ TEST_CASE("DiagnosticIndex detects syntax errors", "[diagnostic_index]") {
     compilation->addSyntaxTree(tree);
   }
 
-  auto diagnostic_index =
-      DiagnosticIndex::FromCompilation(*compilation, *source_manager, test_uri);
+  auto diagnostics = DiagnosticConverter::ExtractAllDiagnostics(
+      *compilation, *source_manager, buffer.id);
 
-  const auto& diagnostics = diagnostic_index.GetDiagnostics();
   REQUIRE(diagnostics.size() > 0);
 
   // Should have at least one error diagnostic
   SimpleTestFixture::AssertDiagnosticExists(
       diagnostics, lsp::DiagnosticSeverity::kError);
 
-  // Verify diagnostic properties
-  for (const auto& diag : diagnostics) {
-    if (diag.severity == lsp::DiagnosticSeverity::kError) {
-      // Should have valid range
-      REQUIRE(diag.range.start.line >= 0);
-      REQUIRE(diag.range.start.character >= 0);
-      // Should have message and source
-      REQUIRE(!diag.message.empty());
-      REQUIRE(diag.source == "slang");
-      break;  // Only need to check one error diagnostic
-    }
-  }
+  // Verify diagnostic properties using helper
+  SimpleTestFixture::AssertDiagnosticsValid(
+      diagnostics, lsp::DiagnosticSeverity::kError);
 }
 
-TEST_CASE("DiagnosticIndex detects semantic errors", "[diagnostic_index]") {
+TEST_CASE(
+    "DiagnosticConverter detects semantic errors", "[diagnostic_converter]") {
   std::string code = R"(
     module test_module;
       logic [7:0] data;
@@ -136,10 +124,9 @@ TEST_CASE("DiagnosticIndex detects semantic errors", "[diagnostic_index]") {
     compilation->addSyntaxTree(tree);
   }
 
-  auto diagnostic_index =
-      DiagnosticIndex::FromCompilation(*compilation, *source_manager, test_uri);
+  auto diagnostics = DiagnosticConverter::ExtractAllDiagnostics(
+      *compilation, *source_manager, buffer.id);
 
-  const auto& diagnostics = diagnostic_index.GetDiagnostics();
   REQUIRE(diagnostics.size() > 0);
 
   // Should find the undefined variable error
@@ -147,7 +134,8 @@ TEST_CASE("DiagnosticIndex detects semantic errors", "[diagnostic_index]") {
       diagnostics, lsp::DiagnosticSeverity::kError, "undefined");
 }
 
-TEST_CASE("DiagnosticIndex handles malformed module", "[diagnostic_index]") {
+TEST_CASE(
+    "DiagnosticConverter handles malformed module", "[diagnostic_converter]") {
   std::string code = R"(
     module test_module  // Missing semicolon and endmodule
       logic signal;
@@ -167,27 +155,21 @@ TEST_CASE("DiagnosticIndex handles malformed module", "[diagnostic_index]") {
     compilation->addSyntaxTree(tree);
   }
 
-  auto diagnostic_index =
-      DiagnosticIndex::FromCompilation(*compilation, *source_manager, test_uri);
+  auto diagnostics = DiagnosticConverter::ExtractAllDiagnostics(
+      *compilation, *source_manager, buffer.id);
 
-  const auto& diagnostics = diagnostic_index.GetDiagnostics();
   REQUIRE(diagnostics.size() > 0);
 
   // Should have error diagnostics for malformed syntax
   SimpleTestFixture::AssertDiagnosticExists(
       diagnostics, lsp::DiagnosticSeverity::kError);
 
-  // Verify basic diagnostic structure
-  for (const auto& diag : diagnostics) {
-    if (diag.severity == lsp::DiagnosticSeverity::kError) {
-      REQUIRE(!diag.message.empty());
-      REQUIRE(diag.source == "slang");
-      break;  // Only need to check one error diagnostic
-    }
-  }
+  // Verify basic diagnostic structure using helper
+  SimpleTestFixture::AssertDiagnosticsValid(
+      diagnostics, lsp::DiagnosticSeverity::kError);
 }
 
-TEST_CASE("DiagnosticIndex handles empty file", "[diagnostic_index]") {
+TEST_CASE("DiagnosticConverter handles empty file", "[diagnostic_converter]") {
   std::string code;
 
   auto source_manager = std::make_shared<slang::SourceManager>();
@@ -204,13 +186,50 @@ TEST_CASE("DiagnosticIndex handles empty file", "[diagnostic_index]") {
     compilation->addSyntaxTree(tree);
   }
 
-  auto diagnostic_index =
-      DiagnosticIndex::FromCompilation(*compilation, *source_manager, test_uri);
-
-  // Empty file should not crash
-  REQUIRE(diagnostic_index.GetUri() == test_uri);
+  auto diagnostics = DiagnosticConverter::ExtractAllDiagnostics(
+      *compilation, *source_manager, buffer.id);
 
   // May have diagnostics about no compilation units, but shouldn't crash
-  const auto& diagnostics = diagnostic_index.GetDiagnostics();
   REQUIRE(diagnostics.size() >= 0);
+}
+
+TEST_CASE(
+    "DiagnosticConverter parse diagnostics are subset of all",
+    "[diagnostic_converter]") {
+  std::string code = R"(
+    module test_module;
+      logic signal  // Missing semicolon - parse error
+      logic [7:0] data;
+
+      initial begin
+        undefined_var = 8'h42;  // Semantic error
+      end
+    endmodule
+  )";
+
+  auto source_manager = std::make_shared<slang::SourceManager>();
+  slang::Bag options;
+  auto compilation = std::make_unique<slang::ast::Compilation>(options);
+
+  constexpr std::string_view kTestFilename = "test.sv";
+  std::string test_uri = "file:///" + std::string(kTestFilename);
+  std::string test_path = "/" + std::string(kTestFilename);
+
+  auto buffer = source_manager->assignText(test_path, code);
+  auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
+  if (tree) {
+    compilation->addSyntaxTree(tree);
+  }
+
+  auto parse_diags = DiagnosticConverter::ExtractParseDiagnostics(
+      *compilation, *source_manager, buffer.id);
+  auto all_diags = DiagnosticConverter::ExtractAllDiagnostics(
+      *compilation, *source_manager, buffer.id);
+
+  // Parse diagnostics should be subset of all diagnostics
+  REQUIRE(parse_diags.size() <= all_diags.size());
+
+  // Each parse diagnostic should appear in all diagnostics (functional
+  // approach)
+  SimpleTestFixture::AssertDiagnosticsSubset(parse_diags, all_diags);
 }

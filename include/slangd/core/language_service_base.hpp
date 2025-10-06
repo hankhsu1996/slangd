@@ -23,16 +23,21 @@ class LanguageServiceBase {
   virtual ~LanguageServiceBase() = default;
 
   // Diagnostics computation - async because may need parsing/compilation
-  virtual auto ComputeDiagnostics(std::string uri, std::string content)
+  // Parse diagnostics only - syntax errors without elaboration
+  virtual auto ComputeParseDiagnostics(std::string uri, std::string content)
       -> asio::awaitable<std::vector<lsp::Diagnostic>> = 0;
 
-  // Definition lookup - async because may need overlay creation
+  // Full diagnostics including semantic analysis
+  virtual auto ComputeDiagnostics(std::string uri)
+      -> asio::awaitable<std::vector<lsp::Diagnostic>> = 0;
+
+  // Definition lookup - async because may need to wait for session
   virtual auto GetDefinitionsForPosition(
-      std::string uri, lsp::Position position, std::string content)
+      std::string uri, lsp::Position position)
       -> asio::awaitable<std::vector<lsp::Location>> = 0;
 
-  // Document symbols - async because may need overlay creation
-  virtual auto GetDocumentSymbols(std::string uri, std::string content)
+  // Document symbols - async because may need to wait for session
+  virtual auto GetDocumentSymbols(std::string uri)
       -> asio::awaitable<std::vector<lsp::DocumentSymbol>> = 0;
 
   // Workspace initialization - called during LSP initialize
@@ -45,6 +50,23 @@ class LanguageServiceBase {
   // Source file change handling - notifies service of source file changes
   virtual auto HandleSourceFileChange(
       std::string uri, lsp::FileChangeType change_type) -> void = 0;
+
+  // Document lifecycle events (protocol-level)
+  // Called when document is opened in editor
+  virtual auto OnDocumentOpened(
+      std::string uri, std::string content, int version)
+      -> asio::awaitable<void> = 0;
+
+  // Called when document is saved
+  virtual auto OnDocumentSaved(
+      std::string uri, std::string content, int version)
+      -> asio::awaitable<void> = 0;
+
+  // Called when document is closed in editor
+  virtual auto OnDocumentClosed(std::string uri) -> void = 0;
+
+  // Called when external file changes are detected
+  virtual auto OnDocumentsChanged(std::vector<std::string> uris) -> void = 0;
 };
 
 }  // namespace slangd

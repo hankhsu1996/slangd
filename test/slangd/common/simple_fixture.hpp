@@ -59,6 +59,16 @@ class SimpleTestFixture {
       lsp::DiagnosticSeverity severity,
       const std::string& message_substring = "");
 
+  // Assert that all diagnostics in subset are found in superset
+  static void AssertDiagnosticsSubset(
+      const std::vector<lsp::Diagnostic>& subset,
+      const std::vector<lsp::Diagnostic>& superset);
+
+  // Assert that all diagnostics with given severity have valid properties
+  static void AssertDiagnosticsValid(
+      const std::vector<lsp::Diagnostic>& diagnostics,
+      lsp::DiagnosticSeverity severity);
+
   // Assert that a symbol's definition range has expected length
   void AssertDefinitionRangeLength(
       semantic::SemanticIndex& index, const std::string& code,

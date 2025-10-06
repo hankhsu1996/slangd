@@ -135,27 +135,24 @@ auto SlangdLspServer::OnDidOpenTextDocument(
 
   AddOpenFile(uri, text, language_id, version);
 
-  // Compute and publish initial diagnostics via facade
+  // Create session in SessionManager (must complete before features can run)
+  co_await language_service_->OnDocumentOpened(uri, text, version);
+  Logger()->debug("SessionManager created session for: {}", uri);
+
+  // Compute and publish initial diagnostics (background)
   asio::co_spawn(
       strand_,
       [this, uri, text, version]() -> asio::awaitable<void> {
-        Logger()->debug("SlangdLspServer starting document parse for: {}", uri);
+        // Phase 1: Parse diagnostics (syntax errors only)
+        auto parse_diags =
+            co_await language_service_->ComputeParseDiagnostics(uri, text);
+        co_await PublishDiagnostics(
+            {.uri = uri, .version = version, .diagnostics = parse_diags});
 
-        // Use facade to compute diagnostics
-        auto diagnostics =
-            co_await language_service_->ComputeDiagnostics(uri, text);
-
-        Logger()->debug(
-            "SlangdLspServer publishing {} diagnostics for document: {}",
-            diagnostics.size(), uri);
-
-        // Publish diagnostics
-        lsp::PublishDiagnosticsParams diag_params{
-            .uri = uri, .version = version, .diagnostics = diagnostics};
-        co_await PublishDiagnostics(diag_params);
-
-        Logger()->debug(
-            "SlangdLspServer completed publishing diagnostics for: {}", uri);
+        // Phase 2: Full diagnostics (includes semantic analysis)
+        auto all_diags = co_await language_service_->ComputeDiagnostics(uri);
+        co_await PublishDiagnostics(
+            {.uri = uri, .version = version, .diagnostics = all_diags});
       },
       asio::detached);
 
@@ -201,7 +198,17 @@ auto SlangdLspServer::OnDidSaveTextDocument(
   const auto& text_doc = params.textDocument;
   const auto& uri = text_doc.uri;
 
-  // Process diagnostics immediately on save (no debounce)
+  // Update session in SessionManager (blocking - must complete before
+  // diagnostics)
+  auto file_opt = GetOpenFile(uri);
+  if (file_opt) {
+    const auto& file = file_opt->get();
+    co_await language_service_->OnDocumentSaved(
+        uri, file.content, file.version);
+    Logger()->debug("SessionManager updated for: {}", uri);
+  }
+
+  // Process diagnostics after session update completes
   co_await ProcessDiagnosticsForUri(uri);
 
   co_return Ok();
@@ -216,6 +223,10 @@ auto SlangdLspServer::OnDidCloseTextDocument(
 
   RemoveOpenFile(uri);
 
+  // Remove session from SessionManager
+  language_service_->OnDocumentClosed(uri);
+  Logger()->debug("SessionManager removed session for: {}", uri);
+
   co_return Ok();
 }
 
@@ -226,36 +237,16 @@ auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
 
   co_await asio::post(strand_, asio::use_awaitable);
 
-  // Get the tracked document to access content and version
-  auto file_opt = GetOpenFile(params.textDocument.uri);
-  if (!file_opt) {
-    Logger()->debug(
-        "OnDocumentSymbols: File not open: {}", params.textDocument.uri);
-    co_return std::vector<lsp::DocumentSymbol>{};
-  }
-
-  const auto& file = file_opt->get();
-
   co_return co_await language_service_->GetDocumentSymbols(
-      params.textDocument.uri, file.content);
+      params.textDocument.uri);
 }
 
 auto SlangdLspServer::OnGotoDefinition(lsp::DefinitionParams params)
     -> asio::awaitable<std::expected<lsp::DefinitionResult, lsp::LspError>> {
   Logger()->debug("SlangdLspServer OnGotoDefinition");
 
-  // Get the tracked document to access content and version
-  auto file_opt = GetOpenFile(params.textDocument.uri);
-  if (!file_opt) {
-    Logger()->debug(
-        "OnGotoDefinition: File not open: {}", params.textDocument.uri);
-    co_return std::vector<lsp::Location>{};
-  }
-
-  const auto& file = file_opt->get();
-
   co_return co_await language_service_->GetDefinitionsForPosition(
-      std::string(params.textDocument.uri), params.position, file.content);
+      std::string(params.textDocument.uri), params.position);
 }
 
 auto SlangdLspServer::OnDidChangeWatchedFiles(
@@ -268,6 +259,7 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
       [this, params]() -> asio::awaitable<void> {
         bool has_config_change = false;
         bool has_sv_file_change = false;
+        std::vector<std::string> changed_sv_uris;
 
         // Process each file change
         for (const auto& change : params.changes) {
@@ -280,7 +272,15 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
           }
           // Check if this is a SystemVerilog file change
           else if (IsSystemVerilogFile(path.Path())) {
+            // Ignore watcher events for open files - they're managed by LSP
+            // text sync
+            if (GetOpenFile(change.uri)) {
+              Logger()->debug(
+                  "Ignoring watcher event for open file: {}", change.uri);
+              continue;
+            }
             has_sv_file_change = true;
+            changed_sv_uris.push_back(change.uri);
           }
         }
 
@@ -288,6 +288,14 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
         if (has_config_change) {
           language_service_->HandleConfigChange();
         }
+
+        // Invalidate SessionManager cache for changed files
+        if (!changed_sv_uris.empty()) {
+          language_service_->OnDocumentsChanged(changed_sv_uris);
+          Logger()->debug(
+              "SessionManager invalidated {} sessions", changed_sv_uris.size());
+        }
+
         // Handle SystemVerilog file changes (language service decides if
         // rebuild needed)
         if (has_sv_file_change) {
@@ -350,20 +358,17 @@ auto SlangdLspServer::ProcessDiagnosticsForUri(std::string uri)
   }
 
   const auto& file = file_opt->get();
-  Logger()->debug("Processing diagnostics for: {}", uri);
 
-  // Use facade to compute diagnostics
-  auto diagnostics =
-      co_await language_service_->ComputeDiagnostics(uri, file.content);
+  // Phase 1: Parse diagnostics (syntax errors only)
+  auto parse_diags =
+      co_await language_service_->ComputeParseDiagnostics(uri, file.content);
+  co_await PublishDiagnostics(
+      {.uri = uri, .version = file.version, .diagnostics = parse_diags});
 
-  Logger()->debug("Publishing {} diagnostics for: {}", diagnostics.size(), uri);
-
-  // Publish diagnostics as a single batch
-  lsp::PublishDiagnosticsParams diag_params{
-      .uri = uri, .version = file.version, .diagnostics = diagnostics};
-  co_await PublishDiagnostics(diag_params);
-
-  Logger()->debug("Completed publishing diagnostics for: {}", uri);
+  // Phase 2: Full diagnostics (includes semantic analysis)
+  auto all_diags = co_await language_service_->ComputeDiagnostics(uri);
+  co_await PublishDiagnostics(
+      {.uri = uri, .version = file.version, .diagnostics = all_diags});
 
   // Remove the pending request if it exists
   pending_diagnostics_.erase(uri);

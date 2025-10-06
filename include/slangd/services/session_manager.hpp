@@ -1,0 +1,109 @@
+#pragma once
+
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+#include <asio/any_io_executor.hpp>
+#include <asio/awaitable.hpp>
+#include <asio/experimental/channel.hpp>
+#include <asio/thread_pool.hpp>
+#include <slang/ast/Compilation.h>
+#include <slang/text/SourceManager.h>
+#include <spdlog/spdlog.h>
+
+#include "slangd/core/project_layout_service.hpp"
+#include "slangd/services/global_catalog.hpp"
+#include "slangd/services/overlay_session.hpp"
+
+namespace slangd::services {
+
+// Centralized session lifecycle manager
+// - Document events create/invalidate sessions (UpdateSession, RemoveSession)
+// - LSP features read sessions (GetSession)
+// - Cache by URI only (not content hash) for stable typing performance
+// - Concurrent requests for same URI share a single pending creation
+class SessionManager {
+ public:
+  explicit SessionManager(
+      asio::any_io_executor executor,
+      std::shared_ptr<ProjectLayoutService> layout_service,
+      std::shared_ptr<const GlobalCatalog> catalog,
+      std::shared_ptr<spdlog::logger> logger);
+
+  ~SessionManager();
+
+  // Non-copyable, non-movable
+  SessionManager(const SessionManager&) = delete;
+  auto operator=(const SessionManager&) -> SessionManager& = delete;
+  SessionManager(SessionManager&&) = delete;
+  auto operator=(SessionManager&&) -> SessionManager& = delete;
+
+  // Document event handlers (ONLY these create/invalidate sessions)
+  auto UpdateSession(std::string uri, std::string content, int version)
+      -> asio::awaitable<void>;
+
+  auto RemoveSession(std::string uri) -> void;
+
+  auto InvalidateSessions(std::vector<std::string> uris) -> void;
+
+  auto InvalidateAllSessions() -> void;  // For catalog version change
+
+  // Feature accessors (read-only)
+  // Returns fully-indexed session (waits for indexing to complete)
+  auto GetSession(std::string uri)
+      -> asio::awaitable<std::shared_ptr<const OverlaySession>>;
+
+  // Returns compilation state for diagnostics (waits for compilation only, not
+  // indexing)
+  struct CompilationState {
+    std::shared_ptr<slang::SourceManager> source_manager;
+    std::shared_ptr<slang::ast::Compilation> compilation;
+    slang::BufferID buffer_id;
+    slang::Diagnostics diagnostics;
+  };
+
+  auto GetSessionForDiagnostics(std::string uri)
+      -> asio::awaitable<CompilationState>;
+
+ private:
+  // Pending session creation - allows concurrent requests to wait at different
+  // phases
+  struct PendingCreation {
+    using CompilationChannel =
+        asio::experimental::channel<void(std::error_code, CompilationState)>;
+    using SessionChannel = asio::experimental::channel<void(
+        std::error_code, std::shared_ptr<OverlaySession>)>;
+
+    // Signal 1: Compilation ready (after elaboration, before indexing)
+    std::shared_ptr<CompilationChannel> compilation_ready;
+    // Signal 2: Full session ready (after indexing)
+    std::shared_ptr<SessionChannel> session_ready;
+    // LSP document version - used to prevent race conditions
+    int version;
+
+    explicit PendingCreation(asio::any_io_executor executor, int doc_version);
+  };
+
+  auto StartSessionCreation(std::string uri, std::string content, int version)
+      -> std::shared_ptr<PendingCreation>;
+
+  // Cache by URI only (no content_hash!)
+  std::unordered_map<std::string, std::shared_ptr<OverlaySession>>
+      active_sessions_;
+
+  std::unordered_map<std::string, std::shared_ptr<PendingCreation>>
+      pending_sessions_;
+
+  // Dependencies
+  asio::any_io_executor executor_;
+  std::shared_ptr<ProjectLayoutService> layout_service_;
+  std::shared_ptr<const GlobalCatalog> catalog_;
+  std::shared_ptr<spdlog::logger> logger_;
+
+  // Background compilation pool
+  std::unique_ptr<asio::thread_pool> compilation_pool_;
+};
+
+}  // namespace slangd::services

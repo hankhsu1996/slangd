@@ -23,21 +23,26 @@ SystemVerilog LSP Server (domain-specific handlers)
 ```
 
 ### Transport & Protocol Layer
+
 - **FramedPipeTransport**: Handles JSON-RPC communication with VSCode
 - **RpcEndpoint**: Generic JSON-RPC request/response processing
 - **lsp::LspServer**: Base LSP protocol implementation with file tracking
 
 ### Domain Layer
+
 - **SlangdLspServer**: SystemVerilog-specific LSP handlers
 - **Strand coordination**: Ensures thread-safe LSP state management
 - **Request debouncing**: Prevents excessive diagnostic requests
 
 ### Business Logic Layer
+
 - **LanguageServiceBase**: Abstract interface for all LSP operations
-- **LanguageService**: Concrete implementation using overlay sessions
+- **LanguageService**: Concrete implementation using SessionManager for lifecycle
+- **SessionManager**: Centralized session creation, caching, and invalidation
 - **Extensible design**: Supports future implementations (e.g., persistent indexing)
 
 ### Computation Layer
+
 - **Background thread pool**: Isolates expensive SystemVerilog compilation
 - **Async dispatch**: Operations complete without blocking main thread
 - **Result coordination**: Thread-safe handoff of computed results
@@ -52,14 +57,37 @@ VSCode Response ← JSON-RPC ← LSP Handler ← Result ← Computation Complete
 
 **Key insight**: Main thread handles protocol coordination while background threads handle computation. This prevents LSP timeouts during heavy SystemVerilog processing.
 
+## Diagnostic Publishing Strategy
+
+**Two-phase approach**: Parse diagnostics (syntax errors) publish immediately, then full diagnostics (semantic analysis) publish after elaboration.
+
+```
+File Save → Parse Diagnostics (fast) → Publish → Full Diagnostics (slow) → Publish
+```
+
+### Key Architectural Decisions
+
+**Lazy elaboration**: OverlaySession creation does NOT trigger elaboration. Semantic indexing uses `compilation.getDefinitions()` and `compilation.getPackages()` - simple map lookups, no analysis.
+
+**On-demand extraction**: Diagnostics extracted only when requested, not pre-computed during session creation. Two extraction methods:
+
+- `getParseDiagnostics()`: Fast, no elaboration triggered
+- `getAllDiagnostics()`: Triggers elaboration for semantic analysis
+
+**Cache reuse**: Both diagnostic phases use the same cached OverlaySession. First phase may create session, second phase reuses it.
+
+**Why this works**: Separating diagnostic extraction from session creation follows Slang's lazy evaluation pattern. Users get immediate syntax error feedback while semantic analysis runs in background.
+
 ## Executor & Threading Model
 
 ### Main Event Loop (io_context)
+
 - **Single-threaded**: All LSP protocol handling, file tracking, and cache management
 - **Strand coordination**: `asio::strand` serializes access to shared state
 - **Non-blocking**: Uses `co_await` for all potentially slow operations
 
 ### Background Thread Pool Pattern
+
 ```cpp
 // Dispatch expensive work to background threads
 auto result = co_await asio::co_spawn(
@@ -75,12 +103,14 @@ co_await asio::post(main_executor_, asio::use_awaitable);
 ```
 
 ### Why This Pattern Works
+
 - **Isolation**: Background threads only access immutable data (no shared state)
 - **Coordination**: Results posted back to main thread for cache updates
 - **Responsiveness**: Main thread stays available for new LSP requests
 - **Concurrency**: Multiple SystemVerilog files can compile simultaneously
 
 ### Async Operation Flow
+
 1. **LSP Request**: Arrives on main thread via JSON-RPC
 2. **Cache Check**: Main thread checks LRU cache (fast path)
 3. **Background Dispatch**: Cache miss triggers `co_spawn` to thread pool
@@ -94,25 +124,98 @@ co_await asio::post(main_executor_, asio::use_awaitable);
 ## State Management
 
 ### Thread Safety Strategy
+
 - **Main thread**: All LSP protocol state (open files, configurations)
 - **Strand serialization**: Ensures consistent state access across async operations
 - **Background isolation**: Computation threads access only immutable data
 
-### Caching Pattern
-- **LRU overlay cache**: Avoids recompilation of frequently accessed files
-- **Version-aware keys**: Invalidates cache when content or configuration changes
-- **Main thread coordination**: All cache operations happen on protocol thread
+### Session Lifecycle Management
+
+**Ownership Hierarchy**:
+```
+SlangdLspServer (LSP protocol layer)
+    │ owns
+    └── LanguageService (business logic - public API)
+            │ owns (private implementation detail)
+            └── SessionManager (resource lifecycle management)
+                    │ creates/caches
+                    └── OverlaySession (data: compilation + index)
+```
+
+**Responsibilities**:
+- **SlangdLspServer**: LSP protocol, delegates to LanguageService
+- **LanguageService**: Public API, feature implementations, owns SessionManager
+- **SessionManager**: Session lifecycle (create/cache/invalidate), returns OverlaySession
+- **OverlaySession**: Data class (Compilation + SemanticIndex + SourceManager)
+
+**Architecture**: SessionManager centralizes all session lifecycle (create/cache/invalidate). LanguageService features are read-only consumers.
+
+**Event-driven model**:
+```
+SlangdLspServer
+  ├─ Document Events (protocol-level API)
+  │   ├─ OnDidOpen(uri, content) → LanguageService.OnDocumentOpened()
+  │   ├─ OnDidSave(uri, content) → LanguageService.OnDocumentSaved()
+  │   ├─ OnDidClose(uri) → LanguageService.OnDocumentClosed()
+  │   └─ OnDidChange(uri) → (no action - typing is fast!)
+  │
+  └─ LSP Feature Handlers (read-only)
+      ├─ OnDocumentSymbols(uri) → LanguageService.GetDocumentSymbols(uri)
+      ├─ OnDefinition(uri, pos) → LanguageService.GetDefinitionsForPosition(uri, pos)
+      └─ OnDiagnostics(uri) → LanguageService.ComputeDiagnostics(uri)
+
+LanguageService (implementation)
+  ├─ OnDocumentOpened/Saved → SessionManager.UpdateSession() (private)
+  ├─ OnDocumentClosed → SessionManager.RemoveSession() (private)
+  └─ OnDocumentsChanged → SessionManager.InvalidateSessions() (private)
+
+SessionManager
+  ├─ active_sessions_: map<uri, OverlaySession>  ← Cache by URI only
+  ├─ pending_sessions_: map<uri, PendingCreation>  ← Being created
+  └─ Cache key: URI (not content hash) - stable during typing
+```
+
+**Why this matters**: Prevents expensive rebuilds on every keystroke. Typing reuses cached session (0ms), saving triggers rebuild (~500ms, expected).
+
+### Two-Phase Session Creation
+
+**Problem**: Diagnostics need compilation (~126ms) but go-to-def/symbols need indexing (+455ms). Waiting for full session delays diagnostic feedback.
+
+**Solution**: SessionManager uses two-phase channels to signal completion at different stages.
+
+```cpp
+struct PendingCreation {
+  channel<CompilationState> compilation_ready;  // Phase 1: After elaboration
+  channel<OverlaySession> session_ready;        // Phase 2: After indexing
+};
+
+// Diagnostics: Wait for compilation only (fast)
+auto state = co_await pending->compilation_ready.receive();  // ~126ms
+
+// Symbols/definitions: Wait for full session (slower)
+auto session = co_await pending->session_ready.receive();    // ~581ms
+```
+
+**Key benefits**:
+- **Fast diagnostics**: 126ms vs 581ms (4.6x faster)
+- **No duplicate work**: Multiple requests wait on same channels
+- **Event-driven coordination**: Async channels avoid polling
 
 ## Extension Patterns
 
 ### Adding New LSP Features
-1. Add method to `LanguageServiceBase` interface
+
+1. Add method to `LanguageServiceBase` interface (domain operations only, not lifecycle events)
 2. Implement in `LanguageService` (may use background dispatch)
 3. Add handler to `SlangdLspServer` (coordinate with strand)
 4. Register handler in base `LspServer` framework
 
+**Note**: Only add domain operations to the base interface (e.g., ComputeDiagnostics, GetDefinitions). Document lifecycle events (OnDocumentOpened, OnDocumentSaved, etc.) are already defined and should not be extended.
+
 ### Alternative Service Implementations
+
 The `LanguageServiceBase` abstraction enables different strategies:
+
 - **Current**: Per-request overlay compilation with caching
 - **Future**: Persistent global index with incremental updates
 - **Hybrid**: Fast local cache with background global indexing
