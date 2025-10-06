@@ -349,6 +349,41 @@ auto LanguageService::HandleSourceFileChange(
   }
 }
 
+auto LanguageService::UpdateSession(std::string uri, std::string content)
+    -> asio::awaitable<void> {
+  if (!session_manager_) {
+    logger_->error("LanguageService: SessionManager not initialized");
+    co_return;
+  }
+
+  logger_->debug("LanguageService::UpdateSession: {}", uri);
+  co_await session_manager_->UpdateSession(uri, content);
+  logger_->debug("SessionManager cache updated for: {}", uri);
+}
+
+auto LanguageService::RemoveSession(std::string uri) -> void {
+  if (!session_manager_) {
+    logger_->error("LanguageService: SessionManager not initialized");
+    return;
+  }
+
+  logger_->debug("LanguageService::RemoveSession: {}", uri);
+  session_manager_->RemoveSession(uri);
+  logger_->debug("SessionManager cache cleared for: {}", uri);
+}
+
+auto LanguageService::InvalidateSessions(std::vector<std::string> uris)
+    -> void {
+  if (!session_manager_) {
+    logger_->error("LanguageService: SessionManager not initialized");
+    return;
+  }
+
+  logger_->debug("LanguageService::InvalidateSessions: {} files", uris.size());
+  session_manager_->InvalidateSessions(uris);
+  logger_->debug("SessionManager cache invalidated for {} files", uris.size());
+}
+
 auto LanguageService::CreateOverlaySession(
     std::string uri, std::string content,
     std::shared_ptr<PendingCreation> pending)

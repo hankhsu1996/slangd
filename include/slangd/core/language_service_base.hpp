@@ -50,6 +50,17 @@ class LanguageServiceBase {
   // Source file change handling - notifies service of source file changes
   virtual auto HandleSourceFileChange(
       std::string uri, lsp::FileChangeType change_type) -> void = 0;
+
+  // Session lifecycle management
+  // Update/create session for document (called on save/open)
+  virtual auto UpdateSession(std::string uri, std::string content)
+      -> asio::awaitable<void> = 0;
+
+  // Remove session for closed document
+  virtual auto RemoveSession(std::string uri) -> void = 0;
+
+  // Invalidate sessions for external file changes
+  virtual auto InvalidateSessions(std::vector<std::string> uris) -> void = 0;
 };
 
 }  // namespace slangd

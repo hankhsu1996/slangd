@@ -75,6 +75,14 @@ class LanguageService : public LanguageServiceBase {
   auto HandleSourceFileChange(std::string uri, lsp::FileChangeType change_type)
       -> void override;
 
+  // Session lifecycle management
+  auto UpdateSession(std::string uri, std::string content)
+      -> asio::awaitable<void> override;
+
+  auto RemoveSession(std::string uri) -> void override;
+
+  auto InvalidateSessions(std::vector<std::string> uris) -> void override;
+
  private:
   // Cache entry for overlay sessions
   struct CacheEntry {

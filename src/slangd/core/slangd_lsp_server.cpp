@@ -135,6 +135,15 @@ auto SlangdLspServer::OnDidOpenTextDocument(
 
   AddOpenFile(uri, text, language_id, version);
 
+  // Create session in SessionManager
+  asio::co_spawn(
+      strand_,
+      [this, uri, text]() -> asio::awaitable<void> {
+        co_await language_service_->UpdateSession(uri, text);
+        Logger()->debug("SessionManager created session for: {}", uri);
+      },
+      asio::detached);
+
   // Compute and publish initial diagnostics
   asio::co_spawn(
       strand_,
@@ -195,6 +204,19 @@ auto SlangdLspServer::OnDidSaveTextDocument(
   const auto& text_doc = params.textDocument;
   const auto& uri = text_doc.uri;
 
+  // Update session in SessionManager
+  auto file_opt = GetOpenFile(uri);
+  if (file_opt) {
+    const auto& file = file_opt->get();
+    asio::co_spawn(
+        strand_,
+        [this, uri, content = file.content]() -> asio::awaitable<void> {
+          co_await language_service_->UpdateSession(uri, content);
+          Logger()->debug("SessionManager updated for: {}", uri);
+        },
+        asio::detached);
+  }
+
   // Process diagnostics immediately on save (no debounce)
   co_await ProcessDiagnosticsForUri(uri);
 
@@ -209,6 +231,10 @@ auto SlangdLspServer::OnDidCloseTextDocument(
   const auto& uri = params.textDocument.uri;
 
   RemoveOpenFile(uri);
+
+  // Remove session from SessionManager
+  language_service_->RemoveSession(uri);
+  Logger()->debug("SessionManager removed session for: {}", uri);
 
   co_return Ok();
 }
@@ -262,6 +288,7 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
       [this, params]() -> asio::awaitable<void> {
         bool has_config_change = false;
         bool has_sv_file_change = false;
+        std::vector<std::string> changed_sv_uris;
 
         // Process each file change
         for (const auto& change : params.changes) {
@@ -275,6 +302,7 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
           // Check if this is a SystemVerilog file change
           else if (IsSystemVerilogFile(path.Path())) {
             has_sv_file_change = true;
+            changed_sv_uris.push_back(change.uri);
           }
         }
 
@@ -282,6 +310,14 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
         if (has_config_change) {
           language_service_->HandleConfigChange();
         }
+
+        // Invalidate SessionManager cache for changed files
+        if (!changed_sv_uris.empty()) {
+          language_service_->InvalidateSessions(changed_sv_uris);
+          Logger()->debug("SessionManager invalidated {} sessions",
+                          changed_sv_uris.size());
+        }
+
         // Handle SystemVerilog file changes (language service decides if
         // rebuild needed)
         if (has_sv_file_change) {
