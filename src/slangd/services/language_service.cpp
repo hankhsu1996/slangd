@@ -30,13 +30,11 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
   utils::ScopedTimer timer("Workspace initialization", logger_);
   logger_->debug("LanguageService initializing workspace: {}", workspace_uri);
 
-  // Create project layout service
   auto workspace_path = CanonicalPath::FromUri(workspace_uri);
   layout_service_ =
       ProjectLayoutService::Create(executor_, workspace_path, logger_);
   co_await layout_service_->LoadConfig(workspace_path);
 
-  // Phase 2: Create GlobalCatalog from ProjectLayoutService
   global_catalog_ =
       GlobalCatalog::CreateFromProjectLayout(layout_service_, logger_);
 
@@ -47,6 +45,9 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
   } else {
     logger_->error("LanguageService failed to create GlobalCatalog");
   }
+
+  session_manager_ = std::make_unique<SessionManager>(
+      executor_, layout_service_, global_catalog_, logger_);
 
   auto elapsed = timer.GetElapsed();
   logger_->info(

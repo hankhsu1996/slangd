@@ -15,6 +15,7 @@
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/services/global_catalog.hpp"
 #include "slangd/services/overlay_session.hpp"
+#include "slangd/services/session_manager.hpp"
 
 namespace slangd::services {
 
@@ -137,6 +138,8 @@ class LanguageService : public LanguageServiceBase {
   std::shared_ptr<const GlobalCatalog> global_catalog_;
   std::shared_ptr<spdlog::logger> logger_;
   asio::any_io_executor executor_;
+
+  std::unique_ptr<SessionManager> session_manager_;
 
   // LRU cache for overlay sessions
   std::vector<CacheEntry> overlay_cache_;

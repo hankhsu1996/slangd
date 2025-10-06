@@ -20,6 +20,7 @@ class LanguageService;
 class OverlaySession {
  public:
   friend class LanguageService;
+
   static auto Create(
       std::string uri, std::string content,
       std::shared_ptr<ProjectLayoutService> layout_service,
@@ -38,6 +39,15 @@ class OverlaySession {
           std::shared_ptr<slang::SourceManager>,
           std::unique_ptr<slang::ast::Compilation>, slang::BufferID>;
 
+  // Create session from pre-built compilation and index (for two-phase
+  // creation)
+  static auto CreateFromParts(
+      std::shared_ptr<slang::SourceManager> source_manager,
+      std::unique_ptr<slang::ast::Compilation> compilation,
+      std::unique_ptr<semantic::SemanticIndex> semantic_index,
+      slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger)
+      -> std::shared_ptr<OverlaySession>;
+
   OverlaySession(const OverlaySession&) = delete;
   OverlaySession(OverlaySession&&) = default;
   auto operator=(const OverlaySession&) -> OverlaySession& = delete;
@@ -55,6 +65,11 @@ class OverlaySession {
 
   [[nodiscard]] auto GetSourceManager() const -> const slang::SourceManager& {
     return *source_manager_;
+  }
+
+  [[nodiscard]] auto GetSourceManagerPtr() const
+      -> std::shared_ptr<slang::SourceManager> {
+    return source_manager_;
   }
 
   [[nodiscard]] auto GetMainBufferID() const -> slang::BufferID {
