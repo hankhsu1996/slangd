@@ -73,14 +73,15 @@ auto LanguageService::ComputeParseDiagnostics(
       compilation_pool_->get_executor(),
       [this, uri, content]() -> asio::awaitable<std::vector<lsp::Diagnostic>> {
         // Build parse-only compilation (no catalog → single file only)
-        auto [source_manager, compilation] = OverlaySession::BuildCompilation(
-            uri, content, layout_service_,
-            nullptr,  // Single-file mode
-            logger_);
+        auto [source_manager, compilation, main_buffer_id] =
+            OverlaySession::BuildCompilation(
+                uri, content, layout_service_,
+                nullptr,  // Single-file mode
+                logger_);
 
-        // Extract parse diagnostics (~10 diags from one file, no filtering)
+        // Extract parse diagnostics using BufferID for fast filtering
         co_return semantic::DiagnosticConverter::ExtractParseDiagnostics(
-            *compilation, *source_manager, uri, logger_);
+            *compilation, *source_manager, main_buffer_id, logger_);
       },
       asio::use_awaitable);
 
@@ -126,8 +127,8 @@ auto LanguageService::ComputeDiagnostics(std::string uri, std::string content)
       compilation_pool_->get_executor(),
       [session, uri, this]() -> asio::awaitable<std::vector<lsp::Diagnostic>> {
         co_return semantic::DiagnosticConverter::ExtractAllDiagnostics(
-            session->GetCompilation(), session->GetSourceManager(), uri,
-            logger_);
+            session->GetCompilation(), session->GetSourceManager(),
+            session->GetMainBufferID(), logger_);
       },
       asio::use_awaitable);
 

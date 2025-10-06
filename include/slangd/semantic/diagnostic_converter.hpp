@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <string>
 #include <vector>
 
 #include <lsp/basic.hpp>
@@ -20,47 +19,39 @@ class DiagnosticConverter {
  public:
   DiagnosticConverter() = delete;
 
-  // Extract parse-only diagnostics (syntax errors, no elaboration)
-  // Does not trigger semantic analysis
+  // Extract syntax errors only (fast, no semantic analysis)
   static auto ExtractParseDiagnostics(
       slang::ast::Compilation& compilation,
-      const slang::SourceManager& source_manager, const std::string& uri,
+      const slang::SourceManager& source_manager,
+      slang::BufferID main_buffer_id,
       std::shared_ptr<spdlog::logger> logger = nullptr)
       -> std::vector<lsp::Diagnostic>;
 
-  // Extract all diagnostics (syntax + semantic errors)
-  // Triggers full semantic analysis and elaboration
+  // Extract all diagnostics including semantic errors (triggers elaboration)
   static auto ExtractAllDiagnostics(
       slang::ast::Compilation& compilation,
-      const slang::SourceManager& source_manager, const std::string& uri,
+      const slang::SourceManager& source_manager,
+      slang::BufferID main_buffer_id,
       std::shared_ptr<spdlog::logger> logger = nullptr)
       -> std::vector<lsp::Diagnostic>;
 
  private:
-  // Core extraction logic - converts Slang diagnostics to LSP format
   static auto ExtractDiagnostics(
       const slang::Diagnostics& slang_diagnostics,
-      const slang::SourceManager& source_manager, const std::string& uri)
-      -> std::vector<lsp::Diagnostic>;
+      const slang::SourceManager& source_manager,
+      slang::BufferID main_buffer_id) -> std::vector<lsp::Diagnostic>;
 
-  // Filter and modify diagnostics for LSP consumption
   static auto FilterAndModifyDiagnostics(
       std::vector<lsp::Diagnostic> diagnostics) -> std::vector<lsp::Diagnostic>;
 
-  // Convert Slang diagnostics to LSP format
   static auto ConvertSlangDiagnosticsToLsp(
       const slang::Diagnostics& slang_diagnostics,
       const slang::SourceManager& source_manager,
-      const slang::DiagnosticEngine& diag_engine, const std::string& uri)
-      -> std::vector<lsp::Diagnostic>;
+      const slang::DiagnosticEngine& diag_engine,
+      slang::BufferID main_buffer_id) -> std::vector<lsp::Diagnostic>;
 
-  // Helper conversion functions
   static auto ConvertDiagnosticSeverityToLsp(slang::DiagnosticSeverity severity)
       -> lsp::DiagnosticSeverity;
-
-  static auto IsDiagnosticInUriDocument(
-      const slang::Diagnostic& diag, const slang::SourceManager& source_manager,
-      const std::string& uri) -> bool;
 };
 
 }  // namespace slangd::semantic

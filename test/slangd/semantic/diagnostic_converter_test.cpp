@@ -55,7 +55,7 @@ TEST_CASE("DiagnosticConverter basic functionality", "[diagnostic_converter]") {
   }
 
   auto diagnostics = DiagnosticConverter::ExtractAllDiagnostics(
-      *compilation, *source_manager, test_uri);
+      *compilation, *source_manager, buffer.id);
 
   // Valid code should have few or no diagnostics
   REQUIRE(diagnostics.size() >= 0);  // May have warnings but shouldn't fail
@@ -85,7 +85,7 @@ TEST_CASE(
   }
 
   auto diagnostics = DiagnosticConverter::ExtractAllDiagnostics(
-      *compilation, *source_manager, test_uri);
+      *compilation, *source_manager, buffer.id);
 
   REQUIRE(diagnostics.size() > 0);
 
@@ -125,7 +125,7 @@ TEST_CASE(
   }
 
   auto diagnostics = DiagnosticConverter::ExtractAllDiagnostics(
-      *compilation, *source_manager, test_uri);
+      *compilation, *source_manager, buffer.id);
 
   REQUIRE(diagnostics.size() > 0);
 
@@ -156,7 +156,7 @@ TEST_CASE(
   }
 
   auto diagnostics = DiagnosticConverter::ExtractAllDiagnostics(
-      *compilation, *source_manager, test_uri);
+      *compilation, *source_manager, buffer.id);
 
   REQUIRE(diagnostics.size() > 0);
 
@@ -187,7 +187,7 @@ TEST_CASE("DiagnosticConverter handles empty file", "[diagnostic_converter]") {
   }
 
   auto diagnostics = DiagnosticConverter::ExtractAllDiagnostics(
-      *compilation, *source_manager, test_uri);
+      *compilation, *source_manager, buffer.id);
 
   // May have diagnostics about no compilation units, but shouldn't crash
   REQUIRE(diagnostics.size() >= 0);
@@ -222,9 +222,9 @@ TEST_CASE(
   }
 
   auto parse_diags = DiagnosticConverter::ExtractParseDiagnostics(
-      *compilation, *source_manager, test_uri);
+      *compilation, *source_manager, buffer.id);
   auto all_diags = DiagnosticConverter::ExtractAllDiagnostics(
-      *compilation, *source_manager, test_uri);
+      *compilation, *source_manager, buffer.id);
 
   // Parse diagnostics should be subset of all diagnostics
   REQUIRE(parse_diags.size() <= all_diags.size());

@@ -4,39 +4,40 @@
 #include <slang/diagnostics/Diagnostics.h>
 
 #include "slangd/utils/conversion.hpp"
-#include "slangd/utils/path_utils.hpp"
 
 namespace slangd::semantic {
 
 auto DiagnosticConverter::ExtractParseDiagnostics(
     slang::ast::Compilation& compilation,
-    const slang::SourceManager& source_manager, const std::string& uri,
+    const slang::SourceManager& source_manager, slang::BufferID main_buffer_id,
     std::shared_ptr<spdlog::logger> logger) -> std::vector<lsp::Diagnostic> {
   if (!logger) {
     logger = spdlog::default_logger();
   }
 
   auto slang_diagnostics = compilation.getParseDiagnostics();
-  auto diagnostics = ExtractDiagnostics(slang_diagnostics, source_manager, uri);
+  auto diagnostics =
+      ExtractDiagnostics(slang_diagnostics, source_manager, main_buffer_id);
   return FilterAndModifyDiagnostics(diagnostics);
 }
 
 auto DiagnosticConverter::ExtractAllDiagnostics(
     slang::ast::Compilation& compilation,
-    const slang::SourceManager& source_manager, const std::string& uri,
+    const slang::SourceManager& source_manager, slang::BufferID main_buffer_id,
     std::shared_ptr<spdlog::logger> logger) -> std::vector<lsp::Diagnostic> {
   if (!logger) {
     logger = spdlog::default_logger();
   }
 
   auto slang_diagnostics = compilation.getAllDiagnostics();
-  auto diagnostics = ExtractDiagnostics(slang_diagnostics, source_manager, uri);
+  auto diagnostics =
+      ExtractDiagnostics(slang_diagnostics, source_manager, main_buffer_id);
   return FilterAndModifyDiagnostics(diagnostics);
 }
 
 auto DiagnosticConverter::ExtractDiagnostics(
     const slang::Diagnostics& slang_diagnostics,
-    const slang::SourceManager& source_manager, const std::string& uri)
+    const slang::SourceManager& source_manager, slang::BufferID main_buffer_id)
     -> std::vector<lsp::Diagnostic> {
   // Create a diagnostic engine using the source manager
   slang::DiagnosticEngine diagnostic_engine(source_manager);
@@ -46,7 +47,7 @@ auto DiagnosticConverter::ExtractDiagnostics(
   diagnostic_engine.setWarningOptions(warning_options);
 
   return ConvertSlangDiagnosticsToLsp(
-      slang_diagnostics, source_manager, diagnostic_engine, uri);
+      slang_diagnostics, source_manager, diagnostic_engine, main_buffer_id);
 }
 
 auto DiagnosticConverter::FilterAndModifyDiagnostics(
@@ -95,13 +96,13 @@ auto DiagnosticConverter::FilterAndModifyDiagnostics(
 auto DiagnosticConverter::ConvertSlangDiagnosticsToLsp(
     const slang::Diagnostics& slang_diagnostics,
     const slang::SourceManager& source_manager,
-    const slang::DiagnosticEngine& diag_engine, const std::string& uri)
+    const slang::DiagnosticEngine& diag_engine, slang::BufferID main_buffer_id)
     -> std::vector<lsp::Diagnostic> {
   std::vector<lsp::Diagnostic> result;
 
   for (const auto& diag : slang_diagnostics) {
-    // Skip diagnostics not in our document
-    if (!IsDiagnosticInUriDocument(diag, source_manager, uri)) {
+    // Fast O(1) BufferID comparison - skip diagnostics not in main file
+    if (!diag.location || diag.location.buffer() != main_buffer_id) {
       continue;
     }
 
@@ -157,16 +158,6 @@ auto DiagnosticConverter::ConvertDiagnosticSeverityToLsp(
     case slang::DiagnosticSeverity::Fatal:
       return lsp::DiagnosticSeverity::kError;
   }
-}
-
-auto DiagnosticConverter::IsDiagnosticInUriDocument(
-    const slang::Diagnostic& diag, const slang::SourceManager& source_manager,
-    const std::string& uri) -> bool {
-  if (!diag.location) {
-    return false;
-  }
-
-  return IsLocationInDocument(diag.location, source_manager, uri);
 }
 
 }  // namespace slangd::semantic

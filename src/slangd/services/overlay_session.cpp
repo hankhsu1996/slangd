@@ -24,7 +24,7 @@ auto OverlaySession::Create(
   logger->debug("Creating overlay session for: {}", uri);
 
   // Build fresh compilation with current buffer and optional catalog files
-  auto [source_manager, compilation] =
+  auto [source_manager, compilation, main_buffer_id] =
       BuildCompilation(uri, content, layout_service, catalog, logger);
 
   // Create unified semantic index (replaces DefinitionIndex + SymbolIndex)
@@ -39,17 +39,18 @@ auto OverlaySession::Create(
 
   return std::shared_ptr<OverlaySession>(new OverlaySession(
       std::move(source_manager), std::move(compilation),
-      std::move(semantic_index), logger));
+      std::move(semantic_index), main_buffer_id, logger));
 }
 
 OverlaySession::OverlaySession(
     std::shared_ptr<slang::SourceManager> source_manager,
     std::unique_ptr<slang::ast::Compilation> compilation,
     std::unique_ptr<semantic::SemanticIndex> semantic_index,
-    std::shared_ptr<spdlog::logger> logger)
+    slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger)
     : source_manager_(std::move(source_manager)),
       compilation_(std::move(compilation)),
       semantic_index_(std::move(semantic_index)),
+      main_buffer_id_(main_buffer_id),
       logger_(std::move(logger)) {
 }
 
@@ -60,7 +61,7 @@ auto OverlaySession::BuildCompilation(
     std::shared_ptr<spdlog::logger> logger)
     -> std::tuple<
         std::shared_ptr<slang::SourceManager>,
-        std::unique_ptr<slang::ast::Compilation>> {
+        std::unique_ptr<slang::ast::Compilation>, slang::BufferID> {
   // Create fresh source manager
   auto source_manager = std::make_shared<slang::SourceManager>();
 
@@ -98,6 +99,7 @@ auto OverlaySession::BuildCompilation(
   // Add current buffer content (authoritative)
   auto file_path = CanonicalPath::FromUri(uri);
   auto buffer = source_manager->assignText(file_path.String(), content);
+  auto main_buffer_id = buffer.id;
   auto buffer_tree =
       slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager, options);
 
@@ -149,7 +151,8 @@ auto OverlaySession::BuildCompilation(
     logger->debug("No catalog provided - single-file mode");
   }
 
-  return std::make_tuple(std::move(source_manager), std::move(compilation));
+  return std::make_tuple(
+      std::move(source_manager), std::move(compilation), main_buffer_id);
 }
 
 }  // namespace slangd::services
