@@ -35,15 +35,18 @@ class DiagnosticConverter {
       std::shared_ptr<spdlog::logger> logger = nullptr)
       -> std::vector<lsp::Diagnostic>;
 
- private:
+  // Extract diagnostics from pre-computed slang::Diagnostics
+  // (used for two-phase diagnostic publishing)
   static auto ExtractDiagnostics(
       const slang::Diagnostics& slang_diagnostics,
       const slang::SourceManager& source_manager,
       slang::BufferID main_buffer_id) -> std::vector<lsp::Diagnostic>;
 
+  // Apply LSP-specific filtering and modifications
   static auto FilterAndModifyDiagnostics(
       std::vector<lsp::Diagnostic> diagnostics) -> std::vector<lsp::Diagnostic>;
 
+ private:
   static auto ConvertSlangDiagnosticsToLsp(
       const slang::Diagnostics& slang_diagnostics,
       const slang::SourceManager& source_manager,

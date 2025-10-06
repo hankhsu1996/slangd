@@ -13,9 +13,13 @@
 
 namespace slangd::services {
 
+// Forward declaration for friend
+class LanguageService;
+
 // Compilation session with current buffer + catalog files for LSP queries
 class OverlaySession {
  public:
+  friend class LanguageService;
   static auto Create(
       std::string uri, std::string content,
       std::shared_ptr<ProjectLayoutService> layout_service,

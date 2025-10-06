@@ -115,31 +115,60 @@ auto LanguageService::ComputeDiagnostics(std::string uri, std::string content)
       .content_hash = content_hash,
       .catalog_version = catalog_version};
 
-  // Get or create overlay session from cache
-  auto session = co_await GetOrCreateOverlay(cache_key, content);
-  if (!session) {
-    logger_->error("Failed to create overlay session for: {}", uri);
+  auto now = std::chrono::steady_clock::now();
+
+  // Check if we already have this overlay in cache (fast path)
+  for (auto& entry : overlay_cache_) {
+    if (entry.key == cache_key) {
+      entry.last_access = now;
+      logger_->debug(
+          "Cache hit for diagnostics: {}:hash{}", uri, cache_key.Hash());
+
+      // Extract diagnostics from cached session
+      auto diagnostics = co_await asio::co_spawn(
+          compilation_pool_->get_executor(),
+          [session = entry.session,
+           this]() -> asio::awaitable<std::vector<lsp::Diagnostic>> {
+            co_return semantic::DiagnosticConverter::ExtractAllDiagnostics(
+                session->GetCompilation(), session->GetSourceManager(),
+                session->GetMainBufferID(), logger_);
+          },
+          asio::use_awaitable);
+
+      co_await asio::post(executor_, asio::use_awaitable);
+      co_return diagnostics;
+    }
+  }
+
+  // Cache miss - get or start pending creation
+  auto pending = GetOrStartPendingCreation(cache_key, content);
+
+  // Wait for compilation only (not indexing) - FAST PATH
+  logger_->debug(
+      "Waiting for compilation_ready: {}:hash{}", uri, cache_key.Hash());
+  std::error_code ec;
+  auto state = co_await pending->compilation_ready->async_receive(
+      asio::redirect_error(asio::use_awaitable, ec));
+
+  if (ec) {
+    logger_->error(
+        "Failed to receive compilation state for {}:hash{}", uri,
+        cache_key.Hash());
     co_return std::vector<lsp::Diagnostic>{};
   }
 
-  // Extract all diagnostics in background thread pool (triggers elaboration)
-  auto diagnostics = co_await asio::co_spawn(
-      compilation_pool_->get_executor(),
-      [session, uri, this]() -> asio::awaitable<std::vector<lsp::Diagnostic>> {
-        co_return semantic::DiagnosticConverter::ExtractAllDiagnostics(
-            session->GetCompilation(), session->GetSourceManager(),
-            session->GetMainBufferID(), logger_);
-      },
-      asio::use_awaitable);
-
-  // Post result back to main strand
-  co_await asio::post(executor_, asio::use_awaitable);
+  // Extract diagnostics from CompilationState (already elaborated)
+  auto diagnostics = semantic::DiagnosticConverter::ExtractDiagnostics(
+      state.diagnostics, *state.source_manager, state.buffer_id);
+  auto filtered = semantic::DiagnosticConverter::FilterAndModifyDiagnostics(
+      std::move(diagnostics));
 
   logger_->debug(
-      "LanguageService computed {} full diagnostics for: {}",
-      diagnostics.size(), uri);
+      "LanguageService computed {} full diagnostics for: {} ({})",
+      filtered.size(), uri,
+      utils::ScopedTimer::FormatDuration(timer.GetElapsed()));
 
-  co_return diagnostics;
+  co_return filtered;
 }
 
 auto LanguageService::GetDefinitionsForPosition(
@@ -319,16 +348,76 @@ auto LanguageService::HandleSourceFileChange(
   }
 }
 
-auto LanguageService::CreateOverlaySession(std::string uri, std::string content)
+auto LanguageService::CreateOverlaySession(
+    std::string uri, std::string content,
+    std::shared_ptr<PendingCreation> pending)
     -> asio::awaitable<std::shared_ptr<OverlaySession>> {
   // Dispatch compilation to background thread pool
   auto session = co_await asio::co_spawn(
       compilation_pool_->get_executor(),
-      [uri, content,
+      [uri, content, pending,
        this]() -> asio::awaitable<std::shared_ptr<OverlaySession>> {
-        // SystemVerilog compilation runs on background thread
-        co_return OverlaySession::Create(
-            uri, content, layout_service_, global_catalog_, logger_);
+        utils::ScopedTimer total_timer(
+            "OverlaySession two-phase creation", logger_);
+
+        // Phase 1: Build compilation (50ms)
+        utils::ScopedTimer build_timer("Compilation build", logger_);
+        auto [source_manager, compilation, main_buffer_id] =
+            OverlaySession::BuildCompilation(
+                uri, content, layout_service_, global_catalog_, logger_);
+        auto build_elapsed = build_timer.GetElapsed();
+        logger_->debug(
+            "Phase 1: Compilation built ({})",
+            utils::ScopedTimer::FormatDuration(build_elapsed));
+
+        // Phase 2: Elaborate with getAllDiagnostics() (76ms)
+        // This FREEZES the compilation, making it safe for concurrent indexing
+        utils::ScopedTimer elab_timer("Elaboration", logger_);
+        auto slang_diagnostics = compilation->getAllDiagnostics();
+        auto elab_elapsed = elab_timer.GetElapsed();
+        logger_->debug(
+            "Phase 2: Elaboration complete ({}, {} diagnostics)",
+            utils::ScopedTimer::FormatDuration(elab_elapsed),
+            slang_diagnostics.size());
+
+        // Signal 1: Compilation ready for diagnostics!
+        // Send copies - we keep compilation for indexing
+        CompilationState state{
+            .source_manager = source_manager,
+            .compilation = nullptr,  // Placeholder, not sent
+            .buffer_id = main_buffer_id,
+            .diagnostics = slang_diagnostics  // Copy diagnostics
+        };
+
+        std::error_code ec;
+        pending->compilation_ready->try_send(ec, std::move(state));
+        pending->compilation_ready->close();
+        logger_->debug(
+            "Signal 1 sent: compilation_ready ({})",
+            utils::ScopedTimer::FormatDuration(build_elapsed + elab_elapsed));
+
+        // Phase 3: Build semantic index (455ms)
+        // Compilation is now immutable, safe for indexing
+        utils::ScopedTimer index_timer("Semantic indexing", logger_);
+        auto semantic_index = semantic::SemanticIndex::FromCompilation(
+            *compilation, *source_manager, uri, global_catalog_.get());
+        auto index_elapsed = index_timer.GetElapsed();
+        logger_->debug(
+            "Phase 3: Semantic index built ({}, {} entries)",
+            utils::ScopedTimer::FormatDuration(index_elapsed),
+            semantic_index->GetSemanticEntries().size());
+
+        // Create final session
+        auto session = std::shared_ptr<OverlaySession>(new OverlaySession(
+            std::move(source_manager), std::move(compilation),
+            std::move(semantic_index), main_buffer_id, logger_));
+
+        auto total_elapsed = total_timer.GetElapsed();
+        logger_->debug(
+            "OverlaySession created (total: {})",
+            utils::ScopedTimer::FormatDuration(total_elapsed));
+
+        co_return session;
       },
       asio::use_awaitable);
 
@@ -360,9 +449,9 @@ auto LanguageService::GetOrCreateOverlay(
         "Waiting for pending session creation: {}:hash{}", key.doc_uri,
         key_hash);
 
-    // Wait for the pending creation to complete via channel
+    // Wait for the full session to complete via session_ready channel
     std::error_code ec;
-    auto result = co_await pending->channel->async_receive(
+    auto result = co_await pending->session_ready->async_receive(
         asio::redirect_error(asio::use_awaitable, ec));
 
     if (!ec) {
@@ -392,21 +481,23 @@ auto LanguageService::GetOrCreateOverlay(
       "Starting new overlay session creation: {}:hash{}", key.doc_uri,
       key_hash);
 
-  auto shared_session = co_await CreateOverlaySession(key.doc_uri, content);
+  auto shared_session =
+      co_await CreateOverlaySession(key.doc_uri, content, pending);
   if (!shared_session) {
     logger_->error(
         "Failed to create overlay session for {}:hash{}", key.doc_uri,
         key.content_hash);
     // Signal failure and cleanup
-    pending->channel->close();
+    pending->compilation_ready->close();
+    pending->session_ready->close();
     pending_creations_.erase(key_hash);
     co_return nullptr;
   }
 
   // Send result to all waiting coroutines
   std::error_code ec;
-  pending->channel->try_send(ec, shared_session);
-  pending->channel->close();  // Close channel after sending
+  pending->session_ready->try_send(ec, shared_session);
+  pending->session_ready->close();  // Close channel after sending
   pending_creations_.erase(key_hash);
 
   // Add to cache
@@ -434,6 +525,74 @@ auto LanguageService::GetOrCreateOverlay(
       "Added overlay to cache for {}:hash{} (cache size: {})", key.doc_uri,
       key.content_hash, overlay_cache_.size());
   co_return shared_session;
+}
+
+auto LanguageService::GetOrStartPendingCreation(
+    OverlayCacheKey key, std::string content)
+    -> std::shared_ptr<PendingCreation> {
+  size_t key_hash = key.Hash();
+
+  // Check if creation is already pending
+  if (auto it = pending_creations_.find(key_hash);
+      it != pending_creations_.end()) {
+    logger_->debug(
+        "Found existing pending creation: {}:hash{}", key.doc_uri, key_hash);
+    return it->second;
+  }
+
+  // No pending creation - start new one
+  auto pending = std::make_shared<PendingCreation>(executor_);
+  pending_creations_[key_hash] = pending;
+  logger_->debug(
+      "Starting new pending creation: {}:hash{}", key.doc_uri, key_hash);
+
+  // Start overlay session creation in background
+  // Signals compilation_ready (phase 1) and session_ready (phase 2)
+  asio::co_spawn(
+      executor_,
+      [this, key, content, pending]() -> asio::awaitable<void> {
+        auto session =
+            co_await CreateOverlaySession(key.doc_uri, content, pending);
+        if (session) {
+          // Signal session_ready
+          std::error_code ec;
+          pending->session_ready->try_send(ec, session);
+          pending->session_ready->close();
+
+          // Add to cache
+          auto now = std::chrono::steady_clock::now();
+          CacheEntry entry{.key = key, .session = session, .last_access = now};
+
+          if (overlay_cache_.size() >= kMaxCacheSize) {
+            auto oldest_it = std::ranges::min_element(
+                overlay_cache_,
+                [](const CacheEntry& a, const CacheEntry& b) -> bool {
+                  return a.last_access < b.last_access;
+                });
+            if (oldest_it != overlay_cache_.end()) {
+              logger_->debug(
+                  "Evicting oldest overlay from cache: {}:hash{}",
+                  oldest_it->key.doc_uri, oldest_it->key.content_hash);
+              *oldest_it = std::move(entry);
+            }
+          } else {
+            overlay_cache_.push_back(std::move(entry));
+          }
+
+          logger_->debug(
+              "Added session to cache: {}:hash{} (size: {})", key.doc_uri,
+              key.Hash(), overlay_cache_.size());
+        } else {
+          // Signal failure
+          pending->session_ready->close();
+          logger_->error(
+              "Failed to create session: {}:hash{}", key.doc_uri, key.Hash());
+        }
+        pending_creations_.erase(key.Hash());
+      },
+      asio::detached);
+
+  return pending;
 }
 
 auto LanguageService::ClearCache() -> void {

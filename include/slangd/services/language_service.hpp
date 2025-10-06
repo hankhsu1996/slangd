@@ -82,25 +82,49 @@ class LanguageService : public LanguageServiceBase {
     std::chrono::steady_clock::time_point last_access;
   };
 
+  // Compilation state for two-phase session creation
+  // Phase 1: Compilation + elaboration (fast - for diagnostics)
+  // Phase 2: Semantic indexing (slow - for go-to-def/symbols)
+  struct CompilationState {
+    std::shared_ptr<slang::SourceManager> source_manager;
+    std::unique_ptr<slang::ast::Compilation> compilation;
+    slang::BufferID buffer_id;
+    slang::Diagnostics diagnostics;
+  };
+
   // Pending session creation - allows concurrent requests to wait for
-  // completion
+  // completion at different phases
   struct PendingCreation {
-    using CompletionChannel = asio::experimental::channel<void(
+    using CompilationChannel =
+        asio::experimental::channel<void(std::error_code, CompilationState)>;
+    using SessionChannel = asio::experimental::channel<void(
         std::error_code, std::shared_ptr<OverlaySession>)>;
-    std::shared_ptr<CompletionChannel> channel;
+
+    // Signal 1: Compilation ready (after elaboration, before indexing)
+    std::shared_ptr<CompilationChannel> compilation_ready;
+    // Signal 2: Full session ready (after indexing)
+    std::shared_ptr<SessionChannel> session_ready;
 
     explicit PendingCreation(asio::any_io_executor executor)
-        : channel(std::make_shared<CompletionChannel>(executor, 10)) {
+        : compilation_ready(std::make_shared<CompilationChannel>(executor, 10)),
+          session_ready(std::make_shared<SessionChannel>(executor, 10)) {
     }
   };
 
   // Create overlay session for the given URI and content
-  auto CreateOverlaySession(std::string uri, std::string content)
+  // Signals compilation_ready after elaboration, session_ready after indexing
+  auto CreateOverlaySession(
+      std::string uri, std::string content,
+      std::shared_ptr<PendingCreation> pending)
       -> asio::awaitable<std::shared_ptr<OverlaySession>>;
 
   // Get or create overlay session from cache
   auto GetOrCreateOverlay(OverlayCacheKey key, std::string content)
       -> asio::awaitable<std::shared_ptr<OverlaySession>>;
+
+  // Get existing or start new pending creation (for two-phase access)
+  auto GetOrStartPendingCreation(OverlayCacheKey key, std::string content)
+      -> std::shared_ptr<PendingCreation>;
 
   // Clear cache when catalog version changes
   auto ClearCache() -> void;
