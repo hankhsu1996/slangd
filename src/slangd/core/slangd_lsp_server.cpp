@@ -198,21 +198,16 @@ auto SlangdLspServer::OnDidSaveTextDocument(
   const auto& text_doc = params.textDocument;
   const auto& uri = text_doc.uri;
 
-  // Update session in SessionManager
+  // Update session in SessionManager (blocking - must complete before
+  // diagnostics)
   auto file_opt = GetOpenFile(uri);
   if (file_opt) {
     const auto& file = file_opt->get();
-    asio::co_spawn(
-        strand_,
-        [this, uri, content = file.content,
-         version = file.version]() -> asio::awaitable<void> {
-          co_await language_service_->UpdateSession(uri, content, version);
-          Logger()->debug("SessionManager updated for: {}", uri);
-        },
-        asio::detached);
+    co_await language_service_->UpdateSession(uri, file.content, file.version);
+    Logger()->debug("SessionManager updated for: {}", uri);
   }
 
-  // Process diagnostics immediately on save (no debounce)
+  // Process diagnostics after session update completes
   co_await ProcessDiagnosticsForUri(uri);
 
   co_return Ok();

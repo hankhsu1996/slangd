@@ -33,6 +33,15 @@ SessionManager::SessionManager(
 
 SessionManager::~SessionManager() {
   logger_->debug("SessionManager shutting down");
+
+  // Close all pending channels to signal shutdown to any active coroutines
+  // NOTE: In practice, coroutines should already be complete since destructor
+  // only runs when io_context has stopped. This is defensive programming.
+  for (auto& [uri, pending] : pending_sessions_) {
+    pending->compilation_ready->close();
+    pending->session_ready->close();
+  }
+
   compilation_pool_->join();
 }
 
