@@ -135,16 +135,11 @@ auto SlangdLspServer::OnDidOpenTextDocument(
 
   AddOpenFile(uri, text, language_id, version);
 
-  // Create session in SessionManager
-  asio::co_spawn(
-      strand_,
-      [this, uri, text]() -> asio::awaitable<void> {
-        co_await language_service_->UpdateSession(uri, text);
-        Logger()->debug("SessionManager created session for: {}", uri);
-      },
-      asio::detached);
+  // Create session in SessionManager (must complete before features can run)
+  co_await language_service_->UpdateSession(uri, text);
+  Logger()->debug("SessionManager created session for: {}", uri);
 
-  // Compute and publish initial diagnostics
+  // Compute and publish initial diagnostics (background)
   asio::co_spawn(
       strand_,
       [this, uri, text, version]() -> asio::awaitable<void> {
@@ -280,6 +275,13 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
           }
           // Check if this is a SystemVerilog file change
           else if (IsSystemVerilogFile(path.Path())) {
+            // Ignore watcher events for open files - they're managed by LSP
+            // text sync
+            if (GetOpenFile(change.uri)) {
+              Logger()->debug(
+                  "Ignoring watcher event for open file: {}", change.uri);
+              continue;
+            }
             has_sv_file_change = true;
             changed_sv_uris.push_back(change.uri);
           }
