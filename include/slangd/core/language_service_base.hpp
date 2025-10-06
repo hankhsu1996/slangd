@@ -31,9 +31,9 @@ class LanguageServiceBase {
   virtual auto ComputeDiagnostics(std::string uri)
       -> asio::awaitable<std::vector<lsp::Diagnostic>> = 0;
 
-  // Definition lookup - async because may need overlay creation
+  // Definition lookup - async because may need to wait for session
   virtual auto GetDefinitionsForPosition(
-      std::string uri, lsp::Position position, std::string content)
+      std::string uri, lsp::Position position)
       -> asio::awaitable<std::vector<lsp::Location>> = 0;
 
   // Document symbols - async because may need to wait for session

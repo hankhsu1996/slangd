@@ -125,7 +125,7 @@ auto LanguageService::ComputeDiagnostics(std::string uri)
 }
 
 auto LanguageService::GetDefinitionsForPosition(
-    std::string uri, lsp::Position position, std::string content)
+    std::string uri, lsp::Position position)
     -> asio::awaitable<std::vector<lsp::Location>> {
   utils::ScopedTimer timer("GetDefinitionsForPosition", logger_);
 
@@ -134,24 +134,9 @@ auto LanguageService::GetDefinitionsForPosition(
     co_return std::vector<lsp::Location>{};
   }
 
-  logger_->debug(
-      "LanguageService getting definitions for: {} at {}:{}", uri,
-      position.line, position.character);
-
-  // Create cache key with catalog version and content hash
-  uint64_t catalog_version =
-      global_catalog_ ? global_catalog_->GetVersion() : 0;
-  size_t content_hash = std::hash<std::string>{}(content);
-  OverlayCacheKey cache_key{
-      .doc_uri = uri,
-      .content_hash = content_hash,
-      .catalog_version = catalog_version};
-
-  // Get or create overlay session from cache
-  auto session = co_await GetOrCreateOverlay(cache_key, content);
-
+  auto session = co_await session_manager_->GetSession(uri);
   if (!session) {
-    logger_->error("Failed to create overlay session for: {}", uri);
+    logger_->debug("No session for {}, returning empty definitions", uri);
     co_return std::vector<lsp::Location>{};
   }
 

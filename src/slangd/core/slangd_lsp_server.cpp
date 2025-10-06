@@ -253,18 +253,8 @@ auto SlangdLspServer::OnGotoDefinition(lsp::DefinitionParams params)
     -> asio::awaitable<std::expected<lsp::DefinitionResult, lsp::LspError>> {
   Logger()->debug("SlangdLspServer OnGotoDefinition");
 
-  // Get the tracked document to access content and version
-  auto file_opt = GetOpenFile(params.textDocument.uri);
-  if (!file_opt) {
-    Logger()->debug(
-        "OnGotoDefinition: File not open: {}", params.textDocument.uri);
-    co_return std::vector<lsp::Location>{};
-  }
-
-  const auto& file = file_opt->get();
-
   co_return co_await language_service_->GetDefinitionsForPosition(
-      std::string(params.textDocument.uri), params.position, file.content);
+      std::string(params.textDocument.uri), params.position);
 }
 
 auto SlangdLspServer::OnDidChangeWatchedFiles(
