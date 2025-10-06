@@ -51,7 +51,19 @@ auto SessionManager::UpdateSession(
   logger_->debug(
       "SessionManager::UpdateSession: {} (version {})", uri, version);
 
-  active_sessions_.erase(uri);
+  // Check if we have a cached session with the same version
+  if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
+    if (it->second.version == version) {
+      logger_->debug(
+          "SessionManager cache hit: {} (version {} unchanged)", uri, version);
+      UpdateAccessOrder(uri);
+      co_return;
+    }
+    logger_->debug(
+        "SessionManager version changed: {} (old: {}, new: {})", uri,
+        it->second.version, version);
+    active_sessions_.erase(uri);
+  }
 
   if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
     logger_->debug(
@@ -71,6 +83,9 @@ auto SessionManager::RemoveSession(std::string uri) -> void {
   logger_->debug("SessionManager::RemoveSession: {}", uri);
   active_sessions_.erase(uri);
 
+  // Remove from LRU tracking
+  std::erase(access_order_, uri);
+
   if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
     logger_->debug("Canceling pending session for closed document: {}", uri);
     it->second->session_ready->close();
@@ -83,6 +98,9 @@ auto SessionManager::InvalidateSessions(std::vector<std::string> uris) -> void {
 
   for (const auto& uri : uris) {
     active_sessions_.erase(uri);
+
+    // Remove from LRU tracking
+    std::erase(access_order_, uri);
 
     if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
       it->second->session_ready->close();
@@ -97,6 +115,7 @@ auto SessionManager::InvalidateAllSessions() -> void {
       active_sessions_.size(), pending_sessions_.size());
 
   active_sessions_.clear();
+  access_order_.clear();
 
   for (auto& [uri, pending] : pending_sessions_) {
     pending->session_ready->close();
@@ -108,7 +127,8 @@ auto SessionManager::GetSession(std::string uri)
     -> asio::awaitable<std::shared_ptr<const OverlaySession>> {
   if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
     logger_->debug("SessionManager::GetSession cache hit: {}", uri);
-    co_return it->second;
+    UpdateAccessOrder(uri);
+    co_return it->second.session;
   }
 
   if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
@@ -134,7 +154,8 @@ auto SessionManager::GetSessionForDiagnostics(std::string uri)
     -> asio::awaitable<CompilationState> {
   // Check active sessions first (session already compiled)
   if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
-    const auto& session = it->second;
+    const auto& session = it->second.session;
+    UpdateAccessOrder(uri);
 
     // Extract diagnostics from active session's compilation
     const auto& diag_engine = session->GetCompilation().getAllDiagnostics();
@@ -237,7 +258,10 @@ auto SessionManager::StartSessionCreation(
         if (session) {
           pending->session_ready->try_send(ec, session);
           pending->session_ready->close();
-          active_sessions_[uri] = session;
+          active_sessions_[uri] =
+              CacheEntry{.session = session, .version = pending->version};
+          UpdateAccessOrder(uri);
+          EvictOldestIfNeeded();
         } else {
           pending->session_ready->close();
           logger_->error("SessionManager failed to create session: {}", uri);
@@ -253,6 +277,33 @@ auto SessionManager::StartSessionCreation(
       asio::detached);
 
   return pending;
+}
+
+auto SessionManager::UpdateAccessOrder(const std::string& uri) -> void {
+  // Remove existing entry if present
+  std::erase(access_order_, uri);
+  // Add to front (most recently used)
+  access_order_.insert(access_order_.begin(), uri);
+}
+
+auto SessionManager::EvictOldestIfNeeded() -> void {
+  while (active_sessions_.size() > kMaxCacheSize) {
+    if (access_order_.empty()) {
+      logger_->error(
+          "SessionManager LRU tracking out of sync (active: {}, LRU: {})",
+          active_sessions_.size(), access_order_.size());
+      break;
+    }
+
+    // Evict least recently used (last in vector)
+    const auto& oldest_uri = access_order_.back();
+    logger_->debug(
+        "SessionManager LRU eviction: {} ({}/{} entries)", oldest_uri,
+        active_sessions_.size(), kMaxCacheSize);
+
+    active_sessions_.erase(oldest_uri);
+    access_order_.pop_back();
+  }
 }
 
 }  // namespace slangd::services

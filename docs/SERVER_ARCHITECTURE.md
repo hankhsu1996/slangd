@@ -132,6 +132,7 @@ co_await asio::post(main_executor_, asio::use_awaitable);
 ### Session Lifecycle Management
 
 **Ownership Hierarchy**:
+
 ```
 SlangdLspServer (LSP protocol layer)
     │ owns
@@ -143,6 +144,7 @@ SlangdLspServer (LSP protocol layer)
 ```
 
 **Responsibilities**:
+
 - **SlangdLspServer**: LSP protocol, delegates to LanguageService
 - **LanguageService**: Public API, feature implementations, owns SessionManager
 - **SessionManager**: Session lifecycle (create/cache/invalidate), returns OverlaySession
@@ -151,6 +153,7 @@ SlangdLspServer (LSP protocol layer)
 **Architecture**: SessionManager centralizes all session lifecycle (create/cache/invalidate). LanguageService features are read-only consumers.
 
 **Event-driven model**:
+
 ```
 SlangdLspServer
   ├─ Document Events (protocol-level API)
@@ -166,16 +169,29 @@ SlangdLspServer
 
 LanguageService (implementation)
   ├─ OnDocumentOpened/Saved → SessionManager.UpdateSession() (private)
-  ├─ OnDocumentClosed → SessionManager.RemoveSession() (private)
+  ├─ OnDocumentClosed → (lazy removal - keeps session in cache)
   └─ OnDocumentsChanged → SessionManager.InvalidateSessions() (private)
 
 SessionManager
-  ├─ active_sessions_: map<uri, OverlaySession>  ← Cache by URI only
+  ├─ active_sessions_: map<uri, CacheEntry{session, version}>  ← Version-aware cache
   ├─ pending_sessions_: map<uri, PendingCreation>  ← Being created
-  └─ Cache key: URI (not content hash) - stable during typing
+  ├─ access_order_: vector<uri>  ← LRU tracking (MRU first)
+  └─ Cache key: URI + LSP document version (not content hash)
 ```
 
-**Why this matters**: Prevents expensive rebuilds on every keystroke. Typing reuses cached session (0ms), saving triggers rebuild (~500ms, expected).
+**Caching strategy**:
+
+- **Version comparison**: Reuses session if LSP document version unchanged (0ms cache hit)
+- **Close/reopen optimization**: Closed files stay in cache (no RemoveSession call)
+- **LRU eviction**: Automatically removes oldest entries when limit exceeded (16 files)
+- **No content hashing**: LSP provides version tracking - no need to hash content
+
+**Why this design**:
+
+1. **Typing performance**: URI+version stable during typing (0ms), save triggers rebuild (~500ms)
+2. **Close/reopen efficiency**: Reopening file reuses cache if version matches (no ~500ms rebuild)
+3. **Memory management**: LRU eviction prevents unbounded growth
+4. **Simplicity**: No content hashing overhead, rely on LSP version tracking
 
 ### Two-Phase Session Creation
 
@@ -197,6 +213,7 @@ auto session = co_await pending->session_ready.receive();    // ~581ms
 ```
 
 **Key benefits**:
+
 - **Fast diagnostics**: 126ms vs 581ms (4.6x faster)
 - **No duplicate work**: Multiple requests wait on same channels
 - **Event-driven coordination**: Async channels avoid polling

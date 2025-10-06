@@ -89,12 +89,26 @@ class SessionManager {
   auto StartSessionCreation(std::string uri, std::string content, int version)
       -> std::shared_ptr<PendingCreation>;
 
-  // Cache by URI only (no content_hash!)
-  std::unordered_map<std::string, std::shared_ptr<OverlaySession>>
-      active_sessions_;
+  // LRU cache management helpers
+  auto UpdateAccessOrder(const std::string& uri) -> void;
+  auto EvictOldestIfNeeded() -> void;
+
+  // Cache entry with version tracking for intelligent cache reuse
+  struct CacheEntry {
+    std::shared_ptr<OverlaySession> session;
+    int version;  // LSP document version
+  };
+
+  // Cache by URI with version tracking (no content_hash!)
+  // Version comparison enables close/reopen optimization without rebuilding
+  std::unordered_map<std::string, CacheEntry> active_sessions_;
 
   std::unordered_map<std::string, std::shared_ptr<PendingCreation>>
       pending_sessions_;
+
+  // LRU tracking for cache eviction (most recently used first)
+  std::vector<std::string> access_order_;
+  static constexpr size_t kMaxCacheSize = 16;
 
   // Dependencies
   asio::any_io_executor executor_;
