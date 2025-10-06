@@ -155,8 +155,7 @@ auto SlangdLspServer::OnDidOpenTextDocument(
             {.uri = uri, .version = version, .diagnostics = parse_diags});
 
         // Phase 2: Full diagnostics (includes semantic analysis)
-        auto all_diags =
-            co_await language_service_->ComputeDiagnostics(uri, text);
+        auto all_diags = co_await language_service_->ComputeDiagnostics(uri);
         co_await PublishDiagnostics(
             {.uri = uri, .version = version, .diagnostics = all_diags});
       },
@@ -314,8 +313,8 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
         // Invalidate SessionManager cache for changed files
         if (!changed_sv_uris.empty()) {
           language_service_->InvalidateSessions(changed_sv_uris);
-          Logger()->debug("SessionManager invalidated {} sessions",
-                          changed_sv_uris.size());
+          Logger()->debug(
+              "SessionManager invalidated {} sessions", changed_sv_uris.size());
         }
 
         // Handle SystemVerilog file changes (language service decides if
@@ -388,8 +387,7 @@ auto SlangdLspServer::ProcessDiagnosticsForUri(std::string uri)
       {.uri = uri, .version = file.version, .diagnostics = parse_diags});
 
   // Phase 2: Full diagnostics (includes semantic analysis)
-  auto all_diags =
-      co_await language_service_->ComputeDiagnostics(uri, file.content);
+  auto all_diags = co_await language_service_->ComputeDiagnostics(uri);
   co_await PublishDiagnostics(
       {.uri = uri, .version = file.version, .diagnostics = all_diags});
 

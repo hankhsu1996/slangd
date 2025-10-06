@@ -60,7 +60,7 @@ class LanguageService : public LanguageServiceBase {
   auto ComputeParseDiagnostics(std::string uri, std::string content)
       -> asio::awaitable<std::vector<lsp::Diagnostic>> override;
 
-  auto ComputeDiagnostics(std::string uri, std::string content)
+  auto ComputeDiagnostics(std::string uri)
       -> asio::awaitable<std::vector<lsp::Diagnostic>> override;
 
   auto GetDefinitionsForPosition(

@@ -28,7 +28,7 @@ class LanguageServiceBase {
       -> asio::awaitable<std::vector<lsp::Diagnostic>> = 0;
 
   // Full diagnostics including semantic analysis
-  virtual auto ComputeDiagnostics(std::string uri, std::string content)
+  virtual auto ComputeDiagnostics(std::string uri)
       -> asio::awaitable<std::vector<lsp::Diagnostic>> = 0;
 
   // Definition lookup - async because may need overlay creation

@@ -96,7 +96,7 @@ auto LanguageService::ComputeParseDiagnostics(
   co_return diagnostics;
 }
 
-auto LanguageService::ComputeDiagnostics(std::string uri, std::string content)
+auto LanguageService::ComputeDiagnostics(std::string uri)
     -> asio::awaitable<std::vector<lsp::Diagnostic>> {
   utils::ScopedTimer timer("ComputeDiagnostics", logger_);
 
@@ -105,58 +105,11 @@ auto LanguageService::ComputeDiagnostics(std::string uri, std::string content)
     co_return std::vector<lsp::Diagnostic>{};
   }
 
-  logger_->debug("LanguageService computing full diagnostics for: {}", uri);
+  logger_->debug("LanguageService computing diagnostics for: {}", uri);
 
-  // Create cache key with catalog version and content hash
-  uint64_t catalog_version =
-      global_catalog_ ? global_catalog_->GetVersion() : 0;
-  size_t content_hash = std::hash<std::string>{}(content);
-  OverlayCacheKey cache_key{
-      .doc_uri = uri,
-      .content_hash = content_hash,
-      .catalog_version = catalog_version};
-
-  auto now = std::chrono::steady_clock::now();
-
-  // Check if we already have this overlay in cache (fast path)
-  for (auto& entry : overlay_cache_) {
-    if (entry.key == cache_key) {
-      entry.last_access = now;
-      logger_->debug(
-          "Cache hit for diagnostics: {}:hash{}", uri, cache_key.Hash());
-
-      // Extract diagnostics from cached session
-      auto diagnostics = co_await asio::co_spawn(
-          compilation_pool_->get_executor(),
-          [session = entry.session,
-           this]() -> asio::awaitable<std::vector<lsp::Diagnostic>> {
-            co_return semantic::DiagnosticConverter::ExtractAllDiagnostics(
-                session->GetCompilation(), session->GetSourceManager(),
-                session->GetMainBufferID(), logger_);
-          },
-          asio::use_awaitable);
-
-      co_await asio::post(executor_, asio::use_awaitable);
-      co_return diagnostics;
-    }
-  }
-
-  // Cache miss - get or start pending creation
-  auto pending = GetOrStartPendingCreation(cache_key, content);
-
-  // Wait for compilation only (not indexing) - FAST PATH
-  logger_->debug(
-      "Waiting for compilation_ready: {}:hash{}", uri, cache_key.Hash());
-  std::error_code ec;
-  auto state = co_await pending->compilation_ready->async_receive(
-      asio::redirect_error(asio::use_awaitable, ec));
-
-  if (ec) {
-    logger_->error(
-        "Failed to receive compilation state for {}:hash{}", uri,
-        cache_key.Hash());
-    co_return std::vector<lsp::Diagnostic>{};
-  }
+  // Get compilation state from SessionManager (waits for compilation only, not
+  // indexing)
+  auto state = co_await session_manager_->GetSessionForDiagnostics(uri);
 
   // Extract diagnostics from CompilationState (already elaborated)
   auto diagnostics = semantic::DiagnosticConverter::ExtractDiagnostics(
@@ -165,9 +118,8 @@ auto LanguageService::ComputeDiagnostics(std::string uri, std::string content)
       std::move(diagnostics));
 
   logger_->debug(
-      "LanguageService computed {} full diagnostics for: {} ({})",
-      filtered.size(), uri,
-      utils::ScopedTimer::FormatDuration(timer.GetElapsed()));
+      "LanguageService computed {} diagnostics for: {} ({})", filtered.size(),
+      uri, utils::ScopedTimer::FormatDuration(timer.GetElapsed()));
 
   co_return filtered;
 }
