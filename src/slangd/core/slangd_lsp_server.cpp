@@ -245,18 +245,8 @@ auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
 
   co_await asio::post(strand_, asio::use_awaitable);
 
-  // Get the tracked document to access content and version
-  auto file_opt = GetOpenFile(params.textDocument.uri);
-  if (!file_opt) {
-    Logger()->debug(
-        "OnDocumentSymbols: File not open: {}", params.textDocument.uri);
-    co_return std::vector<lsp::DocumentSymbol>{};
-  }
-
-  const auto& file = file_opt->get();
-
   co_return co_await language_service_->GetDocumentSymbols(
-      params.textDocument.uri, file.content);
+      params.textDocument.uri);
 }
 
 auto SlangdLspServer::OnGotoDefinition(lsp::DefinitionParams params)

@@ -67,7 +67,7 @@ class LanguageService : public LanguageServiceBase {
       std::string uri, lsp::Position position, std::string content)
       -> asio::awaitable<std::vector<lsp::Location>> override;
 
-  auto GetDocumentSymbols(std::string uri, std::string content)
+  auto GetDocumentSymbols(std::string uri)
       -> asio::awaitable<std::vector<lsp::DocumentSymbol>> override;
 
   auto HandleConfigChange() -> void override;

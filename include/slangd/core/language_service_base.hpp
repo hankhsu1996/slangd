@@ -36,8 +36,8 @@ class LanguageServiceBase {
       std::string uri, lsp::Position position, std::string content)
       -> asio::awaitable<std::vector<lsp::Location>> = 0;
 
-  // Document symbols - async because may need overlay creation
-  virtual auto GetDocumentSymbols(std::string uri, std::string content)
+  // Document symbols - async because may need to wait for session
+  virtual auto GetDocumentSymbols(std::string uri)
       -> asio::awaitable<std::vector<lsp::DocumentSymbol>> = 0;
 
   // Workspace initialization - called during LSP initialize

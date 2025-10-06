@@ -220,7 +220,7 @@ auto LanguageService::GetDefinitionsForPosition(
   co_return std::vector<lsp::Location>{lsp_location};
 }
 
-auto LanguageService::GetDocumentSymbols(std::string uri, std::string content)
+auto LanguageService::GetDocumentSymbols(std::string uri)
     -> asio::awaitable<std::vector<lsp::DocumentSymbol>> {
   utils::ScopedTimer timer("GetDocumentSymbols", logger_);
 
@@ -229,41 +229,13 @@ auto LanguageService::GetDocumentSymbols(std::string uri, std::string content)
     co_return std::vector<lsp::DocumentSymbol>{};
   }
 
-  logger_->debug("LanguageService getting document symbols for: {}", uri);
-
-  // Create cache key with catalog version and content hash
-  uint64_t catalog_version =
-      global_catalog_ ? global_catalog_->GetVersion() : 0;
-  size_t content_hash = std::hash<std::string>{}(content);
-  OverlayCacheKey cache_key{
-      .doc_uri = uri,
-      .content_hash = content_hash,
-      .catalog_version = catalog_version};
-
-  // Get or create overlay session from cache
-  auto overlay_start = std::chrono::steady_clock::now();
-  auto session = co_await GetOrCreateOverlay(cache_key, content);
-  auto overlay_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::chrono::steady_clock::now() - overlay_start);
-  logger_->debug(
-      "GetOrCreateOverlay completed ({})",
-      utils::ScopedTimer::FormatDuration(overlay_elapsed));
-
+  auto session = co_await session_manager_->GetSession(uri);
   if (!session) {
-    logger_->error("Failed to create overlay session for: {}", uri);
+    logger_->debug("No session for {}, returning empty symbols", uri);
     co_return std::vector<lsp::DocumentSymbol>{};
   }
 
-  // Use the unified SemanticIndex for document symbols
-  auto symbols_start = std::chrono::steady_clock::now();
-  auto symbols = session->GetSemanticIndex().GetDocumentSymbols(uri);
-  auto symbols_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::chrono::steady_clock::now() - symbols_start);
-  logger_->debug(
-      "GetDocumentSymbols from index completed ({})",
-      utils::ScopedTimer::FormatDuration(symbols_elapsed));
-
-  co_return symbols;
+  co_return session->GetSemanticIndex().GetDocumentSymbols(uri);
 }
 
 auto LanguageService::HandleConfigChange() -> void {
