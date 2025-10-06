@@ -31,8 +31,9 @@
   "main": "./out/extension.js",
   "scripts": {
     "compile": "webpack",
+    "copy-binary": "cd ../.. && bazel build --config=static //:slangd && cd editor/vscode && mkdir -p ./bin && cp -f ../../bazel-bin/slangd ./bin/",
     "lint": "eslint src --ext ts",
-    "package": "npm run compile && npx @vscode/vsce package",
+    "package": "npm run copy-binary && npm run compile && npx @vscode/vsce package",
     "sort": "sort-package-json",
     "test": "node ./out/test/runTest.js",
     "vscode:prepublish": "webpack --mode production",

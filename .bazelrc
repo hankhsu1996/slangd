@@ -1,9 +1,13 @@
-# Toolchain configuration
-build --action_env=CC=clang
-build --action_env=CXX=clang++
-build --cxxopt='-std=c++23'
-build --cxxopt='-stdlib=libc++'
-build --linkopt='-stdlib=libc++'
+# Toolchain configuration (clang-specific)
+# These are overridden for static builds which use musl gcc toolchain
+build:clang --action_env=CC=clang
+build:clang --action_env=CXX=clang++
+build:clang --cxxopt='-std=c++23'
+build:clang --cxxopt='-stdlib=libc++'
+build:clang --linkopt='-stdlib=libc++'
+
+# Standard configuration uses clang
+build --config=clang
 build --incompatible_strict_action_env
 
 # Performance and caching
@@ -30,6 +34,14 @@ build:debug --linkopt='-ldl'
 build:release --compilation_mode=opt
 build:release --cxxopt='-O3'
 build:release --cxxopt='-DNDEBUG'
+
+# Static release build (for distribution) using musl gcc toolchain
+# Don't use --config=clang since musl toolchain is gcc-based
+build:static --compilation_mode=opt
+build:static --cxxopt='-O3'
+build:static --cxxopt='-DNDEBUG'
+build:static --cxxopt='-std=c++23'
+build:static --features=fully_static_link
 
 # Fastbuild configuration
 build:fastbuild --compilation_mode=fastbuild
