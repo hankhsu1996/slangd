@@ -284,8 +284,8 @@ auto LanguageService::OnDocumentClosed(std::string uri) -> void {
   }
 
   logger_->debug("LanguageService::OnDocumentClosed: {}", uri);
-  session_manager_->RemoveSession(uri);
-  logger_->debug("SessionManager cache cleared for: {}", uri);
+  // Lazy removal: Keep session in cache for close/reopen optimization
+  // LRU eviction will handle cleanup when cache size limit is reached
 }
 
 auto LanguageService::OnDocumentsChanged(std::vector<std::string> uris)
