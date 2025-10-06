@@ -27,6 +27,18 @@ class OverlaySession {
       std::shared_ptr<spdlog::logger> logger = nullptr)
       -> std::shared_ptr<OverlaySession>;
 
+  // Build fresh compilation with current buffer and optional catalog files
+  // Public for parse-only diagnostic extraction (single-file mode with
+  // catalog=nullptr)
+  static auto BuildCompilation(
+      std::string uri, std::string content,
+      std::shared_ptr<ProjectLayoutService> layout_service,
+      std::shared_ptr<const GlobalCatalog> catalog,
+      std::shared_ptr<spdlog::logger> logger)
+      -> std::tuple<
+          std::shared_ptr<slang::SourceManager>,
+          std::unique_ptr<slang::ast::Compilation>>;
+
   // Move-only type for performance
   OverlaySession(const OverlaySession&) = delete;
   OverlaySession(OverlaySession&&) = default;
@@ -57,16 +69,6 @@ class OverlaySession {
       std::unique_ptr<slang::ast::Compilation> compilation,
       std::unique_ptr<semantic::SemanticIndex> semantic_index,
       std::shared_ptr<spdlog::logger> logger);
-
-  // Build fresh compilation with current buffer and optional catalog files
-  static auto BuildCompilation(
-      std::string uri, std::string content,
-      std::shared_ptr<ProjectLayoutService> layout_service,
-      std::shared_ptr<const GlobalCatalog> catalog,
-      std::shared_ptr<spdlog::logger> logger)
-      -> std::tuple<
-          std::shared_ptr<slang::SourceManager>,
-          std::unique_ptr<slang::ast::Compilation>>;
 
   // Core session components
   std::shared_ptr<slang::SourceManager> source_manager_;

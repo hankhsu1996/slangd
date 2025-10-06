@@ -64,46 +64,25 @@ auto LanguageService::ComputeParseDiagnostics(
     co_return std::vector<lsp::Diagnostic>{};
   }
 
-  logger_->debug("LanguageService computing parse diagnostics for: {}", uri);
-
-  // Create cache key with catalog version and content hash
-  uint64_t catalog_version =
-      global_catalog_ ? global_catalog_->GetVersion() : 0;
-  size_t content_hash = std::hash<std::string>{}(content);
-  OverlayCacheKey cache_key{
-      .doc_uri = uri,
-      .content_hash = content_hash,
-      .catalog_version = catalog_version};
-
-  // Get or create overlay session from cache (fast - no elaboration)
-  auto overlay_start = std::chrono::steady_clock::now();
-  auto session = co_await GetOrCreateOverlay(cache_key, content);
-  auto overlay_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::chrono::steady_clock::now() - overlay_start);
   logger_->debug(
-      "GetOrCreateOverlay completed ({})",
-      utils::ScopedTimer::FormatDuration(overlay_elapsed));
+      "LanguageService computing parse diagnostics (single-file mode): {}",
+      uri);
 
-  if (!session) {
-    logger_->error("Failed to create overlay session for: {}", uri);
-    co_return std::vector<lsp::Diagnostic>{};
-  }
-
-  // Extract parse diagnostics in background thread pool
-  auto extract_start = std::chrono::steady_clock::now();
+  // Build single-file compilation and extract diagnostics in thread pool
   auto diagnostics = co_await asio::co_spawn(
       compilation_pool_->get_executor(),
-      [session, uri, this]() -> asio::awaitable<std::vector<lsp::Diagnostic>> {
-        co_return semantic::DiagnosticConverter::ExtractParseDiagnostics(
-            session->GetCompilation(), session->GetSourceManager(), uri,
+      [this, uri, content]() -> asio::awaitable<std::vector<lsp::Diagnostic>> {
+        // Build parse-only compilation (no catalog → single file only)
+        auto [source_manager, compilation] = OverlaySession::BuildCompilation(
+            uri, content, layout_service_,
+            nullptr,  // Single-file mode
             logger_);
+
+        // Extract parse diagnostics (~10 diags from one file, no filtering)
+        co_return semantic::DiagnosticConverter::ExtractParseDiagnostics(
+            *compilation, *source_manager, uri, logger_);
       },
       asio::use_awaitable);
-  auto extract_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::chrono::steady_clock::now() - extract_start);
-  logger_->debug(
-      "ExtractParseDiagnostics completed ({})",
-      utils::ScopedTimer::FormatDuration(extract_elapsed));
 
   // Post result back to main strand
   co_await asio::post(executor_, asio::use_awaitable);
