@@ -254,7 +254,8 @@ auto LanguageService::HandleSourceFileChange(
   }
 }
 
-auto LanguageService::UpdateSession(
+// Document lifecycle events (protocol-level API)
+auto LanguageService::OnDocumentOpened(
     std::string uri, std::string content, int version)
     -> asio::awaitable<void> {
   if (!session_manager_) {
@@ -265,25 +266,36 @@ auto LanguageService::UpdateSession(
   co_await session_manager_->UpdateSession(uri, content, version);
 }
 
-auto LanguageService::RemoveSession(std::string uri) -> void {
+auto LanguageService::OnDocumentSaved(
+    std::string uri, std::string content, int version)
+    -> asio::awaitable<void> {
+  if (!session_manager_) {
+    logger_->error("LanguageService: SessionManager not initialized");
+    co_return;
+  }
+
+  co_await session_manager_->UpdateSession(uri, content, version);
+}
+
+auto LanguageService::OnDocumentClosed(std::string uri) -> void {
   if (!session_manager_) {
     logger_->error("LanguageService: SessionManager not initialized");
     return;
   }
 
-  logger_->debug("LanguageService::RemoveSession: {}", uri);
+  logger_->debug("LanguageService::OnDocumentClosed: {}", uri);
   session_manager_->RemoveSession(uri);
   logger_->debug("SessionManager cache cleared for: {}", uri);
 }
 
-auto LanguageService::InvalidateSessions(std::vector<std::string> uris)
+auto LanguageService::OnDocumentsChanged(std::vector<std::string> uris)
     -> void {
   if (!session_manager_) {
     logger_->error("LanguageService: SessionManager not initialized");
     return;
   }
 
-  logger_->debug("LanguageService::InvalidateSessions: {} files", uris.size());
+  logger_->debug("LanguageService::OnDocumentsChanged: {} files", uris.size());
   session_manager_->InvalidateSessions(uris);
   logger_->debug("SessionManager cache invalidated for {} files", uris.size());
 }

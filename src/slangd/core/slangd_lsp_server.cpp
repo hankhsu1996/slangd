@@ -136,7 +136,7 @@ auto SlangdLspServer::OnDidOpenTextDocument(
   AddOpenFile(uri, text, language_id, version);
 
   // Create session in SessionManager (must complete before features can run)
-  co_await language_service_->UpdateSession(uri, text, version);
+  co_await language_service_->OnDocumentOpened(uri, text, version);
   Logger()->debug("SessionManager created session for: {}", uri);
 
   // Compute and publish initial diagnostics (background)
@@ -203,7 +203,8 @@ auto SlangdLspServer::OnDidSaveTextDocument(
   auto file_opt = GetOpenFile(uri);
   if (file_opt) {
     const auto& file = file_opt->get();
-    co_await language_service_->UpdateSession(uri, file.content, file.version);
+    co_await language_service_->OnDocumentSaved(
+        uri, file.content, file.version);
     Logger()->debug("SessionManager updated for: {}", uri);
   }
 
@@ -223,7 +224,7 @@ auto SlangdLspServer::OnDidCloseTextDocument(
   RemoveOpenFile(uri);
 
   // Remove session from SessionManager
-  language_service_->RemoveSession(uri);
+  language_service_->OnDocumentClosed(uri);
   Logger()->debug("SessionManager removed session for: {}", uri);
 
   co_return Ok();
@@ -290,7 +291,7 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
 
         // Invalidate SessionManager cache for changed files
         if (!changed_sv_uris.empty()) {
-          language_service_->InvalidateSessions(changed_sv_uris);
+          language_service_->OnDocumentsChanged(changed_sv_uris);
           Logger()->debug(
               "SessionManager invalidated {} sessions", changed_sv_uris.size());
         }

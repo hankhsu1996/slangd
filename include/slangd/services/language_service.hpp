@@ -1,10 +1,7 @@
 #pragma once
 
-#include <chrono>
-#include <functional>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include <asio.hpp>
@@ -14,7 +11,6 @@
 #include "slangd/core/language_service_base.hpp"
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/services/global_catalog.hpp"
-#include "slangd/services/overlay_session.hpp"
 #include "slangd/services/session_manager.hpp"
 
 namespace slangd::services {
@@ -50,13 +46,16 @@ class LanguageService : public LanguageServiceBase {
   auto HandleSourceFileChange(std::string uri, lsp::FileChangeType change_type)
       -> void override;
 
-  // Session lifecycle management
-  auto UpdateSession(std::string uri, std::string content, int version)
+  // Document lifecycle events
+  auto OnDocumentOpened(std::string uri, std::string content, int version)
       -> asio::awaitable<void> override;
 
-  auto RemoveSession(std::string uri) -> void override;
+  auto OnDocumentSaved(std::string uri, std::string content, int version)
+      -> asio::awaitable<void> override;
 
-  auto InvalidateSessions(std::vector<std::string> uris) -> void override;
+  auto OnDocumentClosed(std::string uri) -> void override;
+
+  auto OnDocumentsChanged(std::vector<std::string> uris) -> void override;
 
  private:
   // Core dependencies

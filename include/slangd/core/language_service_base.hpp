@@ -51,17 +51,22 @@ class LanguageServiceBase {
   virtual auto HandleSourceFileChange(
       std::string uri, lsp::FileChangeType change_type) -> void = 0;
 
-  // Session lifecycle management
-  // Update/create session for document (called on save/open)
-  // version: LSP document version for tracking concurrent updates
-  virtual auto UpdateSession(std::string uri, std::string content, int version)
+  // Document lifecycle events (protocol-level)
+  // Called when document is opened in editor
+  virtual auto OnDocumentOpened(
+      std::string uri, std::string content, int version)
       -> asio::awaitable<void> = 0;
 
-  // Remove session for closed document
-  virtual auto RemoveSession(std::string uri) -> void = 0;
+  // Called when document is saved
+  virtual auto OnDocumentSaved(
+      std::string uri, std::string content, int version)
+      -> asio::awaitable<void> = 0;
 
-  // Invalidate sessions for external file changes
-  virtual auto InvalidateSessions(std::vector<std::string> uris) -> void = 0;
+  // Called when document is closed in editor
+  virtual auto OnDocumentClosed(std::string uri) -> void = 0;
+
+  // Called when external file changes are detected
+  virtual auto OnDocumentsChanged(std::vector<std::string> uris) -> void = 0;
 };
 
 }  // namespace slangd

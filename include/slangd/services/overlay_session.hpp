@@ -67,6 +67,13 @@ class OverlaySession {
     return *source_manager_;
   }
 
+  // Shared pointer accessors for async lifetime management in CompilationState.
+  // Prefer reference accessors above for most use cases.
+  [[nodiscard]] auto GetCompilationPtr() const
+      -> std::shared_ptr<slang::ast::Compilation> {
+    return compilation_;
+  }
+
   [[nodiscard]] auto GetSourceManagerPtr() const
       -> std::shared_ptr<slang::SourceManager> {
     return source_manager_;

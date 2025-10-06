@@ -153,16 +153,21 @@ SlangdLspServer (LSP protocol layer)
 **Event-driven model**:
 ```
 SlangdLspServer
-  ├─ Document Events (trigger session updates)
-  │   ├─ OnDidOpen(uri, content) → SessionManager.UpdateSession()
-  │   ├─ OnDidSave(uri, content) → SessionManager.UpdateSession()
-  │   ├─ OnDidClose(uri) → SessionManager.RemoveSession()
-  │   └─ OnDidChange(uri) → (no session update - typing is fast!)
+  ├─ Document Events (protocol-level API)
+  │   ├─ OnDidOpen(uri, content) → LanguageService.OnDocumentOpened()
+  │   ├─ OnDidSave(uri, content) → LanguageService.OnDocumentSaved()
+  │   ├─ OnDidClose(uri) → LanguageService.OnDocumentClosed()
+  │   └─ OnDidChange(uri) → (no action - typing is fast!)
   │
   └─ LSP Feature Handlers (read-only)
-      ├─ OnDocumentSymbols(uri) → SessionManager.GetSession(uri)
-      ├─ OnDefinition(uri, pos) → SessionManager.GetSession(uri)
-      └─ OnDiagnostics(uri) → SessionManager.GetSessionForDiagnostics(uri)
+      ├─ OnDocumentSymbols(uri) → LanguageService.GetDocumentSymbols(uri)
+      ├─ OnDefinition(uri, pos) → LanguageService.GetDefinitionsForPosition(uri, pos)
+      └─ OnDiagnostics(uri) → LanguageService.ComputeDiagnostics(uri)
+
+LanguageService (implementation)
+  ├─ OnDocumentOpened/Saved → SessionManager.UpdateSession() (private)
+  ├─ OnDocumentClosed → SessionManager.RemoveSession() (private)
+  └─ OnDocumentsChanged → SessionManager.InvalidateSessions() (private)
 
 SessionManager
   ├─ active_sessions_: map<uri, OverlaySession>  ← Cache by URI only
@@ -200,10 +205,12 @@ auto session = co_await pending->session_ready.receive();    // ~581ms
 
 ### Adding New LSP Features
 
-1. Add method to `LanguageServiceBase` interface
+1. Add method to `LanguageServiceBase` interface (domain operations only, not lifecycle events)
 2. Implement in `LanguageService` (may use background dispatch)
 3. Add handler to `SlangdLspServer` (coordinate with strand)
 4. Register handler in base `LspServer` framework
+
+**Note**: Only add domain operations to the base interface (e.g., ComputeDiagnostics, GetDefinitions). Document lifecycle events (OnDocumentOpened, OnDocumentSaved, etc.) are already defined and should not be extended.
 
 ### Alternative Service Implementations
 

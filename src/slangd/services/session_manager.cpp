@@ -70,7 +70,6 @@ auto SessionManager::UpdateSession(
 auto SessionManager::RemoveSession(std::string uri) -> void {
   logger_->debug("SessionManager::RemoveSession: {}", uri);
   active_sessions_.erase(uri);
-  needs_rebuild_.erase(uri);
 
   if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
     logger_->debug("Canceling pending session for closed document: {}", uri);
@@ -89,8 +88,6 @@ auto SessionManager::InvalidateSessions(std::vector<std::string> uris) -> void {
       it->second->session_ready->close();
       pending_sessions_.erase(it);
     }
-
-    needs_rebuild_.insert(uri);
   }
 }
 
@@ -100,7 +97,6 @@ auto SessionManager::InvalidateAllSessions() -> void {
       active_sessions_.size(), pending_sessions_.size());
 
   active_sessions_.clear();
-  needs_rebuild_.clear();
 
   for (auto& [uri, pending] : pending_sessions_) {
     pending->session_ready->close();
@@ -136,25 +132,38 @@ auto SessionManager::GetSession(std::string uri)
 
 auto SessionManager::GetSessionForDiagnostics(std::string uri)
     -> asio::awaitable<CompilationState> {
-  if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
-    logger_->debug(
-        "SessionManager::GetSessionForDiagnostics waiting for compilation: {}",
-        uri);
+  // Check active sessions first (session already compiled)
+  if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
+    const auto& session = it->second;
 
+    // Extract diagnostics from active session's compilation
+    const auto& diag_engine = session->GetCompilation().getAllDiagnostics();
+
+    slang::Diagnostics diagnostics;
+    for (const auto& diag : diag_engine) {
+      diagnostics.emplace_back(diag);
+    }
+
+    co_return CompilationState{
+        .source_manager = session->GetSourceManagerPtr(),
+        .compilation = session->GetCompilationPtr(),
+        .buffer_id = session->GetMainBufferID(),
+        .diagnostics = std::move(diagnostics)};
+  }
+
+  // Check pending sessions (compilation in progress)
+  if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
     std::error_code ec;
     auto state = co_await it->second->compilation_ready->async_receive(
         asio::redirect_error(asio::use_awaitable, ec));
 
     if (ec) {
-      logger_->error("Failed to receive compilation for: {}", uri);
       co_return CompilationState{};
     }
 
     co_return state;
   }
 
-  logger_->debug(
-      "SessionManager::GetSessionForDiagnostics no pending for: {}", uri);
   co_return CompilationState{};
 }
 
@@ -228,12 +237,7 @@ auto SessionManager::StartSessionCreation(
         if (session) {
           pending->session_ready->try_send(ec, session);
           pending->session_ready->close();
-
           active_sessions_[uri] = session;
-          logger_->debug(
-              "SessionManager added session to cache: {} version {} ({} "
-              "active)",
-              uri, pending->version, active_sessions_.size());
         } else {
           pending->session_ready->close();
           logger_->error("SessionManager failed to create session: {}", uri);

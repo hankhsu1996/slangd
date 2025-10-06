@@ -3,7 +3,6 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include <asio/any_io_executor.hpp>
@@ -96,8 +95,6 @@ class SessionManager {
 
   std::unordered_map<std::string, std::shared_ptr<PendingCreation>>
       pending_sessions_;
-
-  std::unordered_set<std::string> needs_rebuild_;
 
   // Dependencies
   asio::any_io_executor executor_;

@@ -129,9 +129,6 @@ auto OverlaySession::BuildCompilation(
     for (const auto& package_info : catalog->GetPackages()) {
       // Skip if this is the same file as our buffer (deduplication)
       if (package_info.file_path.Path() == file_path.Path()) {
-        logger->debug(
-            "Skipping buffer file from catalog: {}",
-            package_info.file_path.Path().string());
         continue;
       }
 
