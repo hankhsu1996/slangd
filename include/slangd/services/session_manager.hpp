@@ -55,30 +55,13 @@ class SessionManager {
   auto GetSession(std::string uri)
       -> asio::awaitable<std::shared_ptr<const OverlaySession>>;
 
-  // Returns compilation state for diagnostics (waits for compilation only, not
-  // indexing)
-  struct CompilationState {
-    std::shared_ptr<slang::SourceManager> source_manager;
-    std::shared_ptr<slang::ast::Compilation> compilation;
-    slang::BufferID buffer_id;
-    slang::Diagnostics diagnostics;
-  };
-
-  auto GetSessionForDiagnostics(std::string uri)
-      -> asio::awaitable<CompilationState>;
-
  private:
-  // Pending session creation - allows concurrent requests to wait at different
-  // phases
+  // Pending session creation - concurrent requests share the same channel
   struct PendingCreation {
-    using CompilationChannel =
-        asio::experimental::channel<void(std::error_code, CompilationState)>;
     using SessionChannel = asio::experimental::channel<void(
         std::error_code, std::shared_ptr<OverlaySession>)>;
 
-    // Signal 1: Compilation ready (after elaboration, before indexing)
-    std::shared_ptr<CompilationChannel> compilation_ready;
-    // Signal 2: Full session ready (after indexing)
+    // Signal: Full session ready (after indexing + diagnostic extraction)
     std::shared_ptr<SessionChannel> session_ready;
     // LSP document version - used to prevent race conditions
     int version;

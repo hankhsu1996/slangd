@@ -13,8 +13,7 @@ namespace slangd::services {
 
 SessionManager::PendingCreation::PendingCreation(
     asio::any_io_executor executor, int doc_version)
-    : compilation_ready(std::make_shared<CompilationChannel>(executor, 10)),
-      session_ready(std::make_shared<SessionChannel>(executor, 10)),
+    : session_ready(std::make_shared<SessionChannel>(executor, 10)),
       version(doc_version) {
 }
 
@@ -38,7 +37,6 @@ SessionManager::~SessionManager() {
   // NOTE: In practice, coroutines should already be complete since destructor
   // only runs when io_context has stopped. This is defensive programming.
   for (auto& [uri, pending] : pending_sessions_) {
-    pending->compilation_ready->close();
     pending->session_ready->close();
   }
 
@@ -150,44 +148,6 @@ auto SessionManager::GetSession(std::string uri)
   co_return nullptr;
 }
 
-auto SessionManager::GetSessionForDiagnostics(std::string uri)
-    -> asio::awaitable<CompilationState> {
-  // Check active sessions first (session already compiled)
-  if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
-    const auto& session = it->second.session;
-    UpdateAccessOrder(uri);
-
-    // Extract diagnostics from active session's compilation
-    const auto& diag_engine = session->GetCompilation().getAllDiagnostics();
-
-    slang::Diagnostics diagnostics;
-    for (const auto& diag : diag_engine) {
-      diagnostics.emplace_back(diag);
-    }
-
-    co_return CompilationState{
-        .source_manager = session->GetSourceManagerPtr(),
-        .compilation = session->GetCompilationPtr(),
-        .buffer_id = session->GetMainBufferID(),
-        .diagnostics = std::move(diagnostics)};
-  }
-
-  // Check pending sessions (compilation in progress)
-  if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
-    std::error_code ec;
-    auto state = co_await it->second->compilation_ready->async_receive(
-        asio::redirect_error(asio::use_awaitable, ec));
-
-    if (ec) {
-      co_return CompilationState{};
-    }
-
-    co_return state;
-  }
-
-  co_return CompilationState{};
-}
-
 auto SessionManager::StartSessionCreation(
     std::string uri, std::string content, int version)
     -> std::shared_ptr<PendingCreation> {
@@ -196,57 +156,39 @@ auto SessionManager::StartSessionCreation(
   asio::co_spawn(
       executor_,
       [this, uri, content, pending]() -> asio::awaitable<void> {
-        auto compilation_state = co_await asio::co_spawn(
+        // Single-phase: Build compilation + index + extract diagnostics
+        auto session = co_await asio::co_spawn(
             compilation_pool_->get_executor(),
-            [uri, content, this]() -> asio::awaitable<CompilationState> {
-              utils::ScopedTimer timer("SessionManager compilation", logger_);
+            [uri, content,
+             this]() -> asio::awaitable<std::shared_ptr<OverlaySession>> {
+              utils::ScopedTimer timer(
+                  "SessionManager session creation", logger_);
 
+              // Build compilation
               auto [source_manager, compilation, main_buffer_id] =
                   OverlaySession::BuildCompilation(
                       uri, content, layout_service_, catalog_, logger_);
 
-              const auto& diag_engine = compilation->getAllDiagnostics();
+              // Build semantic index (file-scoped traversal)
+              auto semantic_index = semantic::SemanticIndex::FromCompilation(
+                  *compilation, *source_manager, uri, catalog_.get());
+
+              // Extract diagnostics from diagMap (populated during traversal)
               slang::Diagnostics diagnostics;
-              for (const auto& diag : diag_engine) {
+              for (const auto& diag : compilation->getAllDiagnostics()) {
                 diagnostics.emplace_back(diag);
               }
 
-              logger_->debug(
-                  "SessionManager compilation complete for {} ({})", uri,
-                  utils::ScopedTimer::FormatDuration(timer.GetElapsed()));
-
-              co_return CompilationState{
-                  .source_manager = source_manager,
-                  .compilation = std::shared_ptr<slang::ast::Compilation>(
-                      std::move(compilation)),
-                  .buffer_id = main_buffer_id,
-                  .diagnostics = std::move(diagnostics)};
-            },
-            asio::use_awaitable);
-
-        co_await asio::post(executor_, asio::use_awaitable);
-        std::error_code ec;
-        pending->compilation_ready->try_send(ec, compilation_state);
-        pending->compilation_ready->close();
-
-        auto session = co_await asio::co_spawn(
-            compilation_pool_->get_executor(),
-            [uri, compilation_state = std::move(compilation_state),
-             this]() mutable
-                -> asio::awaitable<std::shared_ptr<OverlaySession>> {
-              utils::ScopedTimer timer("SessionManager indexing", logger_);
-
-              auto semantic_index = semantic::SemanticIndex::FromCompilation(
-                  *compilation_state.compilation,
-                  *compilation_state.source_manager, uri, catalog_.get());
-
+              // Create session with index + diagnostics
               auto session = OverlaySession::CreateFromParts(
-                  compilation_state.source_manager,
-                  compilation_state.compilation, std::move(semantic_index),
-                  compilation_state.buffer_id, logger_);
+                  source_manager,
+                  std::shared_ptr<slang::ast::Compilation>(
+                      std::move(compilation)),
+                  std::move(semantic_index), main_buffer_id,
+                  std::move(diagnostics), logger_);
 
               logger_->debug(
-                  "SessionManager indexing complete for {} ({})", uri,
+                  "SessionManager session creation complete for {} ({})", uri,
                   utils::ScopedTimer::FormatDuration(timer.GetElapsed()));
 
               co_return session;
@@ -254,6 +196,7 @@ auto SessionManager::StartSessionCreation(
             asio::use_awaitable);
 
         co_await asio::post(executor_, asio::use_awaitable);
+        std::error_code ec;
 
         if (session) {
           pending->session_ready->try_send(ec, session);
