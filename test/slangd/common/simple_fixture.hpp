@@ -73,6 +73,14 @@ class SimpleTestFixture {
       const std::vector<lsp::Diagnostic>& diagnostics,
       lsp::DiagnosticSeverity severity);
 
+  // Assert that no error diagnostics exist (ignores warnings/info)
+  static void AssertNoErrors(const std::vector<lsp::Diagnostic>& diagnostics);
+
+  // Assert that an error diagnostic with message substring exists
+  static void AssertError(
+      const std::vector<lsp::Diagnostic>& diagnostics,
+      const std::string& message_substring = "");
+
   // Assert that a symbol's definition range has expected length
   void AssertDefinitionRangeLength(
       semantic::SemanticIndex& index, const std::string& code,

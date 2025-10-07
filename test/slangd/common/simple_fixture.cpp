@@ -406,4 +406,25 @@ void SimpleTestFixture::AssertDiagnosticsValid(
   }
 }
 
+void SimpleTestFixture::AssertNoErrors(
+    const std::vector<lsp::Diagnostic>& diagnostics) {
+  auto error_diag = std::ranges::find_if(diagnostics, [](const auto& diag) {
+    return diag.severity == lsp::DiagnosticSeverity::kError;
+  });
+
+  if (error_diag != diagnostics.end()) {
+    throw std::runtime_error(
+        fmt::format(
+            "AssertNoErrors: Found unexpected error diagnostic: '{}'",
+            error_diag->message));
+  }
+}
+
+void SimpleTestFixture::AssertError(
+    const std::vector<lsp::Diagnostic>& diagnostics,
+    const std::string& message_substring) {
+  AssertDiagnosticExists(
+      diagnostics, lsp::DiagnosticSeverity::kError, message_substring);
+}
+
 }  // namespace slangd::test
