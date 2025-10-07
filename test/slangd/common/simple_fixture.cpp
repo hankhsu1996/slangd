@@ -8,6 +8,7 @@
 #include <fmt/format.h>
 #include <slang/ast/Compilation.h>
 #include <slang/diagnostics/DiagnosticEngine.h>
+#include <slang/parsing/Preprocessor.h>
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/text/SourceManager.h>
 #include <slang/util/Bag.h>
@@ -20,6 +21,12 @@ namespace slangd::test {
 // This matches the configuration used in OverlaySession and GlobalCatalog
 static auto CreateLspCompilationOptions() -> slang::Bag {
   slang::Bag options;
+
+  // Disable implicit net declarations for stricter diagnostics
+  slang::parsing::PreprocessorOptions pp_options;
+  pp_options.initialDefaultNetType = slang::parsing::TokenKind::Unknown;
+  options.set(pp_options);
+
   slang::ast::CompilationOptions comp_options;
   comp_options.flags |= slang::ast::CompilationFlags::LintMode;
   comp_options.flags |= slang::ast::CompilationFlags::LanguageServerMode;
@@ -39,10 +46,12 @@ auto SimpleTestFixture::SetupCompilation(const std::string& code)
   source_manager_ = std::make_shared<slang::SourceManager>();
   auto buffer = source_manager_->assignText(test_path, code);
   buffer_id_ = buffer.id;
-  auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager_);
 
-  // Use LSP-style compilation options
+  // Use LSP-style compilation options (must be created before SyntaxTree)
   auto options = CreateLspCompilationOptions();
+  auto tree =
+      slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager_, options);
+
   compilation_ = std::make_unique<slang::ast::Compilation>(options);
   compilation_->addSyntaxTree(tree);
 

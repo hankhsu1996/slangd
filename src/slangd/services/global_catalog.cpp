@@ -54,6 +54,9 @@ auto GlobalCatalog::BuildFromLayout(
   slang::Bag options;
   slang::parsing::PreprocessorOptions pp_options;
 
+  // Disable implicit net declarations for stricter diagnostics
+  pp_options.initialDefaultNetType = slang::parsing::TokenKind::Unknown;
+
   // Get include directories and defines from layout service
   include_directories_ = layout_service->GetIncludeDirectories();
   defines_ = layout_service->GetDefines();

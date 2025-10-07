@@ -84,6 +84,9 @@ auto OverlaySession::BuildCompilation(
   slang::Bag options;
   slang::parsing::PreprocessorOptions pp_options;
 
+  // Disable implicit net declarations for stricter diagnostics
+  pp_options.initialDefaultNetType = slang::parsing::TokenKind::Unknown;
+
   // Apply include directories and defines from layout service
   if (layout_service) {
     for (const auto& include_dir : layout_service->GetIncludeDirectories()) {

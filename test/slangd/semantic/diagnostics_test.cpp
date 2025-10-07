@@ -75,14 +75,39 @@ TEST_CASE("Handles malformed module", "[diagnostics]") {
   Fixture::AssertError(diags, "expected");
 }
 
-TEST_CASE("Detects errors in continuous assignments", "[diagnostics]") {
+TEST_CASE("Continuous assignment error detection", "[diagnostics]") {
   SimpleTestFixture fixture;
-  std::string code = R"(
-    module test_module;
-      assign xxx = yyyyy;
-    endmodule
-  )";
 
-  auto diags = fixture.CompileSourceAndGetDiagnostics(code);
-  Fixture::AssertError(diags, "yyyyy");
+  SECTION("RHS undefined - error correctly reported") {
+    std::string code = R"(
+      module test_module;
+        logic valid_target;
+        assign valid_target = undefined_source;
+      endmodule
+    )";
+    auto diags = fixture.CompileSourceAndGetDiagnostics(code);
+    Fixture::AssertError(diags, "undefined_source");
+  }
+
+  SECTION("Both sides undefined - error correctly reported") {
+    std::string code = R"(
+      module test_module;
+        assign undefined_target = undefined_source;
+      endmodule
+    )";
+    auto diags = fixture.CompileSourceAndGetDiagnostics(code);
+    Fixture::AssertError(diags, "undefined_source");
+  }
+
+  SECTION(
+      "LHS undefined - error correctly reported with default_nettype none") {
+    std::string code = R"(
+      module test_module;
+        logic valid_signal;
+        assign undefined_target = valid_signal;
+      endmodule
+    )";
+    auto diags = fixture.CompileSourceAndGetDiagnostics(code);
+    Fixture::AssertError(diags, "undefined_target");
+  }
 }
