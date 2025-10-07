@@ -112,17 +112,26 @@ auto LanguageService::ComputeDiagnostics(std::string uri)
     co_return std::vector<lsp::Diagnostic>{};
   }
 
-  // Extract diagnostics from collected diagMap (populated by forceElaborate)
-  auto diagnostics = semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
-      *state->compilation, *state->source_manager, state->main_buffer_id);
-  auto filtered =
-      semantic::DiagnosticConverter::FilterDiagnostics(std::move(diagnostics));
+  // Extract parse diagnostics (syntax errors from syntax trees)
+  auto parse_diags = semantic::DiagnosticConverter::ExtractParseDiagnostics(
+      *state->compilation, *state->source_manager, state->main_buffer_id,
+      logger_);
+
+  // Extract semantic diagnostics (from diagMap, populated by forceElaborate)
+  auto semantic_diags =
+      semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
+          *state->compilation, *state->source_manager, state->main_buffer_id);
+
+  // Combine parse + semantic diagnostics
+  parse_diags.insert(
+      parse_diags.end(), semantic_diags.begin(), semantic_diags.end());
 
   logger_->debug(
-      "LanguageService computed {} diagnostics for: {} ({})", filtered.size(),
-      uri, utils::ScopedTimer::FormatDuration(timer.GetElapsed()));
+      "LanguageService computed {} diagnostics for: {} ({})",
+      parse_diags.size(), uri,
+      utils::ScopedTimer::FormatDuration(timer.GetElapsed()));
 
-  co_return filtered;
+  co_return parse_diags;
 }
 
 auto LanguageService::GetDefinitionsForPosition(

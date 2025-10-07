@@ -27,14 +27,6 @@ class DiagnosticConverter {
       std::shared_ptr<spdlog::logger> logger = nullptr)
       -> std::vector<lsp::Diagnostic>;
 
-  // Extract all diagnostics including semantic errors (triggers elaboration)
-  static auto ExtractAllDiagnostics(
-      slang::ast::Compilation& compilation,
-      const slang::SourceManager& source_manager,
-      slang::BufferID main_buffer_id,
-      std::shared_ptr<spdlog::logger> logger = nullptr)
-      -> std::vector<lsp::Diagnostic>;
-
   // Extract diagnostics collected during file-scoped traversal (NO elaboration)
   // This only returns diagnostics that have been added to diagMap during
   // limited AST traversal, WITHOUT triggering full design elaboration
