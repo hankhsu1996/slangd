@@ -13,10 +13,11 @@ SemanticIndex enables LSP features (go-to-definition, find references, document 
 
 **How It Works:**
 
-1. `ProcessSymbol()` creates entries in `symbols_` map
-2. `handle()` methods create reference entries in `references_` vector
-3. `LookupDefinitionAt()` searches `references_` for cursor position
-4. Returns target definition range from matching entry
+1. For each definition: create instance via `createDefault()` → call `forceElaborate()` → populate `diagMap` + cache symbol resolutions
+2. Visit instance bodies: `ProcessSymbol()` creates entries, `handle()` methods create references
+3. `LookupDefinitionAt()` searches `references_` for cursor position, returns target definition
+
+**Note:** `forceElaborate()` is file-scoped (not full design elaboration) and enables both semantic diagnostics and faster indexing through cached resolutions.
 
 ## DocumentSymbol Architecture
 

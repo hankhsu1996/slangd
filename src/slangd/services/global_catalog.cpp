@@ -74,6 +74,8 @@ auto GlobalCatalog::BuildFromLayout(
   slang::ast::CompilationOptions comp_options;
   comp_options.flags |= slang::ast::CompilationFlags::LintMode;
   comp_options.flags |= slang::ast::CompilationFlags::LanguageServerMode;
+  // Set unlimited error limit for LSP - users need to see all diagnostics
+  comp_options.errorLimit = 0;
   options.set(comp_options);
 
   // Create global compilation with options

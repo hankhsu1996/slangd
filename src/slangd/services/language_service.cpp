@@ -104,17 +104,17 @@ auto LanguageService::ComputeDiagnostics(std::string uri)
 
   logger_->debug("LanguageService computing diagnostics for: {}", uri);
 
-  // Get full session from SessionManager (includes diagnostics from indexing)
-  auto session = co_await session_manager_->GetSession(uri);
-  if (!session) {
-    logger_->error("No session available for: {}", uri);
+  // Get compilation state from SessionManager (fast path - waits for Phase 1
+  // only)
+  auto state = co_await session_manager_->GetCompilationState(uri);
+  if (!state.has_value()) {
+    logger_->error("No compilation state available for: {}", uri);
     co_return std::vector<lsp::Diagnostic>{};
   }
 
-  // Extract diagnostics from session (already populated during indexing)
-  auto diagnostics = semantic::DiagnosticConverter::ExtractDiagnostics(
-      session->GetDiagnostics(), session->GetSourceManager(),
-      session->GetMainBufferID());
+  // Extract diagnostics from collected diagMap (populated by forceElaborate)
+  auto diagnostics = semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
+      *state->compilation, *state->source_manager, state->main_buffer_id);
   auto filtered =
       semantic::DiagnosticConverter::FilterDiagnostics(std::move(diagnostics));
 

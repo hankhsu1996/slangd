@@ -118,12 +118,12 @@ auto SemanticIndex::FromCompilation(
         instance.setParent(*parent_scope);
       }
 
-      // Trigger port connection resolution (including modport caching)
-      // In LSP mode, this calls connectDefaultIfacePorts() which resolves
-      // modports and caches them in InterfacePortSymbol::modportSymbol
-      instance.getPortConnections();
+      // Force elaboration to populate diagMap with semantic diagnostics
+      // and cache symbol resolutions (visitInstances=false for file-scoped)
+      compilation.forceElaborate(instance.body);
 
       // Traverse the instance body to index all members
+      // (uses cached symbol resolutions from forceElaborate)
       instance.body.visit(visitor);
     }
   }

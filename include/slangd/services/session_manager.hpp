@@ -19,6 +19,13 @@
 
 namespace slangd::services {
 
+// Intermediate state after Phase 1 (elaboration) - used for fast diagnostics
+struct CompilationState {
+  std::shared_ptr<slang::SourceManager> source_manager;
+  std::shared_ptr<slang::ast::Compilation> compilation;
+  slang::BufferID main_buffer_id;
+};
+
 // Centralized session lifecycle manager
 // - Document events create/invalidate sessions (UpdateSession, RemoveSession)
 // - LSP features read sessions (GetSession)
@@ -51,6 +58,10 @@ class SessionManager {
   auto InvalidateAllSessions() -> void;  // For catalog version change
 
   // Feature accessors (read-only)
+  // Returns compilation state after Phase 1 (fast path for diagnostics)
+  auto GetCompilationState(std::string uri)
+      -> asio::awaitable<std::optional<CompilationState>>;
+
   // Returns fully-indexed session (waits for indexing to complete)
   auto GetSession(std::string uri)
       -> asio::awaitable<std::shared_ptr<const OverlaySession>>;
@@ -58,10 +69,15 @@ class SessionManager {
  private:
   // Pending session creation - concurrent requests share the same channel
   struct PendingCreation {
+    using CompilationChannel =
+        asio::experimental::channel<void(std::error_code, CompilationState)>;
     using SessionChannel = asio::experimental::channel<void(
         std::error_code, std::shared_ptr<OverlaySession>)>;
 
-    // Signal: Full session ready (after indexing + diagnostic extraction)
+    // Signal: Phase 1 complete (after elaboration) - diagnostics can proceed
+    std::shared_ptr<CompilationChannel> compilation_ready;
+    // Signal: Phase 2 complete (after indexing) - symbols/definition can
+    // proceed
     std::shared_ptr<SessionChannel> session_ready;
     // LSP document version - used to prevent race conditions
     int version;

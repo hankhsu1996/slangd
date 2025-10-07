@@ -12,10 +12,24 @@
 #include <slang/text/SourceManager.h>
 #include <slang/util/Bag.h>
 
+#include "slangd/semantic/diagnostic_converter.hpp"
+
 namespace slangd::test {
 
-auto SimpleTestFixture::CompileSource(const std::string& code)
-    -> std::unique_ptr<semantic::SemanticIndex> {
+// Helper to create LSP-style compilation options
+// This matches the configuration used in OverlaySession and GlobalCatalog
+static auto CreateLspCompilationOptions() -> slang::Bag {
+  slang::Bag options;
+  slang::ast::CompilationOptions comp_options;
+  comp_options.flags |= slang::ast::CompilationFlags::LintMode;
+  comp_options.flags |= slang::ast::CompilationFlags::LanguageServerMode;
+  comp_options.errorLimit = 0;  // Unlimited errors for LSP
+  options.set(comp_options);
+  return options;
+}
+
+auto SimpleTestFixture::SetupCompilation(const std::string& code)
+    -> std::string {
   constexpr std::string_view kTestFilename = "test.sv";
 
   // Use consistent URI/path format
@@ -27,14 +41,17 @@ auto SimpleTestFixture::CompileSource(const std::string& code)
   buffer_id_ = buffer.id;
   auto tree = slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager_);
 
-  slang::Bag options;
-  // Enable LSP mode to activate expression preservation for typedef parameter
-  // references
-  slang::ast::CompilationOptions comp_options;
-  comp_options.flags |= slang::ast::CompilationFlags::LanguageServerMode;
-  options.set(comp_options);
+  // Use LSP-style compilation options
+  auto options = CreateLspCompilationOptions();
   compilation_ = std::make_unique<slang::ast::Compilation>(options);
   compilation_->addSyntaxTree(tree);
+
+  return test_uri;
+}
+
+auto SimpleTestFixture::CompileSource(const std::string& code)
+    -> std::unique_ptr<semantic::SemanticIndex> {
+  auto test_uri = SetupCompilation(code);
 
   // Check for compilation errors that would make AST invalid
   auto diagnostics = compilation_->getAllDiagnostics();
@@ -64,6 +81,32 @@ auto SimpleTestFixture::CompileSource(const std::string& code)
   }
 
   return index;
+}
+
+auto SimpleTestFixture::CompileSourceAndGetDiagnostics(const std::string& code)
+    -> std::vector<lsp::Diagnostic> {
+  auto test_uri = SetupCompilation(code);
+
+  // Use production code path - SemanticIndex::FromCompilation() calls
+  // forceElaborate() internally, populating diagMap
+  auto semantic_index = semantic::SemanticIndex::FromCompilation(
+      *compilation_, *source_manager_, test_uri);
+
+  // Extract both parse and semantic diagnostics (same as production)
+  auto parse_diags = semantic::DiagnosticConverter::ExtractParseDiagnostics(
+      *compilation_, *source_manager_, buffer_id_);
+
+  auto semantic_diags =
+      semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
+          *compilation_, *source_manager_, buffer_id_);
+
+  // Combine both
+  std::vector<lsp::Diagnostic> result;
+  result.reserve(parse_diags.size() + semantic_diags.size());
+  result.insert(result.end(), parse_diags.begin(), parse_diags.end());
+  result.insert(result.end(), semantic_diags.begin(), semantic_diags.end());
+
+  return result;
 }
 
 auto SimpleTestFixture::FindSymbol(

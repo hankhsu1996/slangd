@@ -11,9 +11,13 @@ namespace slangd::test {
 
 class SimpleTestFixture {
  public:
-  // Compile source and return semantic index
+  // Compile source and return semantic index (throws on compilation errors)
   auto CompileSource(const std::string& code)
       -> std::unique_ptr<semantic::SemanticIndex>;
+
+  // Compile source and return diagnostics (does not throw on errors)
+  auto CompileSourceAndGetDiagnostics(const std::string& code)
+      -> std::vector<lsp::Diagnostic>;
 
   // Find symbol location in source by name (must be unique)
   auto FindSymbol(const std::string& code, const std::string& name)
@@ -75,6 +79,10 @@ class SimpleTestFixture {
       const std::string& symbol_name, size_t expected_length);
 
  private:
+  // Common setup for both CompileSource and CompileSourceAndGetDiagnostics
+  // Returns test_uri for use by callers
+  auto SetupCompilation(const std::string& code) -> std::string;
+
   std::shared_ptr<slang::SourceManager> source_manager_;
   std::unique_ptr<slang::ast::Compilation> compilation_;
   slang::BufferID buffer_id_;

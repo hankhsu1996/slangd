@@ -28,52 +28,44 @@ auto OverlaySession::Create(
       BuildCompilation(uri, content, layout_service, catalog, logger);
 
   // Create unified semantic index (replaces DefinitionIndex + SymbolIndex)
+  // Note: FromCompilation calls forceElaborate() which populates
+  // compilation.diagMap Diagnostics are extracted on-demand via
+  // ComputeDiagnostics()
   auto semantic_index = semantic::SemanticIndex::FromCompilation(
       *compilation, *source_manager, uri, catalog.get());
-
-  // Extract diagnostics from diagMap (populated during indexing traversal)
-  slang::Diagnostics diagnostics;
-  for (const auto& diag : compilation->getAllDiagnostics()) {
-    diagnostics.emplace_back(diag);
-  }
 
   auto elapsed = timer.GetElapsed();
   auto entry_count = semantic_index->GetSemanticEntries().size();
   logger->debug(
-      "Overlay session created with {} semantic entries, {} diagnostics ({})",
-      entry_count, diagnostics.size(),
+      "Overlay session created with {} semantic entries ({})", entry_count,
       utils::ScopedTimer::FormatDuration(elapsed));
 
   return std::shared_ptr<OverlaySession>(new OverlaySession(
       std::move(source_manager),
       std::shared_ptr<slang::ast::Compilation>(std::move(compilation)),
-      std::move(semantic_index), main_buffer_id, std::move(diagnostics),
-      logger));
+      std::move(semantic_index), main_buffer_id, logger));
 }
 
 auto OverlaySession::CreateFromParts(
     std::shared_ptr<slang::SourceManager> source_manager,
     std::shared_ptr<slang::ast::Compilation> compilation,
     std::unique_ptr<semantic::SemanticIndex> semantic_index,
-    slang::BufferID main_buffer_id, slang::Diagnostics diagnostics,
-    std::shared_ptr<spdlog::logger> logger) -> std::shared_ptr<OverlaySession> {
+    slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger)
+    -> std::shared_ptr<OverlaySession> {
   return std::shared_ptr<OverlaySession>(new OverlaySession(
       std::move(source_manager), std::move(compilation),
-      std::move(semantic_index), main_buffer_id, std::move(diagnostics),
-      logger));
+      std::move(semantic_index), main_buffer_id, logger));
 }
 
 OverlaySession::OverlaySession(
     std::shared_ptr<slang::SourceManager> source_manager,
     std::shared_ptr<slang::ast::Compilation> compilation,
     std::unique_ptr<semantic::SemanticIndex> semantic_index,
-    slang::BufferID main_buffer_id, slang::Diagnostics diagnostics,
-    std::shared_ptr<spdlog::logger> logger)
+    slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger)
     : source_manager_(std::move(source_manager)),
       compilation_(std::move(compilation)),
       semantic_index_(std::move(semantic_index)),
       main_buffer_id_(main_buffer_id),
-      diagnostics_(std::move(diagnostics)),
       logger_(std::move(logger)) {
 }
 
@@ -113,7 +105,8 @@ auto OverlaySession::BuildCompilation(
   slang::ast::CompilationOptions comp_options;
   comp_options.flags |= slang::ast::CompilationFlags::LintMode;
   comp_options.flags |= slang::ast::CompilationFlags::LanguageServerMode;
-  comp_options.flags |= slang::ast::CompilationFlags::IgnoreUnknownModules;
+  // Set unlimited error limit for LSP - users need to see all diagnostics
+  comp_options.errorLimit = 0;
   options.set(comp_options);
 
   // Create compilation with options

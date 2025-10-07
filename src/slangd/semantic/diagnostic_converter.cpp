@@ -37,6 +37,17 @@ auto DiagnosticConverter::ExtractAllDiagnostics(
   return FilterDiagnostics(diagnostics);
 }
 
+auto DiagnosticConverter::ExtractCollectedDiagnostics(
+    slang::ast::Compilation& compilation,
+    const slang::SourceManager& source_manager, slang::BufferID main_buffer_id)
+    -> std::vector<lsp::Diagnostic> {
+  // Get diagnostics from diagMap without triggering elaboration
+  auto slang_diagnostics = compilation.getCollectedDiagnostics();
+  auto diagnostics =
+      ExtractDiagnostics(slang_diagnostics, source_manager, main_buffer_id);
+  return FilterDiagnostics(diagnostics);
+}
+
 auto DiagnosticConverter::ExtractDiagnostics(
     const slang::Diagnostics& slang_diagnostics,
     const slang::SourceManager& source_manager, slang::BufferID main_buffer_id)

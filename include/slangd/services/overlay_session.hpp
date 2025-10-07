@@ -45,8 +45,7 @@ class OverlaySession {
       std::shared_ptr<slang::SourceManager> source_manager,
       std::shared_ptr<slang::ast::Compilation> compilation,
       std::unique_ptr<semantic::SemanticIndex> semantic_index,
-      slang::BufferID main_buffer_id, slang::Diagnostics diagnostics,
-      std::shared_ptr<spdlog::logger> logger)
+      slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger)
       -> std::shared_ptr<OverlaySession>;
 
   OverlaySession(const OverlaySession&) = delete;
@@ -84,23 +83,17 @@ class OverlaySession {
     return main_buffer_id_;
   }
 
-  [[nodiscard]] auto GetDiagnostics() const -> const slang::Diagnostics& {
-    return diagnostics_;
-  }
-
  private:
   OverlaySession(
       std::shared_ptr<slang::SourceManager> source_manager,
       std::shared_ptr<slang::ast::Compilation> compilation,
       std::unique_ptr<semantic::SemanticIndex> semantic_index,
-      slang::BufferID main_buffer_id, slang::Diagnostics diagnostics,
-      std::shared_ptr<spdlog::logger> logger);
+      slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger);
 
   std::shared_ptr<slang::SourceManager> source_manager_;
   std::shared_ptr<slang::ast::Compilation> compilation_;
   std::unique_ptr<semantic::SemanticIndex> semantic_index_;
   slang::BufferID main_buffer_id_;
-  slang::Diagnostics diagnostics_;
   std::shared_ptr<spdlog::logger> logger_;
 };
 

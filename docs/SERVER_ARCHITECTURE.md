@@ -67,16 +67,16 @@ File Save → Parse Diagnostics (fast) → Publish → Full Diagnostics (slow) �
 
 ### Key Architectural Decisions
 
-**Lazy elaboration**: OverlaySession creation does NOT trigger elaboration. Semantic indexing uses `compilation.getDefinitions()` and `compilation.getPackages()` - simple map lookups, no analysis.
+**File-scoped elaboration**: `SemanticIndex::FromCompilation()` calls `forceElaborate()` on each instance, populating `compilation.diagMap` with semantic diagnostics. This is file-scoped (not full design elaboration).
 
-**On-demand extraction**: Diagnostics extracted only when requested, not pre-computed during session creation. Two extraction methods:
+**On-demand extraction**: Diagnostics live in `compilation.diagMap` and are extracted when requested via `ComputeDiagnostics()`:
 
-- `getParseDiagnostics()`: Fast, no elaboration triggered
-- `getAllDiagnostics()`: Triggers elaboration for semantic analysis
+- `ExtractParseDiagnostics()`: Parse/syntax errors from syntax trees
+- `ExtractCollectedDiagnostics()`: Semantic errors from diagMap (already populated)
 
-**Cache reuse**: Both diagnostic phases use the same cached OverlaySession. First phase may create session, second phase reuses it.
+**Two-phase channels**: `SessionManager` signals `compilation_ready` after elaboration (Phase 1) and `session_ready` after indexing (Phase 2). Diagnostics wait on Phase 1 only (faster).
 
-**Why this works**: Separating diagnostic extraction from session creation follows Slang's lazy evaluation pattern. Users get immediate syntax error feedback while semantic analysis runs in background.
+**Why this works**: `forceElaborate()` caches symbol resolutions that `visit()` reuses for indexing. No duplicate work, and diagnostics get faster response by not waiting for full indexing.
 
 ## Executor & Threading Model
 
