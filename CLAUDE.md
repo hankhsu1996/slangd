@@ -70,7 +70,13 @@ SystemVerilog LSP server with modular design:
   - ReferenceEntry structs combine source location + target definition for robust cross-file navigation
 - **Current features**: Diagnostics, go-to-definition, document symbols
 
-See `docs/SERVER_ARCHITECTURE.md` for session lifecycle details.
+## Documentation
+
+- **`docs/DESIGN_PRINCIPLES.md`**: Core philosophy and case studies for working with Slang library infrastructure
+- **`docs/SERVER_ARCHITECTURE.md`**: Server layers, session lifecycle, two-phase diagnostics, and threading model
+- **`docs/SEMANTIC_INDEXING.md`**: SemanticIndex implementation patterns and guide to adding new symbol support
+- **`docs/LSP_TYPE_HANDLING.md`**: TypeReferenceSymbol architecture and type traversal deduplication patterns
+- **`docs/SYMBOL_CONTEXT_HANDLING.md`**: Expression-driven reference architecture (symbols define, expressions reference)
 
 ## Development Tips
 
