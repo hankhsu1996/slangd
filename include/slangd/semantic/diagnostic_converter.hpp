@@ -42,9 +42,9 @@ class DiagnosticConverter {
       const slang::SourceManager& source_manager,
       slang::BufferID main_buffer_id) -> std::vector<lsp::Diagnostic>;
 
-  // Apply LSP-specific filtering and modifications
-  static auto FilterAndModifyDiagnostics(
-      std::vector<lsp::Diagnostic> diagnostics) -> std::vector<lsp::Diagnostic>;
+  // Apply LSP-specific filtering
+  static auto FilterDiagnostics(std::vector<lsp::Diagnostic> diagnostics)
+      -> std::vector<lsp::Diagnostic>;
 
  private:
   static auto ConvertSlangDiagnosticsToLsp(

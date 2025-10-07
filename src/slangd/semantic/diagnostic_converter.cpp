@@ -1,5 +1,7 @@
 #include "slangd/semantic/diagnostic_converter.hpp"
 
+#include <ranges>
+
 #include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/diagnostics/Diagnostics.h>
 
@@ -18,7 +20,7 @@ auto DiagnosticConverter::ExtractParseDiagnostics(
   auto slang_diagnostics = compilation.getParseDiagnostics();
   auto diagnostics =
       ExtractDiagnostics(slang_diagnostics, source_manager, main_buffer_id);
-  return FilterAndModifyDiagnostics(diagnostics);
+  return FilterDiagnostics(diagnostics);
 }
 
 auto DiagnosticConverter::ExtractAllDiagnostics(
@@ -32,7 +34,7 @@ auto DiagnosticConverter::ExtractAllDiagnostics(
   auto slang_diagnostics = compilation.getAllDiagnostics();
   auto diagnostics =
       ExtractDiagnostics(slang_diagnostics, source_manager, main_buffer_id);
-  return FilterAndModifyDiagnostics(diagnostics);
+  return FilterDiagnostics(diagnostics);
 }
 
 auto DiagnosticConverter::ExtractDiagnostics(
@@ -50,47 +52,15 @@ auto DiagnosticConverter::ExtractDiagnostics(
       slang_diagnostics, source_manager, diagnostic_engine, main_buffer_id);
 }
 
-auto DiagnosticConverter::FilterAndModifyDiagnostics(
+auto DiagnosticConverter::FilterDiagnostics(
     std::vector<lsp::Diagnostic> diagnostics) -> std::vector<lsp::Diagnostic> {
-  std::vector<lsp::Diagnostic> result;
-  result.reserve(diagnostics.size());
+  // Filter out InfoTask diagnostics (not relevant for LSP clients)
+  auto is_not_info_task = [](const auto& diag) {
+    return diag.code != "InfoTask";
+  };
 
-  for (auto& diag : diagnostics) {
-    // Check for diagnostics to completely exclude
-    if (diag.code == "InfoTask") {
-      continue;
-    }
-
-    // Check for diagnostics to demote and enhance
-    if (diag.code == "CouldNotOpenIncludeFile") {
-      diag.severity = lsp::DiagnosticSeverity::kWarning;
-
-      // Replace original message with more helpful one
-      std::string original_path;
-      size_t quote_pos = diag.message.find('\'');
-      if (quote_pos != std::string::npos) {
-        size_t end_quote = diag.message.find('\'', quote_pos + 1);
-        if (end_quote != std::string::npos) {
-          original_path =
-              diag.message.substr(quote_pos, end_quote - quote_pos + 1);
-        }
-      }
-
-      if (!original_path.empty()) {
-        diag.message = "Cannot find include file " + original_path;
-      }
-
-      diag.message +=
-          " (Consider configuring include directories in a .slangd file)";
-    } else if (diag.code == "UnknownDirective") {
-      diag.severity = lsp::DiagnosticSeverity::kWarning;
-      diag.message += " (Add defines in .slangd file if needed)";
-    }
-
-    result.push_back(diag);
-  }
-
-  return result;
+  auto filtered = diagnostics | std::views::filter(is_not_info_task);
+  return {filtered.begin(), filtered.end()};
 }
 
 auto DiagnosticConverter::ConvertSlangDiagnosticsToLsp(

@@ -115,8 +115,8 @@ auto LanguageService::ComputeDiagnostics(std::string uri)
   auto diagnostics = semantic::DiagnosticConverter::ExtractDiagnostics(
       session->GetDiagnostics(), session->GetSourceManager(),
       session->GetMainBufferID());
-  auto filtered = semantic::DiagnosticConverter::FilterAndModifyDiagnostics(
-      std::move(diagnostics));
+  auto filtered =
+      semantic::DiagnosticConverter::FilterDiagnostics(std::move(diagnostics));
 
   logger_->debug(
       "LanguageService computed {} diagnostics for: {} ({})", filtered.size(),
