@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include <asio/cancellation_signal.hpp>
 #include <lsp/document_features.hpp>
 #include <slang/ast/ASTVisitor.h>
 #include <slang/ast/Compilation.h>
@@ -107,7 +108,8 @@ class SemanticIndex {
       slang::ast::Compilation& compilation,
       const slang::SourceManager& source_manager,
       const std::string& current_file_uri,
-      const services::GlobalCatalog* catalog = nullptr)
+      const services::GlobalCatalog* catalog = nullptr,
+      asio::cancellation_slot cancellation_slot = {})
       -> std::unique_ptr<SemanticIndex>;
 
   // Query methods

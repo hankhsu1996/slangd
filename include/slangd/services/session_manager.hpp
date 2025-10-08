@@ -7,6 +7,7 @@
 
 #include <asio/any_io_executor.hpp>
 #include <asio/awaitable.hpp>
+#include <asio/cancellation_signal.hpp>
 #include <asio/experimental/channel.hpp>
 #include <asio/thread_pool.hpp>
 #include <slang/ast/Compilation.h>
@@ -79,6 +80,8 @@ class SessionManager {
     // Signal: Phase 2 complete (after indexing) - symbols/definition can
     // proceed
     std::shared_ptr<SessionChannel> session_ready;
+    // Cancellation signal - emit to cancel ongoing work
+    std::shared_ptr<asio::cancellation_signal> cancellation;
     // LSP document version - used to prevent race conditions
     int version;
 

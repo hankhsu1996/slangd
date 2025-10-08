@@ -1,5 +1,6 @@
 #include "slangd/services/session_manager.hpp"
 
+#include <asio/bind_cancellation_slot.hpp>
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/post.hpp>
@@ -15,6 +16,7 @@ SessionManager::PendingCreation::PendingCreation(
     asio::any_io_executor executor, int doc_version)
     : compilation_ready(std::make_shared<CompilationChannel>(executor, 10)),
       session_ready(std::make_shared<SessionChannel>(executor, 10)),
+      cancellation(std::make_shared<asio::cancellation_signal>()),
       version(doc_version) {
 }
 
@@ -38,6 +40,7 @@ SessionManager::~SessionManager() {
   // NOTE: In practice, coroutines should already be complete since destructor
   // only runs when io_context has stopped. This is defensive programming.
   for (auto& [uri, pending] : pending_sessions_) {
+    pending->cancellation->emit(asio::cancellation_type::terminal);
     pending->compilation_ready->close();
     pending->session_ready->close();
   }
@@ -69,6 +72,8 @@ auto SessionManager::UpdateSession(
     logger_->debug(
         "Canceling pending session creation for: {} (old version {})", uri,
         it->second->version);
+    // Emit cancellation signal to stop ongoing work
+    it->second->cancellation->emit(asio::cancellation_type::terminal);
     it->second->compilation_ready->close();
     it->second->session_ready->close();
     pending_sessions_.erase(it);
@@ -89,6 +94,7 @@ auto SessionManager::RemoveSession(std::string uri) -> void {
 
   if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
     logger_->debug("Canceling pending session for closed document: {}", uri);
+    it->second->cancellation->emit(asio::cancellation_type::terminal);
     it->second->compilation_ready->close();
     it->second->session_ready->close();
     pending_sessions_.erase(it);
@@ -105,6 +111,7 @@ auto SessionManager::InvalidateSessions(std::vector<std::string> uris) -> void {
     std::erase(access_order_, uri);
 
     if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
+      it->second->cancellation->emit(asio::cancellation_type::terminal);
       it->second->compilation_ready->close();
       it->second->session_ready->close();
       pending_sessions_.erase(it);
@@ -121,6 +128,7 @@ auto SessionManager::InvalidateAllSessions() -> void {
   access_order_.clear();
 
   for (auto& [uri, pending] : pending_sessions_) {
+    pending->cancellation->emit(asio::cancellation_type::terminal);
     pending->compilation_ready->close();
     pending->session_ready->close();
   }
@@ -208,6 +216,9 @@ auto SessionManager::StartSessionCreation(
               utils::ScopedTimer timer(
                   "SessionManager session creation", logger_);
 
+              // Get cancellation slot for cooperative cancellation
+              auto cancel_state = co_await asio::this_coro::cancellation_state;
+
               // Build compilation
               auto [source_manager, compilation, main_buffer_id] =
                   OverlaySession::BuildCompilation(
@@ -217,7 +228,14 @@ auto SessionManager::StartSessionCreation(
               // visit) FromCompilation now calls forceElaborate on each
               // instance, populating diagMap
               auto semantic_index = semantic::SemanticIndex::FromCompilation(
-                  *compilation, *source_manager, uri, catalog_.get());
+                  *compilation, *source_manager, uri, catalog_.get(),
+                  cancel_state.slot());
+
+              // Check if indexing was cancelled
+              if (!semantic_index) {
+                logger_->debug("Session creation cancelled for {}", uri);
+                co_return std::nullopt;
+              }
 
               // Signal Phase 1 complete: compilation_ready
               // (diagMap populated, diagnostics can be extracted)
@@ -246,7 +264,8 @@ auto SessionManager::StartSessionCreation(
 
               co_return session;
             },
-            asio::use_awaitable);
+            asio::bind_cancellation_slot(
+                pending->cancellation->slot(), asio::use_awaitable));
 
         co_await asio::post(executor_, asio::use_awaitable);
         std::error_code ec;
