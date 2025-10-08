@@ -106,7 +106,9 @@ auto OverlaySession::BuildCompilation(
 
   // Create compilation options for LSP mode
   slang::ast::CompilationOptions comp_options;
-  comp_options.flags |= slang::ast::CompilationFlags::LintMode;
+  // NOTE: We do NOT use LintMode here because it marks all scopes as
+  // uninstantiated, which suppresses diagnostics inside generate blocks.
+  // LanguageServerMode provides sufficient support for single-file analysis.
   comp_options.flags |= slang::ast::CompilationFlags::LanguageServerMode;
   // Set unlimited error limit for LSP - users need to see all diagnostics
   comp_options.errorLimit = 0;

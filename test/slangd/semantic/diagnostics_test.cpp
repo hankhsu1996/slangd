@@ -111,3 +111,35 @@ TEST_CASE("Continuous assignment error detection", "[diagnostics]") {
     Fixture::AssertError(diags, "undefined_target");
   }
 }
+
+TEST_CASE("Generate if block error detection", "[diagnostics]") {
+  SimpleTestFixture fixture;
+
+  SECTION("Undefined variable inside generate if") {
+    std::string code = R"(
+      module test_module;
+        parameter int WIDTH = 8;
+
+        if (WIDTH == 8) begin : gen_block
+          logic [7:0] data;
+          assign data = undefined_var;
+        end
+      endmodule
+    )";
+    auto diags = fixture.CompileSourceAndGetDiagnostics(code);
+    Fixture::AssertError(diags, "undefined_var");
+  }
+}
+
+TEST_CASE("Unknown package import is reported", "[diagnostics]") {
+  SimpleTestFixture fixture;
+
+  std::string code = R"(
+    module test_module;
+      import nonexistent_pkg::*;
+      logic signal;
+    endmodule
+  )";
+  auto diags = fixture.CompileSourceAndGetDiagnostics(code);
+  Fixture::AssertError(diags, "unknown package");
+}

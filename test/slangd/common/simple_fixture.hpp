@@ -86,11 +86,13 @@ class SimpleTestFixture {
       semantic::SemanticIndex& index, const std::string& code,
       const std::string& symbol_name, size_t expected_length);
 
- private:
-  // Common setup for both CompileSource and CompileSourceAndGetDiagnostics
-  // Returns test_uri for use by callers
+  // Access to internal state for debugging
   auto SetupCompilation(const std::string& code) -> std::string;
+  auto GetCompilation() -> slang::ast::Compilation& {
+    return *compilation_;
+  }
 
+ private:
   std::shared_ptr<slang::SourceManager> source_manager_;
   std::unique_ptr<slang::ast::Compilation> compilation_;
   slang::BufferID buffer_id_;

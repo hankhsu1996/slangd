@@ -19,7 +19,8 @@ namespace slangd::test {
 
 // Helper to create LSP-style compilation options
 // This matches the configuration used in OverlaySession and GlobalCatalog
-static auto CreateLspCompilationOptions() -> slang::Bag {
+static auto CreateLspCompilationOptions(bool enable_lint_mode = true)
+    -> slang::Bag {
   slang::Bag options;
 
   // Disable implicit net declarations for stricter diagnostics
@@ -28,7 +29,9 @@ static auto CreateLspCompilationOptions() -> slang::Bag {
   options.set(pp_options);
 
   slang::ast::CompilationOptions comp_options;
-  comp_options.flags |= slang::ast::CompilationFlags::LintMode;
+  if (enable_lint_mode) {
+    comp_options.flags |= slang::ast::CompilationFlags::LintMode;
+  }
   comp_options.flags |= slang::ast::CompilationFlags::LanguageServerMode;
   comp_options.errorLimit = 0;  // Unlimited errors for LSP
   options.set(comp_options);
@@ -47,8 +50,9 @@ auto SimpleTestFixture::SetupCompilation(const std::string& code)
   auto buffer = source_manager_->assignText(test_path, code);
   buffer_id_ = buffer.id;
 
-  // Use LSP-style compilation options (must be created before SyntaxTree)
-  auto options = CreateLspCompilationOptions();
+  // Use LSP-style compilation options WITHOUT LintMode
+  // LintMode marks all scopes as uninstantiated which suppresses diagnostics
+  auto options = CreateLspCompilationOptions(/* enable_lint_mode= */ false);
   auto tree =
       slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager_, options);
 
