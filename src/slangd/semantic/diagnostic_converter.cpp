@@ -1,10 +1,11 @@
 #include "slangd/semantic/diagnostic_converter.hpp"
 
-#include <ranges>
+#include <string_view>
 
 #include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/diagnostics/Diagnostics.h>
 
+#include "slangd/services/global_catalog.hpp"
 #include "slangd/utils/conversion.hpp"
 
 namespace slangd::semantic {
@@ -20,18 +21,19 @@ auto DiagnosticConverter::ExtractParseDiagnostics(
   auto slang_diagnostics = compilation.getParseDiagnostics();
   auto diagnostics =
       ExtractDiagnostics(slang_diagnostics, source_manager, main_buffer_id);
-  return FilterDiagnostics(diagnostics);
+  return FilterDiagnostics(diagnostics, nullptr);
 }
 
 auto DiagnosticConverter::ExtractCollectedDiagnostics(
     slang::ast::Compilation& compilation,
-    const slang::SourceManager& source_manager, slang::BufferID main_buffer_id)
+    const slang::SourceManager& source_manager, slang::BufferID main_buffer_id,
+    const services::GlobalCatalog* global_catalog)
     -> std::vector<lsp::Diagnostic> {
   // Get diagnostics from diagMap without triggering elaboration
   auto slang_diagnostics = compilation.getCollectedDiagnostics();
   auto diagnostics =
       ExtractDiagnostics(slang_diagnostics, source_manager, main_buffer_id);
-  return FilterDiagnostics(diagnostics);
+  return FilterDiagnostics(diagnostics, global_catalog);
 }
 
 auto DiagnosticConverter::ExtractDiagnostics(
@@ -50,14 +52,44 @@ auto DiagnosticConverter::ExtractDiagnostics(
 }
 
 auto DiagnosticConverter::FilterDiagnostics(
-    std::vector<lsp::Diagnostic> diagnostics) -> std::vector<lsp::Diagnostic> {
-  // Filter out InfoTask diagnostics (not relevant for LSP clients)
-  auto is_not_info_task = [](const auto& diag) {
-    return diag.code != "InfoTask";
-  };
+    std::vector<lsp::Diagnostic> diagnostics,
+    const services::GlobalCatalog* global_catalog)
+    -> std::vector<lsp::Diagnostic> {
+  std::vector<lsp::Diagnostic> result;
 
-  auto filtered = diagnostics | std::views::filter(is_not_info_task);
-  return {filtered.begin(), filtered.end()};
+  for (const auto& diag : diagnostics) {
+    // Filter out InfoTask diagnostics (not relevant for LSP clients)
+    if (diag.code == "InfoTask") {
+      continue;
+    }
+
+    // Filter UnknownModule if GlobalCatalog has the definition
+    // This handles OverlaySession limitation: it excludes submodules by design,
+    // but GlobalCatalog provides them for semantic indexing
+    if (diag.code == "UnknownModule" && global_catalog != nullptr) {
+      // Message format: "unknown module 'foo_module'"
+      // Extract module name between single quotes
+      std::string_view message = diag.message;
+      auto start_pos = message.find('\'');
+      auto end_pos = message.rfind('\'');
+
+      if (start_pos != std::string_view::npos &&
+          end_pos != std::string_view::npos && end_pos > start_pos) {
+        auto module_name =
+            message.substr(start_pos + 1, end_pos - start_pos - 1);
+
+        // If GlobalCatalog has this module, it's a false positive
+        // (module exists in project, just not in OverlaySession)
+        if (global_catalog->GetModule(module_name) != nullptr) {
+          continue;  // Skip this diagnostic
+        }
+      }
+    }
+
+    result.push_back(diag);
+  }
+
+  return result;
 }
 
 auto DiagnosticConverter::ConvertSlangDiagnosticsToLsp(

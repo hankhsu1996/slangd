@@ -11,6 +11,10 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
+namespace slangd::services {
+class GlobalCatalog;
+}
+
 namespace slangd::semantic {
 
 // Stateless utility for converting Slang diagnostics to LSP format
@@ -33,7 +37,9 @@ class DiagnosticConverter {
   static auto ExtractCollectedDiagnostics(
       slang::ast::Compilation& compilation,
       const slang::SourceManager& source_manager,
-      slang::BufferID main_buffer_id) -> std::vector<lsp::Diagnostic>;
+      slang::BufferID main_buffer_id,
+      const services::GlobalCatalog* global_catalog = nullptr)
+      -> std::vector<lsp::Diagnostic>;
 
   // Extract diagnostics from pre-computed slang::Diagnostics
   // (used for two-phase diagnostic publishing)
@@ -43,7 +49,11 @@ class DiagnosticConverter {
       slang::BufferID main_buffer_id) -> std::vector<lsp::Diagnostic>;
 
   // Apply LSP-specific filtering
-  static auto FilterDiagnostics(std::vector<lsp::Diagnostic> diagnostics)
+  // global_catalog: Optional GlobalCatalog for filtering false-positive
+  // UnknownModule errors
+  static auto FilterDiagnostics(
+      std::vector<lsp::Diagnostic> diagnostics,
+      const services::GlobalCatalog* global_catalog = nullptr)
       -> std::vector<lsp::Diagnostic>;
 
  private:

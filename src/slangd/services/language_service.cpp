@@ -125,9 +125,11 @@ auto LanguageService::ComputeDiagnostics(std::string uri)
       logger_);
 
   // Extract semantic diagnostics (from diagMap, populated by forceElaborate)
+  // Pass GlobalCatalog to filter false-positive UnknownModule diagnostics
   auto semantic_diags =
       semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
-          *state->compilation, *state->source_manager, state->main_buffer_id);
+          *state->compilation, *state->source_manager, state->main_buffer_id,
+          global_catalog_.get());
 
   // Combine parse + semantic diagnostics
   parse_diags.insert(
