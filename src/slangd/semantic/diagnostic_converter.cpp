@@ -1,8 +1,11 @@
 #include "slangd/semantic/diagnostic_converter.hpp"
 
+#include <string_view>
+
 #include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/diagnostics/Diagnostics.h>
 
+#include "slangd/services/global_catalog.hpp"
 #include "slangd/utils/conversion.hpp"
 
 namespace slangd::semantic {
@@ -18,21 +21,19 @@ auto DiagnosticConverter::ExtractParseDiagnostics(
   auto slang_diagnostics = compilation.getParseDiagnostics();
   auto diagnostics =
       ExtractDiagnostics(slang_diagnostics, source_manager, main_buffer_id);
-  return FilterAndModifyDiagnostics(diagnostics);
+  return FilterDiagnostics(diagnostics, nullptr);
 }
 
-auto DiagnosticConverter::ExtractAllDiagnostics(
+auto DiagnosticConverter::ExtractCollectedDiagnostics(
     slang::ast::Compilation& compilation,
     const slang::SourceManager& source_manager, slang::BufferID main_buffer_id,
-    std::shared_ptr<spdlog::logger> logger) -> std::vector<lsp::Diagnostic> {
-  if (!logger) {
-    logger = spdlog::default_logger();
-  }
-
-  auto slang_diagnostics = compilation.getAllDiagnostics();
+    const services::GlobalCatalog* global_catalog)
+    -> std::vector<lsp::Diagnostic> {
+  // Get diagnostics from diagMap without triggering elaboration
+  auto slang_diagnostics = compilation.getCollectedDiagnostics();
   auto diagnostics =
       ExtractDiagnostics(slang_diagnostics, source_manager, main_buffer_id);
-  return FilterAndModifyDiagnostics(diagnostics);
+  return FilterDiagnostics(diagnostics, global_catalog);
 }
 
 auto DiagnosticConverter::ExtractDiagnostics(
@@ -50,41 +51,39 @@ auto DiagnosticConverter::ExtractDiagnostics(
       slang_diagnostics, source_manager, diagnostic_engine, main_buffer_id);
 }
 
-auto DiagnosticConverter::FilterAndModifyDiagnostics(
-    std::vector<lsp::Diagnostic> diagnostics) -> std::vector<lsp::Diagnostic> {
+auto DiagnosticConverter::FilterDiagnostics(
+    std::vector<lsp::Diagnostic> diagnostics,
+    const services::GlobalCatalog* global_catalog)
+    -> std::vector<lsp::Diagnostic> {
   std::vector<lsp::Diagnostic> result;
-  result.reserve(diagnostics.size());
 
-  for (auto& diag : diagnostics) {
-    // Check for diagnostics to completely exclude
+  for (const auto& diag : diagnostics) {
+    // Filter out InfoTask diagnostics (not relevant for LSP clients)
     if (diag.code == "InfoTask") {
       continue;
     }
 
-    // Check for diagnostics to demote and enhance
-    if (diag.code == "CouldNotOpenIncludeFile") {
-      diag.severity = lsp::DiagnosticSeverity::kWarning;
+    // Filter UnknownModule if GlobalCatalog has the definition
+    // This handles OverlaySession limitation: it excludes submodules by design,
+    // but GlobalCatalog provides them for semantic indexing
+    if (diag.code == "UnknownModule" && global_catalog != nullptr) {
+      // Message format: "unknown module 'foo_module'"
+      // Extract module name between single quotes
+      std::string_view message = diag.message;
+      auto start_pos = message.find('\'');
+      auto end_pos = message.rfind('\'');
 
-      // Replace original message with more helpful one
-      std::string original_path;
-      size_t quote_pos = diag.message.find('\'');
-      if (quote_pos != std::string::npos) {
-        size_t end_quote = diag.message.find('\'', quote_pos + 1);
-        if (end_quote != std::string::npos) {
-          original_path =
-              diag.message.substr(quote_pos, end_quote - quote_pos + 1);
+      if (start_pos != std::string_view::npos &&
+          end_pos != std::string_view::npos && end_pos > start_pos) {
+        auto module_name =
+            message.substr(start_pos + 1, end_pos - start_pos - 1);
+
+        // If GlobalCatalog has this module, it's a false positive
+        // (module exists in project, just not in OverlaySession)
+        if (global_catalog->GetModule(module_name) != nullptr) {
+          continue;  // Skip this diagnostic
         }
       }
-
-      if (!original_path.empty()) {
-        diag.message = "Cannot find include file " + original_path;
-      }
-
-      diag.message +=
-          " (Consider configuring include directories in a .slangd file)";
-    } else if (diag.code == "UnknownDirective") {
-      diag.severity = lsp::DiagnosticSeverity::kWarning;
-      diag.message += " (Add defines in .slangd file if needed)";
     }
 
     result.push_back(diag);

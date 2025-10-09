@@ -59,24 +59,26 @@ VSCode Response ← JSON-RPC ← LSP Handler ← Result ← Computation Complete
 
 ## Diagnostic Publishing Strategy
 
-**Two-phase approach**: Parse diagnostics (syntax errors) publish immediately, then full diagnostics (semantic analysis) publish after elaboration.
+**Single-publish approach**: Full diagnostics (parse + semantic) publish after elaboration completes.
 
 ```
-File Save → Parse Diagnostics (fast) → Publish → Full Diagnostics (slow) → Publish
+File Save → Full Diagnostics (parse + semantic) → Publish
 ```
+
+**Rationale**: Publishing intermediate parse-only diagnostics causes visual flicker (diagnostics clear then reappear) because LSP replaces all diagnostics on each publish. Industry-standard servers (clangd, rust-analyzer) wait for full analysis to avoid this UX issue.
 
 ### Key Architectural Decisions
 
-**Lazy elaboration**: OverlaySession creation does NOT trigger elaboration. Semantic indexing uses `compilation.getDefinitions()` and `compilation.getPackages()` - simple map lookups, no analysis.
+**File-scoped elaboration**: `SemanticIndex::FromCompilation()` calls `forceElaborate()` on each instance, populating `compilation.diagMap` with semantic diagnostics. This is file-scoped (not full design elaboration).
 
-**On-demand extraction**: Diagnostics extracted only when requested, not pre-computed during session creation. Two extraction methods:
+**On-demand extraction**: Diagnostics live in `compilation.diagMap` and are extracted when requested via `ComputeDiagnostics()`:
 
-- `getParseDiagnostics()`: Fast, no elaboration triggered
-- `getAllDiagnostics()`: Triggers elaboration for semantic analysis
+- `ExtractParseDiagnostics()`: Parse/syntax errors from syntax trees
+- `ExtractCollectedDiagnostics()`: Semantic errors from diagMap (already populated)
 
-**Cache reuse**: Both diagnostic phases use the same cached OverlaySession. First phase may create session, second phase reuses it.
+**Two-phase channels**: `SessionManager` signals `compilation_ready` after elaboration (Phase 1) and `session_ready` after indexing (Phase 2). Diagnostics wait on Phase 1 only (faster).
 
-**Why this works**: Separating diagnostic extraction from session creation follows Slang's lazy evaluation pattern. Users get immediate syntax error feedback while semantic analysis runs in background.
+**Why this works**: `forceElaborate()` caches symbol resolutions that `visit()` reuses for indexing. No duplicate work, and diagnostics get faster response by not waiting for full indexing.
 
 ## Executor & Threading Model
 
@@ -152,32 +154,109 @@ SlangdLspServer (LSP protocol layer)
 
 **Architecture**: SessionManager centralizes all session lifecycle (create/cache/invalidate). LanguageService features are read-only consumers.
 
+### Compilation Architecture
+
+**Two-compilation design:**
+
+- **GlobalCatalog**: Compiles ALL project files once → extracts packages, interfaces, module metadata
+
+  - Built from ProjectLayoutService (config file + file discovery)
+  - Shared across ALL OverlaySessions
+  - Immutable snapshot with version tracking
+
+- **OverlaySession**: Compiles current file + uses GlobalCatalog data
+  - Current file buffer (in-memory, authoritative)
+  - Packages from GlobalCatalog (read from disk via `SyntaxTree::fromFile`)
+  - Interfaces from GlobalCatalog (read from disk via `SyntaxTree::fromFile`)
+  - Per-file, cached by SessionManager (LRU eviction)
+
+**Critical insight:** OverlaySession reads packages/interfaces from disk, not from GlobalCatalog compilation. GlobalCatalog only provides metadata (which files to include).
+
+**Invalidation rules:**
+
+| Event                   | GlobalCatalog | OverlaySession            | Reason                                                     |
+| ----------------------- | ------------- | ------------------------- | ---------------------------------------------------------- |
+| Config change           | Rebuild       | Invalidate + rebuild open | Config affects compilation settings (macros, search paths) |
+| Closed SV file change   | No change     | Invalidate all            | OverlaySession reads fresh content from disk               |
+| SV file created/deleted | Rebuild       | Invalidate all            | File discovery changes (new package/interface/module)      |
+| Open file change        | No change     | Invalidate one            | Handled by text sync (didChange/didSave)                   |
+
+**Config change behavior:** After rebuilding GlobalCatalog and invalidating all sessions, proactively rebuilds sessions for all open files to restore LSP features immediately (no on-demand lazy rebuild).
+
 **Event-driven model**:
 
 ```
-SlangdLspServer
-  ├─ Document Events (protocol-level API)
-  │   ├─ OnDidOpen(uri, content) → LanguageService.OnDocumentOpened()
-  │   ├─ OnDidSave(uri, content) → LanguageService.OnDocumentSaved()
-  │   ├─ OnDidClose(uri) → LanguageService.OnDocumentClosed()
-  │   └─ OnDidChange(uri) → (no action - typing is fast!)
+SlangdLspServer (protocol layer - thin delegates)
+  ├─ Document Events (notifications from client - open files)
+  │   ├─ OnDidOpen(uri, content, version)
+  │   │   → LanguageService.OnDocumentOpened()
+  │   │   → PublishDiagnosticsForDocument()  ← Server pushes diagnostics
+  │   │
+  │   ├─ OnDidChange(uri, content, version)
+  │   │   → LanguageService.OnDocumentChanged()
+  │   │
+  │   ├─ OnDidSave(uri)
+  │   │   → LanguageService.OnDocumentSaved()
+  │   │   → PublishDiagnosticsForDocument()  ← Server pushes diagnostics
+  │   │
+  │   └─ OnDidClose(uri) → LanguageService.OnDocumentClosed()
   │
-  └─ LSP Feature Handlers (read-only)
+  ├─ File Watcher Events (external changes - closed files only)
+  │   └─ OnDidChangeWatchedFiles(changes[])
+  │       ├─ Filter open files (handled by text sync above)
+  │       ├─ Config changes → HandleConfigChange() (rebuild GlobalCatalog)
+  │       └─ SV file changes → HandleSourceFileChange() (invalidate sessions)
+  │
+  └─ LSP Feature Handlers (requests from client - respond with data)
       ├─ OnDocumentSymbols(uri) → LanguageService.GetDocumentSymbols(uri)
-      ├─ OnDefinition(uri, pos) → LanguageService.GetDefinitionsForPosition(uri, pos)
-      └─ OnDiagnostics(uri) → LanguageService.ComputeDiagnostics(uri)
+      └─ OnDefinition(uri, pos) → LanguageService.GetDefinitionsForPosition(uri, pos)
 
-LanguageService (implementation)
-  ├─ OnDocumentOpened/Saved → SessionManager.UpdateSession() (private)
-  ├─ OnDocumentClosed → (lazy removal - keeps session in cache)
-  └─ OnDocumentsChanged → SessionManager.InvalidateSessions() (private)
+LanguageService (domain layer - state management + feature implementations)
+  ├─ DocumentStateManager doc_state_  ← Document state (content + version)
+  │
+  ├─ Document Lifecycle
+  │   ├─ OnDocumentOpened → doc_state_.Update() + SessionManager.UpdateSession()
+  │   ├─ OnDocumentChanged → doc_state_.Update() (no session rebuild - typing is fast!)
+  │   ├─ OnDocumentSaved → doc_state_.Get() + SessionManager.UpdateSession()
+  │   ├─ OnDocumentClosed → doc_state_.Remove() (lazy session removal)
+  │   └─ OnDocumentsChanged → SessionManager.InvalidateSessions()
+  │
+  └─ LSP Features (called by protocol layer)
+      ├─ ComputeParseDiagnostics(uri, content) → Parse-only diagnostics
+      ├─ ComputeDiagnostics(uri) → Full diagnostics (parse + semantic)
+      ├─ GetDocumentSymbols(uri) → Document symbol tree
+      └─ GetDefinitionsForPosition(uri, pos) → Go-to-definition locations
 
-SessionManager
+DocumentStateManager (synchronized storage)
+  ├─ documents_: map<uri, DocumentState{content, version}>  ← Domain state
+  └─ strand_: asio::strand  ← Thread-safe access
+
+SessionManager (compilation cache)
   ├─ active_sessions_: map<uri, CacheEntry{session, version}>  ← Version-aware cache
   ├─ pending_sessions_: map<uri, PendingCreation>  ← Being created
   ├─ access_order_: vector<uri>  ← LRU tracking (MRU first)
   └─ Cache key: URI + LSP document version (not content hash)
 ```
+
+**Key LSP Patterns:**
+
+**1. Document Events (Client → Server notifications):**
+
+- Client notifies server of document changes (open/change/save/close)
+- Server responds immediately, then MAY push diagnostics asynchronously
+- Example: `textDocument/didSave` → server computes → `textDocument/publishDiagnostics`
+
+**2. Feature Requests (Client → Server requests, Server → Client responses):**
+
+- Client sends request and waits for response
+- Server processes and returns data synchronously
+- Example: `textDocument/definition` request → server responds with locations
+
+**3. Push Notifications (Server → Client notifications):**
+
+- Server pushes data to client proactively (no request needed)
+- Diagnostics use this pattern - server decides when to send them
+- Example: After save, server publishes diagnostics without client asking
 
 **Caching strategy**:
 
@@ -188,10 +267,14 @@ SessionManager
 
 **Why this design**:
 
-1. **Typing performance**: URI+version stable during typing (0ms), save triggers rebuild (~500ms)
-2. **Close/reopen efficiency**: Reopening file reuses cache if version matches (no ~500ms rebuild)
-3. **Memory management**: LRU eviction prevents unbounded growth
-4. **Simplicity**: No content hashing overhead, rely on LSP version tracking
+1. **Protocol layer is stateless**: Pure LSP translation (params → domain calls), zero state management
+2. **Single source of truth**: Document state lives only in domain layer (`DocumentStateManager`)
+3. **Consistent handlers**: All protocol handlers are 1-line thin delegates (no state access)
+4. **No duplication**: Eliminated redundant storage between protocol and domain layers
+5. **Typing performance**: `OnDocumentChanged` updates state only (no session rebuild), save triggers rebuild
+6. **Close/reopen efficiency**: Reopening file reuses cache if version matches (no ~500ms rebuild)
+7. **Memory management**: LRU eviction prevents unbounded growth
+8. **Simplicity**: No content hashing overhead, rely on LSP version tracking
 
 ### Two-Phase Session Creation
 

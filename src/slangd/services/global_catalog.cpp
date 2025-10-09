@@ -54,6 +54,9 @@ auto GlobalCatalog::BuildFromLayout(
   slang::Bag options;
   slang::parsing::PreprocessorOptions pp_options;
 
+  // Disable implicit net declarations for stricter diagnostics
+  pp_options.initialDefaultNetType = slang::parsing::TokenKind::Unknown;
+
   // Get include directories and defines from layout service
   include_directories_ = layout_service->GetIncludeDirectories();
   defines_ = layout_service->GetDefines();
@@ -72,8 +75,12 @@ auto GlobalCatalog::BuildFromLayout(
 
   // Create compilation options for LSP mode
   slang::ast::CompilationOptions comp_options;
-  comp_options.flags |= slang::ast::CompilationFlags::LintMode;
+  // NOTE: We do NOT use LintMode here because it marks all scopes as
+  // uninstantiated, which suppresses diagnostics inside generate blocks.
+  // LanguageServerMode provides sufficient support for single-file analysis.
   comp_options.flags |= slang::ast::CompilationFlags::LanguageServerMode;
+  // Set unlimited error limit for LSP - users need to see all diagnostics
+  comp_options.errorLimit = 0;
   options.set(comp_options);
 
   // Create global compilation with options

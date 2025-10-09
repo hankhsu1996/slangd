@@ -243,41 +243,4 @@ void LspServer::RegisterWorkspaceFeatureHandlers() {
 void LspServer::RegisterWindowFeatureHandlers() {
 }
 
-// File management helpers
-std::optional<std::reference_wrapper<OpenFile>> LspServer::GetOpenFile(
-    const std::string& uri) {
-  auto it = open_files_.find(uri);
-  if (it != open_files_.end()) {
-    return std::ref(it->second);
-  }
-  return std::nullopt;
-}
-
-void LspServer::AddOpenFile(
-    const std::string& uri, const std::string& content,
-    const std::string& language_id, int version) {
-  Logger()->debug("LspServer adding open file: {}", uri);
-  OpenFile file{uri, content, language_id, version};
-  open_files_[uri] = std::move(file);
-}
-
-void LspServer::UpdateOpenFile(
-    const std::string& uri, const std::vector<std::string>& /*changes*/) {
-  Logger()->debug("LspServer updating open file: {}", uri);
-  auto file_opt = GetOpenFile(uri);
-  if (file_opt) {
-    // Simplified update - in a real implementation, we would apply the changes
-    // Here we just increment the version
-    OpenFile& file = file_opt->get();
-    file.version++;
-    Logger()->debug(
-        "LspServer updated file {} to version {}", uri, file.version);
-  }
-}
-
-void LspServer::RemoveOpenFile(const std::string& uri) {
-  Logger()->debug("LspServer removing open file: {}", uri);
-  open_files_.erase(uri);
-}
-
 }  // namespace lsp

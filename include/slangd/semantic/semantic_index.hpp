@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include <asio/cancellation_signal.hpp>
 #include <lsp/document_features.hpp>
 #include <slang/ast/ASTVisitor.h>
 #include <slang/ast/Compilation.h>

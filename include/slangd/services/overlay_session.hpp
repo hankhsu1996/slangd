@@ -51,7 +51,7 @@ class OverlaySession {
   OverlaySession(const OverlaySession&) = delete;
   OverlaySession(OverlaySession&&) = default;
   auto operator=(const OverlaySession&) -> OverlaySession& = delete;
-  auto operator=(OverlaySession&&) -> OverlaySession& = default;
+  auto operator=(OverlaySession&&) noexcept -> OverlaySession& = default;
   ~OverlaySession() = default;
 
   [[nodiscard]] auto GetSemanticIndex() const

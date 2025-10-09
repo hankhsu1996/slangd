@@ -28,6 +28,9 @@ auto OverlaySession::Create(
       BuildCompilation(uri, content, layout_service, catalog, logger);
 
   // Create unified semantic index (replaces DefinitionIndex + SymbolIndex)
+  // Note: FromCompilation calls forceElaborate() which populates
+  // compilation.diagMap Diagnostics are extracted on-demand via
+  // ComputeDiagnostics()
   auto semantic_index = semantic::SemanticIndex::FromCompilation(
       *compilation, *source_manager, uri, catalog.get());
 
@@ -81,6 +84,9 @@ auto OverlaySession::BuildCompilation(
   slang::Bag options;
   slang::parsing::PreprocessorOptions pp_options;
 
+  // Disable implicit net declarations for stricter diagnostics
+  pp_options.initialDefaultNetType = slang::parsing::TokenKind::Unknown;
+
   // Apply include directories and defines from layout service
   if (layout_service) {
     for (const auto& include_dir : layout_service->GetIncludeDirectories()) {
@@ -100,9 +106,12 @@ auto OverlaySession::BuildCompilation(
 
   // Create compilation options for LSP mode
   slang::ast::CompilationOptions comp_options;
-  comp_options.flags |= slang::ast::CompilationFlags::LintMode;
+  // NOTE: We do NOT use LintMode here because it marks all scopes as
+  // uninstantiated, which suppresses diagnostics inside generate blocks.
+  // LanguageServerMode provides sufficient support for single-file analysis.
   comp_options.flags |= slang::ast::CompilationFlags::LanguageServerMode;
-  comp_options.flags |= slang::ast::CompilationFlags::IgnoreUnknownModules;
+  // Set unlimited error limit for LSP - users need to see all diagnostics
+  comp_options.errorLimit = 0;
   options.set(comp_options);
 
   // Create compilation with options

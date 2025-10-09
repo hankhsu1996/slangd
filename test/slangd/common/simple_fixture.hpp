@@ -11,9 +11,13 @@ namespace slangd::test {
 
 class SimpleTestFixture {
  public:
-  // Compile source and return semantic index
+  // Compile source and return semantic index (throws on compilation errors)
   auto CompileSource(const std::string& code)
       -> std::unique_ptr<semantic::SemanticIndex>;
+
+  // Compile source and return diagnostics (does not throw on errors)
+  auto CompileSourceAndGetDiagnostics(const std::string& code)
+      -> std::vector<lsp::Diagnostic>;
 
   // Find symbol location in source by name (must be unique)
   auto FindSymbol(const std::string& code, const std::string& name)
@@ -69,10 +73,24 @@ class SimpleTestFixture {
       const std::vector<lsp::Diagnostic>& diagnostics,
       lsp::DiagnosticSeverity severity);
 
+  // Assert that no error diagnostics exist (ignores warnings/info)
+  static void AssertNoErrors(const std::vector<lsp::Diagnostic>& diagnostics);
+
+  // Assert that an error diagnostic with message substring exists
+  static void AssertError(
+      const std::vector<lsp::Diagnostic>& diagnostics,
+      const std::string& message_substring = "");
+
   // Assert that a symbol's definition range has expected length
   void AssertDefinitionRangeLength(
       semantic::SemanticIndex& index, const std::string& code,
       const std::string& symbol_name, size_t expected_length);
+
+  // Access to internal state for debugging
+  auto SetupCompilation(const std::string& code) -> std::string;
+  auto GetCompilation() -> slang::ast::Compilation& {
+    return *compilation_;
+  }
 
  private:
   std::shared_ptr<slang::SourceManager> source_manager_;

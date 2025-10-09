@@ -11,6 +11,10 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
+namespace slangd::services {
+class GlobalCatalog;
+}
+
 namespace slangd::semantic {
 
 // Stateless utility for converting Slang diagnostics to LSP format
@@ -27,12 +31,14 @@ class DiagnosticConverter {
       std::shared_ptr<spdlog::logger> logger = nullptr)
       -> std::vector<lsp::Diagnostic>;
 
-  // Extract all diagnostics including semantic errors (triggers elaboration)
-  static auto ExtractAllDiagnostics(
+  // Extract diagnostics collected during file-scoped traversal (NO elaboration)
+  // This only returns diagnostics that have been added to diagMap during
+  // limited AST traversal, WITHOUT triggering full design elaboration
+  static auto ExtractCollectedDiagnostics(
       slang::ast::Compilation& compilation,
       const slang::SourceManager& source_manager,
       slang::BufferID main_buffer_id,
-      std::shared_ptr<spdlog::logger> logger = nullptr)
+      const services::GlobalCatalog* global_catalog = nullptr)
       -> std::vector<lsp::Diagnostic>;
 
   // Extract diagnostics from pre-computed slang::Diagnostics
@@ -42,9 +48,13 @@ class DiagnosticConverter {
       const slang::SourceManager& source_manager,
       slang::BufferID main_buffer_id) -> std::vector<lsp::Diagnostic>;
 
-  // Apply LSP-specific filtering and modifications
-  static auto FilterAndModifyDiagnostics(
-      std::vector<lsp::Diagnostic> diagnostics) -> std::vector<lsp::Diagnostic>;
+  // Apply LSP-specific filtering
+  // global_catalog: Optional GlobalCatalog for filtering false-positive
+  // UnknownModule errors
+  static auto FilterDiagnostics(
+      std::vector<lsp::Diagnostic> diagnostics,
+      const services::GlobalCatalog* global_catalog = nullptr)
+      -> std::vector<lsp::Diagnostic>;
 
  private:
   static auto ConvertSlangDiagnosticsToLsp(

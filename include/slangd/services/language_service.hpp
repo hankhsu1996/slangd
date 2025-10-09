@@ -10,6 +10,7 @@
 
 #include "slangd/core/language_service_base.hpp"
 #include "slangd/core/project_layout_service.hpp"
+#include "slangd/services/document_state_manager.hpp"
 #include "slangd/services/global_catalog.hpp"
 #include "slangd/services/session_manager.hpp"
 
@@ -30,32 +31,42 @@ class LanguageService : public LanguageServiceBase {
       -> asio::awaitable<void> override;
 
   auto ComputeParseDiagnostics(std::string uri, std::string content)
-      -> asio::awaitable<std::vector<lsp::Diagnostic>> override;
+      -> asio::awaitable<std::expected<
+          std::vector<lsp::Diagnostic>, lsp::error::LspError>> override;
 
-  auto ComputeDiagnostics(std::string uri)
-      -> asio::awaitable<std::vector<lsp::Diagnostic>> override;
+  auto ComputeDiagnostics(std::string uri) -> asio::awaitable<std::expected<
+      std::vector<lsp::Diagnostic>, lsp::error::LspError>> override;
 
   auto GetDefinitionsForPosition(std::string uri, lsp::Position position)
-      -> asio::awaitable<std::vector<lsp::Location>> override;
+      -> asio::awaitable<std::expected<
+          std::vector<lsp::Location>, lsp::error::LspError>> override;
 
-  auto GetDocumentSymbols(std::string uri)
-      -> asio::awaitable<std::vector<lsp::DocumentSymbol>> override;
+  auto GetDocumentSymbols(std::string uri) -> asio::awaitable<std::expected<
+      std::vector<lsp::DocumentSymbol>, lsp::error::LspError>> override;
 
-  auto HandleConfigChange() -> void override;
+  auto HandleConfigChange() -> asio::awaitable<void> override;
 
   auto HandleSourceFileChange(std::string uri, lsp::FileChangeType change_type)
-      -> void override;
+      -> asio::awaitable<void> override;
 
   // Document lifecycle events
   auto OnDocumentOpened(std::string uri, std::string content, int version)
       -> asio::awaitable<void> override;
 
-  auto OnDocumentSaved(std::string uri, std::string content, int version)
+  auto OnDocumentChanged(std::string uri, std::string content, int version)
       -> asio::awaitable<void> override;
+
+  auto OnDocumentSaved(std::string uri) -> asio::awaitable<void> override;
 
   auto OnDocumentClosed(std::string uri) -> void override;
 
   auto OnDocumentsChanged(std::vector<std::string> uris) -> void override;
+
+  auto GetDocumentState(std::string uri)
+      -> asio::awaitable<std::optional<DocumentState>> override;
+
+  auto GetAllOpenDocumentUris()
+      -> asio::awaitable<std::vector<std::string>> override;
 
  private:
   // Core dependencies
@@ -63,6 +74,9 @@ class LanguageService : public LanguageServiceBase {
   std::shared_ptr<const GlobalCatalog> global_catalog_;
   std::shared_ptr<spdlog::logger> logger_;
   asio::any_io_executor executor_;
+
+  // Document state management
+  DocumentStateManager doc_state_;
 
   std::unique_ptr<SessionManager> session_manager_;
 
