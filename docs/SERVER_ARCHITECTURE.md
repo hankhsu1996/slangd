@@ -155,29 +155,68 @@ SlangdLspServer (LSP protocol layer)
 **Event-driven model**:
 
 ```
-SlangdLspServer
-  ├─ Document Events (protocol-level API)
-  │   ├─ OnDidOpen(uri, content) → LanguageService.OnDocumentOpened()
-  │   ├─ OnDidSave(uri, content) → LanguageService.OnDocumentSaved()
-  │   ├─ OnDidClose(uri) → LanguageService.OnDocumentClosed()
-  │   └─ OnDidChange(uri) → (no action - typing is fast!)
+SlangdLspServer (protocol layer - thin delegates)
+  ├─ Document Events (notifications from client)
+  │   ├─ OnDidOpen(uri, content, version)
+  │   │   → LanguageService.OnDocumentOpened()
+  │   │   → PublishDiagnosticsForDocument()  ← Server pushes diagnostics
+  │   │
+  │   ├─ OnDidChange(uri, content, version)
+  │   │   → LanguageService.OnDocumentChanged()
+  │   │
+  │   ├─ OnDidSave(uri)
+  │   │   → LanguageService.OnDocumentSaved()
+  │   │   → PublishDiagnosticsForDocument()  ← Server pushes diagnostics
+  │   │
+  │   └─ OnDidClose(uri) → LanguageService.OnDocumentClosed()
   │
-  └─ LSP Feature Handlers (read-only)
+  └─ LSP Feature Handlers (requests from client - respond with data)
       ├─ OnDocumentSymbols(uri) → LanguageService.GetDocumentSymbols(uri)
-      ├─ OnDefinition(uri, pos) → LanguageService.GetDefinitionsForPosition(uri, pos)
-      └─ OnDiagnostics(uri) → LanguageService.ComputeDiagnostics(uri)
+      └─ OnDefinition(uri, pos) → LanguageService.GetDefinitionsForPosition(uri, pos)
 
-LanguageService (implementation)
-  ├─ OnDocumentOpened/Saved → SessionManager.UpdateSession() (private)
-  ├─ OnDocumentClosed → (lazy removal - keeps session in cache)
-  └─ OnDocumentsChanged → SessionManager.InvalidateSessions() (private)
+LanguageService (domain layer - state management + feature implementations)
+  ├─ DocumentStateManager doc_state_  ← Document state (content + version)
+  │
+  ├─ Document Lifecycle
+  │   ├─ OnDocumentOpened → doc_state_.Update() + SessionManager.UpdateSession()
+  │   ├─ OnDocumentChanged → doc_state_.Update() (no session rebuild - typing is fast!)
+  │   ├─ OnDocumentSaved → doc_state_.Get() + SessionManager.UpdateSession()
+  │   ├─ OnDocumentClosed → doc_state_.Remove() (lazy session removal)
+  │   └─ OnDocumentsChanged → SessionManager.InvalidateSessions()
+  │
+  └─ LSP Features (called by protocol layer)
+      ├─ ComputeParseDiagnostics(uri, content) → Parse-only diagnostics
+      ├─ ComputeDiagnostics(uri) → Full diagnostics (parse + semantic)
+      ├─ GetDocumentSymbols(uri) → Document symbol tree
+      └─ GetDefinitionsForPosition(uri, pos) → Go-to-definition locations
 
-SessionManager
+DocumentStateManager (synchronized storage)
+  ├─ documents_: map<uri, DocumentState{content, version}>  ← Domain state
+  └─ strand_: asio::strand  ← Thread-safe access
+
+SessionManager (compilation cache)
   ├─ active_sessions_: map<uri, CacheEntry{session, version}>  ← Version-aware cache
   ├─ pending_sessions_: map<uri, PendingCreation>  ← Being created
   ├─ access_order_: vector<uri>  ← LRU tracking (MRU first)
   └─ Cache key: URI + LSP document version (not content hash)
 ```
+
+**Key LSP Patterns:**
+
+**1. Document Events (Client → Server notifications):**
+- Client notifies server of document changes (open/change/save/close)
+- Server responds immediately, then MAY push diagnostics asynchronously
+- Example: `textDocument/didSave` → server computes → `textDocument/publishDiagnostics`
+
+**2. Feature Requests (Client → Server requests, Server → Client responses):**
+- Client sends request and waits for response
+- Server processes and returns data synchronously
+- Example: `textDocument/definition` request → server responds with locations
+
+**3. Push Notifications (Server → Client notifications):**
+- Server pushes data to client proactively (no request needed)
+- Diagnostics use this pattern - server decides when to send them
+- Example: After save, server publishes diagnostics without client asking
 
 **Caching strategy**:
 
@@ -188,10 +227,14 @@ SessionManager
 
 **Why this design**:
 
-1. **Typing performance**: URI+version stable during typing (0ms), save triggers rebuild (~500ms)
-2. **Close/reopen efficiency**: Reopening file reuses cache if version matches (no ~500ms rebuild)
-3. **Memory management**: LRU eviction prevents unbounded growth
-4. **Simplicity**: No content hashing overhead, rely on LSP version tracking
+1. **Protocol layer is stateless**: Pure LSP translation (params → domain calls), zero state management
+2. **Single source of truth**: Document state lives only in domain layer (`DocumentStateManager`)
+3. **Consistent handlers**: All protocol handlers are 1-line thin delegates (no state access)
+4. **No duplication**: Eliminated redundant storage between protocol and domain layers
+5. **Typing performance**: `OnDocumentChanged` updates state only (no session rebuild), save triggers rebuild
+6. **Close/reopen efficiency**: Reopening file reuses cache if version matches (no ~500ms rebuild)
+7. **Memory management**: LRU eviction prevents unbounded growth
+8. **Simplicity**: No content hashing overhead, rely on LSP version tracking
 
 ### Two-Phase Session Creation
 

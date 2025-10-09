@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -8,6 +9,8 @@
 #include <lsp/document_features.hpp>
 #include <lsp/error.hpp>
 #include <lsp/workspace.hpp>
+
+#include "slangd/core/document_state.hpp"
 
 namespace slangd {
 
@@ -68,15 +71,17 @@ class LanguageServiceBase {
       -> asio::awaitable<void> = 0;
 
   // Called when document is saved
-  virtual auto OnDocumentSaved(
-      std::string uri, std::string content, int version)
-      -> asio::awaitable<void> = 0;
+  virtual auto OnDocumentSaved(std::string uri) -> asio::awaitable<void> = 0;
 
   // Called when document is closed in editor
   virtual auto OnDocumentClosed(std::string uri) -> void = 0;
 
   // Called when external file changes are detected
   virtual auto OnDocumentsChanged(std::vector<std::string> uris) -> void = 0;
+
+  // Get document state (content and version) for a URI
+  virtual auto GetDocumentState(std::string uri)
+      -> asio::awaitable<std::optional<DocumentState>> = 0;
 };
 
 }  // namespace slangd

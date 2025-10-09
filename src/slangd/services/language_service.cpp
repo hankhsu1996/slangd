@@ -18,7 +18,8 @@ LanguageService::LanguageService(
     asio::any_io_executor executor, std::shared_ptr<spdlog::logger> logger)
     : global_catalog_(nullptr),
       logger_(logger ? logger : spdlog::default_logger()),
-      executor_(std::move(executor)),
+      executor_(executor),
+      doc_state_(executor),
       compilation_pool_(std::make_unique<asio::thread_pool>(kThreadPoolSize)) {
   logger_->debug(
       "LanguageService created with {} compilation threads", kThreadPoolSize);
@@ -288,6 +289,10 @@ auto LanguageService::OnDocumentOpened(
     co_return;
   }
 
+  // Store document state
+  co_await doc_state_.Update(uri, content, version);
+
+  // Create session for opened document
   co_await session_manager_->UpdateSession(uri, content, version);
 }
 
@@ -299,18 +304,27 @@ auto LanguageService::OnDocumentChanged(
     co_return;
   }
 
-  co_await session_manager_->UpdateSession(uri, content, version);
+  // Store document state only (no session rebuild - typing is fast!)
+  co_await doc_state_.Update(uri, content, version);
 }
 
-auto LanguageService::OnDocumentSaved(
-    std::string uri, std::string content, int version)
+auto LanguageService::OnDocumentSaved(std::string uri)
     -> asio::awaitable<void> {
   if (!session_manager_) {
     logger_->error("LanguageService: SessionManager not initialized");
     co_return;
   }
 
-  co_await session_manager_->UpdateSession(uri, content, version);
+  // Get document state
+  auto doc_state = co_await doc_state_.Get(uri);
+  if (!doc_state) {
+    logger_->error("LanguageService: No document state for {}", uri);
+    co_return;
+  }
+
+  // Rebuild session with saved content
+  co_await session_manager_->UpdateSession(
+      uri, doc_state->content, doc_state->version);
 }
 
 auto LanguageService::OnDocumentClosed(std::string uri) -> void {
@@ -320,6 +334,15 @@ auto LanguageService::OnDocumentClosed(std::string uri) -> void {
   }
 
   logger_->debug("LanguageService::OnDocumentClosed: {}", uri);
+
+  // Remove document state asynchronously
+  asio::co_spawn(
+      executor_,
+      [this, uri]() -> asio::awaitable<void> {
+        co_await doc_state_.Remove(uri);
+      },
+      asio::detached);
+
   // Lazy removal: Keep session in cache for close/reopen optimization
   // LRU eviction will handle cleanup when cache size limit is reached
 }
@@ -334,6 +357,11 @@ auto LanguageService::OnDocumentsChanged(std::vector<std::string> uris)
   logger_->debug("LanguageService::OnDocumentsChanged: {} files", uris.size());
   session_manager_->InvalidateSessions(uris);
   logger_->debug("SessionManager cache invalidated for {} files", uris.size());
+}
+
+auto LanguageService::GetDocumentState(std::string uri)
+    -> asio::awaitable<std::optional<DocumentState>> {
+  co_return co_await doc_state_.Get(uri);
 }
 
 }  // namespace slangd::services

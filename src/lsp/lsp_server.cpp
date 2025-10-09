@@ -18,8 +18,7 @@ LspServer::LspServer(
     : logger_(logger ? logger : spdlog::default_logger()),
       endpoint_(std::move(endpoint)),
       executor_(executor),
-      work_guard_(asio::make_work_guard(executor)),
-      file_strand_(asio::make_strand(executor)) {
+      work_guard_(asio::make_work_guard(executor)) {
 }
 
 auto LspServer::Start() -> asio::awaitable<std::expected<void, LspError>> {
@@ -242,59 +241,6 @@ void LspServer::RegisterWorkspaceFeatureHandlers() {
 }
 
 void LspServer::RegisterWindowFeatureHandlers() {
-}
-
-// File management helpers
-auto LspServer::GetOpenFile(std::string uri)
-    -> asio::awaitable<std::optional<std::reference_wrapper<OpenFile>>> {
-  co_await asio::post(file_strand_, asio::use_awaitable);
-
-  auto it = open_files_.find(uri);
-  if (it != open_files_.end()) {
-    co_return std::ref(it->second);
-  }
-  co_return std::nullopt;
-}
-
-auto LspServer::AddOpenFile(
-    std::string uri, std::string content, std::string language_id, int version)
-    -> asio::awaitable<void> {
-  co_await asio::post(file_strand_, asio::use_awaitable);
-
-  Logger()->debug("LspServer adding open file: {}", uri);
-  OpenFile file{
-      .uri = uri,
-      .content = content,
-      .language_id = language_id,
-      .version = version,
-  };
-  open_files_[uri] = std::move(file);
-  co_return;
-}
-
-auto LspServer::UpdateOpenFile(
-    std::string uri, std::string content, int version)
-    -> asio::awaitable<void> {
-  co_await asio::post(file_strand_, asio::use_awaitable);
-
-  Logger()->debug("LspServer updating open file: {}", uri);
-  auto it = open_files_.find(uri);
-  if (it != open_files_.end()) {
-    OpenFile& file = it->second;
-    file.content = std::move(content);
-    file.version = version;
-    Logger()->debug(
-        "LspServer updated file {} to version {}", uri, file.version);
-  }
-  co_return;
-}
-
-auto LspServer::RemoveOpenFile(std::string uri) -> asio::awaitable<void> {
-  co_await asio::post(file_strand_, asio::use_awaitable);
-
-  Logger()->debug("LspServer removing open file: {}", uri);
-  open_files_.erase(uri);
-  co_return;
 }
 
 }  // namespace lsp

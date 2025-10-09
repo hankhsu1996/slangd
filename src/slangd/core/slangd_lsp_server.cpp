@@ -116,8 +116,6 @@ auto SlangdLspServer::OnDidOpenTextDocument(
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
   const auto& text_doc = params.textDocument;
 
-  co_await AddOpenFile(
-      text_doc.uri, text_doc.text, text_doc.languageId, text_doc.version);
   co_await language_service_->OnDocumentOpened(
       text_doc.uri, text_doc.text, text_doc.version);
 
@@ -138,7 +136,7 @@ auto SlangdLspServer::OnDidChangeTextDocument(
   if (!params.contentChanges.empty()) {
     const auto& full_change = std::get<lsp::TextDocumentContentFullChangeEvent>(
         params.contentChanges[0]);
-    co_await UpdateOpenFile(
+    co_await language_service_->OnDocumentChanged(
         params.textDocument.uri, full_change.text, params.textDocument.version);
   }
   co_return Ok();
@@ -147,20 +145,14 @@ auto SlangdLspServer::OnDidChangeTextDocument(
 auto SlangdLspServer::OnDidSaveTextDocument(
     lsp::DidSaveTextDocumentParams params)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
-  auto file_opt = co_await GetOpenFile(params.textDocument.uri);
-  if (file_opt) {
-    const auto& file = file_opt->get();
-    co_await language_service_->OnDocumentSaved(
-        params.textDocument.uri, file.content, file.version);
-    co_await ProcessDiagnosticsForUri(params.textDocument.uri);
-  }
+  co_await language_service_->OnDocumentSaved(params.textDocument.uri);
+  co_await ProcessDiagnosticsForUri(params.textDocument.uri);
   co_return Ok();
 }
 
 auto SlangdLspServer::OnDidCloseTextDocument(
     lsp::DidCloseTextDocumentParams params)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
-  co_await RemoveOpenFile(params.textDocument.uri);
   language_service_->OnDocumentClosed(params.textDocument.uri);
   co_return Ok();
 }
@@ -184,10 +176,10 @@ auto SlangdLspServer::PublishDiagnosticsForDocument(
 
 auto SlangdLspServer::ProcessDiagnosticsForUri(std::string uri)
     -> asio::awaitable<void> {
-  auto file_opt = co_await GetOpenFile(uri);
-  if (file_opt) {
-    const auto& file = file_opt->get();
-    co_await PublishDiagnosticsForDocument(uri, file.content, file.version);
+  auto doc_state = co_await language_service_->GetDocumentState(uri);
+  if (doc_state) {
+    co_await PublishDiagnosticsForDocument(
+        uri, doc_state->content, doc_state->version);
   }
 }
 
@@ -220,7 +212,8 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
           if (IsConfigFile(change.uri)) {
             has_config_change = true;
           } else if (IsSystemVerilogFile(path.Path())) {
-            if (co_await GetOpenFile(change.uri)) {
+            // Ignore open files - managed by LSP text sync
+            if (co_await language_service_->GetDocumentState(change.uri)) {
               continue;
             }
             has_sv_file_change = true;

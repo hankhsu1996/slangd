@@ -10,6 +10,7 @@
 
 #include "slangd/core/language_service_base.hpp"
 #include "slangd/core/project_layout_service.hpp"
+#include "slangd/services/document_state_manager.hpp"
 #include "slangd/services/global_catalog.hpp"
 #include "slangd/services/session_manager.hpp"
 
@@ -55,12 +56,14 @@ class LanguageService : public LanguageServiceBase {
   auto OnDocumentChanged(std::string uri, std::string content, int version)
       -> asio::awaitable<void> override;
 
-  auto OnDocumentSaved(std::string uri, std::string content, int version)
-      -> asio::awaitable<void> override;
+  auto OnDocumentSaved(std::string uri) -> asio::awaitable<void> override;
 
   auto OnDocumentClosed(std::string uri) -> void override;
 
   auto OnDocumentsChanged(std::vector<std::string> uris) -> void override;
+
+  auto GetDocumentState(std::string uri)
+      -> asio::awaitable<std::optional<DocumentState>> override;
 
  private:
   // Core dependencies
@@ -68,6 +71,9 @@ class LanguageService : public LanguageServiceBase {
   std::shared_ptr<const GlobalCatalog> global_catalog_;
   std::shared_ptr<spdlog::logger> logger_;
   asio::any_io_executor executor_;
+
+  // Document state management
+  DocumentStateManager doc_state_;
 
   std::unique_ptr<SessionManager> session_manager_;
 
