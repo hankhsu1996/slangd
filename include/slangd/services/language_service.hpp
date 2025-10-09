@@ -44,10 +44,10 @@ class LanguageService : public LanguageServiceBase {
   auto GetDocumentSymbols(std::string uri) -> asio::awaitable<std::expected<
       std::vector<lsp::DocumentSymbol>, lsp::error::LspError>> override;
 
-  auto HandleConfigChange() -> void override;
+  auto HandleConfigChange() -> asio::awaitable<void> override;
 
   auto HandleSourceFileChange(std::string uri, lsp::FileChangeType change_type)
-      -> void override;
+      -> asio::awaitable<void> override;
 
   // Document lifecycle events
   auto OnDocumentOpened(std::string uri, std::string content, int version)
@@ -64,6 +64,9 @@ class LanguageService : public LanguageServiceBase {
 
   auto GetDocumentState(std::string uri)
       -> asio::awaitable<std::optional<DocumentState>> override;
+
+  auto GetAllOpenDocumentUris()
+      -> asio::awaitable<std::vector<std::string>> override;
 
  private:
   // Core dependencies

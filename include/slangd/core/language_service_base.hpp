@@ -53,11 +53,12 @@ class LanguageServiceBase {
       -> asio::awaitable<void> = 0;
 
   // Config change handling - notifies service of configuration file changes
-  virtual auto HandleConfigChange() -> void = 0;
+  virtual auto HandleConfigChange() -> asio::awaitable<void> = 0;
 
   // Source file change handling - notifies service of source file changes
   virtual auto HandleSourceFileChange(
-      std::string uri, lsp::FileChangeType change_type) -> void = 0;
+      std::string uri, lsp::FileChangeType change_type)
+      -> asio::awaitable<void> = 0;
 
   // Document lifecycle events (protocol-level)
   // Called when document is opened in editor
@@ -82,6 +83,10 @@ class LanguageServiceBase {
   // Get document state (content and version) for a URI
   virtual auto GetDocumentState(std::string uri)
       -> asio::awaitable<std::optional<DocumentState>> = 0;
+
+  // Get all open document URIs
+  virtual auto GetAllOpenDocumentUris()
+      -> asio::awaitable<std::vector<std::string>> = 0;
 };
 
 }  // namespace slangd

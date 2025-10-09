@@ -248,9 +248,9 @@ auto LanguageService::GetDocumentSymbols(std::string uri) -> asio::awaitable<
   co_return session->GetSemanticIndex().GetDocumentSymbols(uri);
 }
 
-auto LanguageService::HandleConfigChange() -> void {
+auto LanguageService::HandleConfigChange() -> asio::awaitable<void> {
   if (!layout_service_) {
-    return;
+    co_return;
   }
 
   layout_service_->RebuildLayout();
@@ -270,34 +270,26 @@ auto LanguageService::HandleConfigChange() -> void {
   session_manager_->InvalidateAllSessions();
 
   // Rebuild sessions for all open files to restore LSP features immediately
-  asio::co_spawn(
-      executor_,
-      [this]() -> asio::awaitable<void> {
-        auto open_uris = co_await doc_state_.GetAllUris();
-        logger_->debug(
-            "LanguageService rebuilding {} open file sessions after config "
-            "change",
-            open_uris.size());
+  auto open_uris = co_await doc_state_.GetAllUris();
+  logger_->debug(
+      "LanguageService rebuilding {} open file sessions after config change",
+      open_uris.size());
 
-        for (const auto& uri : open_uris) {
-          auto state = co_await doc_state_.Get(uri);
-          if (state) {
-            co_await session_manager_->UpdateSession(
-                uri, state->content, state->version);
-          }
-        }
+  for (const auto& uri : open_uris) {
+    auto state = co_await doc_state_.Get(uri);
+    if (state) {
+      co_await session_manager_->UpdateSession(
+          uri, state->content, state->version);
+    }
+  }
 
-        logger_->debug("LanguageService completed config change rebuild");
-      },
-      asio::detached);
-
-  logger_->debug("LanguageService handled config change");
+  logger_->debug("LanguageService completed config change rebuild");
 }
 
 auto LanguageService::HandleSourceFileChange(
-    std::string uri, lsp::FileChangeType change_type) -> void {
+    std::string uri, lsp::FileChangeType change_type) -> asio::awaitable<void> {
   if (!layout_service_) {
-    return;
+    co_return;
   }
 
   switch (change_type) {
@@ -405,6 +397,11 @@ auto LanguageService::OnDocumentsChanged(std::vector<std::string> uris)
 auto LanguageService::GetDocumentState(std::string uri)
     -> asio::awaitable<std::optional<DocumentState>> {
   co_return co_await doc_state_.Get(uri);
+}
+
+auto LanguageService::GetAllOpenDocumentUris()
+    -> asio::awaitable<std::vector<std::string>> {
+  co_return co_await doc_state_.GetAllUris();
 }
 
 }  // namespace slangd::services

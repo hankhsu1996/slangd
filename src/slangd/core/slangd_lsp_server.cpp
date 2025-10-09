@@ -221,13 +221,20 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
 
             // Closed file changed - invalidate sessions
             // (Any file might be package/interface included in all sessions)
-            language_service_->HandleSourceFileChange(change.uri, change.type);
+            co_await language_service_->HandleSourceFileChange(
+                change.uri, change.type);
           }
         }
 
         // Config changes affect everything (search paths, macros, etc.)
         if (has_config_change) {
-          language_service_->HandleConfigChange();
+          co_await language_service_->HandleConfigChange();
+
+          // Republish diagnostics for all open files after rebuild
+          auto open_uris = co_await language_service_->GetAllOpenDocumentUris();
+          for (const auto& uri : open_uris) {
+            co_await ProcessDiagnosticsForUri(uri);
+          }
         }
 
         co_return;
