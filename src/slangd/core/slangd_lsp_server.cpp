@@ -160,13 +160,6 @@ auto SlangdLspServer::OnDidCloseTextDocument(
 auto SlangdLspServer::PublishDiagnosticsForDocument(
     std::string uri, std::string content, int version)
     -> asio::awaitable<void> {
-  auto parse_result =
-      co_await language_service_->ComputeParseDiagnostics(uri, content);
-  if (parse_result.has_value()) {
-    co_await PublishDiagnostics(
-        {.uri = uri, .version = version, .diagnostics = *parse_result});
-  }
-
   auto all_diags_result = co_await language_service_->ComputeDiagnostics(uri);
   if (all_diags_result.has_value()) {
     co_await PublishDiagnostics(

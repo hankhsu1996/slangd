@@ -59,11 +59,13 @@ VSCode Response ← JSON-RPC ← LSP Handler ← Result ← Computation Complete
 
 ## Diagnostic Publishing Strategy
 
-**Two-phase approach**: Parse diagnostics (syntax errors) publish immediately, then full diagnostics (semantic analysis) publish after elaboration.
+**Single-publish approach**: Full diagnostics (parse + semantic) publish after elaboration completes.
 
 ```
-File Save → Parse Diagnostics (fast) → Publish → Full Diagnostics (slow) → Publish
+File Save → Full Diagnostics (parse + semantic) → Publish
 ```
+
+**Rationale**: Publishing intermediate parse-only diagnostics causes visual flicker (diagnostics clear then reappear) because LSP replaces all diagnostics on each publish. Industry-standard servers (clangd, rust-analyzer) wait for full analysis to avoid this UX issue.
 
 ### Key Architectural Decisions
 
