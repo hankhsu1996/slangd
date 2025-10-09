@@ -74,6 +74,7 @@ SystemVerilog LSP server with modular design:
 
 - **`docs/DESIGN_PRINCIPLES.md`**: Core philosophy and case studies for working with Slang library infrastructure
 - **`docs/SERVER_ARCHITECTURE.md`**: Server layers, session lifecycle, two-phase diagnostics, and threading model
+- **`docs/CONFIGURATION.md`**: .slangd config file format, file discovery modes, and path filtering
 - **`docs/SEMANTIC_INDEXING.md`**: SemanticIndex implementation patterns and guide to adding new symbol support
 - **`docs/COMPILATION_OPTIONS.md`**: Slang compilation flags and preprocessor options used for LSP operation
 - **`docs/LSP_TYPE_HANDLING.md`**: TypeReferenceSymbol architecture and type traversal deduplication patterns

@@ -1,5 +1,6 @@
 #include "slangd/core/slangd_config_file.hpp"
 
+#include <regex>
 #include <yaml-cpp/yaml.h>
 
 #include <spdlog/spdlog.h>
@@ -82,6 +83,23 @@ auto SlangdConfigFile::LoadFromFile(
       }
     }
 
+    // Parse If section (path filtering)
+    if (yaml["If"]) {
+      if (yaml["If"]["PathMatch"]) {
+        config.path_condition_.path_match =
+            yaml["If"]["PathMatch"].as<std::string>();
+        config.logger_->debug(
+            "Loaded PathMatch: {}", *config.path_condition_.path_match);
+      }
+
+      if (yaml["If"]["PathExclude"]) {
+        config.path_condition_.path_exclude =
+            yaml["If"]["PathExclude"].as<std::string>();
+        config.logger_->debug(
+            "Loaded PathExclude: {}", *config.path_condition_.path_exclude);
+      }
+    }
+
     config.logger_->debug("Loaded .slangd configuration from {}", config_path);
     return config;
 
@@ -93,6 +111,45 @@ auto SlangdConfigFile::LoadFromFile(
     config.logger_->error(
         "Error loading .slangd configuration file: {}", e.what());
     return std::nullopt;
+  }
+}
+
+auto SlangdConfigFile::ShouldIncludeFile(std::string_view relative_path) const
+    -> bool {
+  // No conditions specified -> include everything
+  if (!path_condition_.path_match.has_value() &&
+      !path_condition_.path_exclude.has_value()) {
+    return true;
+  }
+
+  // Convert to string for regex matching (relative_path is already normalized)
+  std::string path_str(relative_path);
+
+  try {
+    // Check PathMatch: if specified, path must match to be included
+    if (path_condition_.path_match.has_value()) {
+      std::regex match_pattern(*path_condition_.path_match);
+      if (!std::regex_match(path_str, match_pattern)) {
+        return false;  // Doesn't match PathMatch -> exclude
+      }
+    }
+
+    // Check PathExclude: if specified and matches, exclude
+    if (path_condition_.path_exclude.has_value()) {
+      std::regex exclude_pattern(*path_condition_.path_exclude);
+      if (std::regex_match(path_str, exclude_pattern)) {
+        return false;  // Matches PathExclude -> exclude
+      }
+    }
+
+    // Passed all conditions -> include
+    return true;
+
+  } catch (const std::regex_error& e) {
+    logger_->warn(
+        "Invalid regex in path condition ({}), including file by default: {}",
+        e.what(), relative_path);
+    return true;  // Fail open on regex error
   }
 }
 

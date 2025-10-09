@@ -21,6 +21,12 @@ class SlangdConfigFile {
     bool absolute = false;
   };
 
+  // Path filtering conditions (If block)
+  struct PathCondition {
+    std::optional<std::string> path_match;    // Include only if matches
+    std::optional<std::string> path_exclude;  // Exclude if matches
+  };
+
   // Constructor with optional logger
   explicit SlangdConfigFile(std::shared_ptr<spdlog::logger> logger = nullptr);
 
@@ -53,6 +59,15 @@ class SlangdConfigFile {
     return defines_;
   }
 
+  [[nodiscard]] auto GetPathCondition() const -> const PathCondition& {
+    return path_condition_;
+  }
+
+  // Path filtering - checks if file should be included based on PathCondition
+  // Takes path relative to workspace root with forward slashes
+  [[nodiscard]] auto ShouldIncludeFile(std::string_view relative_path) const
+      -> bool;
+
   // Helper methods
   [[nodiscard]] auto HasFileSources() const -> bool {
     return !file_lists_.paths.empty() || !files_.empty();
@@ -77,6 +92,9 @@ class SlangdConfigFile {
 
   // Macro definitions (NAME or NAME=value)
   std::vector<std::string> defines_;
+
+  // Path filtering conditions
+  PathCondition path_condition_;
 };
 
 }  // namespace slangd

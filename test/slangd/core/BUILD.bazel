@@ -16,3 +16,16 @@ cc_test(
         "@slang",
     ],
 )
+
+cc_test(
+    name = "slangd_config_file_test",
+    timeout = "short",
+    srcs = [
+        "slangd_config_file_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)

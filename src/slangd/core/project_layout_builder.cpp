@@ -41,6 +41,31 @@ auto ProjectLayoutBuilder::BuildFromConfig(
   // Discover files using the chosen provider
   auto discovered_files = provider->DiscoverFiles(workspace_root, config);
 
+  // Apply path filtering (PathMatch/PathExclude from If block)
+  size_t original_count = discovered_files.size();
+  std::vector<CanonicalPath> filtered_files;
+  for (const auto& file : discovered_files) {
+    // Compute relative path from workspace root
+    auto relative =
+        std::filesystem::relative(file.Path(), workspace_root.Path());
+
+    // Normalize to forward slashes for cross-platform consistency
+    auto relative_str = relative.string();
+    std::ranges::replace(relative_str, '\\', '/');
+
+    // Check if file should be included based on config conditions
+    if (config.ShouldIncludeFile(relative_str)) {
+      filtered_files.push_back(file);
+    }
+  }
+
+  if (filtered_files.size() != original_count) {
+    logger_->info(
+        "ProjectLayoutBuilder filtered {} files (PathMatch/PathExclude), {} "
+        "remaining",
+        original_count - filtered_files.size(), filtered_files.size());
+  }
+
   // Extract other configuration data
   auto include_dirs = config.GetIncludeDirs();
   auto defines = config.GetDefines();
@@ -48,10 +73,10 @@ auto ProjectLayoutBuilder::BuildFromConfig(
   logger_->debug(
       "ProjectLayoutBuilder built layout with {} files, {} includes, {} "
       "defines",
-      discovered_files.size(), include_dirs.size(), defines.size());
+      filtered_files.size(), include_dirs.size(), defines.size());
 
   return {
-      std::move(discovered_files), std::move(include_dirs), std::move(defines)};
+      std::move(filtered_files), std::move(include_dirs), std::move(defines)};
 }
 
 auto ProjectLayoutBuilder::ChooseDiscoveryProvider(
