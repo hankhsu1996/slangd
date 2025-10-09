@@ -80,8 +80,6 @@ class SessionManager {
     // Signal: Phase 2 complete (after indexing) - symbols/definition can
     // proceed
     std::shared_ptr<SessionChannel> session_ready;
-    // Cancellation signal - emit to cancel ongoing work
-    std::shared_ptr<asio::cancellation_signal> cancellation;
     // LSP document version - used to prevent race conditions
     int version;
 

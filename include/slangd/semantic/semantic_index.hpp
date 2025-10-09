@@ -108,8 +108,7 @@ class SemanticIndex {
       slang::ast::Compilation& compilation,
       const slang::SourceManager& source_manager,
       const std::string& current_file_uri,
-      const services::GlobalCatalog* catalog = nullptr,
-      asio::cancellation_slot cancellation_slot = {})
+      const services::GlobalCatalog* catalog = nullptr)
       -> std::unique_ptr<SemanticIndex>;
 
   // Query methods

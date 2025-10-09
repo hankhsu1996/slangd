@@ -145,6 +145,16 @@ Write conditions that express WHEN to do something, not when to skip.
 
 **When to use**: If a condition needs comments to clarify what it means, rewrite as positive.
 
+### Write Comments That Explain "Why", Not "What"
+
+Comments should explain **why** decisions were made, not what the code does.
+
+**Use comments for:** Architectural constraints, design decisions, non-obvious behavior.
+
+**Don't use comments for:** Stating the obvious, discussing past bugs, restating code in English.
+
+**Principle:** If you need comments to explain what code does, refactor the code to be clearer instead.
+
 ## Problem-Solving Process
 
 ### 1. Periodically Stop and Verify

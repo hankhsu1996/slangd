@@ -2,7 +2,6 @@
 
 #include <filesystem>
 
-#include <asio/cancellation_signal.hpp>
 #include <slang/ast/Compilation.h>
 #include <slang/ast/HierarchicalReference.h>
 #include <slang/ast/Symbol.h>
@@ -35,15 +34,8 @@ namespace slangd::semantic {
 auto SemanticIndex::FromCompilation(
     slang::ast::Compilation& compilation,
     const slang::SourceManager& source_manager,
-    const std::string& current_file_uri, const services::GlobalCatalog* catalog,
-    asio::cancellation_slot cancellation_slot)
+    const std::string& current_file_uri, const services::GlobalCatalog* catalog)
     -> std::unique_ptr<SemanticIndex> {
-  // Track cancellation state for cooperative cancellation
-  asio::cancellation_state cancel_state(cancellation_slot);
-  auto is_cancelled = [&cancel_state]() -> bool {
-    return cancel_state.cancelled() != asio::cancellation_type::none;
-  };
-
   auto index =
       std::unique_ptr<SemanticIndex>(new SemanticIndex(source_manager));
 
@@ -91,12 +83,6 @@ auto SemanticIndex::FromCompilation(
   //
   // No ordering needed - instances are independent of traversal order
   for (const auto* def : compilation.getDefinitions()) {
-    // Check for cancellation at the start of each definition
-    if (is_cancelled()) {
-      spdlog::debug("Semantic indexing cancelled for {}", current_file_uri);
-      return nullptr;
-    }
-
     if (def->kind != slang::ast::SymbolKind::Definition) {
       continue;
     }
@@ -119,12 +105,6 @@ auto SemanticIndex::FromCompilation(
     }
 
     if (has_all_defaults) {
-      // Check for cancellation before expensive elaboration
-      if (is_cancelled()) {
-        spdlog::debug("Semantic indexing cancelled for {}", current_file_uri);
-        return nullptr;
-      }
-
       // Create a full InstanceSymbol (not just InstanceBodySymbol) to enable
       // proper interface port connection resolution via getConnection().
       // Using createDefault() ensures parentInstance is set correctly.
@@ -142,12 +122,6 @@ auto SemanticIndex::FromCompilation(
       // and cache symbol resolutions (visitInstances=false for file-scoped)
       compilation.forceElaborate(instance.body);
 
-      // Check for cancellation after elaboration, before indexing
-      if (is_cancelled()) {
-        spdlog::debug("Semantic indexing cancelled for {}", current_file_uri);
-        return nullptr;
-      }
-
       // Traverse the instance body to index all members
       // (uses cached symbol resolutions from forceElaborate)
       instance.body.visit(visitor);
@@ -156,12 +130,6 @@ auto SemanticIndex::FromCompilation(
 
   // PATH 2: Index packages
   for (const auto* pkg : compilation.getPackages()) {
-    // Check for cancellation between packages
-    if (is_cancelled()) {
-      spdlog::debug("Semantic indexing cancelled for {}", current_file_uri);
-      return nullptr;
-    }
-
     if (matches_current_file(pkg->location)) {
       pkg->visit(visitor);  // Packages are Scopes, members auto-traversed
     }
@@ -171,11 +139,6 @@ auto SemanticIndex::FromCompilation(
   // CompilationUnits can contain symbols from MULTIPLE files, so we must
   // filter children by file URI
   for (const auto* unit : compilation.getCompilationUnits()) {
-    // Check for cancellation between compilation units
-    if (is_cancelled()) {
-      spdlog::debug("Semantic indexing cancelled for {}", current_file_uri);
-      return nullptr;
-    }
     for (const auto& child : unit->members()) {
       if (matches_current_file(child.location)) {
         // Skip packages - already handled in PATH 2

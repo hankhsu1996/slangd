@@ -12,6 +12,8 @@
 
 namespace slangd::services {
 
+using lsp::error::LspError;
+
 LanguageService::LanguageService(
     asio::any_io_executor executor, std::shared_ptr<spdlog::logger> logger)
     : global_catalog_(nullptr),
@@ -54,12 +56,13 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
 
 auto LanguageService::ComputeParseDiagnostics(
     std::string uri, std::string content)
-    -> asio::awaitable<std::vector<lsp::Diagnostic>> {
+    -> asio::awaitable<std::expected<std::vector<lsp::Diagnostic>, LspError>> {
   utils::ScopedTimer timer("ComputeParseDiagnostics", logger_);
 
   if (!layout_service_) {
     logger_->error("LanguageService: Workspace not initialized");
-    co_return std::vector<lsp::Diagnostic>{};
+    co_return LspError::UnexpectedFromCode(
+        lsp::error::LspErrorCode::kInternalError, "Workspace not initialized");
   }
 
   logger_->debug(
@@ -94,12 +97,13 @@ auto LanguageService::ComputeParseDiagnostics(
 }
 
 auto LanguageService::ComputeDiagnostics(std::string uri)
-    -> asio::awaitable<std::vector<lsp::Diagnostic>> {
+    -> asio::awaitable<std::expected<std::vector<lsp::Diagnostic>, LspError>> {
   utils::ScopedTimer timer("ComputeDiagnostics", logger_);
 
   if (!layout_service_) {
     logger_->error("LanguageService: Workspace not initialized");
-    co_return std::vector<lsp::Diagnostic>{};
+    co_return LspError::UnexpectedFromCode(
+        lsp::error::LspErrorCode::kInternalError, "Workspace not initialized");
   }
 
   logger_->debug("LanguageService computing diagnostics for: {}", uri);
@@ -108,8 +112,10 @@ auto LanguageService::ComputeDiagnostics(std::string uri)
   // only)
   auto state = co_await session_manager_->GetCompilationState(uri);
   if (!state.has_value()) {
-    logger_->error("No compilation state available for: {}", uri);
-    co_return std::vector<lsp::Diagnostic>{};
+    logger_->info(
+        "LanguageService: No compilation state for {} (likely cancelled)", uri);
+    co_return LspError::UnexpectedFromCode(
+        lsp::error::LspErrorCode::kInternalError, "Document was modified");
   }
 
   // Extract parse diagnostics (syntax errors from syntax trees)
@@ -136,18 +142,20 @@ auto LanguageService::ComputeDiagnostics(std::string uri)
 
 auto LanguageService::GetDefinitionsForPosition(
     std::string uri, lsp::Position position)
-    -> asio::awaitable<std::vector<lsp::Location>> {
+    -> asio::awaitable<std::expected<std::vector<lsp::Location>, LspError>> {
   utils::ScopedTimer timer("GetDefinitionsForPosition", logger_);
 
   if (!layout_service_) {
     logger_->error("LanguageService: Workspace not initialized");
-    co_return std::vector<lsp::Location>{};
+    co_return LspError::UnexpectedFromCode(
+        lsp::error::LspErrorCode::kInternalError, "Workspace not initialized");
   }
 
   auto session = co_await session_manager_->GetSession(uri);
   if (!session) {
-    logger_->debug("No session for {}, returning empty definitions", uri);
-    co_return std::vector<lsp::Location>{};
+    logger_->info("No session for {} (likely cancelled), returning error", uri);
+    co_return LspError::UnexpectedFromCode(
+        lsp::error::LspErrorCode::kInternalError, "Document was modified");
   }
 
   // Get source manager and convert position to location
@@ -215,19 +223,23 @@ auto LanguageService::GetDefinitionsForPosition(
   co_return std::vector<lsp::Location>{lsp_location};
 }
 
-auto LanguageService::GetDocumentSymbols(std::string uri)
-    -> asio::awaitable<std::vector<lsp::DocumentSymbol>> {
+auto LanguageService::GetDocumentSymbols(std::string uri) -> asio::awaitable<
+    std::expected<std::vector<lsp::DocumentSymbol>, lsp::error::LspError>> {
   utils::ScopedTimer timer("GetDocumentSymbols", logger_);
 
   if (!layout_service_) {
     logger_->error("LanguageService: Workspace not initialized");
-    co_return std::vector<lsp::DocumentSymbol>{};
+    co_return LspError::UnexpectedFromCode(
+        lsp::error::LspErrorCode::kInternalError, "Workspace not initialized");
   }
 
   auto session = co_await session_manager_->GetSession(uri);
   if (!session) {
-    logger_->debug("No session for {}, returning empty symbols", uri);
-    co_return std::vector<lsp::DocumentSymbol>{};
+    logger_->info(
+        "No session for {} (likely cancelled/modified), returning error", uri);
+    // Use kInternalError with descriptive message (ContentModified not in enum)
+    co_return LspError::UnexpectedFromCode(
+        lsp::error::LspErrorCode::kInternalError, "Document was modified");
   }
 
   co_return session->GetSemanticIndex().GetDocumentSymbols(uri);
@@ -269,6 +281,17 @@ auto LanguageService::HandleSourceFileChange(
 
 // Document lifecycle events (protocol-level API)
 auto LanguageService::OnDocumentOpened(
+    std::string uri, std::string content, int version)
+    -> asio::awaitable<void> {
+  if (!session_manager_) {
+    logger_->error("LanguageService: SessionManager not initialized");
+    co_return;
+  }
+
+  co_await session_manager_->UpdateSession(uri, content, version);
+}
+
+auto LanguageService::OnDocumentChanged(
     std::string uri, std::string content, int version)
     -> asio::awaitable<void> {
   if (!session_manager_) {

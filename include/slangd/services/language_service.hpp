@@ -30,16 +30,18 @@ class LanguageService : public LanguageServiceBase {
       -> asio::awaitable<void> override;
 
   auto ComputeParseDiagnostics(std::string uri, std::string content)
-      -> asio::awaitable<std::vector<lsp::Diagnostic>> override;
+      -> asio::awaitable<std::expected<
+          std::vector<lsp::Diagnostic>, lsp::error::LspError>> override;
 
-  auto ComputeDiagnostics(std::string uri)
-      -> asio::awaitable<std::vector<lsp::Diagnostic>> override;
+  auto ComputeDiagnostics(std::string uri) -> asio::awaitable<std::expected<
+      std::vector<lsp::Diagnostic>, lsp::error::LspError>> override;
 
   auto GetDefinitionsForPosition(std::string uri, lsp::Position position)
-      -> asio::awaitable<std::vector<lsp::Location>> override;
+      -> asio::awaitable<std::expected<
+          std::vector<lsp::Location>, lsp::error::LspError>> override;
 
-  auto GetDocumentSymbols(std::string uri)
-      -> asio::awaitable<std::vector<lsp::DocumentSymbol>> override;
+  auto GetDocumentSymbols(std::string uri) -> asio::awaitable<std::expected<
+      std::vector<lsp::DocumentSymbol>, lsp::error::LspError>> override;
 
   auto HandleConfigChange() -> void override;
 
@@ -48,6 +50,9 @@ class LanguageService : public LanguageServiceBase {
 
   // Document lifecycle events
   auto OnDocumentOpened(std::string uri, std::string content, int version)
+      -> asio::awaitable<void> override;
+
+  auto OnDocumentChanged(std::string uri, std::string content, int version)
       -> asio::awaitable<void> override;
 
   auto OnDocumentSaved(std::string uri, std::string content, int version)

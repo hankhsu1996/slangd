@@ -6,9 +6,12 @@
 #include <asio.hpp>
 #include <lsp/basic.hpp>
 #include <lsp/document_features.hpp>
+#include <lsp/error.hpp>
 #include <lsp/workspace.hpp>
 
 namespace slangd {
+
+using lsp::error::LspError;
 
 // High-level business operations base class for LSP domain logic
 // Replaces individual providers with unified interface
@@ -22,23 +25,25 @@ class LanguageServiceBase {
   auto operator=(LanguageServiceBase&&) -> LanguageServiceBase& = delete;
   virtual ~LanguageServiceBase() = default;
 
-  // Diagnostics computation - async because may need parsing/compilation
-  // Parse diagnostics only - syntax errors without elaboration
+  // Diagnostics computation - async operations
+  // Compute diagnostics from parsing only (syntax errors)
   virtual auto ComputeParseDiagnostics(std::string uri, std::string content)
-      -> asio::awaitable<std::vector<lsp::Diagnostic>> = 0;
+      -> asio::awaitable<
+          std::expected<std::vector<lsp::Diagnostic>, LspError>> = 0;
 
-  // Full diagnostics including semantic analysis
-  virtual auto ComputeDiagnostics(std::string uri)
-      -> asio::awaitable<std::vector<lsp::Diagnostic>> = 0;
+  // Compute full diagnostics (parse + semantic analysis)
+  virtual auto ComputeDiagnostics(std::string uri) -> asio::awaitable<
+      std::expected<std::vector<lsp::Diagnostic>, LspError>> = 0;
 
-  // Definition lookup - async because may need to wait for session
+  // Find definitions at the given position
   virtual auto GetDefinitionsForPosition(
       std::string uri, lsp::Position position)
-      -> asio::awaitable<std::vector<lsp::Location>> = 0;
+      -> asio::awaitable<
+          std::expected<std::vector<lsp::Location>, LspError>> = 0;
 
-  // Document symbols - async because may need to wait for session
-  virtual auto GetDocumentSymbols(std::string uri)
-      -> asio::awaitable<std::vector<lsp::DocumentSymbol>> = 0;
+  // Get document symbol hierarchy
+  virtual auto GetDocumentSymbols(std::string uri) -> asio::awaitable<
+      std::expected<std::vector<lsp::DocumentSymbol>, LspError>> = 0;
 
   // Workspace initialization - called during LSP initialize
   virtual auto InitializeWorkspace(std::string workspace_uri)
@@ -54,6 +59,11 @@ class LanguageServiceBase {
   // Document lifecycle events (protocol-level)
   // Called when document is opened in editor
   virtual auto OnDocumentOpened(
+      std::string uri, std::string content, int version)
+      -> asio::awaitable<void> = 0;
+
+  // Called when document content changes (typing/editing)
+  virtual auto OnDocumentChanged(
       std::string uri, std::string content, int version)
       -> asio::awaitable<void> = 0;
 

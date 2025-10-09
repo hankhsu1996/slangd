@@ -1,6 +1,5 @@
 #include "slangd/services/session_manager.hpp"
 
-#include <asio/bind_cancellation_slot.hpp>
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/post.hpp>
@@ -16,7 +15,6 @@ SessionManager::PendingCreation::PendingCreation(
     asio::any_io_executor executor, int doc_version)
     : compilation_ready(std::make_shared<CompilationChannel>(executor, 10)),
       session_ready(std::make_shared<SessionChannel>(executor, 10)),
-      cancellation(std::make_shared<asio::cancellation_signal>()),
       version(doc_version) {
 }
 
@@ -40,7 +38,6 @@ SessionManager::~SessionManager() {
   // NOTE: In practice, coroutines should already be complete since destructor
   // only runs when io_context has stopped. This is defensive programming.
   for (auto& [uri, pending] : pending_sessions_) {
-    pending->cancellation->emit(asio::cancellation_type::terminal);
     pending->compilation_ready->close();
     pending->session_ready->close();
   }
@@ -68,19 +65,44 @@ auto SessionManager::UpdateSession(
     active_sessions_.erase(uri);
   }
 
+  // Check if pending session already exists
   if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
+    if (it->second->version == version) {
+      // Same version - check if session is still alive (not cancelled)
+      if (it->second->compilation_ready->is_open() &&
+          it->second->session_ready->is_open()) {
+        // Channels still open - safe to reuse pending session
+        logger_->debug(
+            "SessionManager: Reusing pending session for {} (version {} "
+            "unchanged)",
+            uri, version);
+        co_return;
+      }
+      // Channels closed (cancelled) - remove stale entry and create new below
+      logger_->debug(
+          "SessionManager: Pending session for {} (version {}) was cancelled, "
+          "creating new one",
+          uri, version);
+      pending_sessions_.erase(it);
+    } else {
+      // Different version - close old channels and create new below
+      logger_->info(
+          "SessionManager: Cancelling pending session for {} (old version {}, "
+          "new version {})",
+          uri, it->second->version, version);
+      it->second->compilation_ready->close();
+      it->second->session_ready->close();
+      pending_sessions_.erase(it);
+    }
+  } else {
     logger_->debug(
-        "Canceling pending session creation for: {} (old version {})", uri,
-        it->second->version);
-    // Emit cancellation signal to stop ongoing work
-    it->second->cancellation->emit(asio::cancellation_type::terminal);
-    it->second->compilation_ready->close();
-    it->second->session_ready->close();
-    pending_sessions_.erase(it);
+        "SessionManager: No pending session to cancel for {} (version {})", uri,
+        version);
   }
 
-  auto pending = StartSessionCreation(uri, content, version);
-  pending_sessions_[uri] = pending;
+  // Create NEW pending session and insert into map
+  auto new_pending = StartSessionCreation(uri, content, version);
+  pending_sessions_[uri] = new_pending;
 
   co_return;
 }
@@ -94,7 +116,6 @@ auto SessionManager::RemoveSession(std::string uri) -> void {
 
   if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
     logger_->debug("Canceling pending session for closed document: {}", uri);
-    it->second->cancellation->emit(asio::cancellation_type::terminal);
     it->second->compilation_ready->close();
     it->second->session_ready->close();
     pending_sessions_.erase(it);
@@ -111,7 +132,6 @@ auto SessionManager::InvalidateSessions(std::vector<std::string> uris) -> void {
     std::erase(access_order_, uri);
 
     if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
-      it->second->cancellation->emit(asio::cancellation_type::terminal);
       it->second->compilation_ready->close();
       it->second->session_ready->close();
       pending_sessions_.erase(it);
@@ -128,7 +148,6 @@ auto SessionManager::InvalidateAllSessions() -> void {
   access_order_.clear();
 
   for (auto& [uri, pending] : pending_sessions_) {
-    pending->cancellation->emit(asio::cancellation_type::terminal);
     pending->compilation_ready->close();
     pending->session_ready->close();
   }
@@ -137,7 +156,7 @@ auto SessionManager::InvalidateAllSessions() -> void {
 
 auto SessionManager::GetCompilationState(std::string uri)
     -> asio::awaitable<std::optional<CompilationState>> {
-  // Check if session is already complete (can extract diagnostics from it)
+  // Fast path: Check cache first (source of truth)
   if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
     logger_->debug("SessionManager::GetCompilationState cache hit: {}", uri);
     UpdateAccessOrder(uri);
@@ -148,7 +167,8 @@ auto SessionManager::GetCompilationState(std::string uri)
         .main_buffer_id = session->GetMainBufferID()};
   }
 
-  // Wait for Phase 1 completion (faster than waiting for full session)
+  // Slow path: Wait for Phase 1 notification, then re-check cache
+  // NOTE: Same multi-waiter pattern as GetSession (channels are notifications)
   if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
     logger_->debug(
         "SessionManager::GetCompilationState waiting for compilation_ready: {}",
@@ -158,26 +178,54 @@ auto SessionManager::GetCompilationState(std::string uri)
     auto state = co_await it->second->compilation_ready->async_receive(
         asio::redirect_error(asio::use_awaitable, ec));
 
-    if (ec) {
-      logger_->error("Failed to receive compilation state for: {}", uri);
-      co_return std::nullopt;
+    if (!ec) {
+      // First receiver: got value directly from channel
+      co_return state;
     }
 
-    co_return state;
+    // Channel closed - re-check cache (Phase 2 may have completed by now)
+    if (auto cache_it = active_sessions_.find(uri);
+        cache_it != active_sessions_.end()) {
+      logger_->debug(
+          "GetCompilationState: Session ready after notification "
+          "(multi-waiter): "
+          "{}",
+          uri);
+      UpdateAccessOrder(uri);
+      auto& session = cache_it->second.session;
+      co_return CompilationState{
+          .source_manager = session->GetSourceManagerPtr(),
+          .compilation = session->GetCompilationPtr(),
+          .main_buffer_id = session->GetMainBufferID()};
+    }
+
+    // Not in cache after notification - session was cancelled
+    logger_->debug(
+        "GetCompilationState: Session cancelled for {} (not in cache after "
+        "notification)",
+        uri);
+    co_return std::nullopt;
   }
 
-  logger_->debug("SessionManager::GetCompilationState no session for: {}", uri);
+  logger_->debug(
+      "SessionManager::GetCompilationState no session found: {}", uri);
   co_return std::nullopt;
 }
 
 auto SessionManager::GetSession(std::string uri)
     -> asio::awaitable<std::shared_ptr<const OverlaySession>> {
+  // Fast path: Check cache first (source of truth)
   if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
     logger_->debug("SessionManager::GetSession cache hit: {}", uri);
     UpdateAccessOrder(uri);
     co_return it->second.session;
   }
 
+  // Slow path: Wait for notification, then re-check cache
+  // NOTE: Channels are notification mechanisms (wake up waiters when ready),
+  // NOT data delivery. Only first waiter receives value from channel
+  // (one-shot), others must check cache after waking. This is correct
+  // multi-consumer pattern.
   if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
     logger_->debug("SessionManager::GetSession waiting for pending: {}", uri);
 
@@ -185,15 +233,33 @@ auto SessionManager::GetSession(std::string uri)
     auto session = co_await it->second->session_ready->async_receive(
         asio::redirect_error(asio::use_awaitable, ec));
 
-    if (ec) {
-      logger_->error("Failed to receive session for: {}", uri);
-      co_return nullptr;
+    if (!ec) {
+      // First receiver: got value directly from channel
+      co_return session;
     }
 
-    co_return session;
+    // Channel closed - re-check cache (session may have completed successfully)
+    // This handles both:
+    // 1. One-shot delivery: 2nd/3rd waiters get here, session is in cache
+    // 2. Cancellation: session NOT in cache
+    if (auto cache_it = active_sessions_.find(uri);
+        cache_it != active_sessions_.end()) {
+      logger_->debug(
+          "GetSession: Session ready after notification (multi-waiter): {}",
+          uri);
+      UpdateAccessOrder(uri);
+      co_return cache_it->second.session;
+    }
+
+    // Not in cache after notification - session was cancelled
+    logger_->debug(
+        "GetSession: Session cancelled for {} (not in cache after "
+        "notification)",
+        uri);
+    co_return nullptr;
   }
 
-  logger_->debug("SessionManager::GetSession no session for: {}", uri);
+  logger_->debug("SessionManager::GetSession no session found: {}", uri);
   co_return nullptr;
 }
 
@@ -216,9 +282,6 @@ auto SessionManager::StartSessionCreation(
               utils::ScopedTimer timer(
                   "SessionManager session creation", logger_);
 
-              // Get cancellation slot for cooperative cancellation
-              auto cancel_state = co_await asio::this_coro::cancellation_state;
-
               // Build compilation
               auto [source_manager, compilation, main_buffer_id] =
                   OverlaySession::BuildCompilation(
@@ -228,14 +291,7 @@ auto SessionManager::StartSessionCreation(
               // visit) FromCompilation now calls forceElaborate on each
               // instance, populating diagMap
               auto semantic_index = semantic::SemanticIndex::FromCompilation(
-                  *compilation, *source_manager, uri, catalog_.get(),
-                  cancel_state.slot());
-
-              // Check if indexing was cancelled
-              if (!semantic_index) {
-                logger_->debug("Session creation cancelled for {}", uri);
-                co_return std::nullopt;
-              }
+                  *compilation, *source_manager, uri, catalog_.get());
 
               // Signal Phase 1 complete: compilation_ready
               // (diagMap populated, diagnostics can be extracted)
@@ -264,8 +320,7 @@ auto SessionManager::StartSessionCreation(
 
               co_return session;
             },
-            asio::bind_cancellation_slot(
-                pending->cancellation->slot(), asio::use_awaitable));
+            asio::use_awaitable);
 
         co_await asio::post(executor_, asio::use_awaitable);
         std::error_code ec;
