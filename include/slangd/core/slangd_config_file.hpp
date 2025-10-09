@@ -63,6 +63,10 @@ class SlangdConfigFile {
     return path_condition_;
   }
 
+  [[nodiscard]] auto GetAutoDiscover() const -> bool {
+    return auto_discover_;
+  }
+
   // Path filtering - checks if file should be included based on PathCondition
   // Takes path relative to workspace root with forward slashes
   [[nodiscard]] auto ShouldIncludeFile(std::string_view relative_path) const
@@ -95,6 +99,9 @@ class SlangdConfigFile {
 
   // Path filtering conditions
   PathCondition path_condition_;
+
+  // Auto-discovery flag (default: enabled)
+  bool auto_discover_ = true;
 };
 
 }  // namespace slangd

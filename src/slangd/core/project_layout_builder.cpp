@@ -1,50 +1,59 @@
 #include "slangd/core/project_layout_builder.hpp"
 
+#include <unordered_set>
+
 namespace slangd {
 
 ProjectLayoutBuilder::ProjectLayoutBuilder(
-    std::shared_ptr<ConfigReader> config_reader,
     std::shared_ptr<FilelistProvider> filelist_provider,
-    std::shared_ptr<RepoScanProvider> repo_scan_provider,
+    std::shared_ptr<WorkspaceDiscoveryProvider> workspace_discovery_provider,
     std::shared_ptr<spdlog::logger> logger)
-    : config_reader_(std::move(config_reader)),
-      filelist_provider_(std::move(filelist_provider)),
-      repo_scan_provider_(std::move(repo_scan_provider)),
+    : filelist_provider_(std::move(filelist_provider)),
+      workspace_discovery_provider_(std::move(workspace_discovery_provider)),
       logger_(logger ? logger : spdlog::default_logger()) {
-}
-
-auto ProjectLayoutBuilder::BuildFromWorkspace(
-    const CanonicalPath& workspace_root) const -> ProjectLayout {
-  logger_->debug(
-      "ProjectLayoutBuilder building layout for workspace: {}", workspace_root);
-
-  // Try to load configuration from workspace
-  auto config = config_reader_->LoadFromWorkspace(workspace_root);
-
-  if (config.has_value()) {
-    logger_->debug("ProjectLayoutBuilder using loaded config");
-    return BuildFromConfig(workspace_root, config.value());
-  }
-  logger_->debug(
-      "ProjectLayoutBuilder no config found, using repo scan fallback");
-  // Create empty config for repo scanning
-  SlangdConfigFile empty_config;
-  return BuildFromConfig(workspace_root, empty_config);
 }
 
 auto ProjectLayoutBuilder::BuildFromConfig(
     const CanonicalPath& workspace_root, const SlangdConfigFile& config) const
     -> ProjectLayout {
-  // Choose appropriate discovery provider
-  auto provider = ChooseDiscoveryProvider(config);
+  // Collect files from all sources (additive approach)
+  std::vector<CanonicalPath> all_files;
 
-  // Discover files using the chosen provider
-  auto discovered_files = provider->DiscoverFiles(workspace_root, config);
+  // 1. Auto-discover workspace files if enabled
+  if (config.GetAutoDiscover()) {
+    logger_->debug("ProjectLayoutBuilder: auto-discovery enabled");
+    auto workspace_files =
+        workspace_discovery_provider_->DiscoverFiles(workspace_root, config);
+    all_files.insert(
+        all_files.end(), workspace_files.begin(), workspace_files.end());
+    logger_->debug(
+        "ProjectLayoutBuilder: discovered {} files from workspace",
+        workspace_files.size());
+  }
 
-  // Apply path filtering (PathMatch/PathExclude from If block)
-  size_t original_count = discovered_files.size();
+  // 2. Add files from FileLists and Files sections
+  auto explicit_files =
+      filelist_provider_->DiscoverFiles(workspace_root, config);
+  all_files.insert(
+      all_files.end(), explicit_files.begin(), explicit_files.end());
+  if (!explicit_files.empty()) {
+    logger_->debug(
+        "ProjectLayoutBuilder: added {} files from Files/FileLists",
+        explicit_files.size());
+  }
+
+  // 3. Deduplicate files
+  std::unordered_set<CanonicalPath> unique_files(
+      all_files.begin(), all_files.end());
+  all_files.assign(unique_files.begin(), unique_files.end());
+  logger_->debug(
+      "ProjectLayoutBuilder: total unique files before filtering: {}",
+      all_files.size());
+
+  // 4. Apply path filtering (PathMatch/PathExclude from If block)
+  size_t original_count = all_files.size();
   std::vector<CanonicalPath> filtered_files;
-  for (const auto& file : discovered_files) {
+  for (const auto& file : all_files) {
     // Compute relative path from workspace root
     auto relative =
         std::filesystem::relative(file.Path(), workspace_root.Path());
@@ -77,18 +86,6 @@ auto ProjectLayoutBuilder::BuildFromConfig(
 
   return {
       std::move(filtered_files), std::move(include_dirs), std::move(defines)};
-}
-
-auto ProjectLayoutBuilder::ChooseDiscoveryProvider(
-    const SlangdConfigFile& config) const
-    -> std::shared_ptr<DiscoveryProviderBase> {
-  // If config has file sources (files or filelists), use FilelistProvider
-  if (config.HasFileSources()) {
-    logger_->debug("ProjectLayoutBuilder using FilelistProvider");
-    return filelist_provider_;
-  }
-  logger_->debug("ProjectLayoutBuilder using RepoScanProvider");
-  return repo_scan_provider_;
 }
 
 }  // namespace slangd

@@ -45,11 +45,6 @@ class ProjectLayoutService {
   auto HandleConfigFileChange(CanonicalPath config_path)
       -> asio::awaitable<bool>;
 
-  // Check if a valid configuration is loaded
-  [[nodiscard]] auto HasValidConfig() const -> bool {
-    return config_.has_value();
-  }
-
   // Get source files from config or fall back to scanning workspace
   [[nodiscard]] auto GetSourceFiles() -> std::vector<CanonicalPath>;
 
@@ -75,9 +70,6 @@ class ProjectLayoutService {
   // Get the current ProjectLayout (rebuilding if needed)
   auto GetCurrentLayout() -> const ProjectLayout&;
 
-  // Check if we're in auto-discovery mode (no config or no file sources)
-  [[nodiscard]] auto IsInAutoDiscoveryMode() const -> bool;
-
   // Logger instance
   std::shared_ptr<spdlog::logger> logger_;
 
@@ -85,8 +77,8 @@ class ProjectLayoutService {
   asio::any_io_executor executor_;
   asio::strand<asio::any_io_executor> strand_;
 
-  // The loaded configuration (if any)
-  std::optional<SlangdConfigFile> config_;
+  // The loaded configuration (defaults to empty config with AutoDiscover=true)
+  SlangdConfigFile config_;
 
   // Root path of the workspace
   CanonicalPath workspace_root_;

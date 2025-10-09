@@ -12,14 +12,29 @@ The configuration file is loaded automatically when the workspace is opened. Cha
 
 ## File Discovery
 
-slangd supports two file discovery modes:
+slangd discovers files through three sources that can be combined:
 
-**Explicit file sources** - When `Files` or `FileLists` are specified:
+### Workspace Auto-Discovery
+
+Use `AutoDiscover` to enable/disable workspace scanning (default: enabled):
+
 ```yaml
+AutoDiscover: true  # Recursively scan workspace for *.sv, *.svh, *.v, *.vh
+```
+
+When enabled, slangd scans the entire workspace directory for SystemVerilog files. This is useful for projects without explicit file lists.
+
+### Explicit File Sources
+
+Specify individual files or filelist files:
+
+```yaml
+# Individual source files
 Files:
   - rtl/top.sv
-  - rtl/design.sv
+  - /external/uvm-1.2/src/uvm_pkg.sv  # External dependencies
 
+# Filelist files (.f format)
 FileLists:
   Paths:
     - rtl/rtl.f
@@ -27,11 +42,26 @@ FileLists:
   Absolute: false  # Paths in .f files are relative to .f file location
 ```
 
-**Auto-discovery** - When no file sources are specified, slangd recursively scans the workspace for SystemVerilog files (*.sv, *.svh, *.v, *.vh):
+### Additive Behavior
+
+All file sources are **additive** - you can combine auto-discovery with explicit files:
+
 ```yaml
-# No Files/FileLists specified - auto-discovery mode
+AutoDiscover: true       # Scan workspace
+Files:
+  - /vcs/uvm-1.2/src/uvm_pkg.sv  # Add external UVM package
 IncludeDirs:
-  - include/
+  - /vcs/uvm-1.2/src
+```
+
+This discovers all workspace files plus the external UVM package, which is the recommended pattern for adding external dependencies like UVM.
+
+To use only explicit files without workspace scanning:
+
+```yaml
+AutoDiscover: false
+FileLists:
+  Paths: [rtl/rtl.f]
 ```
 
 ## Path Filtering
@@ -105,10 +135,13 @@ Defines:
 
 Key-value defines are converted to `NAME=VALUE` format.
 
-## Complete Example
+## Complete Examples
+
+### RTL-only Project with Explicit Control
 
 ```yaml
-# File discovery
+# Disable auto-discovery, use only filelist
+AutoDiscover: false
 FileLists:
   Paths:
     - rtl/rtl.f
@@ -130,12 +163,33 @@ Defines:
   - DATA_WIDTH: 64
 ```
 
+### Verification Project with UVM
+
+```yaml
+# Auto-discover workspace + add external UVM
+AutoDiscover: true
+Files:
+  - /tools/vcs/2023.12/etc/uvm-1.2/src/uvm_pkg.sv
+IncludeDirs:
+  - /tools/vcs/2023.12/etc/uvm-1.2/src
+  - rtl/include/
+If:
+  PathMatch: (rtl|tb)/.*
+  PathExclude: .*/generated/.*
+Defines:
+  - UVM_NO_DPI
+  - SIMULATION
+```
+
 ## Precedence
 
-1. Explicit file sources (`Files`, `FileLists`) are used if present
-2. Otherwise, auto-discovery scans the workspace
-3. Path filtering (`If` block) applies to both modes
-4. Include paths and defines apply to all compilations
+1. **File Discovery**: All sources are additive
+   - If `AutoDiscover: true` (default), workspace files are discovered
+   - Files from `FileLists` are added
+   - Files from `Files` are added
+   - Duplicates are automatically removed
+2. **Path Filtering**: `If` block filters all discovered files
+3. **Compilation Settings**: `IncludeDirs` and `Defines` apply to all files
 
 ## Related Documentation
 

@@ -183,3 +183,66 @@ If:
   // The actual path normalization happens in ProjectLayoutBuilder
   // This test documents the expected input format
 }
+
+TEST_CASE(
+    "SlangdConfigFile AutoDiscover defaults to true when omitted", "[config]") {
+  const auto* content = R"(
+Files:
+  - test.sv
+)";
+
+  TempConfigFile temp(content);
+  auto config = slangd::SlangdConfigFile::LoadFromFile(temp.Path());
+
+  REQUIRE(config.has_value());
+  REQUIRE(config->GetAutoDiscover() == true);
+}
+
+TEST_CASE(
+    "SlangdConfigFile AutoDiscover true enables workspace discovery",
+    "[config]") {
+  const auto* content = R"(
+AutoDiscover: true
+Files:
+  - external/uvm_pkg.sv
+)";
+
+  TempConfigFile temp(content);
+  auto config = slangd::SlangdConfigFile::LoadFromFile(temp.Path());
+
+  REQUIRE(config.has_value());
+  REQUIRE(config->GetAutoDiscover() == true);
+}
+
+TEST_CASE(
+    "SlangdConfigFile AutoDiscover false disables workspace discovery",
+    "[config]") {
+  const auto* content = R"(
+AutoDiscover: false
+Files:
+  - rtl/design.sv
+)";
+
+  TempConfigFile temp(content);
+  auto config = slangd::SlangdConfigFile::LoadFromFile(temp.Path());
+
+  REQUIRE(config.has_value());
+  REQUIRE(config->GetAutoDiscover() == false);
+}
+
+TEST_CASE(
+    "SlangdConfigFile AutoDiscover false with FileLists uses only FileLists",
+    "[config]") {
+  const auto* content = R"(
+AutoDiscover: false
+FileLists:
+  Paths:
+    - rtl/rtl.f
+)";
+
+  TempConfigFile temp(content);
+  auto config = slangd::SlangdConfigFile::LoadFromFile(temp.Path());
+
+  REQUIRE(config.has_value());
+  REQUIRE(config->GetAutoDiscover() == false);
+}
