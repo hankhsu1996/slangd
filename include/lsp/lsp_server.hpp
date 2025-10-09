@@ -5,7 +5,6 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
-#include <vector>
 
 #include <asio.hpp>
 #include <jsonrpc/endpoint/endpoint.hpp>
@@ -55,21 +54,24 @@ class LspServer {
  protected:
   void RegisterHandlers();
 
-  // File management helpers
-  auto GetOpenFile(const std::string& uri)
-      -> std::optional<std::reference_wrapper<OpenFile>>;
-  void AddOpenFile(
-      const std::string& uri, const std::string& content,
-      const std::string& language_id, int version);
-  void UpdateOpenFile(
-      const std::string& uri, const std::vector<std::string>& changes);
-  void RemoveOpenFile(const std::string& uri);
+  // File management helpers (automatically synchronized via internal strand)
+  auto GetOpenFile(std::string uri)
+      -> asio::awaitable<std::optional<std::reference_wrapper<OpenFile>>>;
+  auto AddOpenFile(
+      std::string uri, std::string content, std::string language_id,
+      int version) -> asio::awaitable<void>;
+  auto UpdateOpenFile(std::string uri, std::string content, int version)
+      -> asio::awaitable<void>;
+  auto RemoveOpenFile(std::string uri) -> asio::awaitable<void>;
 
  private:
   std::shared_ptr<spdlog::logger> logger_;
   std::unique_ptr<jsonrpc::endpoint::RpcEndpoint> endpoint_;
   asio::any_io_executor executor_;
   asio::executor_work_guard<asio::any_io_executor> work_guard_;
+
+  // Strand for thread-safe file access
+  asio::strand<asio::any_io_executor> file_strand_;
 
   // Map of open document URIs to their content
   std::unordered_map<std::string, OpenFile> open_files_;

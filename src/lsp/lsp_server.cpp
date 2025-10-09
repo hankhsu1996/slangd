@@ -18,7 +18,8 @@ LspServer::LspServer(
     : logger_(logger ? logger : spdlog::default_logger()),
       endpoint_(std::move(endpoint)),
       executor_(executor),
-      work_guard_(asio::make_work_guard(executor)) {
+      work_guard_(asio::make_work_guard(executor)),
+      file_strand_(asio::make_strand(executor)) {
 }
 
 auto LspServer::Start() -> asio::awaitable<std::expected<void, LspError>> {
@@ -244,40 +245,56 @@ void LspServer::RegisterWindowFeatureHandlers() {
 }
 
 // File management helpers
-std::optional<std::reference_wrapper<OpenFile>> LspServer::GetOpenFile(
-    const std::string& uri) {
+auto LspServer::GetOpenFile(std::string uri)
+    -> asio::awaitable<std::optional<std::reference_wrapper<OpenFile>>> {
+  co_await asio::post(file_strand_, asio::use_awaitable);
+
   auto it = open_files_.find(uri);
   if (it != open_files_.end()) {
-    return std::ref(it->second);
+    co_return std::ref(it->second);
   }
-  return std::nullopt;
+  co_return std::nullopt;
 }
 
-void LspServer::AddOpenFile(
-    const std::string& uri, const std::string& content,
-    const std::string& language_id, int version) {
+auto LspServer::AddOpenFile(
+    std::string uri, std::string content, std::string language_id, int version)
+    -> asio::awaitable<void> {
+  co_await asio::post(file_strand_, asio::use_awaitable);
+
   Logger()->debug("LspServer adding open file: {}", uri);
-  OpenFile file{uri, content, language_id, version};
+  OpenFile file{
+      .uri = uri,
+      .content = content,
+      .language_id = language_id,
+      .version = version,
+  };
   open_files_[uri] = std::move(file);
+  co_return;
 }
 
-void LspServer::UpdateOpenFile(
-    const std::string& uri, const std::vector<std::string>& /*changes*/) {
+auto LspServer::UpdateOpenFile(
+    std::string uri, std::string content, int version)
+    -> asio::awaitable<void> {
+  co_await asio::post(file_strand_, asio::use_awaitable);
+
   Logger()->debug("LspServer updating open file: {}", uri);
-  auto file_opt = GetOpenFile(uri);
-  if (file_opt) {
-    // Simplified update - in a real implementation, we would apply the changes
-    // Here we just increment the version
-    OpenFile& file = file_opt->get();
-    file.version++;
+  auto it = open_files_.find(uri);
+  if (it != open_files_.end()) {
+    OpenFile& file = it->second;
+    file.content = std::move(content);
+    file.version = version;
     Logger()->debug(
         "LspServer updated file {} to version {}", uri, file.version);
   }
+  co_return;
 }
 
-void LspServer::RemoveOpenFile(const std::string& uri) {
+auto LspServer::RemoveOpenFile(std::string uri) -> asio::awaitable<void> {
+  co_await asio::post(file_strand_, asio::use_awaitable);
+
   Logger()->debug("LspServer removing open file: {}", uri);
   open_files_.erase(uri);
+  co_return;
 }
 
 }  // namespace lsp

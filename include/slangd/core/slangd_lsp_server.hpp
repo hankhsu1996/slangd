@@ -32,9 +32,6 @@ class SlangdLspServer : public lsp::LspServer {
   // Executor
   asio::any_io_executor executor_;
 
-  // Strand for thread safety
-  asio::strand<asio::any_io_executor> strand_;
-
   // Language service - unified interface for all domain operations
   std::shared_ptr<LanguageServiceBase> language_service_{nullptr};
 
