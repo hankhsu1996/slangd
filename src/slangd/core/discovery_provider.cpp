@@ -94,29 +94,34 @@ auto FilelistProvider::ProcessFileList(
   return files;
 }
 
-// RepoScanProvider implementation
+// WorkspaceDiscoveryProvider implementation
 
-RepoScanProvider::RepoScanProvider(std::shared_ptr<spdlog::logger> logger)
+WorkspaceDiscoveryProvider::WorkspaceDiscoveryProvider(
+    std::shared_ptr<spdlog::logger> logger)
     : logger_(logger ? logger : spdlog::default_logger()) {
 }
 
-auto RepoScanProvider::DiscoverFiles(
+auto WorkspaceDiscoveryProvider::DiscoverFiles(
     const CanonicalPath& workspace_root,
     const SlangdConfigFile& /*config*/) const -> std::vector<CanonicalPath> {
   logger_->debug(
-      "RepoScanProvider scanning workspace: {}", workspace_root.String());
+      "WorkspaceDiscoveryProvider discovering files in workspace: {}",
+      workspace_root.String());
 
   auto files = FindSystemVerilogFilesInDirectory(workspace_root);
-  logger_->debug("RepoScanProvider discovered {} files", files.size());
+  logger_->debug(
+      "WorkspaceDiscoveryProvider discovered {} files", files.size());
 
   return files;
 }
 
-auto RepoScanProvider::FindSystemVerilogFilesInDirectory(
+auto WorkspaceDiscoveryProvider::FindSystemVerilogFilesInDirectory(
     const CanonicalPath& directory) const -> std::vector<CanonicalPath> {
   std::vector<CanonicalPath> sv_files;
 
-  logger_->debug("RepoScanProvider scanning directory: {}", directory.String());
+  logger_->debug(
+      "WorkspaceDiscoveryProvider discovering files in directory: {}",
+      directory.String());
 
   try {
     for (const auto& entry :
@@ -127,8 +132,9 @@ auto RepoScanProvider::FindSystemVerilogFilesInDirectory(
     }
   } catch (const std::exception& e) {
     logger_->error(
-        "RepoScanProvider error scanning directory {}: {}", directory.String(),
-        e.what());
+        "WorkspaceDiscoveryProvider error discovering files in directory {}: "
+        "{}",
+        directory.String(), e.what());
   }
 
   return sv_files;

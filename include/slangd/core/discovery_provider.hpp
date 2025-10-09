@@ -13,7 +13,7 @@ namespace slangd {
 // DiscoveryProviderBase defines the interface for discovering source files
 // based on configuration. This allows different discovery strategies:
 // - FilelistProvider: reads filelists specified in config
-// - RepoScanProvider: scans repository when no filelist is provided
+// - WorkspaceDiscoveryProvider: discovers files in workspace when enabled
 class DiscoveryProviderBase {
  public:
   DiscoveryProviderBase() = default;
@@ -49,11 +49,12 @@ class FilelistProvider : public DiscoveryProviderBase {
   std::shared_ptr<spdlog::logger> logger_;
 };
 
-// RepoScanProvider scans the repository for SystemVerilog files
-// when no explicit filelist is provided
-class RepoScanProvider : public DiscoveryProviderBase {
+// WorkspaceDiscoveryProvider discovers SystemVerilog files in the workspace
+// when AutoDiscover is enabled
+class WorkspaceDiscoveryProvider : public DiscoveryProviderBase {
  public:
-  explicit RepoScanProvider(std::shared_ptr<spdlog::logger> logger = nullptr);
+  explicit WorkspaceDiscoveryProvider(
+      std::shared_ptr<spdlog::logger> logger = nullptr);
 
   [[nodiscard]] auto DiscoverFiles(
       const CanonicalPath& workspace_root, const SlangdConfigFile& config) const

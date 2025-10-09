@@ -100,6 +100,12 @@ auto SlangdConfigFile::LoadFromFile(
       }
     }
 
+    // Parse AutoDiscover section
+    if (yaml["AutoDiscover"]) {
+      config.auto_discover_ = yaml["AutoDiscover"].as<bool>();
+      config.logger_->debug("Loaded AutoDiscover: {}", config.auto_discover_);
+    }
+
     config.logger_->debug("Loaded .slangd configuration from {}", config_path);
     return config;
 

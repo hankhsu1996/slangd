@@ -11,11 +11,11 @@ auto ProjectLayoutService::Create(
     asio::any_io_executor executor, CanonicalPath workspace_root,
     std::shared_ptr<spdlog::logger> logger)
     -> std::shared_ptr<ProjectLayoutService> {
-  auto config_reader = std::make_shared<ConfigReader>(logger);
   auto filelist_provider = std::make_shared<FilelistProvider>(logger);
-  auto repo_scan_provider = std::make_shared<RepoScanProvider>(logger);
+  auto workspace_discovery_provider =
+      std::make_shared<WorkspaceDiscoveryProvider>(logger);
   auto layout_builder = std::make_shared<ProjectLayoutBuilder>(
-      config_reader, filelist_provider, repo_scan_provider, logger);
+      filelist_provider, workspace_discovery_provider, logger);
 
   return std::make_shared<ProjectLayoutService>(
       executor, workspace_root, layout_builder, logger);
@@ -49,14 +49,16 @@ auto ProjectLayoutService::LoadConfig(CanonicalPath workspace_root)
     config_ = std::move(loaded_config.value());
     logger_->info(
         "ConfigManager loaded .slangd config file from {}", config_path);
-
-    RebuildLayout();
-    co_return true;
   } else {
+    // No config file - use default config (AutoDiscover=true)
+    config_ = SlangdConfigFile();
     logger_->debug(
-        "ConfigManager no .slangd config file found at {}", config_path);
-    co_return false;
+        "ConfigManager no .slangd config file found at {}, using defaults",
+        config_path);
   }
+
+  RebuildLayout();
+  co_return loaded_config.has_value();
 }
 
 auto ProjectLayoutService::HandleConfigFileChange(CanonicalPath config_path)
@@ -81,21 +83,22 @@ auto ProjectLayoutService::HandleConfigFileChange(CanonicalPath config_path)
     // Update the configuration
     config_ = std::move(loaded_config.value());
     logger_->info("ConfigManager successfully reloaded configuration");
-
-    RebuildLayout();
-    co_return true;
   } else {
-    // Config file was deleted or has errors
-    logger_->info("ConfigManager config file was removed or contains errors");
-    config_.reset();  // Clear the configuration
-    RebuildLayout();  // Rebuild with empty config fallback
-    co_return false;
+    // Config file was deleted or has errors - reset to default config
+    logger_->info(
+        "ConfigManager config file was removed or contains errors, using "
+        "defaults");
+    config_ = SlangdConfigFile();
   }
+
+  RebuildLayout();
+  co_return loaded_config.has_value();
 }
 
 auto ProjectLayoutService::RebuildLayout() -> void {
   layout_version_++;
-  auto new_layout = layout_builder_->BuildFromWorkspace(workspace_root_);
+  // Use stored config instead of reloading from filesystem
+  auto new_layout = layout_builder_->BuildFromConfig(workspace_root_, config_);
   cached_layout_ = LayoutSnapshot{
       .layout = std::make_shared<const ProjectLayout>(std::move(new_layout)),
       .timestamp = std::chrono::steady_clock::now(),
@@ -140,15 +143,16 @@ auto ProjectLayoutService::GetLayoutSnapshot() -> LayoutSnapshot {
 }
 
 auto ProjectLayoutService::ScheduleDebouncedRebuild() -> void {
-  // Check if we're in auto-discovery mode
-  if (!IsInAutoDiscoveryMode()) {
+  // Only watch filesystem when AutoDiscover is enabled
+  if (!config_.GetAutoDiscover()) {
     logger_->debug(
-        "ProjectLayoutService: In config mode, ignoring file system changes");
+        "ProjectLayoutService: AutoDiscover disabled, ignoring file system "
+        "changes");
     return;
   }
 
   logger_->debug(
-      "ProjectLayoutService: In auto-discovery mode, scheduling debounced "
+      "ProjectLayoutService: AutoDiscover enabled, scheduling debounced "
       "rebuild");
 
   // Cancel existing timer if any
@@ -169,11 +173,6 @@ auto ProjectLayoutService::ScheduleDebouncedRebuild() -> void {
           "ProjectLayoutService: Debounce timer error: {}", ec.message());
     }
   });
-}
-
-auto ProjectLayoutService::IsInAutoDiscoveryMode() const -> bool {
-  // Auto-discovery mode when no config OR config has no file sources
-  return !config_.has_value() || !config_->HasFileSources();
 }
 
 }  // namespace slangd
