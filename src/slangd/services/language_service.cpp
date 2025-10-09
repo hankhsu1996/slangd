@@ -247,11 +247,49 @@ auto LanguageService::GetDocumentSymbols(std::string uri) -> asio::awaitable<
 }
 
 auto LanguageService::HandleConfigChange() -> void {
-  if (layout_service_) {
-    layout_service_->RebuildLayout();
-    session_manager_->InvalidateAllSessions();
-    logger_->debug("LanguageService handled config change");
+  if (!layout_service_) {
+    return;
   }
+
+  layout_service_->RebuildLayout();
+
+  // Rebuild GlobalCatalog with new configuration (search paths, macros, etc.)
+  global_catalog_ =
+      GlobalCatalog::CreateFromProjectLayout(layout_service_, logger_);
+
+  if (global_catalog_) {
+    logger_->debug(
+        "LanguageService rebuilt GlobalCatalog with {} packages, version {}",
+        global_catalog_->GetPackages().size(), global_catalog_->GetVersion());
+  } else {
+    logger_->error("LanguageService failed to rebuild GlobalCatalog");
+  }
+
+  session_manager_->InvalidateAllSessions();
+
+  // Rebuild sessions for all open files to restore LSP features immediately
+  asio::co_spawn(
+      executor_,
+      [this]() -> asio::awaitable<void> {
+        auto open_uris = co_await doc_state_.GetAllUris();
+        logger_->debug(
+            "LanguageService rebuilding {} open file sessions after config "
+            "change",
+            open_uris.size());
+
+        for (const auto& uri : open_uris) {
+          auto state = co_await doc_state_.Get(uri);
+          if (state) {
+            co_await session_manager_->UpdateSession(
+                uri, state->content, state->version);
+          }
+        }
+
+        logger_->debug("LanguageService completed config change rebuild");
+      },
+      asio::detached);
+
+  logger_->debug("LanguageService handled config change");
 }
 
 auto LanguageService::HandleSourceFileChange(
@@ -272,10 +310,13 @@ auto LanguageService::HandleSourceFileChange(
       break;
 
     case lsp::FileChangeType::kChanged:
-      // Use lazy invalidation strategy for content changes:
-      // - File saves: buffer already matches disk, cache stays valid
-      // - External changes: cache miss will trigger rebuild on next LSP request
-      logger_->debug("LanguageService ignoring disk content change: {}", uri);
+      // Conservative invalidation: Any file might be a package/interface
+      // included in all OverlaySessions. Without dependency tracking,
+      // invalidate all sessions to ensure correctness.
+      session_manager_->InvalidateAllSessions();
+      logger_->debug(
+          "LanguageService invalidated all sessions due to file change: {}",
+          uri);
       break;
   }
 }

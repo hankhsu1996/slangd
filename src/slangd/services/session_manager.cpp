@@ -28,12 +28,9 @@ SessionManager::SessionManager(
       catalog_(std::move(catalog)),
       logger_(std::move(logger)),
       compilation_pool_(std::make_unique<asio::thread_pool>(4)) {
-  logger_->debug("SessionManager initialized with 4 compilation threads");
 }
 
 SessionManager::~SessionManager() {
-  logger_->debug("SessionManager shutting down");
-
   // Close all pending channels to signal shutdown to any active coroutines
   // NOTE: In practice, coroutines should already be complete since destructor
   // only runs when io_context has stopped. This is defensive programming.
@@ -54,8 +51,6 @@ auto SessionManager::UpdateSession(
   // Check if we have a cached session with the same version
   if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
     if (it->second.version == version) {
-      logger_->debug(
-          "SessionManager cache hit: {} (version {} unchanged)", uri, version);
       UpdateAccessOrder(uri);
       co_return;
     }
@@ -72,17 +67,9 @@ auto SessionManager::UpdateSession(
       if (it->second->compilation_ready->is_open() &&
           it->second->session_ready->is_open()) {
         // Channels still open - safe to reuse pending session
-        logger_->debug(
-            "SessionManager: Reusing pending session for {} (version {} "
-            "unchanged)",
-            uri, version);
         co_return;
       }
       // Channels closed (cancelled) - remove stale entry and create new below
-      logger_->debug(
-          "SessionManager: Pending session for {} (version {}) was cancelled, "
-          "creating new one",
-          uri, version);
       pending_sessions_.erase(it);
     } else {
       // Different version - close old channels and create new below
@@ -94,10 +81,6 @@ auto SessionManager::UpdateSession(
       it->second->session_ready->close();
       pending_sessions_.erase(it);
     }
-  } else {
-    logger_->debug(
-        "SessionManager: No pending session to cancel for {} (version {})", uri,
-        version);
   }
 
   // Create NEW pending session and insert into map
@@ -108,14 +91,12 @@ auto SessionManager::UpdateSession(
 }
 
 auto SessionManager::RemoveSession(std::string uri) -> void {
-  logger_->debug("SessionManager::RemoveSession: {}", uri);
   active_sessions_.erase(uri);
 
   // Remove from LRU tracking
   std::erase(access_order_, uri);
 
   if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
-    logger_->debug("Canceling pending session for closed document: {}", uri);
     it->second->compilation_ready->close();
     it->second->session_ready->close();
     pending_sessions_.erase(it);
@@ -123,8 +104,6 @@ auto SessionManager::RemoveSession(std::string uri) -> void {
 }
 
 auto SessionManager::InvalidateSessions(std::vector<std::string> uris) -> void {
-  logger_->debug("SessionManager::InvalidateSessions: {} files", uris.size());
-
   for (const auto& uri : uris) {
     active_sessions_.erase(uri);
 
@@ -158,7 +137,6 @@ auto SessionManager::GetCompilationState(std::string uri)
     -> asio::awaitable<std::optional<CompilationState>> {
   // Fast path: Check cache first (source of truth)
   if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
-    logger_->debug("SessionManager::GetCompilationState cache hit: {}", uri);
     UpdateAccessOrder(uri);
     auto& session = it->second.session;
     co_return CompilationState{
@@ -186,11 +164,6 @@ auto SessionManager::GetCompilationState(std::string uri)
     // Channel closed - re-check cache (Phase 2 may have completed by now)
     if (auto cache_it = active_sessions_.find(uri);
         cache_it != active_sessions_.end()) {
-      logger_->debug(
-          "GetCompilationState: Session ready after notification "
-          "(multi-waiter): "
-          "{}",
-          uri);
       UpdateAccessOrder(uri);
       auto& session = cache_it->second.session;
       co_return CompilationState{
@@ -200,14 +173,14 @@ auto SessionManager::GetCompilationState(std::string uri)
     }
 
     // Not in cache after notification - session was cancelled
-    logger_->debug(
+    logger_->info(
         "GetCompilationState: Session cancelled for {} (not in cache after "
         "notification)",
         uri);
     co_return std::nullopt;
   }
 
-  logger_->debug(
+  logger_->info(
       "SessionManager::GetCompilationState no session found: {}", uri);
   co_return std::nullopt;
 }
@@ -216,7 +189,6 @@ auto SessionManager::GetSession(std::string uri)
     -> asio::awaitable<std::shared_ptr<const OverlaySession>> {
   // Fast path: Check cache first (source of truth)
   if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
-    logger_->debug("SessionManager::GetSession cache hit: {}", uri);
     UpdateAccessOrder(uri);
     co_return it->second.session;
   }
@@ -244,22 +216,19 @@ auto SessionManager::GetSession(std::string uri)
     // 2. Cancellation: session NOT in cache
     if (auto cache_it = active_sessions_.find(uri);
         cache_it != active_sessions_.end()) {
-      logger_->debug(
-          "GetSession: Session ready after notification (multi-waiter): {}",
-          uri);
       UpdateAccessOrder(uri);
       co_return cache_it->second.session;
     }
 
     // Not in cache after notification - session was cancelled
-    logger_->debug(
+    logger_->info(
         "GetSession: Session cancelled for {} (not in cache after "
         "notification)",
         uri);
     co_return nullptr;
   }
 
-  logger_->debug("SessionManager::GetSession no session found: {}", uri);
+  logger_->info("SessionManager::GetSession no session found: {}", uri);
   co_return nullptr;
 }
 
@@ -313,10 +282,6 @@ auto SessionManager::StartSessionCreation(
               auto session = OverlaySession::CreateFromParts(
                   source_manager, compilation_shared, std::move(semantic_index),
                   main_buffer_id, logger_);
-
-              logger_->debug(
-                  "SessionManager session creation complete for {} ({})", uri,
-                  utils::ScopedTimer::FormatDuration(timer.GetElapsed()));
 
               co_return session;
             },

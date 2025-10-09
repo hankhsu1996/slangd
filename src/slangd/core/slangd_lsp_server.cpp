@@ -203,40 +203,31 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
       executor_,
       [this, params]() -> asio::awaitable<void> {
         bool has_config_change = false;
-        bool has_sv_file_change = false;
-        std::vector<std::string> changed_sv_uris;
 
+        // Single pass: Process each change once
         for (const auto& change : params.changes) {
-          auto path = CanonicalPath::FromUri(change.uri);
-
           if (IsConfigFile(change.uri)) {
             has_config_change = true;
-          } else if (IsSystemVerilogFile(path.Path())) {
+            continue;
+          }
+
+          auto path = CanonicalPath::FromUri(change.uri);
+          if (IsSystemVerilogFile(path.Path())) {
             // Ignore open files - managed by LSP text sync
+            // (VSCode prompts "reload?" and sends didChange with new version)
             if (co_await language_service_->GetDocumentState(change.uri)) {
               continue;
             }
-            has_sv_file_change = true;
-            changed_sv_uris.push_back(change.uri);
+
+            // Closed file changed - invalidate sessions
+            // (Any file might be package/interface included in all sessions)
+            language_service_->HandleSourceFileChange(change.uri, change.type);
           }
         }
 
+        // Config changes affect everything (search paths, macros, etc.)
         if (has_config_change) {
           language_service_->HandleConfigChange();
-        }
-
-        if (!changed_sv_uris.empty()) {
-          language_service_->OnDocumentsChanged(changed_sv_uris);
-        }
-
-        if (has_sv_file_change) {
-          for (const auto& change : params.changes) {
-            auto path = CanonicalPath::FromUri(change.uri);
-            if (IsSystemVerilogFile(path.Path())) {
-              language_service_->HandleSourceFileChange(
-                  change.uri, change.type);
-            }
-          }
         }
 
         co_return;

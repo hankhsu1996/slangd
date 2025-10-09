@@ -29,6 +29,9 @@ class DocumentStateManager {
   // Check if document exists
   auto Contains(std::string uri) -> asio::awaitable<bool>;
 
+  // Get all document URIs
+  auto GetAllUris() -> asio::awaitable<std::vector<std::string>>;
+
  private:
   // Document storage
   std::unordered_map<std::string, DocumentState> documents_;

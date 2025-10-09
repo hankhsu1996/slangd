@@ -42,4 +42,16 @@ auto DocumentStateManager::Contains(std::string uri) -> asio::awaitable<bool> {
   co_return documents_.contains(uri);
 }
 
+auto DocumentStateManager::GetAllUris()
+    -> asio::awaitable<std::vector<std::string>> {
+  co_await asio::post(strand_, asio::use_awaitable);
+
+  std::vector<std::string> uris;
+  uris.reserve(documents_.size());
+  for (const auto& [uri, _] : documents_) {
+    uris.push_back(uri);
+  }
+  co_return uris;
+}
+
 }  // namespace slangd::services

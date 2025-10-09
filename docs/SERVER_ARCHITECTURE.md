@@ -152,11 +152,40 @@ SlangdLspServer (LSP protocol layer)
 
 **Architecture**: SessionManager centralizes all session lifecycle (create/cache/invalidate). LanguageService features are read-only consumers.
 
+### Compilation Architecture
+
+**Two-compilation design:**
+
+- **GlobalCatalog**: Compiles ALL project files once → extracts packages, interfaces, module metadata
+
+  - Built from ProjectLayoutService (config file + file discovery)
+  - Shared across ALL OverlaySessions
+  - Immutable snapshot with version tracking
+
+- **OverlaySession**: Compiles current file + uses GlobalCatalog data
+  - Current file buffer (in-memory, authoritative)
+  - Packages from GlobalCatalog (read from disk via `SyntaxTree::fromFile`)
+  - Interfaces from GlobalCatalog (read from disk via `SyntaxTree::fromFile`)
+  - Per-file, cached by SessionManager (LRU eviction)
+
+**Critical insight:** OverlaySession reads packages/interfaces from disk, not from GlobalCatalog compilation. GlobalCatalog only provides metadata (which files to include).
+
+**Invalidation rules:**
+
+| Event                   | GlobalCatalog | OverlaySession            | Reason                                                     |
+| ----------------------- | ------------- | ------------------------- | ---------------------------------------------------------- |
+| Config change           | Rebuild       | Invalidate + rebuild open | Config affects compilation settings (macros, search paths) |
+| Closed SV file change   | No change     | Invalidate all            | OverlaySession reads fresh content from disk               |
+| SV file created/deleted | Rebuild       | Invalidate all            | File discovery changes (new package/interface/module)      |
+| Open file change        | No change     | Invalidate one            | Handled by text sync (didChange/didSave)                   |
+
+**Config change behavior:** After rebuilding GlobalCatalog and invalidating all sessions, proactively rebuilds sessions for all open files to restore LSP features immediately (no on-demand lazy rebuild).
+
 **Event-driven model**:
 
 ```
 SlangdLspServer (protocol layer - thin delegates)
-  ├─ Document Events (notifications from client)
+  ├─ Document Events (notifications from client - open files)
   │   ├─ OnDidOpen(uri, content, version)
   │   │   → LanguageService.OnDocumentOpened()
   │   │   → PublishDiagnosticsForDocument()  ← Server pushes diagnostics
@@ -169,6 +198,12 @@ SlangdLspServer (protocol layer - thin delegates)
   │   │   → PublishDiagnosticsForDocument()  ← Server pushes diagnostics
   │   │
   │   └─ OnDidClose(uri) → LanguageService.OnDocumentClosed()
+  │
+  ├─ File Watcher Events (external changes - closed files only)
+  │   └─ OnDidChangeWatchedFiles(changes[])
+  │       ├─ Filter open files (handled by text sync above)
+  │       ├─ Config changes → HandleConfigChange() (rebuild GlobalCatalog)
+  │       └─ SV file changes → HandleSourceFileChange() (invalidate sessions)
   │
   └─ LSP Feature Handlers (requests from client - respond with data)
       ├─ OnDocumentSymbols(uri) → LanguageService.GetDocumentSymbols(uri)
@@ -204,16 +239,19 @@ SessionManager (compilation cache)
 **Key LSP Patterns:**
 
 **1. Document Events (Client → Server notifications):**
+
 - Client notifies server of document changes (open/change/save/close)
 - Server responds immediately, then MAY push diagnostics asynchronously
 - Example: `textDocument/didSave` → server computes → `textDocument/publishDiagnostics`
 
 **2. Feature Requests (Client → Server requests, Server → Client responses):**
+
 - Client sends request and waits for response
 - Server processes and returns data synchronously
 - Example: `textDocument/definition` request → server responds with locations
 
 **3. Push Notifications (Server → Client notifications):**
+
 - Server pushes data to client proactively (no request needed)
 - Diagnostics use this pattern - server decides when to send them
 - Example: After save, server publishes diagnostics without client asking
