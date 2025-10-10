@@ -263,6 +263,11 @@ class SemanticIndex {
         const slang::ast::ClassType& class_type,
         const slang::syntax::ParameterValueAssignmentSyntax& params);
 
+    // Helper for indexing interface/module parameter names in instantiation
+    void IndexInstanceParameters(
+        const slang::ast::InstanceSymbol& instance,
+        const slang::syntax::ParameterValueAssignmentSyntax& params);
+
     // Helper for indexing package names in scoped references
     // (e.g., pkg::PARAM, pkg::func())
     void IndexPackageInScopedName(

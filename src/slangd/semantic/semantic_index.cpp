@@ -551,6 +551,67 @@ void SemanticIndex::IndexVisitor::IndexClassParameters(
   }
 }
 
+void SemanticIndex::IndexVisitor::IndexInstanceParameters(
+    const slang::ast::InstanceSymbol& instance,
+    const slang::syntax::ParameterValueAssignmentSyntax& params) {
+  // Parameter value assignments can be ordered or named
+  // For named assignments: .FLAG(50) - we index the parameter name
+  // For ordered assignments: #(50, 100) - no names to index, only values
+
+  // Visit parameter value expressions to index symbol references (e.g.,
+  // SIZE in #(.WIDTH(SIZE)))
+  for (const auto& member : instance.body.members()) {
+    if (member.kind == slang::ast::SymbolKind::Parameter) {
+      const auto& param = member.as<slang::ast::ParameterSymbol>();
+      if (param.getInitializer() != nullptr) {
+        param.getInitializer()->visit(*this);
+      }
+    }
+  }
+
+  for (const auto* param_base : params.parameters) {
+    // Only process named parameter assignments
+    if (param_base->kind != slang::syntax::SyntaxKind::NamedParamAssignment) {
+      continue;
+    }
+
+    const auto& named_param =
+        param_base->as<slang::syntax::NamedParamAssignmentSyntax>();
+    std::string_view param_name = named_param.name.valueText();
+
+    // Find corresponding parameter symbol in instance body
+    for (const auto& member : instance.body.members()) {
+      if (member.kind != slang::ast::SymbolKind::Parameter) {
+        continue;
+      }
+
+      const auto& param_symbol = member.as<slang::ast::ParameterSymbol>();
+      if (param_symbol.name == param_name && param_symbol.location.valid()) {
+        const auto* param_syntax = param_symbol.getSyntax();
+        if (param_syntax == nullptr) {
+          continue;
+        }
+
+        slang::SourceRange param_def_range;
+
+        // ParameterSymbol syntax can point to Declarator directly
+        if (param_syntax->kind == slang::syntax::SyntaxKind::Declarator) {
+          const auto& decl =
+              param_syntax->as<slang::syntax::DeclaratorSyntax>();
+          param_def_range = decl.name.range();
+        }
+
+        if (param_def_range.start().valid() && param_def_range.end().valid()) {
+          AddReference(
+              param_symbol, param_symbol.name, named_param.name.range(),
+              param_def_range, param_symbol.getParentScope());
+        }
+        break;
+      }
+    }
+  }
+}
+
 void SemanticIndex::IndexVisitor::IndexPackageInScopedName(
     const slang::syntax::SyntaxNode* syntax,
     const slang::ast::Symbol& target_symbol) {
@@ -1692,6 +1753,11 @@ void SemanticIndex::IndexVisitor::handle(
                     interface_definition_range, interface_def.getParentScope());
               }
             }
+
+            // 3. Index parameter overrides (e.g., #(.FLAG(1)))
+            if (inst_syntax.parameters != nullptr) {
+              IndexInstanceParameters(first_instance, *inst_syntax.parameters);
+            }
           }
         }
       }
@@ -1702,8 +1768,9 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
 
-  // For non-interface arrays, continue normal traversal
-  this->visitDefault(instance_array);
+  // For non-interface arrays (module arrays), skip body traversal
+  // SINGLE-FILE MODE: Module array elements should not have their bodies
+  // traversed - same reasoning as single InstanceSymbol handler
 }
 
 void SemanticIndex::IndexVisitor::handle(
@@ -1750,25 +1817,29 @@ void SemanticIndex::IndexVisitor::handle(
               interface_definition_range, interface_def.getParentScope());
         }
       }
+
+      // 3. Index parameter overrides (e.g., #(.FLAG(1)))
+      if (inst_syntax.parameters != nullptr) {
+        IndexInstanceParameters(instance, *inst_syntax.parameters);
+      }
     }
   }
 
-  // Control body traversal for interface instances
-  if (instance.isInterface()) {
-    const auto* parent = instance.getParentScope();
-    if (parent != nullptr &&
-        parent->asSymbol().kind == slang::ast::SymbolKind::CompilationUnit) {
-      // Standalone interface instance - traverse the body to index interface
-      // members
-      this->visitDefault(instance);
-      return;
-    }
-    // Nested interface instance (e.g., inside a module) - skip body traversal
-    return;
+  // Control body traversal - only traverse standalone instances, not nested
+  // ones SINGLE-FILE MODE: We only index the current module's body (via
+  // createDefault in PATH 1). Nested instances (submodules, interface
+  // instances) should NOT have their bodies traversed - those are indexed when
+  // their definition file is opened.
+  const auto* parent = instance.getParentScope();
+  if (parent != nullptr &&
+      parent->asSymbol().kind == slang::ast::SymbolKind::CompilationUnit) {
+    // Standalone instance (only relevant for interfaces) - traverse body
+    this->visitDefault(instance);
   }
 
-  // For non-interface instances (modules/programs), continue normal traversal
-  this->visitDefault(instance);
+  // Nested instance (inside a module/interface) - skip body traversal
+  // This prevents us from indexing submodule/interface bodies in single-file
+  // mode
 }
 
 void SemanticIndex::IndexVisitor::handle(

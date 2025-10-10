@@ -248,3 +248,43 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "if_array", 2, 0);
   fixture.AssertGoToDefinition(*index, code, "signal_b", 1, 0);
 }
+
+TEST_CASE(
+    "SemanticIndex interface parameter override references work",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    interface config_if #(
+      parameter int FLAG = 0,
+      parameter int WIDTH = 8
+    ) ();
+      logic [WIDTH-1:0] data;
+    endinterface
+
+    module top;
+      parameter int SIZE = 4;
+
+      // Single instance with parameter override
+      config_if #(.FLAG(1)) single_inst ();
+
+      // Array of instances with parameter override
+      config_if #(.WIDTH(16)) inst_array [SIZE] ();
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test parameter definitions
+  fixture.AssertGoToDefinition(*index, code, "FLAG", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 0, 0);
+
+  // Test parameter references in single instance override: .FLAG(1)
+  fixture.AssertGoToDefinition(*index, code, "FLAG", 1, 0);
+
+  // Test parameter references in array instance override: .WIDTH(16)
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 2, 0);
+
+  // Test array dimension parameter reference
+  fixture.AssertGoToDefinition(*index, code, "SIZE", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "SIZE", 1, 0);
+}
