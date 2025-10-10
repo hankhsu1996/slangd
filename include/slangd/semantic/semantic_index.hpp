@@ -13,6 +13,7 @@
 #include <slang/ast/Symbol.h>
 #include <slang/text/SourceLocation.h>
 #include <slang/text/SourceManager.h>
+#include <spdlog/spdlog.h>
 
 #include "slangd/utils/canonical_path.hpp"
 
@@ -108,7 +109,8 @@ class SemanticIndex {
       slang::ast::Compilation& compilation,
       const slang::SourceManager& source_manager,
       const std::string& current_file_uri,
-      const services::GlobalCatalog* catalog = nullptr)
+      const services::GlobalCatalog* catalog = nullptr,
+      std::shared_ptr<spdlog::logger> logger = nullptr)
       -> std::unique_ptr<SemanticIndex>;
 
   // Query methods
@@ -135,8 +137,11 @@ class SemanticIndex {
   void ValidateNoRangeOverlaps() const;
 
  private:
-  explicit SemanticIndex(const slang::SourceManager& source_manager)
-      : source_manager_(source_manager) {
+  explicit SemanticIndex(
+      const slang::SourceManager& source_manager,
+      std::shared_ptr<spdlog::logger> logger)
+      : source_manager_(source_manager),
+        logger_(logger ? logger : spdlog::default_logger()) {
   }
 
   // Core data storage
@@ -145,6 +150,9 @@ class SemanticIndex {
 
   // Store source manager reference for symbol processing
   std::reference_wrapper<const slang::SourceManager> source_manager_;
+
+  // Logger for error reporting
+  std::shared_ptr<spdlog::logger> logger_;
 
   // Visitor for symbol collection and reference tracking
   class IndexVisitor : public slang::ast::ASTVisitor<IndexVisitor, true, true> {

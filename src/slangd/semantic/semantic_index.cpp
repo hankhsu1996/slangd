@@ -34,10 +34,10 @@ namespace slangd::semantic {
 auto SemanticIndex::FromCompilation(
     slang::ast::Compilation& compilation,
     const slang::SourceManager& source_manager,
-    const std::string& current_file_uri, const services::GlobalCatalog* catalog)
-    -> std::unique_ptr<SemanticIndex> {
+    const std::string& current_file_uri, const services::GlobalCatalog* catalog,
+    std::shared_ptr<spdlog::logger> logger) -> std::unique_ptr<SemanticIndex> {
   auto index =
-      std::unique_ptr<SemanticIndex>(new SemanticIndex(source_manager));
+      std::unique_ptr<SemanticIndex>(new SemanticIndex(source_manager, logger));
 
   // Create visitor for comprehensive symbol collection and reference tracking
   auto visitor =
@@ -699,7 +699,7 @@ void SemanticIndex::IndexVisitor::handle(
               target_symbol->location + target_symbol->name.length());
         } else {
           // Should never reach here - symbol with syntax but no valid location
-          spdlog::error(
+          index_.get().logger_->error(
               "NamedValueExpression: Symbol '{}' (kind '{}') has syntax but "
               "invalid location",
               target_symbol->name, slang::ast::toString(target_symbol->kind));
@@ -1861,7 +1861,7 @@ void SemanticIndex::ValidateNoRangeOverlaps() const {
       // Log error but don't crash - LSP server should continue working
       auto prev_loc = prev.source_range.start();
       auto curr_loc = curr.source_range.start();
-      spdlog::error(
+      logger_->error(
           "Range overlap detected: prev=[{}:{}..{}:{}] '{}', "
           "curr=[{}:{}..{}:{}] '{}'. Please report this bug.",
           prev_loc.buffer().getId(), prev_loc.offset(),

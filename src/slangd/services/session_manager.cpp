@@ -27,6 +27,7 @@ SessionManager::SessionManager(
       layout_service_(std::move(layout_service)),
       catalog_(std::move(catalog)),
       logger_(std::move(logger)),
+      session_strand_(asio::make_strand(executor)),
       compilation_pool_(std::make_unique<asio::thread_pool>(4)) {
 }
 
@@ -45,6 +46,8 @@ SessionManager::~SessionManager() {
 auto SessionManager::UpdateSession(
     std::string uri, std::string content, int version)
     -> asio::awaitable<void> {
+  co_await asio::post(session_strand_, asio::use_awaitable);
+
   logger_->debug(
       "SessionManager::UpdateSession: {} (version {})", uri, version);
 
@@ -90,51 +93,58 @@ auto SessionManager::UpdateSession(
   co_return;
 }
 
-auto SessionManager::RemoveSession(std::string uri) -> void {
-  active_sessions_.erase(uri);
-
-  // Remove from LRU tracking
-  std::erase(access_order_, uri);
-
-  if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
-    it->second->compilation_ready->close();
-    it->second->session_ready->close();
-    pending_sessions_.erase(it);
-  }
-}
-
 auto SessionManager::InvalidateSessions(std::vector<std::string> uris) -> void {
-  for (const auto& uri : uris) {
-    active_sessions_.erase(uri);
+  asio::co_spawn(
+      executor_,
+      [this, uris = std::move(uris)]() -> asio::awaitable<void> {
+        co_await asio::post(session_strand_, asio::use_awaitable);
 
-    // Remove from LRU tracking
-    std::erase(access_order_, uri);
+        for (const auto& uri : uris) {
+          active_sessions_.erase(uri);
 
-    if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
-      it->second->compilation_ready->close();
-      it->second->session_ready->close();
-      pending_sessions_.erase(it);
-    }
-  }
+          // Remove from LRU tracking
+          std::erase(access_order_, uri);
+
+          if (auto it = pending_sessions_.find(uri);
+              it != pending_sessions_.end()) {
+            it->second->compilation_ready->close();
+            it->second->session_ready->close();
+            pending_sessions_.erase(it);
+          }
+          logger_->debug("SessionManager::InvalidateSessions: {}", uri);
+        }
+        co_return;
+      },
+      asio::detached);
 }
 
 auto SessionManager::InvalidateAllSessions() -> void {
-  logger_->debug(
-      "SessionManager::InvalidateAllSessions ({} active, {} pending)",
-      active_sessions_.size(), pending_sessions_.size());
+  asio::co_spawn(
+      executor_,
+      [this]() -> asio::awaitable<void> {
+        co_await asio::post(session_strand_, asio::use_awaitable);
 
-  active_sessions_.clear();
-  access_order_.clear();
+        logger_->debug(
+            "SessionManager::InvalidateAllSessions ({} active, {} pending)",
+            active_sessions_.size(), pending_sessions_.size());
 
-  for (auto& [uri, pending] : pending_sessions_) {
-    pending->compilation_ready->close();
-    pending->session_ready->close();
-  }
-  pending_sessions_.clear();
+        active_sessions_.clear();
+        access_order_.clear();
+
+        for (auto& [uri, pending] : pending_sessions_) {
+          pending->compilation_ready->close();
+          pending->session_ready->close();
+        }
+        pending_sessions_.clear();
+        co_return;
+      },
+      asio::detached);
 }
 
 auto SessionManager::GetCompilationState(std::string uri)
     -> asio::awaitable<std::optional<CompilationState>> {
+  co_await asio::post(session_strand_, asio::use_awaitable);
+
   // Fast path: Check cache first (source of truth)
   if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
     UpdateAccessOrder(uri);
@@ -187,6 +197,8 @@ auto SessionManager::GetCompilationState(std::string uri)
 
 auto SessionManager::GetSession(std::string uri)
     -> asio::awaitable<std::shared_ptr<const OverlaySession>> {
+  co_await asio::post(session_strand_, asio::use_awaitable);
+
   // Fast path: Check cache first (source of truth)
   if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
     UpdateAccessOrder(uri);
@@ -260,7 +272,7 @@ auto SessionManager::StartSessionCreation(
               // visit) FromCompilation now calls forceElaborate on each
               // instance, populating diagMap
               auto semantic_index = semantic::SemanticIndex::FromCompilation(
-                  *compilation, *source_manager, uri, catalog_.get());
+                  *compilation, *source_manager, uri, catalog_.get(), logger_);
 
               // Signal Phase 1 complete: compilation_ready
               // (diagMap populated, diagnostics can be extracted)
@@ -272,7 +284,7 @@ auto SessionManager::StartSessionCreation(
                   .source_manager = source_manager,
                   .compilation = compilation_shared,
                   .main_buffer_id = main_buffer_id};
-              co_await asio::post(executor_, asio::use_awaitable);
+              co_await asio::post(session_strand_, asio::use_awaitable);
               pending->compilation_ready->try_send(ec, compilation_state);
               pending->compilation_ready->close();
 
@@ -287,7 +299,7 @@ auto SessionManager::StartSessionCreation(
             },
             asio::use_awaitable);
 
-        co_await asio::post(executor_, asio::use_awaitable);
+        co_await asio::post(session_strand_, asio::use_awaitable);
         std::error_code ec;
 
         if (result.has_value() && result.value()) {

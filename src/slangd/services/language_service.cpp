@@ -324,11 +324,11 @@ auto LanguageService::OnDocumentOpened(
     co_return;
   }
 
-  // Store document state
-  co_await doc_state_.Update(uri, content, version);
-
-  // Create session for opened document
+  // Create session first (time-critical - other handlers may need it)
   co_await session_manager_->UpdateSession(uri, content, version);
+
+  // Store document state after (less time-critical)
+  co_await doc_state_.Update(uri, content, version);
 }
 
 auto LanguageService::OnDocumentChanged(
