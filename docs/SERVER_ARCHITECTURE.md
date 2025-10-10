@@ -232,6 +232,7 @@ DocumentStateManager (synchronized storage)
   └─ strand_: asio::strand  ← Thread-safe access
 
 SessionManager (compilation cache)
+  ├─ session_strand_: asio::strand  ← Thread-safe access to maps
   ├─ active_sessions_: map<uri, CacheEntry{session, version}>  ← Version-aware cache
   ├─ pending_sessions_: map<uri, PendingCreation>  ← Being created
   ├─ access_order_: vector<uri>  ← LRU tracking (MRU first)
