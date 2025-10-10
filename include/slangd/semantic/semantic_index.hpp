@@ -191,6 +191,7 @@ class SemanticIndex {
     void handle(const slang::ast::InterfacePortSymbol& interface_port);
     void handle(const slang::ast::ModportSymbol& modport);
     void handle(const slang::ast::ModportPortSymbol& modport_port);
+    void handle(const slang::ast::InstanceArraySymbol& instance_array);
     void handle(const slang::ast::InstanceSymbol& instance);
     void handle(const slang::ast::GenerateBlockArraySymbol& generate_array);
     void handle(const slang::ast::GenerateBlockSymbol& generate_block);

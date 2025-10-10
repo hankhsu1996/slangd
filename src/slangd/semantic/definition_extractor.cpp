@@ -158,6 +158,16 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       break;
 
+    case SK::InstanceArray:
+      // Instance arrays (e.g., interface if_array[4])
+      if (syntax.kind == SyntaxKind::HierarchicalInstance) {
+        // Use symbol location + name length for array names
+        if (symbol.location.valid()) {
+          return {symbol.location, symbol.location + symbol.name.length()};
+        }
+      }
+      break;
+
     default:
       // Unhandled symbol type - log warning and use fallback
       spdlog::warn(

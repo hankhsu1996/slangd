@@ -204,3 +204,42 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "bus", 1, 0);
   fixture.AssertGoToDefinition(*index, code, "data", 1, 0);
 }
+
+TEST_CASE(
+    "SemanticIndex unpacked array of interface instances works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    interface array_if;
+      logic [31:0] signal_a;
+      logic [31:0] signal_b;
+    endinterface
+
+    module top;
+      parameter int ARRAY_SIZE = 4;
+
+      array_if if_array[ARRAY_SIZE] ();
+
+      initial begin
+        if_array[0].signal_a = 32'h1234;
+        if_array[1].signal_b = 32'h5678;
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test interface type name in array instantiation
+  fixture.AssertGoToDefinition(*index, code, "array_if", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "array_if", 1, 0);
+
+  // Test array instance name self-definition
+  fixture.AssertGoToDefinition(*index, code, "if_array", 0, 0);
+
+  // Test array element access and member access
+  fixture.AssertGoToDefinition(*index, code, "if_array", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "signal_a", 0, 0);
+
+  fixture.AssertGoToDefinition(*index, code, "if_array", 2, 0);
+  fixture.AssertGoToDefinition(*index, code, "signal_b", 0, 0);
+}

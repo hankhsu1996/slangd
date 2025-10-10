@@ -909,6 +909,12 @@ void SemanticIndex::IndexVisitor::handle(
     } else if (node->kind == slang::syntax::SyntaxKind::IdentifierName) {
       // Leaf node - this is one element in the path
       syntax_ranges.push_back(node->sourceRange());
+    } else if (node->kind == slang::syntax::SyntaxKind::IdentifierSelectName) {
+      // Handle array element access like if_array[0]
+      // Extract just the identifier range, not the selectors
+      const auto& select_name =
+          node->as<slang::syntax::IdentifierSelectNameSyntax>();
+      syntax_ranges.push_back(select_name.identifier.range());
     }
   };
 
@@ -927,6 +933,17 @@ void SemanticIndex::IndexVisitor::handle(
       const auto& modport_port = symbol->as<slang::ast::ModportPortSymbol>();
       if (modport_port.internalSymbol != nullptr) {
         symbol = modport_port.internalSymbol;
+      }
+    }
+
+    // Handle array element access (e.g., if_array[0].member)
+    // Array elements have empty names - redirect to parent InstanceArray
+    if (symbol->kind == slang::ast::SymbolKind::Instance &&
+        symbol->name.empty()) {
+      const auto* parent = symbol->getParentScope();
+      if (parent != nullptr &&
+          parent->asSymbol().kind == slang::ast::SymbolKind::InstanceArray) {
+        symbol = &parent->asSymbol();
       }
     }
 
@@ -1574,8 +1591,87 @@ void SemanticIndex::IndexVisitor::handle(
 }
 
 void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::InstanceArraySymbol& instance_array) {
+  // Handle arrays of interface instances (e.g., array_if if_array[4] ();)
+  // InstanceArraySymbol contains multiple InstanceSymbol children
+  const auto* syntax = instance_array.getSyntax();
+
+  if (syntax != nullptr &&
+      syntax->kind == slang::syntax::SyntaxKind::HierarchicalInstance) {
+    // Check if this is an interface array by looking at first element
+    bool is_interface_array = false;
+    if (!instance_array.elements.empty()) {
+      const auto* first_elem = instance_array.elements[0];
+      if (first_elem != nullptr &&
+          first_elem->kind == slang::ast::SymbolKind::Instance) {
+        const auto& first_instance =
+            first_elem->as<slang::ast::InstanceSymbol>();
+        is_interface_array = first_instance.isInterface();
+      }
+    }
+
+    if (is_interface_array) {
+      // 1. Create self-definition for array name
+      if (instance_array.location.valid()) {
+        auto start_loc = instance_array.location;
+        auto end_loc = start_loc + instance_array.name.length();
+        auto name_range = slang::SourceRange{start_loc, end_loc};
+        AddDefinition(
+            instance_array, instance_array.name, name_range,
+            instance_array.getParentScope());
+      }
+
+      // 2. Create reference from interface type name to interface definition
+      const auto* parent_syntax = syntax->parent;
+      if (parent_syntax != nullptr &&
+          parent_syntax->kind ==
+              slang::syntax::SyntaxKind::HierarchyInstantiation) {
+        const auto& inst_syntax =
+            parent_syntax->as<slang::syntax::HierarchyInstantiationSyntax>();
+
+        // Get interface definition from first array element
+        if (!instance_array.elements.empty()) {
+          const auto* first_elem = instance_array.elements[0];
+          if (first_elem != nullptr &&
+              first_elem->kind == slang::ast::SymbolKind::Instance) {
+            const auto& first_instance =
+                first_elem->as<slang::ast::InstanceSymbol>();
+            const auto& interface_def = first_instance.getDefinition();
+            if (interface_def.location.valid()) {
+              if (const auto* interface_syntax = interface_def.getSyntax()) {
+                auto interface_definition_range =
+                    DefinitionExtractor::ExtractDefinitionRange(
+                        interface_def, *interface_syntax);
+                AddReference(
+                    interface_def, interface_def.name, inst_syntax.type.range(),
+                    interface_definition_range, interface_def.getParentScope());
+              }
+            }
+          }
+        }
+      }
+
+      // Skip visitDefault to avoid processing child instances
+      // (they would create duplicate type references)
+      return;
+    }
+  }
+
+  // For non-interface arrays, continue normal traversal
+  this->visitDefault(instance_array);
+}
+
+void SemanticIndex::IndexVisitor::handle(
     const slang::ast::InstanceSymbol& instance) {
   const auto* syntax = instance.getSyntax();
+
+  // Skip array elements (they have empty names and are handled by
+  // InstanceArraySymbol)
+  if (instance.name.empty()) {
+    // Array element - skip to avoid duplicate references
+    // Body traversal is controlled by InstanceArraySymbol handler
+    return;
+  }
 
   // Create references for interface instances in module bodies
   if (instance.isInterface() && syntax != nullptr &&
