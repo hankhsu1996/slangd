@@ -52,8 +52,6 @@ class SessionManager {
   auto UpdateSession(std::string uri, std::string content, int version)
       -> asio::awaitable<void>;
 
-  auto RemoveSession(std::string uri) -> void;
-
   auto InvalidateSessions(std::vector<std::string> uris) -> void;
 
   auto InvalidateAllSessions() -> void;  // For catalog version change
@@ -99,6 +97,16 @@ class SessionManager {
     int version;  // LSP document version
   };
 
+  // Dependencies
+  asio::any_io_executor executor_;
+  std::shared_ptr<ProjectLayoutService> layout_service_;
+  std::shared_ptr<const GlobalCatalog> catalog_;
+  std::shared_ptr<spdlog::logger> logger_;
+
+  // Strand for thread-safe session map access
+  asio::strand<asio::any_io_executor> session_strand_;
+
+  // Protected by session_strand_:
   // Cache by URI with version tracking (no content_hash!)
   // Version comparison enables close/reopen optimization without rebuilding
   std::unordered_map<std::string, CacheEntry> active_sessions_;
@@ -109,12 +117,6 @@ class SessionManager {
   // LRU tracking for cache eviction (most recently used first)
   std::vector<std::string> access_order_;
   static constexpr size_t kMaxCacheSize = 16;
-
-  // Dependencies
-  asio::any_io_executor executor_;
-  std::shared_ptr<ProjectLayoutService> layout_service_;
-  std::shared_ptr<const GlobalCatalog> catalog_;
-  std::shared_ptr<spdlog::logger> logger_;
 
   // Background compilation pool
   std::unique_ptr<asio::thread_pool> compilation_pool_;

@@ -134,7 +134,8 @@ auto SlangdLspServer::OnDidOpenTextDocument(
 auto SlangdLspServer::OnDidChangeTextDocument(
     lsp::DidChangeTextDocumentParams params)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
-  Logger()->debug("OnDidChangeTextDocument received: {}", params.textDocument.uri);
+  Logger()->debug(
+      "OnDidChangeTextDocument received: {}", params.textDocument.uri);
   if (!params.contentChanges.empty()) {
     const auto& full_change = std::get<lsp::TextDocumentContentFullChangeEvent>(
         params.contentChanges[0]);
@@ -147,7 +148,8 @@ auto SlangdLspServer::OnDidChangeTextDocument(
 auto SlangdLspServer::OnDidSaveTextDocument(
     lsp::DidSaveTextDocumentParams params)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
-  Logger()->debug("OnDidSaveTextDocument received: {}", params.textDocument.uri);
+  Logger()->debug(
+      "OnDidSaveTextDocument received: {}", params.textDocument.uri);
   co_await language_service_->OnDocumentSaved(params.textDocument.uri);
   co_await ProcessDiagnosticsForUri(params.textDocument.uri);
   co_return Ok();
@@ -156,7 +158,8 @@ auto SlangdLspServer::OnDidSaveTextDocument(
 auto SlangdLspServer::OnDidCloseTextDocument(
     lsp::DidCloseTextDocumentParams params)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
-  Logger()->debug("OnDidCloseTextDocument received: {}", params.textDocument.uri);
+  Logger()->debug(
+      "OnDidCloseTextDocument received: {}", params.textDocument.uri);
   language_service_->OnDocumentClosed(params.textDocument.uri);
   co_return Ok();
 }
