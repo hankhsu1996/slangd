@@ -169,3 +169,38 @@ TEST_CASE("SemanticIndex interface member access works", "[definition]") {
   fixture.AssertGoToDefinition(*index, code, "bus", 2, 0);
   fixture.AssertGoToDefinition(*index, code, "data", 1, 0);
 }
+
+TEST_CASE(
+    "SemanticIndex interface instance in module body works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    interface my_if;
+      logic data;
+      logic valid;
+    endinterface
+
+    module top;
+      my_if bus();
+      my_if other_bus();
+
+      initial begin
+        bus.data = 1'b1;
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test interface type name in body instantiation
+  fixture.AssertGoToDefinition(*index, code, "my_if", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "my_if", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "my_if", 2, 0);
+
+  // Test interface instance name self-definition
+  fixture.AssertGoToDefinition(*index, code, "bus", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "other_bus", 0, 0);
+
+  // Test member access through body instance
+  fixture.AssertGoToDefinition(*index, code, "bus", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "data", 1, 0);
+}

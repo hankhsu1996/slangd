@@ -140,6 +140,24 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       break;
 
+    case SK::InterfacePort:
+      // Interface port declarations (e.g., MemBus.cpu mem_if)
+      if (syntax.kind == SyntaxKind::Declarator) {
+        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
+      }
+      break;
+
+    case SK::Instance:
+      // Module/interface/program instances
+      if (syntax.kind == SyntaxKind::HierarchicalInstance) {
+        // Use symbol location + name length for instance names
+        // (HierarchicalInstanceSyntax doesn't have a dedicated name field)
+        if (symbol.location.valid()) {
+          return {symbol.location, symbol.location + symbol.name.length()};
+        }
+      }
+      break;
+
     default:
       // Unhandled symbol type - log warning and use fallback
       spdlog::warn(

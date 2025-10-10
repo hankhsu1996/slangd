@@ -932,15 +932,15 @@ void SemanticIndex::IndexVisitor::handle(
 
     if (symbol->location.valid()) {
       if (const auto* syntax = symbol->getSyntax()) {
-        // All hierarchical path elements use Declarator syntax
-        if (syntax->kind == slang::syntax::SyntaxKind::Declarator) {
-          auto definition_range =
-              syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
+        // Use DefinitionExtractor to handle different symbol types
+        // (Declarator for variables, HierarchicalInstance for interface
+        // instances, etc.)
+        auto definition_range =
+            DefinitionExtractor::ExtractDefinitionRange(*symbol, *syntax);
 
-          AddReference(
-              *symbol, symbol->name, syntax_ranges[i], definition_range,
-              symbol->getParentScope());
-        }
+        AddReference(
+            *symbol, symbol->name, syntax_ranges[i], definition_range,
+            symbol->getParentScope());
       }
     }
   }
@@ -1575,11 +1575,44 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::InstanceSymbol& instance) {
-  // Only traverse interface instances when in standalone interface definition
-  // mode (parent = CompilationUnit). This is when we process the interface
-  // definition itself in PATH 1. Interface instances nested inside modules
-  // (parent != CompilationUnit) should not be traversed - we only care about
-  // the interface reference/port name, not re-indexing the interface body.
+  const auto* syntax = instance.getSyntax();
+
+  // Create references for interface instances in module bodies
+  if (instance.isInterface() && syntax != nullptr &&
+      syntax->kind == slang::syntax::SyntaxKind::HierarchicalInstance) {
+    // 1. Create self-definition for instance name
+    if (instance.location.valid()) {
+      auto start_loc = instance.location;
+      auto end_loc = start_loc + instance.name.length();
+      auto name_range = slang::SourceRange{start_loc, end_loc};
+      AddDefinition(
+          instance, instance.name, name_range, instance.getParentScope());
+    }
+
+    // 2. Create reference from interface type name to interface definition
+    const auto* parent_syntax = syntax->parent;
+    if (parent_syntax != nullptr &&
+        parent_syntax->kind ==
+            slang::syntax::SyntaxKind::HierarchyInstantiation) {
+      const auto& inst_syntax =
+          parent_syntax->as<slang::syntax::HierarchyInstantiationSyntax>();
+
+      // Get interface definition from instance
+      const auto& interface_def = instance.getDefinition();
+      if (interface_def.location.valid()) {
+        if (const auto* interface_syntax = interface_def.getSyntax()) {
+          auto interface_definition_range =
+              DefinitionExtractor::ExtractDefinitionRange(
+                  interface_def, *interface_syntax);
+          AddReference(
+              interface_def, interface_def.name, inst_syntax.type.range(),
+              interface_definition_range, interface_def.getParentScope());
+        }
+      }
+    }
+  }
+
+  // Control body traversal for interface instances
   if (instance.isInterface()) {
     const auto* parent = instance.getParentScope();
     if (parent != nullptr &&
