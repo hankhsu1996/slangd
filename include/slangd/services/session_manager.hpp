@@ -116,7 +116,7 @@ class SessionManager {
 
   // LRU tracking for cache eviction (most recently used first)
   std::vector<std::string> access_order_;
-  static constexpr size_t kMaxCacheSize = 16;
+  static constexpr size_t kMaxCacheSize = 8;
 
   // Background compilation pool
   std::unique_ptr<asio::thread_pool> compilation_pool_;
