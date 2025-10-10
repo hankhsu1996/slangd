@@ -21,7 +21,7 @@ auto DiagnosticConverter::ExtractParseDiagnostics(
   auto slang_diagnostics = compilation.getParseDiagnostics();
   auto diagnostics =
       ExtractDiagnostics(slang_diagnostics, source_manager, main_buffer_id);
-  return FilterDiagnostics(diagnostics, nullptr);
+  return FilterDiagnostics(diagnostics);
 }
 
 auto DiagnosticConverter::ExtractCollectedDiagnostics(
@@ -111,6 +111,13 @@ auto DiagnosticConverter::ConvertSlangDiagnosticsToLsp(
     // Get severity from the diagnostic engine
     lsp_diag.severity = ConvertDiagnosticSeverityToLsp(
         diag_engine.getSeverity(diag.code, diag.location));
+
+    // Downgrade UnresolvedHierarchicalPath to hint level (less intrusive)
+    // This is an LSP limitation, not a code issue, so grey dotted hint is
+    // appropriate
+    if (toString(diag.code) == "UnresolvedHierarchicalPath") {
+      lsp_diag.severity = lsp::DiagnosticSeverity::kHint;
+    }
 
     // Format message using the diagnostic engine
     lsp_diag.message = diag_engine.formatMessage(diag);
