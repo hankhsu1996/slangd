@@ -32,7 +32,7 @@ auto OverlaySession::Create(
   // compilation.diagMap Diagnostics are extracted on-demand via
   // ComputeDiagnostics()
   auto semantic_index = semantic::SemanticIndex::FromCompilation(
-      *compilation, *source_manager, uri, catalog.get());
+      *compilation, *source_manager, uri, catalog.get(), logger);
 
   auto elapsed = timer.GetElapsed();
   auto entry_count = semantic_index->GetSemanticEntries().size();

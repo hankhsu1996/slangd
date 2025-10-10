@@ -272,7 +272,7 @@ auto SessionManager::StartSessionCreation(
               // visit) FromCompilation now calls forceElaborate on each
               // instance, populating diagMap
               auto semantic_index = semantic::SemanticIndex::FromCompilation(
-                  *compilation, *source_manager, uri, catalog_.get());
+                  *compilation, *source_manager, uri, catalog_.get(), logger_);
 
               // Signal Phase 1 complete: compilation_ready
               // (diagMap populated, diagnostics can be extracted)
