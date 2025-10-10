@@ -116,7 +116,6 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "data", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "cpu", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "addr", 1, 0);
-  // TODO: Interface member access (mem_if.addr) not yet indexed
 }
 
 TEST_CASE(
@@ -135,4 +134,38 @@ TEST_CASE(
 
   fixture.AssertGoToDefinition(*index, code, "WIDTH", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "WIDTH", 1, 0);
+}
+
+TEST_CASE("SemanticIndex interface member access works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    interface bus_if;
+      logic [31:0] addr;
+      logic [31:0] data;
+    endinterface
+
+    module TestModule(bus_if bus);
+      logic [31:0] temp;
+
+      initial begin
+        bus.addr = 32'h1234;
+        temp = bus.data;
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test interface port parameter
+  fixture.AssertGoToDefinition(*index, code, "bus", 0, 0);
+
+  // Test LHS: bus.addr reference
+  fixture.AssertGoToDefinition(*index, code, "addr", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "bus", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "addr", 1, 0);
+
+  // Test RHS: bus.data reference
+  fixture.AssertGoToDefinition(*index, code, "data", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "bus", 2, 0);
+  fixture.AssertGoToDefinition(*index, code, "data", 1, 0);
 }

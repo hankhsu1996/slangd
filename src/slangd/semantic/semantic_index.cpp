@@ -880,32 +880,71 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::HierarchicalValueExpression& expr) {
-  const slang::ast::Symbol* target_symbol = &expr.symbol;
+  // Hierarchical references like `bus.addr` are represented as ScopedName
+  // syntax Slang already provides precise ranges for each element through the
+  // syntax tree
+  //
+  // For `bus.addr`:
+  // - Path[0]: `bus` (InterfacePort)
+  // - Path[1]: `addr` (Variable)
+  //
+  // The syntax is ScopedName with left/right parts, recursively structured
 
-  // If this is a ModportPortSymbol, trace to the underlying variable
-  if (expr.symbol.kind == slang::ast::SymbolKind::ModportPort) {
-    const auto& modport_port = expr.symbol.as<slang::ast::ModportPortSymbol>();
-    if (modport_port.internalSymbol != nullptr) {
-      target_symbol = modport_port.internalSymbol;
+  // Helper to extract ranges from ScopedName syntax tree
+  // Collect (symbol_index → source_range) mappings by traversing syntax
+  std::vector<slang::SourceRange> syntax_ranges;
+
+  std::function<void(const slang::syntax::SyntaxNode*)> collect_ranges =
+      [&](const slang::syntax::SyntaxNode* node) -> void {
+    if (node == nullptr) {
+      return;
+    }
+
+    if (node->kind == slang::syntax::SyntaxKind::ScopedName) {
+      const auto& scoped = node->as<slang::syntax::ScopedNameSyntax>();
+      // Traverse left first (to match path order)
+      collect_ranges(scoped.left);
+      // Then right
+      collect_ranges(scoped.right);
+    } else if (node->kind == slang::syntax::SyntaxKind::IdentifierName) {
+      // Leaf node - this is one element in the path
+      syntax_ranges.push_back(node->sourceRange());
+    }
+  };
+
+  if (expr.syntax != nullptr) {
+    collect_ranges(expr.syntax);
+  }
+
+  // Now create references using the syntax ranges
+  for (size_t i = 0; i < expr.ref.path.size() && i < syntax_ranges.size();
+       ++i) {
+    const auto& elem = expr.ref.path[i];
+    const slang::ast::Symbol* symbol = elem.symbol;
+
+    // Handle ModportPortSymbol by redirecting to internal symbol
+    if (symbol->kind == slang::ast::SymbolKind::ModportPort) {
+      const auto& modport_port = symbol->as<slang::ast::ModportPortSymbol>();
+      if (modport_port.internalSymbol != nullptr) {
+        symbol = modport_port.internalSymbol;
+      }
+    }
+
+    if (symbol->location.valid()) {
+      if (const auto* syntax = symbol->getSyntax()) {
+        // All hierarchical path elements use Declarator syntax
+        if (syntax->kind == slang::syntax::SyntaxKind::Declarator) {
+          auto definition_range =
+              syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
+
+          AddReference(
+              *symbol, symbol->name, syntax_ranges[i], definition_range,
+              symbol->getParentScope());
+        }
+      }
     }
   }
 
-  if (target_symbol->location.valid()) {
-    if (const auto* syntax = target_symbol->getSyntax()) {
-      auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(*target_symbol, *syntax);
-
-      // Use precise symbol name range, similar to NamedValueExpression approach
-      auto reference_range = slang::SourceRange(
-          expr.sourceRange.start(),
-          expr.sourceRange.start() +
-              static_cast<uint32_t>(target_symbol->name.length()));
-
-      AddReference(
-          *target_symbol, target_symbol->name, reference_range,
-          definition_range, target_symbol->getParentScope());
-    }
-  }
   this->visitDefault(expr);
 }
 
@@ -1429,12 +1468,23 @@ void SemanticIndex::IndexVisitor::handle(
   if (interface_port.location.valid()) {
     if (const auto* syntax = interface_port.getSyntax()) {
       // Create self-definition for interface port name
-      slang::SourceRange definition_range = syntax->sourceRange();
+      slang::SourceRange definition_range;
+
       if (syntax->kind == slang::syntax::SyntaxKind::InterfacePortHeader) {
+        // Standalone interface port: interface_type port_name;
         definition_range =
             syntax->as<slang::syntax::InterfacePortHeaderSyntax>()
                 .nameOrKeyword.range();
+      } else if (syntax->kind == slang::syntax::SyntaxKind::Declarator) {
+        // Interface port in module port list: module M(interface_type
+        // port_name);
+        definition_range =
+            syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
+      } else {
+        // Fallback for unknown syntax kinds
+        definition_range = syntax->sourceRange();
       }
+
       AddDefinition(
           interface_port, interface_port.name, definition_range,
           interface_port.getParentScope());
