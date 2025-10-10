@@ -967,6 +967,37 @@ void SemanticIndex::IndexVisitor::handle(
     ++syntax_index;
   }
 
+  // Visit selector expressions (e.g., ARRAY_IDX in if_array[ARRAY_IDX].signal,
+  // or LOWER and UPPER in if_array[LOWER:UPPER].signal)
+  // These expressions were bound during hierarchical lookup and stored in the
+  // path elements as a variant (monostate for name, Expression* for index,
+  // pair for range)
+  for (const auto& elem : expr.ref.path) {
+    std::visit(
+        [this](auto&& selector) {
+          using T = std::decay_t<decltype(selector)>;
+          if constexpr (std::is_same_v<T, const slang::ast::Expression*>) {
+            // Single-index selector
+            if (selector != nullptr) {
+              selector->visit(*this);
+            }
+          } else if constexpr (std::is_same_v<
+                                   T, std::pair<
+                                          const slang::ast::Expression*,
+                                          const slang::ast::Expression*>>) {
+            // Range selector
+            if (selector.first != nullptr) {
+              selector.first->visit(*this);
+            }
+            if (selector.second != nullptr) {
+              selector.second->visit(*this);
+            }
+          }
+          // std::monostate case - name selector, no expression to visit
+        },
+        elem.selectorExprs);
+  }
+
   this->visitDefault(expr);
 }
 

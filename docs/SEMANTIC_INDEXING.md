@@ -231,22 +231,22 @@ if (variable.flags.has(VariableFlags::CompilerGenerated)) {
 }
 ```
 
-### 2. Parameter Expression Preservation
+### 2. Expression Preservation Pattern
 
-**Problem:** Slang's `evalInteger()` converts parameter expressions to constants, losing symbol references.
+**Problem:** Compiler evaluates expressions to constants and discards the AST, breaking LSP navigation.
 
-**Solution:** Symmetric expression storage - store expressions alongside computed values in `EvaluatedDimension` struct:
+**Solution**: Store bound expressions alongside constants in Slang. Structure mirrors the constant (single/pair/variant).
 
-```cpp
-struct EvaluatedDimension {
-  ConstantRange range;
-  const Expression* rangeLeftExpr = nullptr;   // → range.left
-  const Expression* rangeRightExpr = nullptr;  // → range.right
-  // ... other fields
-};
-```
+**Process**:
+1. Find where Slang evaluates the expression (`evalInteger()` or `eval()`)
+2. Identify the struct storing the constant result
+3. Add expression field(s) matching the constant's structure
+4. Store bound expression before evaluation
+5. Visit stored expressions in slangd's semantic indexer
 
-Store directly in type classes (e.g., `PackedArrayType::evalDim`) to eliminate re-evaluation. Compatible with Slang's `BumpAllocator` (trivially destructible).
+**Examples**: Array dimensions (`EvaluatedDimension`, commit 5c5eee26), hierarchical selectors (`HierarchicalReference::Element`, commit 1d1543bb).
+
+**Key insight**: Compiler has bound expression at evaluation time - just save it. BumpAllocator makes storage cheap.
 
 ## Design Principles
 
