@@ -115,6 +115,7 @@ auto SlangdLspServer::OnDidOpenTextDocument(
     lsp::DidOpenTextDocumentParams params)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
   const auto& text_doc = params.textDocument;
+  Logger()->debug("OnDidOpenTextDocument received: {}", text_doc.uri);
 
   co_await language_service_->OnDocumentOpened(
       text_doc.uri, text_doc.text, text_doc.version);
@@ -133,6 +134,7 @@ auto SlangdLspServer::OnDidOpenTextDocument(
 auto SlangdLspServer::OnDidChangeTextDocument(
     lsp::DidChangeTextDocumentParams params)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
+  Logger()->debug("OnDidChangeTextDocument received: {}", params.textDocument.uri);
   if (!params.contentChanges.empty()) {
     const auto& full_change = std::get<lsp::TextDocumentContentFullChangeEvent>(
         params.contentChanges[0]);
@@ -145,6 +147,7 @@ auto SlangdLspServer::OnDidChangeTextDocument(
 auto SlangdLspServer::OnDidSaveTextDocument(
     lsp::DidSaveTextDocumentParams params)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
+  Logger()->debug("OnDidSaveTextDocument received: {}", params.textDocument.uri);
   co_await language_service_->OnDocumentSaved(params.textDocument.uri);
   co_await ProcessDiagnosticsForUri(params.textDocument.uri);
   co_return Ok();
@@ -153,6 +156,7 @@ auto SlangdLspServer::OnDidSaveTextDocument(
 auto SlangdLspServer::OnDidCloseTextDocument(
     lsp::DidCloseTextDocumentParams params)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
+  Logger()->debug("OnDidCloseTextDocument received: {}", params.textDocument.uri);
   language_service_->OnDocumentClosed(params.textDocument.uri);
   co_return Ok();
 }
@@ -179,12 +183,14 @@ auto SlangdLspServer::ProcessDiagnosticsForUri(std::string uri)
 auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
     -> asio::awaitable<
         std::expected<lsp::DocumentSymbolResult, lsp::LspError>> {
+  Logger()->debug("OnDocumentSymbols received: {}", params.textDocument.uri);
   co_return co_await language_service_->GetDocumentSymbols(
       params.textDocument.uri);
 }
 
 auto SlangdLspServer::OnGotoDefinition(lsp::DefinitionParams params)
     -> asio::awaitable<std::expected<lsp::DefinitionResult, lsp::LspError>> {
+  Logger()->debug("OnGotoDefinition received: {}", params.textDocument.uri);
   co_return co_await language_service_->GetDefinitionsForPosition(
       params.textDocument.uri, params.position);
 }
