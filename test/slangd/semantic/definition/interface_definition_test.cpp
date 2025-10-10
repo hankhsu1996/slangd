@@ -231,15 +231,16 @@ TEST_CASE(
 
   // Test interface type name in array instantiation
   fixture.AssertGoToDefinition(*index, code, "array_if", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "array_if", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "signal_a", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "signal_b", 0, 0);
 
   // Test array instance name self-definition
   fixture.AssertGoToDefinition(*index, code, "if_array", 0, 0);
 
   // Test array element access and member access
   fixture.AssertGoToDefinition(*index, code, "if_array", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "signal_a", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "signal_a", 1, 0);
 
   fixture.AssertGoToDefinition(*index, code, "if_array", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "signal_b", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "signal_b", 1, 0);
 }

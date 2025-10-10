@@ -923,9 +923,11 @@ void SemanticIndex::IndexVisitor::handle(
   }
 
   // Now create references using the syntax ranges
-  for (size_t i = 0; i < expr.ref.path.size() && i < syntax_ranges.size();
-       ++i) {
-    const auto& elem = expr.ref.path[i];
+  // NOTE: path.size() may be > syntax_ranges.size() because array elements
+  // (empty name) don't have syntax nodes, but do appear in the AST path
+  size_t syntax_index = 0;
+  for (size_t path_index = 0; path_index < expr.ref.path.size(); ++path_index) {
+    const auto& elem = expr.ref.path[path_index];
     const slang::ast::Symbol* symbol = elem.symbol;
 
     // Handle ModportPortSymbol by redirecting to internal symbol
@@ -937,14 +939,15 @@ void SemanticIndex::IndexVisitor::handle(
     }
 
     // Handle array element access (e.g., if_array[0].member)
-    // Array elements have empty names - redirect to parent InstanceArray
+    // Array elements have empty names and no syntax representation - skip them
     if (symbol->kind == slang::ast::SymbolKind::Instance &&
         symbol->name.empty()) {
-      const auto* parent = symbol->getParentScope();
-      if (parent != nullptr &&
-          parent->asSymbol().kind == slang::ast::SymbolKind::InstanceArray) {
-        symbol = &parent->asSymbol();
-      }
+      continue;  // Don't consume a syntax_index slot
+    }
+
+    // Check if we have a corresponding syntax range
+    if (syntax_index >= syntax_ranges.size()) {
+      break;
     }
 
     if (symbol->location.valid()) {
@@ -956,10 +959,12 @@ void SemanticIndex::IndexVisitor::handle(
             DefinitionExtractor::ExtractDefinitionRange(*symbol, *syntax);
 
         AddReference(
-            *symbol, symbol->name, syntax_ranges[i], definition_range,
-            symbol->getParentScope());
+            *symbol, symbol->name, syntax_ranges[syntax_index],
+            definition_range, symbol->getParentScope());
       }
     }
+
+    ++syntax_index;
   }
 
   this->visitDefault(expr);
