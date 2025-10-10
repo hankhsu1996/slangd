@@ -237,6 +237,10 @@ TEST_CASE(
   // Test array instance name self-definition
   fixture.AssertGoToDefinition(*index, code, "if_array", 0, 0);
 
+  // Test parameter reference in array dimension
+  fixture.AssertGoToDefinition(*index, code, "ARRAY_SIZE", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "ARRAY_SIZE", 1, 0);
+
   // Test array element access and member access
   fixture.AssertGoToDefinition(*index, code, "if_array", 1, 0);
   fixture.AssertGoToDefinition(*index, code, "signal_a", 1, 0);

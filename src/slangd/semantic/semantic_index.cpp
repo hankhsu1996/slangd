@@ -1601,6 +1601,15 @@ void SemanticIndex::IndexVisitor::handle(
   // InstanceArraySymbol contains multiple InstanceSymbol children
   const auto* syntax = instance_array.getSyntax();
 
+  // Visit dimension expressions to index parameter references (e.g.,
+  // if_array[ARRAY_SIZE])
+  if (instance_array.dimension.has_value()) {
+    instance_array.dimension->visitExpressions(
+        [this](const slang::ast::Expression& expr) -> void {
+          expr.visit(*this);
+        });
+  }
+
   if (syntax != nullptr &&
       syntax->kind == slang::syntax::SyntaxKind::HierarchicalInstance) {
     // Check if this is an interface array by looking at first element
