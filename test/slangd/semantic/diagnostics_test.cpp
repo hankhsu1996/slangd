@@ -143,3 +143,77 @@ TEST_CASE("Unknown package import is reported", "[diagnostics]") {
   auto diags = fixture.CompileSourceAndGetDiagnostics(code);
   Fixture::AssertError(diags, "unknown package");
 }
+
+TEST_CASE(
+    "Hierarchical reference in assertion without full hierarchy",
+    "[diagnostics]") {
+  SimpleTestFixture fixture;
+
+  SECTION("Upward hierarchical reference in assertion") {
+    std::string code = R"(
+      module test_module(
+        input logic clk,
+        input logic reset,
+        input logic enable
+      );
+        // Hierarchical reference that would work in full design
+        // but shows as info in single-file LSP mode
+        assert property (@(posedge clk) disable iff (reset)
+          enable |-> top.subsystem.status_flag);
+      endmodule
+    )";
+    auto diags = fixture.CompileSourceAndGetDiagnostics(code);
+
+    // Should have UnresolvedHierarchicalPath as hint (grey dotted), not error
+    Fixture::AssertDiagnosticExists(
+        diags, lsp::DiagnosticSeverity::kHint,
+        "hierarchical reference 'top' cannot be resolved in the language "
+        "server");
+
+    // Should NOT have an error
+    Fixture::AssertNoErrors(diags);
+  }
+
+  SECTION("Hierarchical reference in assertion with nested path") {
+    std::string code = R"(
+      module clock_gate(
+        input logic clk,
+        input logic reset,
+        input logic pipe_empty
+      );
+        assert property (@(negedge clk) disable iff (reset)
+          ~pipe_empty |-> parent.core.pipe_active)
+          else $error("Clock disabled but pipe not empty!");
+      endmodule
+    )";
+    auto diags = fixture.CompileSourceAndGetDiagnostics(code);
+
+    // Should have UnresolvedHierarchicalPath as hint (grey dotted), not error
+    Fixture::AssertDiagnosticExists(
+        diags, lsp::DiagnosticSeverity::kHint,
+        "hierarchical reference 'parent' cannot be resolved in the language "
+        "server");
+
+    // Should NOT have an error
+    Fixture::AssertNoErrors(diags);
+  }
+
+  SECTION("Regular undefined variable still shows as error") {
+    std::string code = R"(
+      module test_module(
+        input logic clk,
+        input logic reset
+      );
+        // This is NOT a hierarchical path - just a typo
+        // Should still show as error
+        initial begin
+          undefined_var = 1'b1;
+        end
+      endmodule
+    )";
+    auto diags = fixture.CompileSourceAndGetDiagnostics(code);
+
+    // Regular undefined variable should still be an error
+    Fixture::AssertError(diags, "undefined_var");
+  }
+}
