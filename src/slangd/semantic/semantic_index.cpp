@@ -19,7 +19,9 @@
 #include <slang/ast/symbols/PortSymbols.h>
 #include <slang/ast/symbols/VariableSymbols.h>
 #include <slang/ast/types/AllTypes.h>
+#include <slang/parsing/Token.h>
 #include <slang/syntax/AllSyntax.h>
+#include <slang/syntax/SyntaxVisitor.h>
 #include <slang/util/Enum.h>
 #include <spdlog/spdlog.h>
 
@@ -197,6 +199,9 @@ auto SemanticIndex::FromCompilation(
 
   // Validate no overlaps using O(n) algorithm (entries are now sorted)
   index->ValidateNoRangeOverlaps();
+
+  // Validate symbol coverage to find unsupported constructs
+  index->ValidateSymbolCoverage(compilation, current_file_uri);
 
   return index;
 }
@@ -2230,10 +2235,10 @@ void SemanticIndex::ValidateNoRangeOverlaps() const {
          curr.source_range.start() < prev.source_range.end());
 
     if (overlap) {
-      // Log error but don't crash - LSP server should continue working
+      // Log warning but don't crash - LSP server should continue working
       auto prev_loc = prev.source_range.start();
       auto curr_loc = curr.source_range.start();
-      logger_->error(
+      logger_->warn(
           "Range overlap detected: prev=[{}:{}..{}:{}] '{}', "
           "curr=[{}:{}..{}:{}] '{}'. Please report this bug.",
           prev_loc.buffer().getId(), prev_loc.offset(),
@@ -2246,6 +2251,96 @@ void SemanticIndex::ValidateNoRangeOverlaps() const {
     }
   }
   // Range validation passed - no overlaps detected
+}
+
+void SemanticIndex::ValidateSymbolCoverage(
+    slang::ast::Compilation& compilation,
+    const std::string& current_file_uri) const {
+  // Normalize current file URI for comparison
+  auto normalized_target = NormalizeUri(current_file_uri);
+
+  // Helper to check if a location is from the current file
+  auto is_current_file = [&](slang::SourceLocation loc) -> bool {
+    if (!loc.valid()) {
+      return false;
+    }
+    auto uri = std::string(
+        ConvertSlangLocationToLspLocation(loc, source_manager_.get()).uri);
+    return NormalizeUri(uri) == normalized_target;
+  };
+
+  // Helper visitor to collect all identifier tokens from syntax tree
+  struct IdentifierCollector {
+    std::vector<slang::parsing::Token> identifiers;
+
+    void visit(const slang::syntax::SyntaxNode& node) {
+      // Recursively visit all children
+      for (uint32_t i = 0; i < node.getChildCount(); i++) {
+        const auto* child = node.childNode(i);
+        if (child != nullptr) {
+          visit(*child);
+        } else {
+          // Check if it's a token
+          auto token = node.childToken(i);
+          if (token.kind == slang::parsing::TokenKind::Identifier) {
+            identifiers.push_back(token);
+          }
+        }
+      }
+    }
+  };
+
+  // Collect all identifiers from syntax trees
+  IdentifierCollector collector;
+  for (const auto& tree : compilation.getSyntaxTrees()) {
+    collector.visit(tree->root());
+  }
+
+  // Filter to only identifiers from current file and check which don't have
+  // definitions
+  std::vector<slang::parsing::Token> missing;
+  for (const auto& token : collector.identifiers) {
+    // Only check identifiers from the current file
+    if (!is_current_file(token.location())) {
+      continue;
+    }
+
+    auto result = LookupDefinitionAt(token.location());
+    if (!result) {
+      missing.push_back(token);
+    }
+  }
+
+  // Report missing definitions grouped by line
+  if (!missing.empty()) {
+    auto file_name = source_manager_.get().getFileName(
+        source_manager_.get().getFullyExpandedLoc(missing[0].location()));
+
+    // Group by line number
+    std::map<uint32_t, std::vector<std::string_view>> missing_by_line;
+    for (const auto& token : missing) {
+      auto location =
+          source_manager_.get().getFullyExpandedLoc(token.location());
+      auto line_number = source_manager_.get().getLineNumber(location);
+      missing_by_line[line_number].push_back(token.valueText());
+    }
+
+    logger_->warn(
+        "File {} has {} identifiers without definitions on {} lines:",
+        file_name, missing.size(), missing_by_line.size());
+
+    for (const auto& [line, symbols] : missing_by_line) {
+      // Join symbols with commas
+      std::string symbols_str;
+      for (size_t i = 0; i < symbols.size(); ++i) {
+        if (i > 0) {
+          symbols_str += ", ";
+        }
+        symbols_str += symbols[i];
+      }
+      logger_->warn("  Line {}: {}", line, symbols_str);
+    }
+  }
 }
 
 }  // namespace slangd::semantic

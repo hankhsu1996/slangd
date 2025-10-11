@@ -136,6 +136,13 @@ class SemanticIndex {
   // Validation method to check for overlapping ranges
   void ValidateNoRangeOverlaps() const;
 
+  // Validation method to check symbol coverage
+  // Logs identifiers that don't have definitions in the semantic index
+  // Only checks identifiers from the specified file URI
+  void ValidateSymbolCoverage(
+      slang::ast::Compilation& compilation,
+      const std::string& current_file_uri) const;
+
  private:
   explicit SemanticIndex(
       const slang::SourceManager& source_manager,

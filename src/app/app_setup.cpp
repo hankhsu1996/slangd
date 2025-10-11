@@ -40,7 +40,7 @@ auto SetupLoggers()
       };
 
   for (const auto& [name, logger] : logger_pairs) {
-    logger->set_pattern("[%n][%5l] %v");
+    logger->set_pattern("[%n][%L] %v");
     logger->flush_on(spdlog::level::debug);
   }
 
