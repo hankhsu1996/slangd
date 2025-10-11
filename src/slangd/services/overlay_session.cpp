@@ -87,6 +87,12 @@ auto OverlaySession::BuildCompilation(
   // Disable implicit net declarations for stricter diagnostics
   pp_options.initialDefaultNetType = slang::parsing::TokenKind::Unknown;
 
+  // Configure lexer options for compatibility
+  slang::parsing::LexerOptions lexer_options;
+  // Enable legacy protection directives for compatibility with older codebases
+  lexer_options.enableLegacyProtect = true;
+  options.set(lexer_options);
+
   // Apply include directories and defines from layout service
   if (layout_service) {
     for (const auto& include_dir : layout_service->GetIncludeDirectories()) {
