@@ -267,6 +267,9 @@ auto LanguageService::HandleConfigChange() -> asio::awaitable<void> {
     logger_->error("LanguageService failed to rebuild GlobalCatalog");
   }
 
+  // Update SessionManager's catalog reference for future session creations
+  session_manager_->UpdateCatalog(global_catalog_);
+
   session_manager_->InvalidateAllSessions();
 
   // Rebuild sessions for all open files to restore LSP features immediately

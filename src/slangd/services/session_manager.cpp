@@ -141,6 +141,28 @@ auto SessionManager::InvalidateAllSessions() -> void {
       asio::detached);
 }
 
+auto SessionManager::UpdateCatalog(std::shared_ptr<const GlobalCatalog> catalog)
+    -> void {
+  asio::co_spawn(
+      executor_,
+      [this, catalog]() -> asio::awaitable<void> {
+        co_await asio::post(session_strand_, asio::use_awaitable);
+
+        logger_->debug(
+            "SessionManager::UpdateCatalog: Updating catalog pointer (old "
+            "version: {}, new version: {})",
+            catalog_ ? catalog_->GetVersion() : 0,
+            catalog ? catalog->GetVersion() : 0);
+
+        // Replace catalog pointer for all future session creations
+        // Releases previous catalog's shared_ptr reference
+        catalog_ = catalog;
+
+        co_return;
+      },
+      asio::detached);
+}
+
 auto SessionManager::GetCompilationState(std::string uri)
     -> asio::awaitable<std::optional<CompilationState>> {
   co_await asio::post(session_strand_, asio::use_awaitable);
