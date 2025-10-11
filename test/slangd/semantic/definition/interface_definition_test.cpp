@@ -318,3 +318,54 @@ TEST_CASE(
   // This should jump to the declaration of 'bus' above
   fixture.AssertGoToDefinition(*index, code, "bus", 1, 0);
 }
+
+TEST_CASE(
+    "SemanticIndex interface array port connection with parameters works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    interface common_if #(
+      parameter int MODE = 0
+    ) ();
+      logic [31:0] data;
+      logic valid;
+    endinterface
+
+    module child(
+      common_if.master if_port
+    );
+    endmodule
+
+    module parent;
+      parameter int NUM_UNITS = 4;
+
+      common_if #(.MODE(0)) unit_if [NUM_UNITS] ();
+
+      child u_child(
+        .if_port(unit_if)
+      );
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test interface type name
+  fixture.AssertGoToDefinition(*index, code, "common_if", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "common_if", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "common_if", 2, 0);
+
+  // Test parameter definition and reference
+  fixture.AssertGoToDefinition(*index, code, "MODE", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "MODE", 1, 0);
+
+  // Test array dimension parameter
+  fixture.AssertGoToDefinition(*index, code, "NUM_UNITS", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "NUM_UNITS", 1, 0);
+
+  // Test interface array instance self-definition
+  fixture.AssertGoToDefinition(*index, code, "unit_if", 0, 0);
+
+  // Test interface array reference in port connection (no index)
+  // This should jump to the array declaration above
+  fixture.AssertGoToDefinition(*index, code, "unit_if", 1, 0);
+}

@@ -2079,7 +2079,7 @@ void SemanticIndex::IndexVisitor::handle(
           const auto& arb = expr.as<slang::ast::ArbitrarySymbolExpression>();
           const auto& ref_symbol = *arb.symbol;  // Dereference not_null
 
-          // Only index interface instances
+          // Handle both single interface instances and interface arrays
           if (ref_symbol.kind == slang::ast::SymbolKind::Instance) {
             const auto& instance_symbol =
                 ref_symbol.as<slang::ast::InstanceSymbol>();
@@ -2094,6 +2094,30 @@ void SemanticIndex::IndexVisitor::handle(
                 AddReference(
                     instance_symbol, instance_symbol.name, expr.sourceRange,
                     definition_range, instance_symbol.getParentScope());
+              }
+            }
+          } else if (ref_symbol.kind == slang::ast::SymbolKind::InstanceArray) {
+            const auto& instance_array =
+                ref_symbol.as<slang::ast::InstanceArraySymbol>();
+            // Check if this is an interface array by examining first element
+            if (!instance_array.elements.empty() &&
+                instance_array.elements[0] != nullptr &&
+                instance_array.elements[0]->kind ==
+                    slang::ast::SymbolKind::Instance) {
+              const auto& first_instance =
+                  instance_array.elements[0]->as<slang::ast::InstanceSymbol>();
+              if (first_instance.isInterface() &&
+                  instance_array.location.valid()) {
+                if (const auto* array_syntax = instance_array.getSyntax()) {
+                  auto definition_range =
+                      DefinitionExtractor::ExtractDefinitionRange(
+                          instance_array, *array_syntax);
+
+                  // Create reference using the expression's source range
+                  AddReference(
+                      instance_array, instance_array.name, expr.sourceRange,
+                      definition_range, instance_array.getParentScope());
+                }
               }
             }
           }
