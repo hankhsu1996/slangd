@@ -83,6 +83,28 @@ Before changing or working around existing behavior, understand the reason for t
 3. Check SystemVerilog specification if needed
 4. Only then decide if you need to change it
 
+### 4. Preserve Compiler Information for LSP
+
+**Principle**: When the compiler optimizes away information that LSP needs, modify the compiler to preserve that information alongside the optimized result. Don't reconstruct it in LSP.
+
+**Why**: Compilers are designed to discard information after processing (constant folding, temporary values, intermediate results). LSP servers need the original information to enable navigation and references.
+
+**Core insight**: At the point where the compiler computes and discards something, it has all the information needed. Storing it costs almost nothing but saves LSP from fragile reconstruction logic.
+
+**When this applies**:
+- Compiler evaluates expressions to constants and discards the AST
+- Compiler creates temporary symbols but doesn't link them to original declarations
+- Compiler resolves lookups but doesn't cache the resolution path
+
+**Why not reconstruct in LSP**:
+- Compiler already did the work (binding, resolution, type checking)
+- Reconstruction requires duplicating compiler logic (fragile, error-prone)
+- Original information is available at compilation time with zero extra work
+
+**Pattern**: Store original alongside optimized result, structure mirrors the result's shape.
+
+**See**: `docs/SEMANTIC_INDEXING.md` "Slang Fork Modifications" for implementation details and examples.
+
 ## Solution Quality Standards
 
 ### What "Elegant" and "Beautiful" Mean
@@ -204,11 +226,16 @@ See "Working with the Slang Library" section above for detailed case study.
 
 **Pattern**: Store symbol relationships during construction, use them during LSP traversal.
 
-### Parameter Expression Preservation
+### Preserving Compiler Information
 
-See `docs/SEMANTIC_INDEXING.md` for details on symmetric expression storage pattern.
+See "Preserve Compiler Information for LSP" principle above.
 
-**Pattern**: Store expressions alongside computed values for LSP access without re-evaluation.
+**Examples**:
+- **Array dimensions**: Compiler folds dimension expressions to constants → store expressions alongside results
+- **Hierarchical selectors**: Compiler evaluates array selectors to indices → store expressions alongside indices
+- **Genvar loops**: Compiler creates temporary iteration variables → link them back to genvar declarations
+
+**Pattern**: Small changes in compiler (~10 lines each) avoid complex reconstruction in LSP. Always cheaper to store during compilation than reconstruct later.
 
 ### Interface Instance Deduplication
 

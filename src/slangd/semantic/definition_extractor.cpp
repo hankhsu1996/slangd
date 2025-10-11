@@ -54,6 +54,17 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       break;
 
+    case SK::MethodPrototype:
+      if (syntax.kind == SyntaxKind::ClassMethodPrototype) {
+        const auto& proto_syntax =
+            syntax.as<slang::syntax::ClassMethodPrototypeSyntax>();
+        if ((proto_syntax.prototype != nullptr) &&
+            (proto_syntax.prototype->name != nullptr)) {
+          return proto_syntax.prototype->name->sourceRange();
+        }
+      }
+      break;
+
     case SK::Port:
       // Port symbols - handle different ANSI and non-ANSI syntax types
       if (syntax.kind == SyntaxKind::ImplicitAnsiPort) {
@@ -113,6 +124,20 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       break;
 
+    case SK::ClassType:
+      // Class type declarations (appears when classes are imported)
+      if (syntax.kind == SyntaxKind::ClassDeclaration) {
+        return syntax.as<slang::syntax::ClassDeclarationSyntax>().name.range();
+      }
+      break;
+
+    case SK::GenericClassDef:
+      // Generic class definitions (parameterized classes)
+      if (syntax.kind == SyntaxKind::ClassDeclaration) {
+        return syntax.as<slang::syntax::ClassDeclarationSyntax>().name.range();
+      }
+      break;
+
     case SK::Definition:
       // Module/Interface/Program definitions
       if (syntax.kind == SyntaxKind::ModuleDeclaration ||
@@ -140,9 +165,45 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       break;
 
+    case SK::Genvar:
+      // Genvar declarations use IdentifierNameSyntax
+      if (syntax.kind == SyntaxKind::IdentifierName) {
+        return syntax.as<slang::syntax::IdentifierNameSyntax>()
+            .identifier.range();
+      }
+      break;
+
+    case SK::InterfacePort:
+      // Interface port declarations (e.g., MemBus.cpu mem_if)
+      if (syntax.kind == SyntaxKind::Declarator) {
+        return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
+      }
+      break;
+
+    case SK::Instance:
+      // Module/interface/program instances
+      if (syntax.kind == SyntaxKind::HierarchicalInstance) {
+        // Use symbol location + name length for instance names
+        // (HierarchicalInstanceSyntax doesn't have a dedicated name field)
+        if (symbol.location.valid()) {
+          return {symbol.location, symbol.location + symbol.name.length()};
+        }
+      }
+      break;
+
+    case SK::InstanceArray:
+      // Instance arrays (e.g., interface if_array[4])
+      if (syntax.kind == SyntaxKind::HierarchicalInstance) {
+        // Use symbol location + name length for array names
+        if (symbol.location.valid()) {
+          return {symbol.location, symbol.location + symbol.name.length()};
+        }
+      }
+      break;
+
     default:
       // Unhandled symbol type - log warning and use fallback
-      spdlog::warn(
+      logger_->warn(
           "DefinitionExtractor: Unhandled symbol kind '{}' with syntax kind "
           "'{}' for symbol '{}'. Using symbol.location + name.length() "
           "fallback. Consider adding explicit handling.",
@@ -154,12 +215,11 @@ auto DefinitionExtractor::ExtractDefinitionRange(
   // Fallback: use symbol location + name length
   // This should only trigger for unhandled symbol types (warning logged above)
   if (symbol.location.valid()) {
-    return slang::SourceRange(
-        symbol.location, symbol.location + symbol.name.length());
+    return {symbol.location, symbol.location + symbol.name.length()};
   }
 
   // Should never reach here - symbol with syntax but no valid location
-  spdlog::error(
+  logger_->error(
       "DefinitionExtractor: Symbol '{}' has syntax but invalid location",
       symbol.name);
   return syntax.sourceRange();

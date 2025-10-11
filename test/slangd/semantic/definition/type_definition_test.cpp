@@ -96,6 +96,29 @@ TEST_CASE(
 }
 
 TEST_CASE(
+    "SemanticIndex variable size cast reference lookup works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module sizecast_variable_test;
+      parameter WIDTH = 8;
+      parameter SIZE = 4;
+      logic [7:0] result;
+      logic [3:0] input_val;
+
+      always_comb begin
+        result = WIDTH'(input_val);
+        result = SIZE'(result - WIDTH'(1));
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "SIZE", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 2, 0);
+}
+
+TEST_CASE(
     "SemanticIndex parameter type in module port list works", "[definition]") {
   SimpleTestFixture fixture;
   std::string code = R"(
@@ -444,4 +467,132 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "counter_t", 2, 0);
   fixture.AssertGoToDefinition(*index, code, "counter_t", 3, 0);
   fixture.AssertGoToDefinition(*index, code, "counter_t", 4, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex system function type argument reference works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module system_func_type_test;
+      typedef logic [7:0] byte_t;
+      typedef struct packed { logic [3:0] addr; } packet_t;
+
+      localparam int BYTE_WIDTH = $bits(byte_t);
+      localparam int PACKET_WIDTH = $bits(packet_t);
+
+      logic [$bits(byte_t)-1:0] data;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "byte_t", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "packet_t", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "byte_t", 2, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex assignment pattern field references work", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    typedef enum logic [1:0] {
+      MODE_A,
+      MODE_B,
+      MODE_C
+    } mode_type;
+
+    typedef struct {
+      mode_type mode;
+      logic [4:0] index;
+    } config_t;
+
+    module assignment_pattern_test;
+      parameter config_t DEFAULT_CONFIG = '{mode: MODE_A, index: 5'b0};
+      parameter config_t ALTERNATE_CONFIG = '{mode: MODE_B, index: 5'b1};
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test field name references in assignment patterns
+  fixture.AssertGoToDefinition(*index, code, "mode", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "index", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "mode", 2, 0);
+  fixture.AssertGoToDefinition(*index, code, "index", 2, 0);
+
+  // Test enum value references in assignment patterns
+  fixture.AssertGoToDefinition(*index, code, "MODE_A", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "MODE_B", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex typed assignment pattern type reference works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    typedef struct {
+      logic [3:0] field_a;
+      logic [4:0] field_b;
+    } config_t;
+
+    module typed_assignment_pattern_test;
+      config_t cfg;
+
+      initial begin
+        cfg = config_t'{field_a: 4'h5, field_b: 5'h0A};
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "config_t", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "field_a", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "field_b", 1, 0);
+}
+
+TEST_CASE("SemanticIndex enum base type reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    typedef logic [19:0] base_type_t;
+
+    typedef enum base_type_t {
+      VALUE_A = 20'b0000,
+      VALUE_B = 20'b0001,
+      VALUE_C = 20'b0010
+    } enum_name_t;
+
+    module enum_base_test;
+      enum_name_t signal;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "base_type_t", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex function call in size cast type expression works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module func_in_cast_test;
+      parameter SIZE = 8;
+
+      function automatic int calc_width(int size);
+        return size - 1;
+      endfunction
+
+      logic [15:0] input_val;
+      logic [15:0] result;
+
+      always_comb begin
+        result = (calc_width(SIZE))'(input_val + SIZE);
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "calc_width", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "SIZE", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "SIZE", 2, 0);
 }

@@ -15,6 +15,7 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
+#include "slangd/semantic/definition_extractor.hpp"
 #include "slangd/utils/canonical_path.hpp"
 
 namespace slangd::services {
@@ -136,6 +137,13 @@ class SemanticIndex {
   // Validation method to check for overlapping ranges
   void ValidateNoRangeOverlaps() const;
 
+  // Validation method to check symbol coverage
+  // Logs identifiers that don't have definitions in the semantic index
+  // Only checks identifiers from the specified file URI
+  void ValidateSymbolCoverage(
+      slang::ast::Compilation& compilation,
+      const std::string& current_file_uri) const;
+
  private:
   explicit SemanticIndex(
       const slang::SourceManager& source_manager,
@@ -163,15 +171,18 @@ class SemanticIndex {
         : index_(index),
           source_manager_(source_manager),
           current_file_uri_(std::move(current_file_uri)),
-          catalog_(catalog) {
+          catalog_(catalog),
+          definition_extractor_(index.logger_) {
     }
 
     // Expression handlers
     void handle(const slang::ast::NamedValueExpression& expr);
     void handle(const slang::ast::CallExpression& expr);
     void handle(const slang::ast::ConversionExpression& expr);
+    void handle(const slang::ast::DataTypeExpression& expr);
     void handle(const slang::ast::MemberAccessExpression& expr);
     void handle(const slang::ast::HierarchicalValueExpression& expr);
+    void handle(const slang::ast::StructuredAssignmentPatternExpression& expr);
 
     // Symbol handlers
     void handle(const slang::ast::FormalArgumentSymbol& formal_arg);
@@ -180,6 +191,7 @@ class SemanticIndex {
     void handle(const slang::ast::ExplicitImportSymbol& import_symbol);
     void handle(const slang::ast::ParameterSymbol& param);
     void handle(const slang::ast::SubroutineSymbol& subroutine);
+    void handle(const slang::ast::MethodPrototypeSymbol& method_prototype);
     void handle(const slang::ast::DefinitionSymbol& definition);
     void handle(const slang::ast::TypeAliasType& type_alias);
     void handle(const slang::ast::EnumValueSymbol& enum_value);
@@ -191,6 +203,7 @@ class SemanticIndex {
     void handle(const slang::ast::InterfacePortSymbol& interface_port);
     void handle(const slang::ast::ModportSymbol& modport);
     void handle(const slang::ast::ModportPortSymbol& modport_port);
+    void handle(const slang::ast::InstanceArraySymbol& instance_array);
     void handle(const slang::ast::InstanceSymbol& instance);
     void handle(const slang::ast::GenerateBlockArraySymbol& generate_array);
     void handle(const slang::ast::GenerateBlockSymbol& generate_block);
@@ -209,6 +222,9 @@ class SemanticIndex {
     std::reference_wrapper<const slang::SourceManager> source_manager_;
     std::string current_file_uri_;
     const services::GlobalCatalog* catalog_;
+
+    // Definition extractor for precise symbol range extraction
+    DefinitionExtractor definition_extractor_;
 
     // Track which type syntax nodes we've already traversed
     // Prevents duplicate traversal when multiple symbols share the same type
@@ -260,6 +276,11 @@ class SemanticIndex {
     // Helper for indexing class parameter names in specialization
     void IndexClassParameters(
         const slang::ast::ClassType& class_type,
+        const slang::syntax::ParameterValueAssignmentSyntax& params);
+
+    // Helper for indexing interface/module parameter names in instantiation
+    void IndexInstanceParameters(
+        const slang::ast::InstanceSymbol& instance,
         const slang::syntax::ParameterValueAssignmentSyntax& params);
 
     // Helper for indexing package names in scoped references

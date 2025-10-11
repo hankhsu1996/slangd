@@ -34,7 +34,7 @@ CheckOptions:
   - key: readability-identifier-naming.FunctionCase
     value: CamelCase
   - key: readability-identifier-naming.FunctionIgnoredRegexp
-    value: "(to_json|from_json)(_(\\w)+)?|preVisit|handle"
+    value: "(to_json|from_json)(_(\\w)+)?|preVisit|handle|visit"
   - key: readability-identifier-naming.GlobalConstantCase
     value: CamelCase
   - key: readability-identifier-naming.GlobalConstantPrefix

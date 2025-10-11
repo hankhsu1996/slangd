@@ -420,7 +420,6 @@ TEST_CASE("SemanticIndex package name in function call works", "[definition]") {
   )";
 
   auto index = fixture.CompileSource(code);
-  // Test clicking on package name in function call
   fixture.AssertGoToDefinition(*index, code, "util_pkg", 1, 0);
 }
 
@@ -438,7 +437,6 @@ TEST_CASE(
   )";
 
   auto index = fixture.CompileSource(code);
-  // Test clicking on package name when accessing parameter
   fixture.AssertGoToDefinition(*index, code, "cfg_pkg", 1, 0);
 }
 
@@ -456,7 +454,6 @@ TEST_CASE(
   )";
 
   auto index = fixture.CompileSource(code);
-  // Test clicking on package name when using typedef
   fixture.AssertGoToDefinition(*index, code, "types_pkg", 1, 0);
 }
 
@@ -476,6 +473,94 @@ TEST_CASE(
   )";
 
   auto index = fixture.CompileSource(code);
-  // Test clicking on package name when using class type
   fixture.AssertGoToDefinition(*index, code, "class_pkg", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex package name in enum member reference works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package enum_pkg;
+      typedef enum logic [1:0] {
+        VALUE_A = 0,
+        VALUE_B = 1
+      } state_t;
+    endpackage
+
+    module test;
+      logic [1:0] a;
+      assign a = enum_pkg::VALUE_A;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "enum_pkg", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex explicit class import reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package source_pkg;
+      class DataHandler;
+        int value;
+      endclass
+    endpackage
+
+    module test;
+      import source_pkg::DataHandler;
+      DataHandler handler;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "DataHandler", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "DataHandler", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "DataHandler", 2, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex package to package class import works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package base_pkg;
+      class BaseTransaction;
+        int id;
+      endclass
+    endpackage
+
+    package derived_pkg;
+      import base_pkg::BaseTransaction;
+      class ExtendedTransaction extends BaseTransaction;
+        int timestamp;
+      endclass
+    endpackage
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "BaseTransaction", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "BaseTransaction", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "BaseTransaction", 2, 0);
+}
+
+TEST_CASE("SemanticIndex generic class import works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package base_pkg;
+      class GenericHandler #(
+        parameter int WIDTH = 8
+      );
+        int value;
+      endclass
+    endpackage
+
+    package derived_pkg;
+      import base_pkg::GenericHandler;
+    endpackage
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "GenericHandler", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "GenericHandler", 1, 0);
 }

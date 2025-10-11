@@ -76,7 +76,8 @@ auto ShouldIndexForDocumentSymbols(const slang::ast::Symbol& symbol) -> bool {
     case SK::ProceduralBlock:
     case SK::GenerateBlock:
     case SK::GenerateBlockArray:
-    case SK::Subroutine:  // Functions and tasks
+    case SK::Subroutine:       // Functions and tasks
+    case SK::MethodPrototype:  // Pure virtual functions
     case SK::EnumValue:
     case SK::Field:  // Struct/union fields
       return true;
@@ -200,6 +201,7 @@ auto ConvertToLspKind(const slang::ast::Symbol& symbol) -> lsp::SymbolKind {
 
     // Function-related (both functions and tasks)
     case SK::Subroutine:
+    case SK::MethodPrototype:  // Pure virtual functions
       return LK::kFunction;
 
     // Generate blocks are containers/namespaces
@@ -255,6 +257,7 @@ auto ConvertToLspKindForDocuments(const slang::ast::Symbol& symbol)
     case SK::GenerateBlockArray:
       return lsp::SymbolKind::kNamespace;
     case SK::Subroutine:
+    case SK::MethodPrototype:  // Pure virtual functions
       return lsp::SymbolKind::kFunction;
     case SK::EnumValue:
       return lsp::SymbolKind::kEnumMember;
