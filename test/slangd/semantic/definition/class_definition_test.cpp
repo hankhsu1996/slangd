@@ -430,3 +430,38 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "BUS_WIDTH", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "BUS_WIDTH", 1, 0);
 }
+
+TEST_CASE(
+    "SemanticIndex pure virtual function navigation works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    typedef int reg_t;
+    typedef int value_t;
+
+    virtual class BaseHandler;
+      pure virtual function void set_value(reg_t addr, value_t data);
+      pure virtual function value_t get_value(reg_t addr);
+    endclass
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Function names
+  fixture.AssertGoToDefinition(*index, code, "set_value", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "get_value", 0, 0);
+
+  // Return types
+  fixture.AssertGoToDefinition(*index, code, "value_t", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "value_t", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "value_t", 2, 0);
+
+  // Argument types
+  fixture.AssertGoToDefinition(*index, code, "reg_t", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "reg_t", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "reg_t", 2, 0);
+
+  // Argument variables (each function has its own parameters)
+  fixture.AssertGoToDefinition(*index, code, "addr", 0, 0);  // set_value addr
+  fixture.AssertGoToDefinition(*index, code, "addr", 1, 1);  // get_value addr
+  fixture.AssertGoToDefinition(*index, code, "data", 0, 0);  // set_value data
+}

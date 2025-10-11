@@ -1239,6 +1239,33 @@ void SemanticIndex::IndexVisitor::handle(
 }
 
 void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::MethodPrototypeSymbol& method_prototype) {
+  if (method_prototype.location.valid()) {
+    if (const auto* syntax = method_prototype.getSyntax()) {
+      if (syntax->kind == slang::syntax::SyntaxKind::ClassMethodPrototype) {
+        const auto& proto_syntax =
+            syntax->as<slang::syntax::ClassMethodPrototypeSyntax>();
+        if ((proto_syntax.prototype != nullptr) &&
+            (proto_syntax.prototype->name != nullptr)) {
+          auto definition_range = proto_syntax.prototype->name->sourceRange();
+          AddDefinition(
+              method_prototype, method_prototype.name, definition_range,
+              method_prototype.getParentScope());
+        }
+      }
+    }
+  }
+
+  // Traverse return type and arguments for type references
+  TraverseType(method_prototype.getReturnType());
+  for (const auto* arg : method_prototype.getArguments()) {
+    TraverseType(arg->getType());
+  }
+
+  this->visitDefault(method_prototype);
+}
+
+void SemanticIndex::IndexVisitor::handle(
     const slang::ast::DefinitionSymbol& definition) {
   if (definition.location.valid()) {
     if (const auto* syntax = definition.getSyntax()) {

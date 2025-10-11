@@ -54,6 +54,17 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       break;
 
+    case SK::MethodPrototype:
+      if (syntax.kind == SyntaxKind::ClassMethodPrototype) {
+        const auto& proto_syntax =
+            syntax.as<slang::syntax::ClassMethodPrototypeSyntax>();
+        if ((proto_syntax.prototype != nullptr) &&
+            (proto_syntax.prototype->name != nullptr)) {
+          return proto_syntax.prototype->name->sourceRange();
+        }
+      }
+      break;
+
     case SK::Port:
       // Port symbols - handle different ANSI and non-ANSI syntax types
       if (syntax.kind == SyntaxKind::ImplicitAnsiPort) {

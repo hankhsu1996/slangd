@@ -187,6 +187,7 @@ class SemanticIndex {
     void handle(const slang::ast::ExplicitImportSymbol& import_symbol);
     void handle(const slang::ast::ParameterSymbol& param);
     void handle(const slang::ast::SubroutineSymbol& subroutine);
+    void handle(const slang::ast::MethodPrototypeSymbol& method_prototype);
     void handle(const slang::ast::DefinitionSymbol& definition);
     void handle(const slang::ast::TypeAliasType& type_alias);
     void handle(const slang::ast::EnumValueSymbol& enum_value);
