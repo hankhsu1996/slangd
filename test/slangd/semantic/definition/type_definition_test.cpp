@@ -501,3 +501,23 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "MODE_A", 1, 0);
   fixture.AssertGoToDefinition(*index, code, "MODE_B", 1, 0);
 }
+
+TEST_CASE("SemanticIndex enum base type reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    typedef logic [19:0] base_type_t;
+
+    typedef enum base_type_t {
+      VALUE_A = 20'b0000,
+      VALUE_B = 20'b0001,
+      VALUE_C = 20'b0010
+    } enum_name_t;
+
+    module enum_base_test;
+      enum_name_t signal;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "base_type_t", 1, 0);
+}

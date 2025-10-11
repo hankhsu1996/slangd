@@ -397,6 +397,9 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
     }
     case slang::ast::SymbolKind::EnumType: {
       const auto& enum_type = type.as<slang::ast::EnumType>();
+      // Traverse base type to index type references (e.g., typedef enum
+      // base_type_t)
+      TraverseType(enum_type.baseType);
       for (const auto& enum_value : enum_type.values()) {
         this->visit(enum_value);
       }
