@@ -96,6 +96,29 @@ TEST_CASE(
 }
 
 TEST_CASE(
+    "SemanticIndex variable size cast reference lookup works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module sizecast_variable_test;
+      parameter WIDTH = 8;
+      parameter SIZE = 4;
+      logic [7:0] result;
+      logic [3:0] input_val;
+
+      always_comb begin
+        result = WIDTH'(input_val);
+        result = SIZE'(result - WIDTH'(1));
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "SIZE", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 2, 0);
+}
+
+TEST_CASE(
     "SemanticIndex parameter type in module port list works", "[definition]") {
   SimpleTestFixture fixture;
   std::string code = R"(
