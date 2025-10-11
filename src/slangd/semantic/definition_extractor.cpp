@@ -131,6 +131,13 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       break;
 
+    case SK::GenericClassDef:
+      // Generic class definitions (parameterized classes)
+      if (syntax.kind == SyntaxKind::ClassDeclaration) {
+        return syntax.as<slang::syntax::ClassDeclarationSyntax>().name.range();
+      }
+      break;
+
     case SK::Definition:
       // Module/Interface/Program definitions
       if (syntax.kind == SyntaxKind::ModuleDeclaration ||
