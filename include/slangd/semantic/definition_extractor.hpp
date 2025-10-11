@@ -1,8 +1,11 @@
 #pragma once
 
+#include <memory>
+
 #include <slang/ast/Symbol.h>
 #include <slang/syntax/SyntaxNode.h>
 #include <slang/text/SourceLocation.h>
+#include <spdlog/spdlog.h>
 
 namespace slangd::semantic {
 
@@ -11,18 +14,25 @@ namespace slangd::semantic {
 // the exact name range for go-to-definition functionality.
 class DefinitionExtractor {
  public:
+  explicit DefinitionExtractor(std::shared_ptr<spdlog::logger> logger)
+      : logger_(logger ? logger : spdlog::default_logger()) {
+  }
+
   // Extract the most precise definition range for a symbol.
   // Always returns a valid range - either the precise name range when possible,
   // or the full syntax range as a safe fallback. Safe to call with any
   // symbol/syntax combination.
-  static auto ExtractDefinitionRange(
+  auto ExtractDefinitionRange(
       const slang::ast::Symbol& symbol, const slang::syntax::SyntaxNode& syntax)
       -> slang::SourceRange;
 
  private:
   // Symbol-type specific extraction method for complex cases
-  static auto ExtractStatementBlockRange(
+  auto static ExtractStatementBlockRange(
       const slang::syntax::SyntaxNode& syntax) -> slang::SourceRange;
+
+  // Logger for warnings and errors
+  std::shared_ptr<spdlog::logger> logger_;
 };
 
 }  // namespace slangd::semantic

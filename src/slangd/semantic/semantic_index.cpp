@@ -942,7 +942,7 @@ void SemanticIndex::IndexVisitor::handle(
   if (expr.member.location.valid()) {
     if (const auto* syntax = expr.member.getSyntax()) {
       auto definition_range =
-          DefinitionExtractor::ExtractDefinitionRange(expr.member, *syntax);
+          definition_extractor_.ExtractDefinitionRange(expr.member, *syntax);
       AddReference(
           expr.member, expr.member.name, expr.memberNameRange(),
           definition_range, expr.member.getParentScope());
@@ -981,7 +981,7 @@ void SemanticIndex::IndexVisitor::handle(
         symbol->location.valid()) {
       if (const auto* syntax = symbol->getSyntax()) {
         auto definition_range =
-            DefinitionExtractor::ExtractDefinitionRange(*symbol, *syntax);
+            definition_extractor_.ExtractDefinitionRange(*symbol, *syntax);
         AddReference(
             *symbol, symbol->name, elem.sourceRange, definition_range,
             symbol->getParentScope());
@@ -1138,7 +1138,7 @@ void SemanticIndex::IndexVisitor::handle(
   }
 
   auto definition_range =
-      DefinitionExtractor::ExtractDefinitionRange(*package, *pkg_syntax);
+      definition_extractor_.ExtractDefinitionRange(*package, *pkg_syntax);
   AddReference(
       *package, package->name, import_item.package.range(), definition_range,
       package->getParentScope());
@@ -1169,7 +1169,7 @@ void SemanticIndex::IndexVisitor::handle(
   }
 
   auto definition_range =
-      DefinitionExtractor::ExtractDefinitionRange(*package, *pkg_syntax);
+      definition_extractor_.ExtractDefinitionRange(*package, *pkg_syntax);
   AddReference(
       *package, package->name, import_item.package.range(), definition_range,
       package->getParentScope());
@@ -1180,7 +1180,7 @@ void SemanticIndex::IndexVisitor::handle(
     if (imported_symbol->location.valid()) {
       if (const auto* imported_syntax = imported_symbol->getSyntax()) {
         auto imported_definition_range =
-            DefinitionExtractor::ExtractDefinitionRange(
+            definition_extractor_.ExtractDefinitionRange(
                 *imported_symbol, *imported_syntax);
         AddReference(
             *imported_symbol, imported_symbol->name, import_item.item.range(),
@@ -1599,7 +1599,7 @@ void SemanticIndex::IndexVisitor::handle(
           if (const auto* interface_syntax =
                   interface_port.interfaceDef->getSyntax()) {
             auto interface_definition_range =
-                DefinitionExtractor::ExtractDefinitionRange(
+                definition_extractor_.ExtractDefinitionRange(
                     *interface_port.interfaceDef, *interface_syntax);
             AddReference(
                 *interface_port.interfaceDef, interface_port.interfaceDef->name,
@@ -1617,7 +1617,7 @@ void SemanticIndex::IndexVisitor::handle(
           if (const auto* modport_syntax =
                   interface_port.modportSymbol->getSyntax()) {
             auto modport_definition_range =
-                DefinitionExtractor::ExtractDefinitionRange(
+                definition_extractor_.ExtractDefinitionRange(
                     *interface_port.modportSymbol, *modport_syntax);
             AddReference(
                 *interface_port.modportSymbol,
@@ -1661,7 +1661,7 @@ void SemanticIndex::IndexVisitor::handle(
             modport_port.internalSymbol->location.valid()) {
           if (const auto* internal_syntax =
                   modport_port.internalSymbol->getSyntax()) {
-            auto target_range = DefinitionExtractor::ExtractDefinitionRange(
+            auto target_range = definition_extractor_.ExtractDefinitionRange(
                 *modport_port.internalSymbol, *internal_syntax);
             AddReference(
                 *modport_port.internalSymbol, modport_port.name, source_range,
@@ -1734,7 +1734,7 @@ void SemanticIndex::IndexVisitor::handle(
             if (interface_def.location.valid()) {
               if (const auto* interface_syntax = interface_def.getSyntax()) {
                 auto interface_definition_range =
-                    DefinitionExtractor::ExtractDefinitionRange(
+                    definition_extractor_.ExtractDefinitionRange(
                         interface_def, *interface_syntax);
                 AddReference(
                     interface_def, interface_def.name, inst_syntax.type.range(),
@@ -1798,7 +1798,7 @@ void SemanticIndex::IndexVisitor::handle(
       if (interface_def.location.valid()) {
         if (const auto* interface_syntax = interface_def.getSyntax()) {
           auto interface_definition_range =
-              DefinitionExtractor::ExtractDefinitionRange(
+              definition_extractor_.ExtractDefinitionRange(
                   interface_def, *interface_syntax);
           AddReference(
               interface_def, interface_def.name, inst_syntax.type.range(),
@@ -1836,8 +1836,9 @@ void SemanticIndex::IndexVisitor::handle(
         if (expr != nullptr && expr->sourceRange.start().valid()) {
           // Extract definition range from the connected instance
           if (const auto* conn_syntax = connected_instance->getSyntax()) {
-            auto definition_range = DefinitionExtractor::ExtractDefinitionRange(
-                *connected_instance, *conn_syntax);
+            auto definition_range =
+                definition_extractor_.ExtractDefinitionRange(
+                    *connected_instance, *conn_syntax);
 
             // Calculate precise reference range from the connected instance
             // name (similar to NamedValueExpression handling)
@@ -1887,7 +1888,7 @@ void SemanticIndex::IndexVisitor::handle(
       generate_array.genvar != nullptr) {
     if (const auto* genvar_syntax = generate_array.genvar->getSyntax()) {
       auto ref_range = *generate_array.externalGenvarRefRange;
-      auto definition_range = DefinitionExtractor::ExtractDefinitionRange(
+      auto definition_range = definition_extractor_.ExtractDefinitionRange(
           *generate_array.genvar, *genvar_syntax);
       AddReference(
           *generate_array.genvar, generate_array.genvar->name, ref_range,
@@ -2078,7 +2079,7 @@ void SemanticIndex::IndexVisitor::handle(
                 instance_symbol.location.valid()) {
               if (const auto* inst_syntax = instance_symbol.getSyntax()) {
                 auto definition_range =
-                    DefinitionExtractor::ExtractDefinitionRange(
+                    definition_extractor_.ExtractDefinitionRange(
                         instance_symbol, *inst_syntax);
 
                 // Create reference using the expression's source range
@@ -2101,7 +2102,7 @@ void SemanticIndex::IndexVisitor::handle(
                   instance_array.location.valid()) {
                 if (const auto* array_syntax = instance_array.getSyntax()) {
                   auto definition_range =
-                      DefinitionExtractor::ExtractDefinitionRange(
+                      definition_extractor_.ExtractDefinitionRange(
                           instance_array, *array_syntax);
 
                   // Create reference using the expression's source range
@@ -2117,7 +2118,7 @@ void SemanticIndex::IndexVisitor::handle(
             if (iface_port.location.valid()) {
               if (const auto* port_syntax = iface_port.getSyntax()) {
                 auto definition_range =
-                    DefinitionExtractor::ExtractDefinitionRange(
+                    definition_extractor_.ExtractDefinitionRange(
                         iface_port, *port_syntax);
 
                 // Create reference using the expression's source range

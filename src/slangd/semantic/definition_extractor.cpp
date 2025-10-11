@@ -203,7 +203,7 @@ auto DefinitionExtractor::ExtractDefinitionRange(
 
     default:
       // Unhandled symbol type - log warning and use fallback
-      spdlog::warn(
+      logger_->warn(
           "DefinitionExtractor: Unhandled symbol kind '{}' with syntax kind "
           "'{}' for symbol '{}'. Using symbol.location + name.length() "
           "fallback. Consider adding explicit handling.",
@@ -215,12 +215,11 @@ auto DefinitionExtractor::ExtractDefinitionRange(
   // Fallback: use symbol location + name length
   // This should only trigger for unhandled symbol types (warning logged above)
   if (symbol.location.valid()) {
-    return slang::SourceRange(
-        symbol.location, symbol.location + symbol.name.length());
+    return {symbol.location, symbol.location + symbol.name.length()};
   }
 
   // Should never reach here - symbol with syntax but no valid location
-  spdlog::error(
+  logger_->error(
       "DefinitionExtractor: Symbol '{}' has syntax but invalid location",
       symbol.name);
   return syntax.sourceRange();

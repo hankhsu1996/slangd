@@ -15,6 +15,7 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
+#include "slangd/semantic/definition_extractor.hpp"
 #include "slangd/utils/canonical_path.hpp"
 
 namespace slangd::services {
@@ -170,7 +171,8 @@ class SemanticIndex {
         : index_(index),
           source_manager_(source_manager),
           current_file_uri_(std::move(current_file_uri)),
-          catalog_(catalog) {
+          catalog_(catalog),
+          definition_extractor_(index.logger_) {
     }
 
     // Expression handlers
@@ -218,6 +220,9 @@ class SemanticIndex {
     std::reference_wrapper<const slang::SourceManager> source_manager_;
     std::string current_file_uri_;
     const services::GlobalCatalog* catalog_;
+
+    // Definition extractor for precise symbol range extraction
+    DefinitionExtractor definition_extractor_;
 
     // Track which type syntax nodes we've already traversed
     // Prevents duplicate traversal when multiple symbols share the same type
