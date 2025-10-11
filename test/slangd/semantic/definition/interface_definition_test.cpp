@@ -369,3 +369,47 @@ TEST_CASE(
   // This should jump to the array declaration above
   fixture.AssertGoToDefinition(*index, code, "unit_if", 1, 0);
 }
+
+TEST_CASE(
+    "SemanticIndex interface member array indexing works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    interface mem_if;
+      logic [7:0] array_field;
+      logic       scalar_field;
+    endinterface
+
+    module top;
+      parameter int NUM_ITEMS = 4;
+
+      mem_if mem_inst();
+
+      for (genvar idx = 0; idx < NUM_ITEMS; idx++) begin
+        assign mem_inst.array_field[idx] = 8'h00;
+      end
+
+      assign mem_inst.scalar_field = 1'b1;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test interface type definition
+  fixture.AssertGoToDefinition(*index, code, "mem_if", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "mem_if", 1, 0);
+
+  // Test interface instance self-definition
+  fixture.AssertGoToDefinition(*index, code, "mem_inst", 0, 0);
+
+  // Test interface instance reference in member access (with array indexing)
+  fixture.AssertGoToDefinition(*index, code, "mem_inst", 1, 0);
+
+  // Test array member field reference (the field being indexed)
+  fixture.AssertGoToDefinition(*index, code, "array_field", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "array_field", 1, 0);
+
+  // Test scalar member for comparison
+  fixture.AssertGoToDefinition(*index, code, "mem_inst", 2, 0);
+  fixture.AssertGoToDefinition(*index, code, "scalar_field", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "scalar_field", 1, 0);
+}

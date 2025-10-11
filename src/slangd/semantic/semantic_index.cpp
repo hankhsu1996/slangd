@@ -947,54 +947,16 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::HierarchicalValueExpression& expr) {
-  // Hierarchical references like `bus.addr` are represented as ScopedName
-  // syntax Slang already provides precise ranges for each element through the
-  // syntax tree
+  // Hierarchical references like `bus.addr` or `mem_inst.array_field[idx]`
+  // Each path element stores its source range (captured during hierarchical
+  // lookup)
   //
   // For `bus.addr`:
-  // - Path[0]: `bus` (InterfacePort)
-  // - Path[1]: `addr` (Variable)
-  //
-  // The syntax is ScopedName with left/right parts, recursively structured
+  // - Path[0]: `bus` (InterfacePort) with sourceRange for "bus"
+  // - Path[1]: `addr` (Variable) with sourceRange for "addr"
 
-  // Helper to extract ranges from ScopedName syntax tree
-  // Collect (symbol_index → source_range) mappings by traversing syntax
-  std::vector<slang::SourceRange> syntax_ranges;
-
-  std::function<void(const slang::syntax::SyntaxNode*)> collect_ranges =
-      [&](const slang::syntax::SyntaxNode* node) -> void {
-    if (node == nullptr) {
-      return;
-    }
-
-    if (node->kind == slang::syntax::SyntaxKind::ScopedName) {
-      const auto& scoped = node->as<slang::syntax::ScopedNameSyntax>();
-      // Traverse left first (to match path order)
-      collect_ranges(scoped.left);
-      // Then right
-      collect_ranges(scoped.right);
-    } else if (node->kind == slang::syntax::SyntaxKind::IdentifierName) {
-      // Leaf node - this is one element in the path
-      syntax_ranges.push_back(node->sourceRange());
-    } else if (node->kind == slang::syntax::SyntaxKind::IdentifierSelectName) {
-      // Handle array element access like if_array[0]
-      // Extract just the identifier range, not the selectors
-      const auto& select_name =
-          node->as<slang::syntax::IdentifierSelectNameSyntax>();
-      syntax_ranges.push_back(select_name.identifier.range());
-    }
-  };
-
-  if (expr.syntax != nullptr) {
-    collect_ranges(expr.syntax);
-  }
-
-  // Now create references using the syntax ranges
-  // NOTE: path.size() may be > syntax_ranges.size() because array elements
-  // (empty name) don't have syntax nodes, but do appear in the AST path
-  size_t syntax_index = 0;
-  for (size_t path_index = 0; path_index < expr.ref.path.size(); ++path_index) {
-    const auto& elem = expr.ref.path[path_index];
+  // Create references for each path element using stored source ranges
+  for (const auto& elem : expr.ref.path) {
     const slang::ast::Symbol* symbol = elem.symbol;
 
     // Handle ModportPortSymbol by redirecting to internal symbol
@@ -1005,33 +967,20 @@ void SemanticIndex::IndexVisitor::handle(
       }
     }
 
-    // Handle array element access (e.g., if_array[0].member)
-    // Array elements have empty names and no syntax representation - skip them
-    if (symbol->kind == slang::ast::SymbolKind::Instance &&
-        symbol->name.empty()) {
-      continue;  // Don't consume a syntax_index slot
-    }
-
-    // Check if we have a corresponding syntax range
-    if (syntax_index >= syntax_ranges.size()) {
-      break;
-    }
-
-    if (symbol->location.valid()) {
+    // Skip array elements (empty name, no source range) and invalid ranges
+    const bool is_array_element =
+        symbol->kind == slang::ast::SymbolKind::Instance &&
+        symbol->name.empty();
+    if (!is_array_element && elem.sourceRange.start().valid() &&
+        symbol->location.valid()) {
       if (const auto* syntax = symbol->getSyntax()) {
-        // Use DefinitionExtractor to handle different symbol types
-        // (Declarator for variables, HierarchicalInstance for interface
-        // instances, etc.)
         auto definition_range =
             DefinitionExtractor::ExtractDefinitionRange(*symbol, *syntax);
-
         AddReference(
-            *symbol, symbol->name, syntax_ranges[syntax_index],
-            definition_range, symbol->getParentScope());
+            *symbol, symbol->name, elem.sourceRange, definition_range,
+            symbol->getParentScope());
       }
     }
-
-    ++syntax_index;
   }
 
   // Visit selector expressions (e.g., ARRAY_IDX in if_array[ARRAY_IDX].signal,
