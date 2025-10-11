@@ -116,6 +116,7 @@ SystemVerilog LSP server with modular design:
 - Do not use `env SPDLOG_LEVEL=debug bazel test //...`. Set the log level in each test file instead.
 - Default log level is already set to debug - do not add SPDLOG_LEVEL=xxx to test commands.
 - Generally, just do `bazel test //...` even if you are changing a single file, we don't have that mush tests, so it is fast.
+- For temporary logging, use `spdlog::debug("message")` directly (not instance logger). Remove before committing.
 
 **AST/CST Debugging:**
 

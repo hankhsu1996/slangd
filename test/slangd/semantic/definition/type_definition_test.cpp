@@ -544,3 +544,30 @@ TEST_CASE("SemanticIndex enum base type reference works", "[definition]") {
   auto index = fixture.CompileSource(code);
   fixture.AssertGoToDefinition(*index, code, "base_type_t", 1, 0);
 }
+
+TEST_CASE(
+    "SemanticIndex function call in size cast type expression works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module func_in_cast_test;
+      parameter SIZE = 8;
+
+      function automatic int calc_width(int size);
+        return size - 1;
+      endfunction
+
+      logic [15:0] input_val;
+      logic [15:0] result;
+
+      always_comb begin
+        result = (calc_width(SIZE))'(input_val + SIZE);
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "calc_width", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "SIZE", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "SIZE", 2, 0);
+}

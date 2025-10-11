@@ -238,6 +238,7 @@ if (variable.flags.has(VariableFlags::CompilerGenerated)) {
 **Solution**: Store bound expressions alongside constants in Slang. Structure mirrors the constant (single/pair/variant).
 
 **Process**:
+
 1. Find where Slang evaluates the expression (`evalInteger()` or `eval()`)
 2. Identify the struct storing the constant result
 3. Add expression field(s) matching the constant's structure
@@ -277,11 +278,23 @@ if (variable.flags.has(VariableFlags::CompilerGenerated)) {
 mkdir -p debug
 echo 'test code' > debug/test.sv
 slang debug/test.sv --ast-json debug/ast.json
+slang debug/test.sv --cst-json debug/cst.json
 ```
+
+**Temporary Logging:**
+
+Use `spdlog::debug()` for temporary logging, remove before committing.
+
+**Finding Handlers:**
+
+Indexing logic can span multiple handlers via `visitDefault()` calls. To locate handlers for an expression type:
+
+- Search for the expression class name in `semantic_index.cpp`
+- Add `spdlog::debug()` at handler entry to trace execution
 
 **Common Issues:**
 
-- "LookupDefinitionAt failed": Missing expression handler
+- "LookupDefinitionAt failed": Missing expression handler or unhandled syntax kind
 - "No symbol found": Missing definition extraction
 - "Wrong definition target": Check reference creation logic
 - Overlapping ranges: Fix reference creation, don't add disambiguation

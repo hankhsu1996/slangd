@@ -872,9 +872,20 @@ void SemanticIndex::IndexVisitor::handle(
       return std::nullopt;
     }
 
-    if (expr.syntax->kind == slang::syntax::SyntaxKind::InvocationExpression) {
+    const slang::syntax::SyntaxNode* call_syntax = expr.syntax;
+
+    // Unwrap ParenthesizedExpression to get the inner InvocationExpression
+    // This handles size casts with function calls: (func_name(args))'(value)
+    if (call_syntax->kind ==
+        slang::syntax::SyntaxKind::ParenthesizedExpression) {
+      const auto& paren =
+          call_syntax->as<slang::syntax::ParenthesizedExpressionSyntax>();
+      call_syntax = paren.expression;
+    }
+
+    if (call_syntax->kind == slang::syntax::SyntaxKind::InvocationExpression) {
       const auto& invocation =
-          expr.syntax->as<slang::syntax::InvocationExpressionSyntax>();
+          call_syntax->as<slang::syntax::InvocationExpressionSyntax>();
 
       // For ScopedName (e.g., pkg::Class#(...)::func), extract the rightmost
       // name to get precise function name range, not the entire scope chain
@@ -887,10 +898,10 @@ void SemanticIndex::IndexVisitor::handle(
       return invocation.left->sourceRange();
     }
 
-    if (expr.syntax->kind ==
+    if (call_syntax->kind ==
         slang::syntax::SyntaxKind::ArrayOrRandomizeMethodExpression) {
       const auto& method =
-          expr.syntax
+          call_syntax
               ->as<slang::syntax::ArrayOrRandomizeMethodExpressionSyntax>();
       if (method.method != nullptr) {
         return method.method->sourceRange();
