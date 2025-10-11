@@ -497,3 +497,49 @@ TEST_CASE(
   auto index = fixture.CompileSource(code);
   fixture.AssertGoToDefinition(*index, code, "enum_pkg", 1, 0);
 }
+
+TEST_CASE(
+    "SemanticIndex explicit class import reference works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package source_pkg;
+      class DataHandler;
+        int value;
+      endclass
+    endpackage
+
+    module test;
+      import source_pkg::DataHandler;
+      DataHandler handler;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "DataHandler", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "DataHandler", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "DataHandler", 2, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex package to package class import works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    package base_pkg;
+      class BaseTransaction;
+        int id;
+      endclass
+    endpackage
+
+    package derived_pkg;
+      import base_pkg::BaseTransaction;
+      class ExtendedTransaction extends BaseTransaction;
+        int timestamp;
+      endclass
+    endpackage
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "BaseTransaction", 0, 0);
+  fixture.AssertGoToDefinition(*index, code, "BaseTransaction", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "BaseTransaction", 2, 0);
+}

@@ -1874,17 +1874,28 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::GenerateBlockArraySymbol& generate_array) {
-  // First, visit any inline genvars at the array level (not inside entries)
-  // These are declared like: for (genvar j = 0; ...)
+  // Visit inline genvar declarations (for (genvar j = 0; ...))
   for (const auto& member : generate_array.members()) {
     if (member.kind == slang::ast::SymbolKind::Genvar) {
       member.visit(*this);
     }
   }
 
-  // Visit loop control expressions (initialization, condition, increment)
-  // For example: for (genvar i = INIT; i < NUM; i++) has references to INIT,
-  // NUM
+  // For external genvars (genvar idx; for (idx = 0; ...)), create reference
+  // for LHS identifier
+  if (generate_array.externalGenvarRefRange.has_value() &&
+      generate_array.genvar != nullptr) {
+    if (const auto* genvar_syntax = generate_array.genvar->getSyntax()) {
+      auto ref_range = *generate_array.externalGenvarRefRange;
+      auto definition_range = DefinitionExtractor::ExtractDefinitionRange(
+          *generate_array.genvar, *genvar_syntax);
+      AddReference(
+          *generate_array.genvar, generate_array.genvar->name, ref_range,
+          definition_range, generate_array.genvar->getParentScope());
+    }
+  }
+
+  // Visit loop control expressions
   if (generate_array.initialExpression != nullptr) {
     generate_array.initialExpression->visit(*this);
   }
@@ -1895,16 +1906,14 @@ void SemanticIndex::IndexVisitor::handle(
     generate_array.iterExpression->visit(*this);
   }
 
-  // Then process only the first entry to avoid duplicates
-  // Generate for loops create multiple identical instances - we only need to
-  // index the template
+  // Index only first entry - all entries are identical
   if (!generate_array.entries.empty()) {
     const auto* first_entry = generate_array.entries[0];
     if (first_entry != nullptr) {
       first_entry->visit(*this);
     }
   }
-  // NOTE: No visitDefault() - we manually control which children to visit
+  // NOTE: No visitDefault() - we manually control traversal
 }
 
 void SemanticIndex::IndexVisitor::handle(

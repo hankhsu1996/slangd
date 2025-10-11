@@ -124,6 +124,13 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       }
       break;
 
+    case SK::ClassType:
+      // Class type declarations (appears when classes are imported)
+      if (syntax.kind == SyntaxKind::ClassDeclaration) {
+        return syntax.as<slang::syntax::ClassDeclarationSyntax>().name.range();
+      }
+      break;
+
     case SK::Definition:
       // Module/Interface/Program definitions
       if (syntax.kind == SyntaxKind::ModuleDeclaration ||
@@ -148,6 +155,14 @@ auto DefinitionExtractor::ExtractDefinitionRange(
       // Variable declarations
       if (syntax.kind == SyntaxKind::Declarator) {
         return syntax.as<slang::syntax::DeclaratorSyntax>().name.range();
+      }
+      break;
+
+    case SK::Genvar:
+      // Genvar declarations use IdentifierNameSyntax
+      if (syntax.kind == SyntaxKind::IdentifierName) {
+        return syntax.as<slang::syntax::IdentifierNameSyntax>()
+            .identifier.range();
       }
       break;
 
