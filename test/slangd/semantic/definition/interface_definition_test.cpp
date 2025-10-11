@@ -288,3 +288,33 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "SIZE", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "SIZE", 1, 0);
 }
+
+TEST_CASE(
+    "SemanticIndex interface port connection references work", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    interface test_if;
+      logic data;
+    endinterface
+
+    module child(test_if.master port);
+    endmodule
+
+    module parent;
+      test_if bus();
+
+      child u_child(
+        .port(bus)
+      );
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test interface instance declaration
+  fixture.AssertGoToDefinition(*index, code, "bus", 0, 0);
+
+  // Test interface instance reference in port connection (RHS)
+  // This should jump to the declaration of 'bus' above
+  fixture.AssertGoToDefinition(*index, code, "bus", 1, 0);
+}

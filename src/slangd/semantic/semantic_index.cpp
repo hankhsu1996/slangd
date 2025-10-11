@@ -5,6 +5,7 @@
 #include <slang/ast/Compilation.h>
 #include <slang/ast/HierarchicalReference.h>
 #include <slang/ast/Symbol.h>
+#include <slang/ast/expressions/AssertionExpr.h>
 #include <slang/ast/expressions/CallExpression.h>
 #include <slang/ast/expressions/ConversionExpression.h>
 #include <slang/ast/expressions/MiscExpressions.h>
@@ -1825,6 +1826,48 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
 
+  // 4. Index interface port connections (e.g., .port(bus))
+  // For module instances that take interface ports, index the RHS interface
+  // instance references
+  auto port_connections = instance.getPortConnections();
+  for (const auto* port_conn : port_connections) {
+    if (port_conn == nullptr) {
+      continue;
+    }
+
+    // Check if this is an interface port connection
+    if (port_conn->port.kind == slang::ast::SymbolKind::InterfacePort) {
+      // Get the connected interface instance
+      auto iface_conn = port_conn->getIfaceConn();
+      const auto* connected_instance = iface_conn.first;
+
+      if (connected_instance != nullptr &&
+          connected_instance->location.valid()) {
+        // Get the expression for the connection (contains the RHS syntax)
+        const auto* expr = port_conn->getExpression();
+
+        if (expr != nullptr && expr->sourceRange.start().valid()) {
+          // Extract definition range from the connected instance
+          if (const auto* conn_syntax = connected_instance->getSyntax()) {
+            auto definition_range = DefinitionExtractor::ExtractDefinitionRange(
+                *connected_instance, *conn_syntax);
+
+            // Calculate precise reference range from the connected instance
+            // name (similar to NamedValueExpression handling)
+            auto ref_start = expr->sourceRange.start();
+            auto reference_range = slang::SourceRange(
+                ref_start, ref_start + static_cast<uint32_t>(
+                                           connected_instance->name.length()));
+
+            AddReference(
+                *connected_instance, connected_instance->name, reference_range,
+                definition_range, connected_instance->getParentScope());
+          }
+        }
+      }
+    }
+  }
+
   // Control body traversal - only traverse standalone instances, not nested
   // ones SINGLE-FILE MODE: We only index the current module's body (via
   // createDefault in PATH 1). Nested instances (submodules, interface
@@ -1989,8 +2032,7 @@ void SemanticIndex::IndexVisitor::handle(
     const slang::ast::UninstantiatedDefSymbol& symbol) {
   const auto* syntax = symbol.getSyntax();
   if (syntax == nullptr) {
-    this->visitDefault(symbol);
-    return;
+    return;  // Nothing to index without syntax
   }
 
   // Always create self-definition for instance name (same-file and cross-file)
@@ -2010,23 +2052,59 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
 
+  // Index interface port connections by extracting symbols from bound
+  // expressions Slang already resolved port connections during binding -
+  // extract the symbols
   auto port_conns = symbol.getPortConnections();
-  for (const auto* port_conn : port_conns) {
-    if (port_conn != nullptr) {
-      port_conn->visit(*this);
+  for (const auto* assertion_expr : port_conns) {
+    if (assertion_expr != nullptr) {
+      // Always visit the expression tree to index nested references
+      assertion_expr->visit(*this);
+
+      // Additionally, check if this is an interface instance reference
+      // (SimpleAssertionExpr with ArbitrarySymbolExpression)
+      if (assertion_expr->kind == slang::ast::AssertionExprKind::Simple) {
+        const auto& simple =
+            assertion_expr->as<slang::ast::SimpleAssertionExpr>();
+        const auto& expr = simple.expr;
+
+        // Check if expression is ArbitrarySymbolExpression (interface instance
+        // ref)
+        if (expr.kind == slang::ast::ExpressionKind::ArbitrarySymbol) {
+          const auto& arb = expr.as<slang::ast::ArbitrarySymbolExpression>();
+          const auto& ref_symbol = *arb.symbol;  // Dereference not_null
+
+          // Only index interface instances
+          if (ref_symbol.kind == slang::ast::SymbolKind::Instance) {
+            const auto& instance_symbol =
+                ref_symbol.as<slang::ast::InstanceSymbol>();
+            if (instance_symbol.isInterface() &&
+                instance_symbol.location.valid()) {
+              if (const auto* inst_syntax = instance_symbol.getSyntax()) {
+                auto definition_range =
+                    DefinitionExtractor::ExtractDefinitionRange(
+                        instance_symbol, *inst_syntax);
+
+                // Create reference using the expression's source range
+                AddReference(
+                    instance_symbol, instance_symbol.name, expr.sourceRange,
+                    definition_range, instance_symbol.getParentScope());
+              }
+            }
+          }
+        }
+      }
     }
   }
 
   // Cross-file handling requires catalog
   if (catalog_ == nullptr) {
-    this->visitDefault(symbol);
-    return;
+    return;  // No cross-file indexing without catalog
   }
 
   const auto* module_info = catalog_->GetModule(symbol.definitionName);
   if (module_info == nullptr) {
-    this->visitDefault(symbol);
-    return;
+    return;  // Module not found in catalog
   }
 
   // The syntax is HierarchicalInstanceSyntax, whose parent is
@@ -2092,8 +2170,7 @@ void SemanticIndex::IndexVisitor::handle(
       }
     }
   }
-
-  this->visitDefault(symbol);
+  // UninstantiatedDefSymbol has no children to visit - done
 }
 
 // Go-to-definition implementation
