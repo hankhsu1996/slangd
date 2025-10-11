@@ -467,3 +467,37 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "packet_t", 1, 0);
   fixture.AssertGoToDefinition(*index, code, "byte_t", 2, 0);
 }
+
+TEST_CASE(
+    "SemanticIndex assignment pattern field references work", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    typedef enum logic [1:0] {
+      MODE_A,
+      MODE_B,
+      MODE_C
+    } mode_type;
+
+    typedef struct {
+      mode_type mode;
+      logic [4:0] index;
+    } config_t;
+
+    module assignment_pattern_test;
+      parameter config_t DEFAULT_CONFIG = '{mode: MODE_A, index: 5'b0};
+      parameter config_t ALTERNATE_CONFIG = '{mode: MODE_B, index: 5'b1};
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test field name references in assignment patterns
+  fixture.AssertGoToDefinition(*index, code, "mode", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "index", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "mode", 2, 0);
+  fixture.AssertGoToDefinition(*index, code, "index", 2, 0);
+
+  // Test enum value references in assignment patterns
+  fixture.AssertGoToDefinition(*index, code, "MODE_A", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "MODE_B", 1, 0);
+}

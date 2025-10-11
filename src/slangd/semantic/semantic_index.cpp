@@ -6,6 +6,7 @@
 #include <slang/ast/HierarchicalReference.h>
 #include <slang/ast/Symbol.h>
 #include <slang/ast/expressions/AssertionExpr.h>
+#include <slang/ast/expressions/AssignmentExpressions.h>
 #include <slang/ast/expressions/CallExpression.h>
 #include <slang/ast/expressions/ConversionExpression.h>
 #include <slang/ast/expressions/MiscExpressions.h>
@@ -954,6 +955,29 @@ void SemanticIndex::IndexVisitor::handle(
           definition_range, expr.member.getParentScope());
     }
   }
+  this->visitDefault(expr);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::StructuredAssignmentPatternExpression& expr) {
+  // Handle field references in assignment patterns like '{field1: value1,
+  // field2: value2}'
+  for (const auto& setter : expr.memberSetters) {
+    const slang::ast::Symbol& member_symbol = *setter.member;
+
+    // Create reference from field name in pattern to field definition
+    if (member_symbol.location.valid()) {
+      if (const auto* member_syntax = member_symbol.getSyntax()) {
+        auto definition_range = definition_extractor_.ExtractDefinitionRange(
+            member_symbol, *member_syntax);
+        // Use the keyRange stored during AST binding
+        AddReference(
+            member_symbol, member_symbol.name, setter.keyRange,
+            definition_range, member_symbol.getParentScope());
+      }
+    }
+  }
+
   this->visitDefault(expr);
 }
 

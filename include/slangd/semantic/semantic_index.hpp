@@ -182,6 +182,7 @@ class SemanticIndex {
     void handle(const slang::ast::DataTypeExpression& expr);
     void handle(const slang::ast::MemberAccessExpression& expr);
     void handle(const slang::ast::HierarchicalValueExpression& expr);
+    void handle(const slang::ast::StructuredAssignmentPatternExpression& expr);
 
     // Symbol handlers
     void handle(const slang::ast::FormalArgumentSymbol& formal_arg);
