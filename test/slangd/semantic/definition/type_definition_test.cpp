@@ -445,3 +445,25 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "counter_t", 3, 0);
   fixture.AssertGoToDefinition(*index, code, "counter_t", 4, 0);
 }
+
+TEST_CASE(
+    "SemanticIndex system function type argument reference works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module system_func_type_test;
+      typedef logic [7:0] byte_t;
+      typedef struct packed { logic [3:0] addr; } packet_t;
+
+      localparam int BYTE_WIDTH = $bits(byte_t);
+      localparam int PACKET_WIDTH = $bits(packet_t);
+
+      logic [$bits(byte_t)-1:0] data;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "byte_t", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "packet_t", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "byte_t", 2, 0);
+}

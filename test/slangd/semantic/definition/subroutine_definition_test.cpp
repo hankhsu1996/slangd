@@ -142,7 +142,7 @@ TEST_CASE(
   std::string code = R"(
     module implicit_return_test;
       function int my_func(input int x);
-        my_func = x * 2;  // Function name as implicit return variable
+        my_func = x * 2;
       endfunction
 
       initial begin
@@ -152,14 +152,8 @@ TEST_CASE(
   )";
 
   auto index = fixture.CompileSource(code);
-
-  // Test function definition (first occurrence)
   fixture.AssertGoToDefinition(*index, code, "my_func", 0, 0);
-
-  // Test implicit return variable usage (second occurrence)
   fixture.AssertGoToDefinition(*index, code, "my_func", 1, 0);
-
-  // Test function call (third occurrence)
   fixture.AssertGoToDefinition(*index, code, "my_func", 2, 0);
 }
 
@@ -189,18 +183,10 @@ TEST_CASE(
   )";
 
   auto index = fixture.CompileSource(code);
-
-  // Test function definition in package
   fixture.AssertGoToDefinition(*index, code, "add_one", 0, 0);
-
-  // Test task definition in package
   fixture.AssertGoToDefinition(*index, code, "increment_task", 0, 0);
-
-  // Test explicit import references
   fixture.AssertGoToDefinition(*index, code, "add_one", 1, 0);
   fixture.AssertGoToDefinition(*index, code, "increment_task", 1, 0);
-
-  // Test function/task calls
   fixture.AssertGoToDefinition(*index, code, "add_one", 2, 0);
   fixture.AssertGoToDefinition(*index, code, "increment_task", 2, 0);
 }
@@ -219,13 +205,10 @@ TEST_CASE(
   )";
 
   auto index = fixture.CompileSource(code);
-  // Type references should go to typedef definitions
   fixture.AssertGoToDefinition(*index, code, "byte_t", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "byte_t", 1, 0);
   fixture.AssertGoToDefinition(*index, code, "packet_t", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "packet_t", 1, 0);
-
-  // Formal argument names should have self-references
   fixture.AssertGoToDefinition(*index, code, "data", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "pkt", 0, 0);
 }
@@ -243,12 +226,29 @@ TEST_CASE("SemanticIndex task argument type reference works", "[definition]") {
   )";
 
   auto index = fixture.CompileSource(code);
-  // Type references should go to typedef definition
   fixture.AssertGoToDefinition(*index, code, "counter_t", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "counter_t", 1, 0);
-
-  // Formal argument name should have self-reference
-  // Note: cnt appears 3 times (declaration, then 2 uses in body)
-  // The first occurrence (index 0) should go to itself
   fixture.AssertGoToDefinition(*index, code, "cnt", 0, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex system function parameter argument reference works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    module system_func_test;
+      parameter int SIZE = 8;
+      parameter int WIDTH = 32;
+
+      localparam int ADDR_WIDTH = $clog2(SIZE);
+      localparam int DATA_BITS = $bits(WIDTH);
+
+      logic [$clog2(SIZE)-1:0] addr;
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "SIZE", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "WIDTH", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "SIZE", 2, 0);
 }

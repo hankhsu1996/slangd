@@ -938,6 +938,12 @@ void SemanticIndex::IndexVisitor::handle(
 }
 
 void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::DataTypeExpression& expr) {
+  TraverseType(*expr.type);
+  this->visitDefault(expr);
+}
+
+void SemanticIndex::IndexVisitor::handle(
     const slang::ast::MemberAccessExpression& expr) {
   if (expr.member.location.valid()) {
     if (const auto* syntax = expr.member.getSyntax()) {
