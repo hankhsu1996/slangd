@@ -28,6 +28,12 @@ static auto CreateLspCompilationOptions(bool enable_lint_mode = true)
   pp_options.initialDefaultNetType = slang::parsing::TokenKind::Unknown;
   options.set(pp_options);
 
+  // Configure lexer options for compatibility
+  slang::parsing::LexerOptions lexer_options;
+  // Enable legacy protection directives for compatibility with older codebases
+  lexer_options.enableLegacyProtect = true;
+  options.set(lexer_options);
+
   slang::ast::CompilationOptions comp_options;
   if (enable_lint_mode) {
     comp_options.flags |= slang::ast::CompilationFlags::LintMode;

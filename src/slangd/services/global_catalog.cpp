@@ -57,6 +57,12 @@ auto GlobalCatalog::BuildFromLayout(
   // Disable implicit net declarations for stricter diagnostics
   pp_options.initialDefaultNetType = slang::parsing::TokenKind::Unknown;
 
+  // Configure lexer options for compatibility
+  slang::parsing::LexerOptions lexer_options;
+  // Enable legacy protection directives for compatibility with older codebases
+  lexer_options.enableLegacyProtect = true;
+  options.set(lexer_options);
+
   // Get include directories and defines from layout service
   include_directories_ = layout_service->GetIncludeDirectories();
   defines_ = layout_service->GetDefines();
