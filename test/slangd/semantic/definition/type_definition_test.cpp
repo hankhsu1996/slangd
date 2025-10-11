@@ -525,6 +525,31 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "MODE_B", 1, 0);
 }
 
+TEST_CASE(
+    "SemanticIndex typed assignment pattern type reference works",
+    "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    typedef struct {
+      logic [3:0] field_a;
+      logic [4:0] field_b;
+    } config_t;
+
+    module typed_assignment_pattern_test;
+      config_t cfg;
+
+      initial begin
+        cfg = config_t'{field_a: 4'h5, field_b: 5'h0A};
+      end
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+  fixture.AssertGoToDefinition(*index, code, "config_t", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "field_a", 1, 0);
+  fixture.AssertGoToDefinition(*index, code, "field_b", 1, 0);
+}
+
 TEST_CASE("SemanticIndex enum base type reference works", "[definition]") {
   SimpleTestFixture fixture;
   std::string code = R"(

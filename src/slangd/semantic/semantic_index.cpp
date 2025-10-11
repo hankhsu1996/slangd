@@ -974,6 +974,9 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::StructuredAssignmentPatternExpression& expr) {
+  // Handle type reference in typed assignment patterns (e.g., type_t'{...})
+  TraverseType(*expr.type);
+
   // Handle field references in assignment patterns like '{field1: value1,
   // field2: value2}'
   for (const auto& setter : expr.memberSetters) {

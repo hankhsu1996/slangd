@@ -129,4 +129,5 @@ slang debug/test.sv --cst-json debug/cst.json
 ```
 
 - Keep test files minimal - JSON output is extremely large.
+- Use `jq` for efficient JSON querying.
 - 'slang' is installed in system.
