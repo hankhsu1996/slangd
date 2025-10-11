@@ -56,6 +56,10 @@ class SessionManager {
 
   auto InvalidateAllSessions() -> void;  // For catalog version change
 
+  // Updates the catalog pointer used for all future session creations
+  // Must be called when GlobalCatalog is rebuilt (e.g., config changes)
+  auto UpdateCatalog(std::shared_ptr<const GlobalCatalog> catalog) -> void;
+
   // Feature accessors (read-only)
   // Returns compilation state after Phase 1 (fast path for diagnostics)
   auto GetCompilationState(std::string uri)
