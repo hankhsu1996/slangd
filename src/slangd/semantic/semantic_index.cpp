@@ -2069,6 +2069,21 @@ void SemanticIndex::IndexVisitor::handle(
                 }
               }
             }
+          } else if (ref_symbol.kind == slang::ast::SymbolKind::InterfacePort) {
+            const auto& iface_port =
+                ref_symbol.as<slang::ast::InterfacePortSymbol>();
+            if (iface_port.location.valid()) {
+              if (const auto* port_syntax = iface_port.getSyntax()) {
+                auto definition_range =
+                    DefinitionExtractor::ExtractDefinitionRange(
+                        iface_port, *port_syntax);
+
+                // Create reference using the expression's source range
+                AddReference(
+                    iface_port, iface_port.name, expr.sourceRange,
+                    definition_range, iface_port.getParentScope());
+              }
+            }
           }
         }
       }

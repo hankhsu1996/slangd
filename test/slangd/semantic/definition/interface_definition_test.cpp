@@ -413,3 +413,37 @@ TEST_CASE(
   fixture.AssertGoToDefinition(*index, code, "scalar_field", 0, 0);
   fixture.AssertGoToDefinition(*index, code, "scalar_field", 1, 0);
 }
+
+TEST_CASE(
+    "SemanticIndex interface port passed to submodule works", "[definition]") {
+  SimpleTestFixture fixture;
+  std::string code = R"(
+    interface data_if;
+      logic [31:0] data;
+      logic valid;
+    endinterface
+
+    module child(data_if port);
+    endmodule
+
+    module parent(
+      data_if external_if
+    );
+      child u_child(
+        .port(external_if)
+      );
+    endmodule
+  )";
+
+  auto index = fixture.CompileSource(code);
+
+  // Test interface type definition
+  fixture.AssertGoToDefinition(*index, code, "data_if", 0, 0);
+
+  // Test interface port in parent module declaration
+  fixture.AssertGoToDefinition(*index, code, "external_if", 0, 0);
+
+  // Test interface port reference in submodule connection
+  // This should resolve to the port declaration (occurrence 0 of "external_if")
+  fixture.AssertGoToDefinition(*index, code, "external_if", 1, 0);
+}
