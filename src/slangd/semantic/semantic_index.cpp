@@ -640,21 +640,27 @@ void SemanticIndex::IndexVisitor::IndexPackageInScopedName(
 
   const auto& ident = scoped.left->as<slang::syntax::IdentifierNameSyntax>();
 
-  // Check if target symbol's parent is a package
-  const auto* parent = target_symbol.getParentScope();
-  if (parent != nullptr &&
-      parent->asSymbol().kind == slang::ast::SymbolKind::Package) {
-    const auto& pkg = parent->asSymbol().as<slang::ast::PackageSymbol>();
-    if (const auto* pkg_syntax = pkg.getSyntax()) {
-      if (pkg_syntax->kind == slang::syntax::SyntaxKind::PackageDeclaration) {
-        const auto& decl_syntax =
-            pkg_syntax->as<slang::syntax::ModuleDeclarationSyntax>();
-        auto pkg_def_range = decl_syntax.header->name.range();
-        AddReference(
-            pkg, pkg.name, ident.identifier.range(), pkg_def_range,
-            pkg.getParentScope());
+  // Walk up the scope chain to find the package
+  // (target symbol might be nested, e.g., enum member inside enum type inside
+  // package)
+  const auto* scope = target_symbol.getParentScope();
+  while (scope != nullptr) {
+    const auto& scope_symbol = scope->asSymbol();
+    if (scope_symbol.kind == slang::ast::SymbolKind::Package) {
+      const auto& pkg = scope_symbol.as<slang::ast::PackageSymbol>();
+      if (const auto* pkg_syntax = pkg.getSyntax()) {
+        if (pkg_syntax->kind == slang::syntax::SyntaxKind::PackageDeclaration) {
+          const auto& decl_syntax =
+              pkg_syntax->as<slang::syntax::ModuleDeclarationSyntax>();
+          auto pkg_def_range = decl_syntax.header->name.range();
+          AddReference(
+              pkg, pkg.name, ident.identifier.range(), pkg_def_range,
+              pkg.getParentScope());
+        }
       }
+      break;  // Found package, stop searching
     }
+    scope = scope->asSymbol().getParentScope();
   }
 }
 
