@@ -8,7 +8,6 @@
 #include <asio/any_io_executor.hpp>
 #include <asio/awaitable.hpp>
 #include <asio/cancellation_signal.hpp>
-#include <asio/experimental/channel.hpp>
 #include <asio/thread_pool.hpp>
 #include <slang/ast/Compilation.h>
 #include <slang/text/SourceManager.h>
@@ -18,6 +17,7 @@
 #include "slangd/services/global_catalog.hpp"
 #include "slangd/services/open_document_tracker.hpp"
 #include "slangd/services/overlay_session.hpp"
+#include "slangd/utils/broadcast_event.hpp"
 
 namespace slangd::services {
 
@@ -26,6 +26,12 @@ struct CompilationState {
   std::shared_ptr<slang::SourceManager> source_manager;
   std::shared_ptr<slang::ast::Compilation> compilation;
   slang::BufferID main_buffer_id;
+};
+
+// Session creation phase tracking
+enum class SessionPhase {
+  kElaborationComplete,  // Phase 1: Diagnostics can run
+  kIndexingComplete      // Phase 2: Symbols/definitions can run
 };
 
 // Centralized session lifecycle manager
@@ -59,7 +65,6 @@ class SessionManager {
   auto InvalidateAllSessions() -> void;  // For catalog version change
 
   // Cancel pending session compilation (called when document is closed)
-  // Closes channels to signal background thread cancellation
   auto CancelPendingSession(std::string uri) -> void;
 
   // Updates the catalog pointer used for all future session creations
@@ -76,20 +81,13 @@ class SessionManager {
       -> asio::awaitable<std::shared_ptr<const OverlaySession>>;
 
  private:
-  // Pending session creation - concurrent requests share the same channel
+  // Pending session creation - concurrent requests share the same events
   struct PendingCreation {
-    using CompilationChannel =
-        asio::experimental::channel<void(std::error_code, CompilationState)>;
-    using SessionChannel = asio::experimental::channel<void(
-        std::error_code, std::shared_ptr<OverlaySession>)>;
-
-    // Signal: Phase 1 complete (after elaboration) - diagnostics can proceed
-    std::shared_ptr<CompilationChannel> compilation_ready;
-    // Signal: Phase 2 complete (after indexing) - symbols/definition can
-    // proceed
-    std::shared_ptr<SessionChannel> session_ready;
-    // LSP document version - used to prevent race conditions
-    int version;
+    // Phase 1: Elaboration complete (diagnostics can proceed)
+    utils::BroadcastEvent compilation_ready;
+    // Phase 2: Indexing complete (symbols/definitions can proceed)
+    utils::BroadcastEvent session_ready;
+    int version;  // LSP document version
 
     explicit PendingCreation(asio::any_io_executor executor, int doc_version);
   };
@@ -101,10 +99,11 @@ class SessionManager {
   auto UpdateAccessOrder(const std::string& uri) -> void;
   auto EvictOldestIfNeeded() -> void;
 
-  // Cache entry with version tracking for intelligent cache reuse
+  // Cache entry with version and phase tracking
   struct CacheEntry {
     std::shared_ptr<OverlaySession> session;
-    int version;  // LSP document version
+    int version;
+    SessionPhase phase;
   };
 
   // Dependencies
@@ -118,8 +117,6 @@ class SessionManager {
   asio::strand<asio::any_io_executor> session_strand_;
 
   // Protected by session_strand_:
-  // Cache by URI with version tracking (no content_hash!)
-  // Version comparison enables close/reopen optimization without rebuilding
   std::unordered_map<std::string, CacheEntry> active_sessions_;
 
   std::unordered_map<std::string, std::shared_ptr<PendingCreation>>

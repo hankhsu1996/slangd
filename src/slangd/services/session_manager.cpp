@@ -15,8 +15,8 @@ namespace slangd::services {
 
 SessionManager::PendingCreation::PendingCreation(
     asio::any_io_executor executor, int doc_version)
-    : compilation_ready(std::make_shared<CompilationChannel>(executor, 10)),
-      session_ready(std::make_shared<SessionChannel>(executor, 10)),
+    : compilation_ready(executor),
+      session_ready(executor),
       version(doc_version) {
 }
 
@@ -36,14 +36,6 @@ SessionManager::SessionManager(
 }
 
 SessionManager::~SessionManager() {
-  // Close all pending channels to signal shutdown to any active coroutines
-  // NOTE: In practice, coroutines should already be complete since destructor
-  // only runs when io_context has stopped. This is defensive programming.
-  for (auto& [uri, pending] : pending_sessions_) {
-    pending->compilation_ready->close();
-    pending->session_ready->close();
-  }
-
   compilation_pool_->join();
 }
 
@@ -70,27 +62,17 @@ auto SessionManager::UpdateSession(
   // Check if pending session already exists
   if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
     if (it->second->version == version) {
-      // Same version - check if session is still alive (not cancelled)
-      if (it->second->compilation_ready->is_open() &&
-          it->second->session_ready->is_open()) {
-        // Channels still open - safe to reuse pending session
-        co_return;
-      }
-      // Channels closed (cancelled) - remove stale entry and create new below
-      pending_sessions_.erase(it);
+      co_return;  // Same version, reuse pending session
     } else {
-      // Different version - close old channels and create new below
+      // Different version - cancel old and create new
       logger_->info(
           "SessionManager: Cancelling pending session for {} (old version {}, "
           "new version {})",
           uri, it->second->version, version);
-      it->second->compilation_ready->close();
-      it->second->session_ready->close();
       pending_sessions_.erase(it);
     }
   }
 
-  // Create NEW pending session and insert into map
   auto new_pending = StartSessionCreation(uri, content, version);
   pending_sessions_[uri] = new_pending;
 
@@ -105,16 +87,8 @@ auto SessionManager::InvalidateSessions(std::vector<std::string> uris) -> void {
 
         for (const auto& uri : uris) {
           active_sessions_.erase(uri);
-
-          // Remove from LRU tracking
           std::erase(access_order_, uri);
-
-          if (auto it = pending_sessions_.find(uri);
-              it != pending_sessions_.end()) {
-            it->second->compilation_ready->close();
-            it->second->session_ready->close();
-            pending_sessions_.erase(it);
-          }
+          pending_sessions_.erase(uri);
           logger_->debug("SessionManager::InvalidateSessions: {}", uri);
         }
         co_return;
@@ -134,11 +108,6 @@ auto SessionManager::InvalidateAllSessions() -> void {
 
         active_sessions_.clear();
         access_order_.clear();
-
-        for (auto& [uri, pending] : pending_sessions_) {
-          pending->compilation_ready->close();
-          pending->session_ready->close();
-        }
         pending_sessions_.clear();
         co_return;
       },
@@ -151,14 +120,9 @@ auto SessionManager::CancelPendingSession(std::string uri) -> void {
       [this, uri]() -> asio::awaitable<void> {
         co_await asio::post(session_strand_, asio::use_awaitable);
 
-        // Check if pending session exists
         if (auto it = pending_sessions_.find(uri);
             it != pending_sessions_.end()) {
-          // Close both channels to signal cancellation to background thread
-          it->second->compilation_ready->close();
-          it->second->session_ready->close();
           pending_sessions_.erase(it);
-
           logger_->debug(
               "Cancelled pending session for: {} (active={}, pending={})", uri,
               active_sessions_.size(), pending_sessions_.size());
@@ -182,8 +146,6 @@ auto SessionManager::UpdateCatalog(std::shared_ptr<const GlobalCatalog> catalog)
             catalog_ ? catalog_->GetVersion() : 0,
             catalog ? catalog->GetVersion() : 0);
 
-        // Replace catalog pointer for all future session creations
-        // Releases previous catalog's shared_ptr reference
         catalog_ = catalog;
 
         co_return;
@@ -195,35 +157,31 @@ auto SessionManager::GetCompilationState(std::string uri)
     -> asio::awaitable<std::optional<CompilationState>> {
   co_await asio::post(session_strand_, asio::use_awaitable);
 
-  // Fast path: Check cache first (source of truth)
+  // Fast path: Check cache
   if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
-    UpdateAccessOrder(uri);
-    auto& session = it->second.session;
-    co_return CompilationState{
-        .source_manager = session->GetSourceManagerPtr(),
-        .compilation = session->GetCompilationPtr(),
-        .main_buffer_id = session->GetMainBufferID()};
+    if (it->second.phase >= SessionPhase::kElaborationComplete) {
+      UpdateAccessOrder(uri);
+      auto& session = it->second.session;
+      co_return CompilationState{
+          .source_manager = session->GetSourceManagerPtr(),
+          .compilation = session->GetCompilationPtr(),
+          .main_buffer_id = session->GetMainBufferID()};
+    }
   }
 
-  // Slow path: Wait for Phase 1 notification, then re-check cache
-  // NOTE: Same multi-waiter pattern as GetSession (channels are notifications)
+  // Slow path: Wait for Phase 1 completion
   if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
     logger_->debug(
         "SessionManager::GetCompilationState waiting for compilation_ready: {}",
         uri);
 
-    std::error_code ec;
-    auto state = co_await it->second->compilation_ready->async_receive(
-        asio::redirect_error(asio::use_awaitable, ec));
+    auto pending = it->second;
+    co_await pending->compilation_ready.AsyncWait(asio::use_awaitable);
+    co_await asio::post(session_strand_, asio::use_awaitable);
 
-    if (!ec) {
-      // First receiver: got value directly from channel
-      co_return state;
-    }
-
-    // Channel closed - re-check cache (Phase 2 may have completed by now)
     if (auto cache_it = active_sessions_.find(uri);
-        cache_it != active_sessions_.end()) {
+        cache_it != active_sessions_.end() &&
+        cache_it->second.phase >= SessionPhase::kElaborationComplete) {
       UpdateAccessOrder(uri);
       auto& session = cache_it->second.session;
       co_return CompilationState{
@@ -232,10 +190,9 @@ auto SessionManager::GetCompilationState(std::string uri)
           .main_buffer_id = session->GetMainBufferID()};
     }
 
-    // Not in cache after notification - session was cancelled
     logger_->info(
-        "GetCompilationState: Session cancelled for {} (not in cache after "
-        "notification)",
+        "GetCompilationState: Session not found for {} after notification "
+        "(evicted or cancelled)",
         uri);
     co_return std::nullopt;
   }
@@ -249,43 +206,32 @@ auto SessionManager::GetSession(std::string uri)
     -> asio::awaitable<std::shared_ptr<const OverlaySession>> {
   co_await asio::post(session_strand_, asio::use_awaitable);
 
-  // Fast path: Check cache first (source of truth)
+  // Fast path: Check cache
   if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
-    UpdateAccessOrder(uri);
-    co_return it->second.session;
+    if (it->second.phase >= SessionPhase::kIndexingComplete) {
+      UpdateAccessOrder(uri);
+      co_return it->second.session;
+    }
   }
 
-  // Slow path: Wait for notification, then re-check cache
-  // NOTE: Channels are notification mechanisms (wake up waiters when ready),
-  // NOT data delivery. Only first waiter receives value from channel
-  // (one-shot), others must check cache after waking. This is correct
-  // multi-consumer pattern.
+  // Slow path: Wait for Phase 2 completion
   if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
     logger_->debug("SessionManager::GetSession waiting for pending: {}", uri);
 
-    std::error_code ec;
-    auto session = co_await it->second->session_ready->async_receive(
-        asio::redirect_error(asio::use_awaitable, ec));
+    auto pending = it->second;
+    co_await pending->session_ready.AsyncWait(asio::use_awaitable);
+    co_await asio::post(session_strand_, asio::use_awaitable);
 
-    if (!ec) {
-      // First receiver: got value directly from channel
-      co_return session;
-    }
-
-    // Channel closed - re-check cache (session may have completed successfully)
-    // This handles both:
-    // 1. One-shot delivery: 2nd/3rd waiters get here, session is in cache
-    // 2. Cancellation: session NOT in cache
     if (auto cache_it = active_sessions_.find(uri);
-        cache_it != active_sessions_.end()) {
+        cache_it != active_sessions_.end() &&
+        cache_it->second.phase >= SessionPhase::kIndexingComplete) {
       UpdateAccessOrder(uri);
       co_return cache_it->second.session;
     }
 
-    // Not in cache after notification - session was cancelled
     logger_->info(
-        "GetSession: Session cancelled for {} (not in cache after "
-        "notification)",
+        "GetSession: Session not found for {} after notification (evicted or "
+        "cancelled)",
         uri);
     co_return nullptr;
   }
@@ -302,98 +248,82 @@ auto SessionManager::StartSessionCreation(
   asio::co_spawn(
       executor_,
       [this, uri, content, pending]() -> asio::awaitable<void> {
-        // Two-phase creation: elaboration + indexing
-        // Note: Currently sequential inside FromCompilation, but infrastructure
-        // ready for future async separation
         auto result = co_await asio::co_spawn(
             compilation_pool_->get_executor(),
             [uri, content, this, pending]()
                 -> asio::awaitable<
                     std::optional<std::shared_ptr<OverlaySession>>> {
-              // CRITICAL: Check cancellation BEFORE expensive work
-              if (!pending->compilation_ready->is_open()) {
-                logger_->debug(
-                    "Session creation cancelled before compilation: {}", uri);
-                co_return std::nullopt;
-              }
-
               utils::ScopedTimer timer(
                   "SessionManager session creation", logger_);
 
-              // Build compilation
               auto [source_manager, compilation, main_buffer_id] =
                   OverlaySession::BuildCompilation(
                       uri, content, layout_service_, catalog_, logger_);
 
-              // Check cancellation after BuildCompilation (expensive!)
-              if (!pending->compilation_ready->is_open()) {
-                logger_->debug(
-                    "Session creation cancelled after BuildCompilation: {}",
-                    uri);
-                co_return std::nullopt;
-              }
-
-              // Phase 1: Build semantic index (includes forceElaborate +
-              // visit) FromCompilation now calls forceElaborate on each
-              // instance, populating diagMap
               auto semantic_index = semantic::SemanticIndex::FromCompilation(
                   *compilation, *source_manager, uri, catalog_.get(), logger_);
 
-              // Check cancellation after FromCompilation (expensive!)
-              if (!pending->compilation_ready->is_open()) {
+              // Check if still current before storing
+              co_await asio::post(session_strand_, asio::use_awaitable);
+
+              auto it = pending_sessions_.find(uri);
+              if (it == pending_sessions_.end() ||
+                  it->second->version != pending->version) {
                 logger_->debug(
-                    "Session creation cancelled after FromCompilation: {}",
-                    uri);
+                    "Session creation cancelled after elaboration: {}", uri);
                 co_return std::nullopt;
               }
 
-              // Signal Phase 1 complete: compilation_ready
-              // (diagMap populated, diagnostics can be extracted)
-              std::error_code ec;
+              // Store Phase 1 in cache, then broadcast
               auto compilation_shared =
                   std::shared_ptr<slang::ast::Compilation>(
                       std::move(compilation));
-              auto compilation_state = CompilationState{
-                  .source_manager = source_manager,
-                  .compilation = compilation_shared,
-                  .main_buffer_id = main_buffer_id};
-              co_await asio::post(session_strand_, asio::use_awaitable);
-              pending->compilation_ready->try_send(ec, compilation_state);
-              pending->compilation_ready->close();
-
-              // Phase 2: Create session (lightweight - just wraps existing
-              // objects)
-              auto session = OverlaySession::CreateFromParts(
+              auto partial_session = OverlaySession::CreateFromParts(
                   source_manager, compilation_shared, std::move(semantic_index),
                   main_buffer_id, logger_);
 
-              co_return session;
+              active_sessions_[uri] = CacheEntry{
+                  .session = partial_session,
+                  .version = pending->version,
+                  .phase = SessionPhase::kElaborationComplete};
+              UpdateAccessOrder(uri);
+              EvictOldestIfNeeded();
+
+              pending->compilation_ready.Set();
+
+              logger_->debug(
+                  "SessionManager Phase 1 complete (elaboration): {}", uri);
+
+              co_return partial_session;
             },
             asio::use_awaitable);
 
         co_await asio::post(session_strand_, asio::use_awaitable);
-        std::error_code ec;
 
         if (result.has_value() && result.value()) {
-          auto session = result.value();
-          // Signal Phase 2 complete: session_ready
-          pending->session_ready->try_send(ec, session);
-          pending->session_ready->close();
-          active_sessions_[uri] =
-              CacheEntry{.session = session, .version = pending->version};
-          UpdateAccessOrder(uri);
-          EvictOldestIfNeeded();
+          auto it = pending_sessions_.find(uri);
+          if (it != pending_sessions_.end() &&
+              it->second->version == pending->version) {
+            // Upgrade to Phase 2, then broadcast
+            if (auto cache_it = active_sessions_.find(uri);
+                cache_it != active_sessions_.end()) {
+              cache_it->second.phase = SessionPhase::kIndexingComplete;
+              pending->session_ready.Set();
+              logger_->debug(
+                  "SessionManager Phase 2 complete (indexing): {}", uri);
+            }
+            pending_sessions_.erase(it);
+          } else {
+            logger_->debug(
+                "Session creation superseded during Phase 2: {}", uri);
+          }
         } else {
-          // Failed or cancelled - close channels
-          pending->compilation_ready->close();
-          pending->session_ready->close();
-        }
-
-        // Only erase if this pending creation is still current
-        if (auto it = pending_sessions_.find(uri);
-            it != pending_sessions_.end() &&
-            it->second->version == pending->version) {
-          pending_sessions_.erase(it);
+          logger_->debug("Session creation failed or cancelled: {}", uri);
+          auto it = pending_sessions_.find(uri);
+          if (it != pending_sessions_.end() &&
+              it->second->version == pending->version) {
+            pending_sessions_.erase(it);
+          }
         }
       },
       asio::detached);
@@ -402,10 +332,8 @@ auto SessionManager::StartSessionCreation(
 }
 
 auto SessionManager::UpdateAccessOrder(const std::string& uri) -> void {
-  // Remove existing entry if present
   std::erase(access_order_, uri);
-  // Add to front (most recently used)
-  access_order_.insert(access_order_.begin(), uri);
+  access_order_.insert(access_order_.begin(), uri);  // MRU at front
 }
 
 auto SessionManager::EvictOldestIfNeeded() -> void {
@@ -417,12 +345,10 @@ auto SessionManager::EvictOldestIfNeeded() -> void {
       break;
     }
 
-    // Smart eviction: Prioritize closed files over open files
-    // Scan access_order_ from back (oldest first) to find closed file
+    // Smart eviction: prefer closed files over open files
     std::string uri_to_evict;
     bool found_closed = false;
 
-    // Phase 1: Try to find a closed file to evict (scan LRU order)
     for (const auto& uri : access_order_ | std::views::reverse) {
       if (!open_tracker_->Contains(uri)) {
         uri_to_evict = uri;
@@ -434,7 +360,6 @@ auto SessionManager::EvictOldestIfNeeded() -> void {
       }
     }
 
-    // Phase 2: No closed files found, evict oldest open file (forced eviction)
     if (!found_closed) {
       uri_to_evict = access_order_.back();
       logger_->debug(
@@ -443,7 +368,6 @@ auto SessionManager::EvictOldestIfNeeded() -> void {
           uri_to_evict, active_sessions_.size(), kMaxCacheSize);
     }
 
-    // Remove from cache and LRU tracking
     active_sessions_.erase(uri_to_evict);
     std::erase(access_order_, uri_to_evict);
   }
