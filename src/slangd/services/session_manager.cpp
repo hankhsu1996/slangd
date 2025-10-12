@@ -159,9 +159,8 @@ auto SessionManager::CancelPendingSession(std::string uri) -> void {
           it->second->session_ready->close();
           pending_sessions_.erase(it);
 
-          logger_->debug("Cancelled pending session for: {}", uri);
           logger_->debug(
-              "SessionManager state - active: {}, pending: {}",
+              "Cancelled pending session for: {} (active={}, pending={})", uri,
               active_sessions_.size(), pending_sessions_.size());
         }
 
@@ -311,6 +310,13 @@ auto SessionManager::StartSessionCreation(
             [uri, content, this, pending]()
                 -> asio::awaitable<
                     std::optional<std::shared_ptr<OverlaySession>>> {
+              // CRITICAL: Check cancellation BEFORE expensive work
+              if (!pending->compilation_ready->is_open()) {
+                logger_->debug(
+                    "Session creation cancelled before compilation: {}", uri);
+                co_return std::nullopt;
+              }
+
               utils::ScopedTimer timer(
                   "SessionManager session creation", logger_);
 
@@ -319,11 +325,27 @@ auto SessionManager::StartSessionCreation(
                   OverlaySession::BuildCompilation(
                       uri, content, layout_service_, catalog_, logger_);
 
+              // Check cancellation after BuildCompilation (expensive!)
+              if (!pending->compilation_ready->is_open()) {
+                logger_->debug(
+                    "Session creation cancelled after BuildCompilation: {}",
+                    uri);
+                co_return std::nullopt;
+              }
+
               // Phase 1: Build semantic index (includes forceElaborate +
               // visit) FromCompilation now calls forceElaborate on each
               // instance, populating diagMap
               auto semantic_index = semantic::SemanticIndex::FromCompilation(
                   *compilation, *source_manager, uri, catalog_.get(), logger_);
+
+              // Check cancellation after FromCompilation (expensive!)
+              if (!pending->compilation_ready->is_open()) {
+                logger_->debug(
+                    "Session creation cancelled after FromCompilation: {}",
+                    uri);
+                co_return std::nullopt;
+              }
 
               // Signal Phase 1 complete: compilation_ready
               // (diagMap populated, diagnostics can be extracted)
@@ -340,9 +362,7 @@ auto SessionManager::StartSessionCreation(
               pending->compilation_ready->close();
 
               // Phase 2: Create session (lightweight - just wraps existing
-              // objects) Note: No early abort check needed here -
-              // CreateFromParts is trivial
-              // (~1 allocation). Real win is cancelling before FromCompilation.
+              // objects)
               auto session = OverlaySession::CreateFromParts(
                   source_manager, compilation_shared, std::move(semantic_index),
                   main_buffer_id, logger_);
@@ -364,10 +384,9 @@ auto SessionManager::StartSessionCreation(
           UpdateAccessOrder(uri);
           EvictOldestIfNeeded();
         } else {
-          // Failed - close channels
+          // Failed or cancelled - close channels
           pending->compilation_ready->close();
           pending->session_ready->close();
-          logger_->error("SessionManager failed to create session: {}", uri);
         }
 
         // Only erase if this pending creation is still current
