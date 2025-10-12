@@ -71,10 +71,6 @@ class LanguageService : public LanguageServiceBase {
       -> asio::awaitable<std::vector<std::string>> override;
 
  private:
-  // Session recovery helper: Gets session or rebuilds if evicted
-  auto GetOrRebuildSession(std::string uri)
-      -> asio::awaitable<std::shared_ptr<const OverlaySession>>;
-
   // Core dependencies
   std::shared_ptr<ProjectLayoutService> layout_service_;
   std::shared_ptr<const GlobalCatalog> global_catalog_;

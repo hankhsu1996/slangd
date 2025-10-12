@@ -108,66 +108,43 @@ auto LanguageService::ComputeDiagnostics(std::string uri)
         lsp::error::LspErrorCode::kInternalError, "Workspace not initialized");
   }
 
-  logger_->debug("LanguageService computing diagnostics for: {}", uri);
+  // Use callback pattern to access compilation state without shared_ptr escape
+  auto result = co_await session_manager_->WithCompilationState(
+      uri, [this, uri](const CompilationState& state) {
+        // Extract parse diagnostics (syntax errors from syntax trees)
+        auto parse_diags =
+            semantic::DiagnosticConverter::ExtractParseDiagnostics(
+                *state.compilation, *state.source_manager, state.main_buffer_id,
+                logger_);
 
-  // Get compilation state from SessionManager (fast path - waits for Phase 1
-  // only)
-  auto state = co_await session_manager_->GetCompilationState(uri);
-  if (!state.has_value()) {
-    logger_->info(
-        "LanguageService: No compilation state for {} (likely cancelled)", uri);
+        // Extract semantic diagnostics (from diagMap, populated by
+        // forceElaborate) Pass GlobalCatalog to filter false-positive
+        // UnknownModule diagnostics
+        auto semantic_diags =
+            semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
+                *state.compilation, *state.source_manager, state.main_buffer_id,
+                global_catalog_.get());
+
+        // Combine parse + semantic diagnostics
+        parse_diags.insert(
+            parse_diags.end(), semantic_diags.begin(), semantic_diags.end());
+
+        return parse_diags;
+      });
+
+  if (!result) {
+    logger_->debug(
+        "LanguageService: No compilation state for {} ({})", uri,
+        result.error());
     co_return LspError::UnexpectedFromCode(
-        lsp::error::LspErrorCode::kInternalError, "Document was modified");
+        lsp::error::LspErrorCode::kInternalError, result.error());
   }
-
-  // Extract parse diagnostics (syntax errors from syntax trees)
-  auto parse_diags = semantic::DiagnosticConverter::ExtractParseDiagnostics(
-      *state->compilation, *state->source_manager, state->main_buffer_id,
-      logger_);
-
-  // Extract semantic diagnostics (from diagMap, populated by forceElaborate)
-  // Pass GlobalCatalog to filter false-positive UnknownModule diagnostics
-  auto semantic_diags =
-      semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
-          *state->compilation, *state->source_manager, state->main_buffer_id,
-          global_catalog_.get());
-
-  // Combine parse + semantic diagnostics
-  parse_diags.insert(
-      parse_diags.end(), semantic_diags.begin(), semantic_diags.end());
 
   logger_->debug(
-      "LanguageService computed {} diagnostics for: {} ({})",
-      parse_diags.size(), uri,
-      utils::ScopedTimer::FormatDuration(timer.GetElapsed()));
+      "LanguageService computed {} diagnostics for: {} ({})", result->size(),
+      uri, utils::ScopedTimer::FormatDuration(timer.GetElapsed()));
 
-  co_return parse_diags;
-}
-
-auto LanguageService::GetOrRebuildSession(std::string uri)
-    -> asio::awaitable<std::shared_ptr<const OverlaySession>> {
-  // Try getting existing session (fast path - cache hit)
-  auto session = co_await session_manager_->GetSession(uri);
-  if (session) {
-    co_return session;
-  }
-
-  // Session evicted or not yet created - check if document still open
-  auto doc_state = co_await doc_state_.Get(uri);
-  if (!doc_state) {
-    // Document closed, can't rebuild
-    logger_->debug(
-        "GetOrRebuildSession: Document {} closed, cannot rebuild session", uri);
-    co_return nullptr;
-  }
-
-  // Rebuild session (blocks and waits for compilation)
-  logger_->debug("Rebuilding evicted session: {}", uri);
-  co_await session_manager_->UpdateSession(
-      uri, doc_state->content, doc_state->version);
-
-  // Retry get (should hit cache now)
-  co_return co_await session_manager_->GetSession(uri);
+  co_return *result;
 }
 
 auto LanguageService::GetDefinitionsForPosition(
@@ -181,77 +158,79 @@ auto LanguageService::GetDefinitionsForPosition(
         lsp::error::LspErrorCode::kInternalError, "Workspace not initialized");
   }
 
-  // Use recovery helper to handle evicted sessions gracefully
-  auto session = co_await GetOrRebuildSession(uri);
-  if (!session) {
-    logger_->info("No session for {} (likely cancelled), returning error", uri);
-    co_return LspError::UnexpectedFromCode(
-        lsp::error::LspErrorCode::kInternalError, "Document was modified");
-  }
+  // Use callback pattern to access session without shared_ptr escape
+  auto result = co_await session_manager_->WithSession(
+      uri, [this, uri, position](const OverlaySession& session) {
+        // Get source manager and convert position to location
+        const auto& source_manager = session.GetSourceManager();
+        auto buffers = source_manager.getAllBuffers();
+        if (buffers.empty()) {
+          logger_->warn("No buffers found in source manager for: {}", uri);
+          return std::vector<lsp::Location>{};
+        }
 
-  // Get source manager and convert position to location
-  const auto& source_manager = session->GetSourceManager();
-  auto buffers = source_manager.getAllBuffers();
-  if (buffers.empty()) {
-    logger_->error("No buffers found in source manager for: {}", uri);
-    co_return std::vector<lsp::Location>{};
-  }
+        // Find the buffer that matches the requested URI
+        auto target_path = CanonicalPath::FromUri(uri);
+        slang::BufferID target_buffer;
+        bool found_buffer = false;
 
-  // Find the buffer that matches the requested URI
-  // Convert URI to path for comparison with buffer paths
-  auto target_path = CanonicalPath::FromUri(uri);
-  slang::BufferID target_buffer;
-  bool found_buffer = false;
+        for (const auto& buffer_id : buffers) {
+          auto buffer_path = source_manager.getFullPath(buffer_id);
+          if (buffer_path == target_path.String()) {
+            target_buffer = buffer_id;
+            found_buffer = true;
+            break;
+          }
+        }
 
-  for (const auto& buffer_id : buffers) {
-    auto buffer_path = source_manager.getFullPath(buffer_id);
-    if (buffer_path == target_path.String()) {
-      target_buffer = buffer_id;
-      found_buffer = true;
-      break;
-    }
-  }
+        if (!found_buffer) {
+          logger_->warn(
+              "No buffer found matching URI: {} (path: {}), using fallback",
+              uri, target_path.String());
+          // Fallback to first buffer (old behavior)
+          target_buffer = buffers[0];
+        }
 
-  if (!found_buffer) {
-    logger_->error(
-        "No buffer found matching URI: {} (path: {})", uri,
-        target_path.String());
-    // Fallback to first buffer (old behavior)
-    target_buffer = buffers[0];
-  }
+        auto location = ConvertLspPositionToSlangLocation(
+            position, target_buffer, source_manager);
 
-  auto location = ConvertLspPositionToSlangLocation(
-      position, target_buffer, source_manager);
+        // Look up definition using semantic index
+        auto def_loc_opt =
+            session.GetSemanticIndex().LookupDefinitionAt(location);
+        if (!def_loc_opt) {
+          logger_->debug(
+              "No definition found at position {}:{} in {}", position.line,
+              position.character, uri);
+          return std::vector<lsp::Location>{};
+        }
 
-  // Look up definition using semantic index
-  auto def_loc_opt = session->GetSemanticIndex().LookupDefinitionAt(location);
-  if (!def_loc_opt) {
+        // Convert to LSP location based on definition type
+        lsp::Location lsp_location;
+        if (def_loc_opt->cross_file_path.has_value()) {
+          // Cross-file definition - use pre-converted path and range
+          lsp_location.uri = def_loc_opt->cross_file_path->ToUri();
+          lsp_location.range = *def_loc_opt->cross_file_range;
+        } else {
+          // Same-file definition - convert using current source manager
+          lsp_location = ConvertSlangLocationToLspLocation(
+              def_loc_opt->same_file_range->start(), source_manager);
+          lsp_location.range = ConvertSlangRangeToLspRange(
+              *def_loc_opt->same_file_range, source_manager);
+        }
+
+        return std::vector<lsp::Location>{lsp_location};
+      });
+
+  if (!result) {
     logger_->debug(
-        "No definition found at position {}:{} in {}", position.line,
-        position.character, uri);
-    co_return std::vector<lsp::Location>{};
+        "GetDefinitionsForPosition: Session not found for {} ({}), returning "
+        "error",
+        uri, result.error());
+    co_return LspError::UnexpectedFromCode(
+        lsp::error::LspErrorCode::kInternalError, result.error());
   }
 
-  // Convert to LSP location based on definition type
-  lsp::Location lsp_location;
-  if (def_loc_opt->cross_file_path.has_value()) {
-    // Cross-file definition - use pre-converted path and range
-    lsp_location.uri = def_loc_opt->cross_file_path->ToUri();
-    lsp_location.range = *def_loc_opt->cross_file_range;
-  } else {
-    // Same-file definition - convert using current source manager
-    lsp_location = ConvertSlangLocationToLspLocation(
-        def_loc_opt->same_file_range->start(), source_manager);
-    lsp_location.range = ConvertSlangRangeToLspRange(
-        *def_loc_opt->same_file_range, source_manager);
-  }
-
-  logger_->debug(
-      "Found definition at {}:{}-{}:{} in {}", lsp_location.range.start.line,
-      lsp_location.range.start.character, lsp_location.range.end.line,
-      lsp_location.range.end.character, lsp_location.uri);
-
-  co_return std::vector<lsp::Location>{lsp_location};
+  co_return *result;
 }
 
 auto LanguageService::GetDocumentSymbols(std::string uri) -> asio::awaitable<
@@ -264,17 +243,21 @@ auto LanguageService::GetDocumentSymbols(std::string uri) -> asio::awaitable<
         lsp::error::LspErrorCode::kInternalError, "Workspace not initialized");
   }
 
-  // Use recovery helper to handle evicted sessions gracefully
-  auto session = co_await GetOrRebuildSession(uri);
-  if (!session) {
-    logger_->info(
-        "No session for {} (likely cancelled/modified), returning error", uri);
-    // Use kInternalError with descriptive message (ContentModified not in enum)
+  // Use callback pattern to access session without shared_ptr escape
+  auto result = co_await session_manager_->WithSession(
+      uri, [uri](const OverlaySession& session) {
+        return session.GetSemanticIndex().GetDocumentSymbols(uri);
+      });
+
+  if (!result) {
+    logger_->debug(
+        "GetDocumentSymbols: Session not found for {} ({}), returning error",
+        uri, result.error());
     co_return LspError::UnexpectedFromCode(
-        lsp::error::LspErrorCode::kInternalError, "Document was modified");
+        lsp::error::LspErrorCode::kInternalError, result.error());
   }
 
-  co_return session->GetSemanticIndex().GetDocumentSymbols(uri);
+  co_return *result;
 }
 
 auto LanguageService::HandleConfigChange() -> asio::awaitable<void> {
@@ -315,7 +298,7 @@ auto LanguageService::HandleConfigChange() -> asio::awaitable<void> {
     }
   }
 
-  logger_->debug("LanguageService completed config change rebuild");
+  logger_->info("LanguageService completed config change rebuild");
 }
 
 auto LanguageService::HandleSourceFileChange(
@@ -399,8 +382,6 @@ auto LanguageService::OnDocumentClosed(std::string uri) -> void {
     logger_->error("LanguageService: SessionManager not initialized");
     return;
   }
-
-  logger_->debug("LanguageService::OnDocumentClosed: {}", uri);
 
   // Cancel pending compilation to prevent unbounded memory accumulation
   // (preview mode spam defense - see docs/SESSION_MANAGEMENT.md)
