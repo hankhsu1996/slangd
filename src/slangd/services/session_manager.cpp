@@ -1,5 +1,7 @@
 #include "slangd/services/session_manager.hpp"
 
+#include <ranges>
+
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/post.hpp>
@@ -396,14 +398,35 @@ auto SessionManager::EvictOldestIfNeeded() -> void {
       break;
     }
 
-    // Evict least recently used (last in vector)
-    const auto& oldest_uri = access_order_.back();
-    logger_->debug(
-        "SessionManager LRU eviction: {} ({}/{} entries)", oldest_uri,
-        active_sessions_.size(), kMaxCacheSize);
+    // Smart eviction: Prioritize closed files over open files
+    // Scan access_order_ from back (oldest first) to find closed file
+    std::string uri_to_evict;
+    bool found_closed = false;
 
-    active_sessions_.erase(oldest_uri);
-    access_order_.pop_back();
+    // Phase 1: Try to find a closed file to evict (scan LRU order)
+    for (const auto& uri : access_order_ | std::views::reverse) {
+      if (!open_tracker_->Contains(uri)) {
+        uri_to_evict = uri;
+        found_closed = true;
+        logger_->debug(
+            "SessionManager evicting closed file: {} ({}/{} entries)",
+            uri_to_evict, active_sessions_.size(), kMaxCacheSize);
+        break;
+      }
+    }
+
+    // Phase 2: No closed files found, evict oldest open file (forced eviction)
+    if (!found_closed) {
+      uri_to_evict = access_order_.back();
+      logger_->debug(
+          "SessionManager evicting open file (no closed files available): {} "
+          "({}/{} entries)",
+          uri_to_evict, active_sessions_.size(), kMaxCacheSize);
+    }
+
+    // Remove from cache and LRU tracking
+    active_sessions_.erase(uri_to_evict);
+    std::erase(access_order_, uri_to_evict);
   }
 }
 
