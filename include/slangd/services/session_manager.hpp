@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -87,7 +88,8 @@ class SessionManager {
     utils::BroadcastEvent compilation_ready;
     // Phase 2: Indexing complete (symbols/definitions can proceed)
     utils::BroadcastEvent session_ready;
-    int version;  // LSP document version
+    int version;                         // LSP document version
+    std::atomic<bool> cancelled{false};  // Lock-free cancellation flag
 
     explicit PendingCreation(asio::any_io_executor executor, int doc_version);
   };

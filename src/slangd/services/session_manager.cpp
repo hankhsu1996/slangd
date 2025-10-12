@@ -69,6 +69,7 @@ auto SessionManager::UpdateSession(
           "SessionManager: Cancelling pending session for {} (old version {}, "
           "new version {})",
           uri, it->second->version, version);
+      it->second->cancelled.store(true, std::memory_order_release);
       pending_sessions_.erase(it);
     }
   }
@@ -86,6 +87,10 @@ auto SessionManager::InvalidateSessions(std::vector<std::string> uris) -> void {
         co_await asio::post(session_strand_, asio::use_awaitable);
 
         for (const auto& uri : uris) {
+          if (auto it = pending_sessions_.find(uri);
+              it != pending_sessions_.end()) {
+            it->second->cancelled.store(true, std::memory_order_release);
+          }
           active_sessions_.erase(uri);
           std::erase(access_order_, uri);
           pending_sessions_.erase(uri);
@@ -106,6 +111,10 @@ auto SessionManager::InvalidateAllSessions() -> void {
             "SessionManager::InvalidateAllSessions ({} active, {} pending)",
             active_sessions_.size(), pending_sessions_.size());
 
+        for (auto& [uri, pending] : pending_sessions_) {
+          pending->cancelled.store(true, std::memory_order_release);
+        }
+
         active_sessions_.clear();
         access_order_.clear();
         pending_sessions_.clear();
@@ -122,6 +131,7 @@ auto SessionManager::CancelPendingSession(std::string uri) -> void {
 
         if (auto it = pending_sessions_.find(uri);
             it != pending_sessions_.end()) {
+          it->second->cancelled.store(true, std::memory_order_release);
           pending_sessions_.erase(it);
           logger_->debug(
               "Cancelled pending session for: {} (active={}, pending={})", uri,
@@ -256,9 +266,23 @@ auto SessionManager::StartSessionCreation(
               utils::ScopedTimer timer(
                   "SessionManager session creation", logger_);
 
+              // Check cancellation flag (lock-free, stays on pool thread)
+              if (pending->cancelled.load(std::memory_order_acquire)) {
+                logger_->debug(
+                    "Session creation cancelled before compilation: {}", uri);
+                co_return std::nullopt;
+              }
+
               auto [source_manager, compilation, main_buffer_id] =
                   OverlaySession::BuildCompilation(
                       uri, content, layout_service_, catalog_, logger_);
+
+              // Check again after expensive BuildCompilation
+              if (pending->cancelled.load(std::memory_order_acquire)) {
+                logger_->debug(
+                    "Session creation cancelled after compilation: {}", uri);
+                co_return std::nullopt;
+              }
 
               auto semantic_index = semantic::SemanticIndex::FromCompilation(
                   *compilation, *source_manager, uri, catalog_.get(), logger_);
