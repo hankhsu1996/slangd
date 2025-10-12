@@ -143,6 +143,31 @@ auto SessionManager::InvalidateAllSessions() -> void {
       asio::detached);
 }
 
+auto SessionManager::CancelPendingSession(std::string uri) -> void {
+  asio::co_spawn(
+      executor_,
+      [this, uri]() -> asio::awaitable<void> {
+        co_await asio::post(session_strand_, asio::use_awaitable);
+
+        // Check if pending session exists
+        if (auto it = pending_sessions_.find(uri);
+            it != pending_sessions_.end()) {
+          // Close both channels to signal cancellation to background thread
+          it->second->compilation_ready->close();
+          it->second->session_ready->close();
+          pending_sessions_.erase(it);
+
+          logger_->debug("Cancelled pending session for: {}", uri);
+          logger_->debug(
+              "SessionManager state - active: {}, pending: {}",
+              active_sessions_.size(), pending_sessions_.size());
+        }
+
+        co_return;
+      },
+      asio::detached);
+}
+
 auto SessionManager::UpdateCatalog(std::shared_ptr<const GlobalCatalog> catalog)
     -> void {
   asio::co_spawn(
@@ -312,9 +337,10 @@ auto SessionManager::StartSessionCreation(
               pending->compilation_ready->try_send(ec, compilation_state);
               pending->compilation_ready->close();
 
-              // Phase 2: Create session
-              // Diagnostics are extracted on-demand via
-              // ComputeDiagnostics() from compilation.diagMap
+              // Phase 2: Create session (lightweight - just wraps existing
+              // objects) Note: No early abort check needed here -
+              // CreateFromParts is trivial
+              // (~1 allocation). Real win is cancelling before FromCompilation.
               auto session = OverlaySession::CreateFromParts(
                   source_manager, compilation_shared, std::move(semantic_index),
                   main_buffer_id, logger_);

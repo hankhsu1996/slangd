@@ -58,6 +58,10 @@ class SessionManager {
 
   auto InvalidateAllSessions() -> void;  // For catalog version change
 
+  // Cancel pending session compilation (called when document is closed)
+  // Closes channels to signal background thread cancellation
+  auto CancelPendingSession(std::string uri) -> void;
+
   // Updates the catalog pointer used for all future session creations
   // Must be called when GlobalCatalog is rebuilt (e.g., config changes)
   auto UpdateCatalog(std::shared_ptr<const GlobalCatalog> catalog) -> void;

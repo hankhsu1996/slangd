@@ -374,6 +374,10 @@ auto LanguageService::OnDocumentClosed(std::string uri) -> void {
 
   logger_->debug("LanguageService::OnDocumentClosed: {}", uri);
 
+  // Cancel pending compilation to prevent unbounded memory accumulation
+  // (preview mode spam defense - see docs/SESSION_MANAGEMENT.md)
+  session_manager_->CancelPendingSession(uri);
+
   // Remove document state asynchronously
   asio::co_spawn(
       executor_,
@@ -382,7 +386,7 @@ auto LanguageService::OnDocumentClosed(std::string uri) -> void {
       },
       asio::detached);
 
-  // Lazy removal: Keep session in cache for close/reopen optimization
+  // Keep completed sessions in cache for close/reopen optimization
   // LRU eviction will handle cleanup when cache size limit is reached
 }
 
