@@ -76,7 +76,7 @@ File Save → Full Diagnostics (parse + semantic) → Publish
 - `ExtractParseDiagnostics()`: Parse/syntax errors from syntax trees
 - `ExtractCollectedDiagnostics()`: Semantic errors from diagMap (already populated)
 
-**Two-phase channels**: `SessionManager` signals `compilation_ready` after elaboration (Phase 1) and `session_ready` after indexing (Phase 2). Diagnostics wait on Phase 1 only (faster).
+**Two-phase broadcast events**: `SessionManager` signals `compilation_ready` after elaboration (Phase 1) and `session_ready` after indexing (Phase 2). Diagnostics wait on Phase 1 only (faster).
 
 **Why this works**: `forceElaborate()` caches symbol resolutions that `visit()` reuses for indexing. No duplicate work, and diagnostics get faster response by not waiting for full indexing.
 
@@ -212,7 +212,9 @@ SlangdLspServer (protocol layer - thin delegates)
       └─ OnDefinition(uri, pos) → LanguageService.GetDefinitionsForPosition(uri, pos)
 
 LanguageService (domain layer - state management + feature implementations)
+  ├─ OpenDocumentTracker open_tracker_  ← Tracks which documents are open (shared)
   ├─ DocumentStateManager doc_state_  ← Document state (content + version)
+  ├─ SessionManager session_manager_  ← Compilation cache + lifecycle
   │
   ├─ Document Lifecycle
   │   ├─ OnDocumentOpened → doc_state_.Update() + SessionManager.UpdateSession()
@@ -227,16 +229,24 @@ LanguageService (domain layer - state management + feature implementations)
       ├─ GetDocumentSymbols(uri) → Document symbol tree
       └─ GetDefinitionsForPosition(uri, pos) → Go-to-definition locations
 
+OpenDocumentTracker (shared state)
+  └─ open_documents_: set<uri>  ← Which documents are currently open
+
 DocumentStateManager (synchronized storage)
+  ├─ open_tracker_: shared reference  ← Updates on open/close
   ├─ documents_: map<uri, DocumentState{content, version}>  ← Domain state
   └─ strand_: asio::strand  ← Thread-safe access
 
 SessionManager (compilation cache)
+  ├─ open_tracker_: shared reference  ← Queries for eviction decisions
   ├─ session_strand_: asio::strand  ← Thread-safe access to maps
   ├─ active_sessions_: map<uri, CacheEntry{session, version}>  ← Version-aware cache
   ├─ pending_sessions_: map<uri, PendingCreation>  ← Being created
   ├─ access_order_: vector<uri>  ← LRU tracking (MRU first)
   └─ Cache key: URI + LSP document version (not content hash)
+
+For detailed session management design including memory bounds, eviction policy, and
+VSCode behavioral patterns, see SESSION_MANAGEMENT.md.
 ```
 
 **Key LSP Patterns:**
@@ -281,26 +291,29 @@ SessionManager (compilation cache)
 
 **Problem**: Diagnostics need compilation (~126ms) but go-to-def/symbols need indexing (+455ms). Waiting for full session delays diagnostic feedback.
 
-**Solution**: SessionManager uses two-phase channels to signal completion at different stages.
+**Solution**: SessionManager uses two-phase broadcast events to signal completion at different stages.
 
 ```cpp
 struct PendingCreation {
-  channel<CompilationState> compilation_ready;  // Phase 1: After elaboration
-  channel<OverlaySession> session_ready;        // Phase 2: After indexing
+  BroadcastEvent compilation_ready;  // Phase 1: After elaboration
+  BroadcastEvent session_ready;      // Phase 2: After indexing
 };
 
 // Diagnostics: Wait for compilation only (fast)
-auto state = co_await pending->compilation_ready.receive();  // ~126ms
+co_await pending->compilation_ready.AsyncWait(asio::use_awaitable);
+auto state = GetCompilationState(uri);  // Check cache: ~126ms total
 
 // Symbols/definitions: Wait for full session (slower)
-auto session = co_await pending->session_ready.receive();    // ~581ms
+co_await pending->session_ready.AsyncWait(asio::use_awaitable);
+auto session = GetSession(uri);  // Check cache: ~581ms total
 ```
 
 **Key benefits**:
 
 - **Fast diagnostics**: 126ms vs 581ms (4.6x faster)
-- **No duplicate work**: Multiple requests wait on same channels
-- **Event-driven coordination**: Async channels avoid polling
+- **No duplicate work**: Multiple requests wait on same broadcast event
+- **Event-driven coordination**: Broadcast events avoid polling
+- **No convoy effect**: Cache-first pattern eliminates strand bottleneck
 
 ## Extension Patterns
 
