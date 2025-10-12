@@ -144,6 +144,32 @@ auto LanguageService::ComputeDiagnostics(std::string uri)
   co_return parse_diags;
 }
 
+auto LanguageService::GetOrRebuildSession(std::string uri)
+    -> asio::awaitable<std::shared_ptr<const OverlaySession>> {
+  // Try getting existing session (fast path - cache hit)
+  auto session = co_await session_manager_->GetSession(uri);
+  if (session) {
+    co_return session;
+  }
+
+  // Session evicted or not yet created - check if document still open
+  auto doc_state = co_await doc_state_.Get(uri);
+  if (!doc_state) {
+    // Document closed, can't rebuild
+    logger_->debug(
+        "GetOrRebuildSession: Document {} closed, cannot rebuild session", uri);
+    co_return nullptr;
+  }
+
+  // Rebuild session (blocks and waits for compilation)
+  logger_->debug("Rebuilding evicted session: {}", uri);
+  co_await session_manager_->UpdateSession(
+      uri, doc_state->content, doc_state->version);
+
+  // Retry get (should hit cache now)
+  co_return co_await session_manager_->GetSession(uri);
+}
+
 auto LanguageService::GetDefinitionsForPosition(
     std::string uri, lsp::Position position)
     -> asio::awaitable<std::expected<std::vector<lsp::Location>, LspError>> {
@@ -155,7 +181,8 @@ auto LanguageService::GetDefinitionsForPosition(
         lsp::error::LspErrorCode::kInternalError, "Workspace not initialized");
   }
 
-  auto session = co_await session_manager_->GetSession(uri);
+  // Use recovery helper to handle evicted sessions gracefully
+  auto session = co_await GetOrRebuildSession(uri);
   if (!session) {
     logger_->info("No session for {} (likely cancelled), returning error", uri);
     co_return LspError::UnexpectedFromCode(
@@ -237,7 +264,8 @@ auto LanguageService::GetDocumentSymbols(std::string uri) -> asio::awaitable<
         lsp::error::LspErrorCode::kInternalError, "Workspace not initialized");
   }
 
-  auto session = co_await session_manager_->GetSession(uri);
+  // Use recovery helper to handle evicted sessions gracefully
+  auto session = co_await GetOrRebuildSession(uri);
   if (!session) {
     logger_->info(
         "No session for {} (likely cancelled/modified), returning error", uri);
