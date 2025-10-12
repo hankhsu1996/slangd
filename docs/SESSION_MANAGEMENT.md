@@ -46,7 +46,7 @@ LanguageService creates and owns OpenDocumentTracker
 
 1. **Pending** (`pending_sessions_`): Compilation in progress on background thread
 2. **Active** (`active_sessions_`): Compilation complete, cached for reuse (LRU eviction)
-3. **Evicted**: Removed from cache, next request triggers recompilation
+3. **Evicted**: Removed from cache, feature requests fail gracefully (client can retry)
 
 ## VSCode Behavioral Patterns (Critical Design Context)
 
@@ -142,45 +142,65 @@ Understanding these patterns is essential to the design decisions below.
 
 **Design principle**: Prefer composition with single source of truth over cross-component queries.
 
+### Decision 4: No Rebuild on Eviction
+
+**Policy**: LSP feature requests fail gracefully if session not found (evicted or not yet created).
+
+**Rationale**:
+- Eviction means session wasn't important enough to keep in bounded cache
+- Client will retry if user needs it (e.g., reopening file, navigating back)
+- Simpler code - no rebuild-and-retry logic in feature layer
+- Respects SessionManager lifecycle decisions - features are read-only consumers
+
+**Alternative considered**: Auto-rebuild on first access after eviction
+
+**Why rejected**:
+- Violates separation of concerns (features shouldn't trigger lifecycle operations)
+- Blocks feature requests on 2-second recompilation (poor UX)
+- Undermines eviction decisions made by SessionManager
+
 ## Request Patterns
 
-### GetOrRebuildSession (Session Recovery After Eviction)
+### WithSession - Dependency Inversion for Feature Extraction
 
-**Problem**: When user switches to evicted file, how do we handle feature requests?
+**Problem**: How do LSP features access sessions without holding shared_ptr (causing memory leaks)?
 
-**Solution**: LanguageService helper that blocks and waits for recompilation:
+**Solution**: Dependency inversion - SessionManager executes feature code WITH the session, rather than giving session TO feature code.
 
+**API** (template methods, only way to access sessions):
 ```
-LanguageService::GetOrRebuildSession(uri):
-  session = await SessionManager::GetSession(uri)
-
-  if session is null:
-    doc_state = await DocumentStateManager::Get(uri)
-    if doc_state exists:
-      // Document still open, rebuild session
-      await SessionManager::UpdateSession(uri, doc_state.content, doc_state.version)
-      session = await SessionManager::GetSession(uri)
-    else:
-      // Document closed, return null
-      return null
-
-  return session
+WithSession(uri, callback) -> expected<Result, error>
+WithCompilationState(uri, callback) -> expected<Result, error>
 ```
 
-**Every feature handler uses this pattern**:
-
+**Pattern**:
 ```
-OnDefinition(uri, position):
-  session = await GetOrRebuildSession(uri)
-  if session is null:
-    return empty result
+WithSession(uri, callback):
+  acquire strand
+  find session in cache (or wait for pending creation)
+  execute callback(session) synchronously on strand
+  release strand
+  return result or error
 
-  return session.FindDefinition(position)
+Feature example:
+  result = WithSession(uri, [](session) { return session.GetDocumentSymbols() })
+  if (!result) return error_to_client
+  return *result
 ```
 
-**User experience**: Switch to evicted file → first request waits for recompilation → subsequent requests instant.
+**Why this works**:
 
-**Design principle**: Block and wait rather than "fail now, succeed later" for consistent UX.
+- **No shared_ptr escape**: Callback gets const reference, not ownership
+- **Strand as lock**: While callback runs on strand, eviction cannot proceed
+- **Separation preserved**: SessionManager controls lifecycle, LanguageService implements features
+- **Simple**: No manual refcounting, no in_use_count tracking
+- **Graceful failure**: Returns error if session not found (evicted/cancelled) - no rebuild
+
+**Memory bound**: Strand serializes all operations (create/evict/extract). Only one extraction at a time, so at most:
+
+- 8 cached sessions
+- 4 building in pool
+- **12 sessions max (4.2GB)**
 
 ### Multi-Waiter Coordination (Broadcast Events)
 
@@ -191,14 +211,14 @@ OnDefinition(uri, position):
 **Pattern**:
 
 ```
-Request 1: GetSession(uri) → Not in cache → Wait on pending->session_ready
-Request 2: GetSession(uri) → Not in cache → Wait on same pending->session_ready
-Request 3: GetSession(uri) → Not in cache → Wait on same pending->session_ready
+Request 1: WithSession(uri, callback) → Not in cache → Wait on pending->session_ready
+Request 2: WithSession(uri, callback) → Not in cache → Wait on same pending->session_ready
+Request 3: WithSession(uri, callback) → Not in cache → Wait on same pending->session_ready
 
 Compilation completes:
   1. Store session in active_sessions_ cache
   2. Broadcast event.Set() (wakes ALL waiters simultaneously)
-  3. All waiters check active_sessions_ cache (now populated)
+  3. All waiters re-acquire strand, check cache, execute callbacks
 ```
 
 **Key insight**: Broadcast events provide pure notification (no data transfer). Store in cache first, then broadcast.

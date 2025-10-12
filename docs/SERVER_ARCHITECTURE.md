@@ -90,18 +90,12 @@ File Save → Full Diagnostics (parse + semantic) → Publish
 
 ### Background Thread Pool Pattern
 
-```cpp
+```
 // Dispatch expensive work to background threads
-auto result = co_await asio::co_spawn(
-    thread_pool_->get_executor(),
-    [data]() -> asio::awaitable<Result> {
-        // Heavy computation runs here (SystemVerilog compilation)
-        co_return DoExpensiveWork(data);
-    },
-    asio::use_awaitable);
+result = co_await spawn_on_pool(heavy_computation)
 
 // Post result back to main thread for cache/protocol handling
-co_await asio::post(main_executor_, asio::use_awaitable);
+co_await post_to_main_thread()
 ```
 
 ### Why This Pattern Works
@@ -149,10 +143,10 @@ SlangdLspServer (LSP protocol layer)
 
 - **SlangdLspServer**: LSP protocol, delegates to LanguageService
 - **LanguageService**: Public API, feature implementations, owns SessionManager
-- **SessionManager**: Session lifecycle (create/cache/invalidate), returns OverlaySession
+- **SessionManager**: Session lifecycle (create/cache/invalidate), provides access via WithSession callbacks
 - **OverlaySession**: Data class (Compilation + SemanticIndex + SourceManager)
 
-**Architecture**: SessionManager centralizes all session lifecycle (create/cache/invalidate). LanguageService features are read-only consumers.
+**Architecture**: SessionManager centralizes all session lifecycle (create/cache/invalidate). LanguageService features are read-only consumers using callback pattern (no shared_ptr escape).
 
 ### Compilation Architecture
 
@@ -293,25 +287,23 @@ VSCode behavioral patterns, see SESSION_MANAGEMENT.md.
 
 **Solution**: SessionManager uses two-phase broadcast events to signal completion at different stages.
 
-```cpp
-struct PendingCreation {
-  BroadcastEvent compilation_ready;  // Phase 1: After elaboration
-  BroadcastEvent session_ready;      // Phase 2: After indexing
-};
+**Phases**:
+- **Phase 1 (compilation_ready)**: Elaboration complete → diagnostics available (~126ms)
+- **Phase 2 (session_ready)**: Indexing complete → symbols/definitions available (~581ms)
 
-// Diagnostics: Wait for compilation only (fast)
-co_await pending->compilation_ready.AsyncWait(asio::use_awaitable);
-auto state = GetCompilationState(uri);  // Check cache: ~126ms total
+**Pattern**:
+```
+// Diagnostics: Wait for Phase 1 only (fast)
+WithCompilationState(uri, callback) → waits for compilation_ready → executes
 
-// Symbols/definitions: Wait for full session (slower)
-co_await pending->session_ready.AsyncWait(asio::use_awaitable);
-auto session = GetSession(uri);  // Check cache: ~581ms total
+// Symbols/definitions: Wait for Phase 2 (slower)
+WithSession(uri, callback) → waits for session_ready → executes
 ```
 
 **Key benefits**:
 
 - **Fast diagnostics**: 126ms vs 581ms (4.6x faster)
-- **No duplicate work**: Multiple requests wait on same broadcast event
+- **No duplicate work**: Multiple requests wait on same broadcast event, share cached result
 - **Event-driven coordination**: Broadcast events avoid polling
 - **No convoy effect**: Cache-first pattern eliminates strand bottleneck
 
