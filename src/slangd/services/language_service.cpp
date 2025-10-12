@@ -19,7 +19,8 @@ LanguageService::LanguageService(
     : global_catalog_(nullptr),
       logger_(logger ? logger : spdlog::default_logger()),
       executor_(executor),
-      doc_state_(executor),
+      open_tracker_(std::make_shared<OpenDocumentTracker>()),
+      doc_state_(executor, open_tracker_),
       compilation_pool_(std::make_unique<asio::thread_pool>(kThreadPoolSize)) {
   logger_->debug(
       "LanguageService created with {} compilation threads", kThreadPoolSize);
@@ -47,7 +48,7 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
   }
 
   session_manager_ = std::make_unique<SessionManager>(
-      executor_, layout_service_, global_catalog_, logger_);
+      executor_, layout_service_, global_catalog_, open_tracker_, logger_);
 
   auto elapsed = timer.GetElapsed();
   logger_->info(

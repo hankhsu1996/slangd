@@ -12,6 +12,7 @@
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/services/document_state_manager.hpp"
 #include "slangd/services/global_catalog.hpp"
+#include "slangd/services/open_document_tracker.hpp"
 #include "slangd/services/session_manager.hpp"
 
 namespace slangd::services {
@@ -74,6 +75,9 @@ class LanguageService : public LanguageServiceBase {
   std::shared_ptr<const GlobalCatalog> global_catalog_;
   std::shared_ptr<spdlog::logger> logger_;
   asio::any_io_executor executor_;
+
+  // Open document tracking (shared by doc_state_ and session_manager_)
+  std::shared_ptr<OpenDocumentTracker> open_tracker_;
 
   // Document state management
   DocumentStateManager doc_state_;

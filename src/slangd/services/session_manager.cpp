@@ -22,10 +22,12 @@ SessionManager::SessionManager(
     asio::any_io_executor executor,
     std::shared_ptr<ProjectLayoutService> layout_service,
     std::shared_ptr<const GlobalCatalog> catalog,
+    std::shared_ptr<OpenDocumentTracker> open_tracker,
     std::shared_ptr<spdlog::logger> logger)
     : executor_(executor),
       layout_service_(std::move(layout_service)),
       catalog_(std::move(catalog)),
+      open_tracker_(std::move(open_tracker)),
       logger_(std::move(logger)),
       session_strand_(asio::make_strand(executor)),
       compilation_pool_(std::make_unique<asio::thread_pool>(4)) {

@@ -16,6 +16,7 @@
 
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/services/global_catalog.hpp"
+#include "slangd/services/open_document_tracker.hpp"
 #include "slangd/services/overlay_session.hpp"
 
 namespace slangd::services {
@@ -38,6 +39,7 @@ class SessionManager {
       asio::any_io_executor executor,
       std::shared_ptr<ProjectLayoutService> layout_service,
       std::shared_ptr<const GlobalCatalog> catalog,
+      std::shared_ptr<OpenDocumentTracker> open_tracker,
       std::shared_ptr<spdlog::logger> logger);
 
   ~SessionManager();
@@ -105,6 +107,7 @@ class SessionManager {
   asio::any_io_executor executor_;
   std::shared_ptr<ProjectLayoutService> layout_service_;
   std::shared_ptr<const GlobalCatalog> catalog_;
+  std::shared_ptr<OpenDocumentTracker> open_tracker_;
   std::shared_ptr<spdlog::logger> logger_;
 
   // Strand for thread-safe session map access
