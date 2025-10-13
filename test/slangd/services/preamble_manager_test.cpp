@@ -7,6 +7,7 @@
 
 #include <asio.hpp>
 #include <catch2/catch_all.hpp>
+#include <slang/ast/symbols/CompilationUnitSymbols.h>
 #include <spdlog/spdlog.h>
 
 #include "slangd/core/project_layout_service.hpp"
@@ -329,6 +330,182 @@ TEST_CASE("PreambleManager GetModule lookup", "[preamble_manager]") {
 
     const auto* nonexistent = preamble_manager->GetModule("NonExistent");
     REQUIRE(nonexistent == nullptr);
+
+    co_return;
+  });
+}
+
+TEST_CASE("PreambleManager package symbol storage", "[preamble_manager]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    PreambleManagerTestFixture fixture;
+    fixture.CreateFile("config_pkg.sv", R"(
+      package config_pkg;
+        parameter WIDTH = 32;
+        parameter DEPTH = 16;
+        typedef logic [WIDTH-1:0] word_t;
+      endpackage
+    )");
+
+    auto preamble_manager = fixture.BuildPreambleManager(executor);
+
+    // Test GetPackage() API
+    const auto* pkg = preamble_manager->GetPackage("config_pkg");
+    REQUIRE(pkg != nullptr);
+    REQUIRE(pkg->name == "config_pkg");
+
+    // Test nonexistent package
+    const auto* nonexistent = preamble_manager->GetPackage("nonexistent");
+    REQUIRE(nonexistent == nullptr);
+
+    co_return;
+  });
+}
+
+TEST_CASE("PreambleManager symbol info table", "[preamble_manager]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    PreambleManagerTestFixture fixture;
+    fixture.CreateFile("types_pkg.sv", R"(
+      package types_pkg;
+        parameter BUS_WIDTH = 64;
+        typedef logic [7:0] byte_t;
+        typedef logic [31:0] word_t;
+      endpackage
+    )");
+
+    auto preamble_manager = fixture.BuildPreambleManager(executor);
+
+    // Get the package symbol
+    const auto* pkg = preamble_manager->GetPackage("types_pkg");
+    REQUIRE(pkg != nullptr);
+
+    // Verify package itself is indexed
+    REQUIRE(
+        preamble_manager->IsPreambleSymbol(
+            static_cast<const slang::ast::Symbol*>(pkg)) == true);
+
+    // Get symbol info for the package
+    auto pkg_info = preamble_manager->GetSymbolInfo(
+        static_cast<const slang::ast::Symbol*>(pkg));
+    REQUIRE(pkg_info.has_value());
+    REQUIRE(!pkg_info->file_uri.empty());
+    REQUIRE(pkg_info->file_uri.find("types_pkg.sv") != std::string::npos);
+
+    // Verify definition range is valid
+    REQUIRE(pkg_info->definition_range.start.line >= 0);
+    REQUIRE(pkg_info->definition_range.start.character >= 0);
+
+    co_return;
+  });
+}
+
+TEST_CASE("PreambleManager IsPreambleSymbol check", "[preamble_manager]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    PreambleManagerTestFixture fixture;
+    fixture.CreateFile("math_pkg.sv", R"(
+      package math_pkg;
+        parameter MAX_VALUE = 100;
+      endpackage
+    )");
+
+    auto preamble_manager = fixture.BuildPreambleManager(executor);
+
+    const auto* pkg = preamble_manager->GetPackage("math_pkg");
+    REQUIRE(pkg != nullptr);
+
+    // Test that package symbol is recognized as preamble symbol
+    REQUIRE(
+        preamble_manager->IsPreambleSymbol(
+            static_cast<const slang::ast::Symbol*>(pkg)) == true);
+
+    // Test with nullptr (should return false, not crash)
+    REQUIRE(preamble_manager->IsPreambleSymbol(nullptr) == false);
+
+    co_return;
+  });
+}
+
+TEST_CASE("PreambleManager GetSymbolInfo lookup", "[preamble_manager]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    PreambleManagerTestFixture fixture;
+    fixture.CreateFile("protocol_pkg.sv", R"(
+      package protocol_pkg;
+        parameter TIMEOUT = 1000;
+        typedef enum {IDLE, ACTIVE, DONE} state_t;
+      endpackage
+    )");
+
+    auto preamble_manager = fixture.BuildPreambleManager(executor);
+
+    const auto* pkg = preamble_manager->GetPackage("protocol_pkg");
+    REQUIRE(pkg != nullptr);
+
+    // Get symbol info
+    auto info = preamble_manager->GetSymbolInfo(
+        static_cast<const slang::ast::Symbol*>(pkg));
+    REQUIRE(info.has_value());
+
+    // Verify file URI format
+    REQUIRE(info->file_uri.find("file://") == 0);
+    REQUIRE(info->file_uri.find("protocol_pkg.sv") != std::string::npos);
+
+    // Verify range is valid
+    REQUIRE(info->definition_range.start.line >= 0);
+    REQUIRE(info->definition_range.start.character >= 0);
+    REQUIRE(
+        info->definition_range.end.line >= info->definition_range.start.line);
+
+    // Test with nullptr (should return nullopt)
+    auto null_info = preamble_manager->GetSymbolInfo(nullptr);
+    REQUIRE(!null_info.has_value());
+
+    co_return;
+  });
+}
+
+TEST_CASE(
+    "PreambleManager symbol info for multiple packages", "[preamble_manager]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    PreambleManagerTestFixture fixture;
+    fixture.CreateFile("pkg_a.sv", R"(
+      package pkg_a;
+        parameter A_PARAM = 1;
+      endpackage
+    )");
+
+    fixture.CreateFile("pkg_b.sv", R"(
+      package pkg_b;
+        parameter B_PARAM = 2;
+      endpackage
+    )");
+
+    auto preamble_manager = fixture.BuildPreambleManager(executor);
+
+    // Verify both packages are indexed
+    const auto* pkg_a = preamble_manager->GetPackage("pkg_a");
+    const auto* pkg_b = preamble_manager->GetPackage("pkg_b");
+    REQUIRE(pkg_a != nullptr);
+    REQUIRE(pkg_b != nullptr);
+
+    // Both should be recognized as preamble symbols
+    REQUIRE(
+        preamble_manager->IsPreambleSymbol(
+            static_cast<const slang::ast::Symbol*>(pkg_a)) == true);
+    REQUIRE(
+        preamble_manager->IsPreambleSymbol(
+            static_cast<const slang::ast::Symbol*>(pkg_b)) == true);
+
+    // Both should have symbol info
+    auto info_a = preamble_manager->GetSymbolInfo(
+        static_cast<const slang::ast::Symbol*>(pkg_a));
+    auto info_b = preamble_manager->GetSymbolInfo(
+        static_cast<const slang::ast::Symbol*>(pkg_b));
+    REQUIRE(info_a.has_value());
+    REQUIRE(info_b.has_value());
+
+    // Verify they point to different files
+    REQUIRE(info_a->file_uri != info_b->file_uri);
+    REQUIRE(info_a->file_uri.find("pkg_a.sv") != std::string::npos);
+    REQUIRE(info_b->file_uri.find("pkg_b.sv") != std::string::npos);
 
     co_return;
   });

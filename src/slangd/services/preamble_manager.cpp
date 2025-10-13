@@ -1,5 +1,6 @@
 #include "slangd/services/preamble_manager.hpp"
 
+#include <slang/ast/ASTVisitor.h>
 #include <slang/ast/Compilation.h>
 #include <slang/ast/SemanticFacts.h>
 #include <slang/ast/symbols/CompilationUnitSymbols.h>
@@ -8,10 +9,83 @@
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/util/Bag.h>
 
+#include "lsp/basic.hpp"
 #include "slangd/core/project_layout_service.hpp"
+#include "slangd/semantic/definition_extractor.hpp"
+#include "slangd/utils/conversion.hpp"
 #include "slangd/utils/scoped_timer.hpp"
 
 namespace slangd::services {
+
+namespace {
+
+// Visitor for collecting all package symbols and their LSP locations
+class PreambleSymbolVisitor
+    : public slang::ast::ASTVisitor<PreambleSymbolVisitor, true, false> {
+ public:
+  PreambleSymbolVisitor(
+      std::unordered_map<const slang::ast::Symbol*, PreambleSymbolInfo>&
+          symbol_info,
+      const slang::SourceManager& source_manager,
+      std::shared_ptr<spdlog::logger> logger)
+      : symbol_info_(symbol_info),
+        source_manager_(source_manager),
+        logger_(logger ? logger : spdlog::default_logger()),
+        definition_extractor_(logger) {
+  }
+
+  void ProcessSymbol(const slang::ast::Symbol& symbol) {
+    // Skip symbols without valid location (built-ins, etc.)
+    if (!symbol.location.valid()) {
+      return;
+    }
+
+    // Convert symbol location to file URI
+    auto file_name = source_manager_.get().getFileName(symbol.location);
+    auto canonical_path = CanonicalPath(std::filesystem::path(file_name));
+    auto file_uri = canonical_path.ToUri();
+
+    // Extract precise definition range using preamble's SourceManager
+    lsp::Range definition_range{};
+    if (const auto* syntax = symbol.getSyntax()) {
+      // Use DefinitionExtractor to get precise name range from syntax
+      auto range =
+          definition_extractor_.ExtractDefinitionRange(symbol, *syntax);
+      definition_range =
+          ConvertSlangRangeToLspRange(range, source_manager_.get());
+    } else {
+      // No syntax - log error and skip
+      logger_->error(
+          "PreambleManager: Symbol '{}' (kind: {}) has location but no syntax",
+          symbol.name, slang::ast::toString(symbol.kind));
+      return;
+    }
+
+    // Store in map (symbol pointer as key)
+    symbol_info_.get()[&symbol] = PreambleSymbolInfo{
+        .file_uri = file_uri, .definition_range = definition_range};
+  }
+
+  template <typename T>
+  void handle(const T& node) {
+    // For symbols, process and store their info
+    if constexpr (std::is_base_of_v<slang::ast::Symbol, T>) {
+      ProcessSymbol(node);
+    }
+    // Always recurse to children
+    this->visitDefault(node);
+  }
+
+ private:
+  std::reference_wrapper<
+      std::unordered_map<const slang::ast::Symbol*, PreambleSymbolInfo>>
+      symbol_info_;
+  std::reference_wrapper<const slang::SourceManager> source_manager_;
+  std::shared_ptr<spdlog::logger> logger_;
+  semantic::DefinitionExtractor definition_extractor_;
+};
+
+}  // namespace
 
 auto PreambleManager::CreateFromProjectLayout(
     std::shared_ptr<ProjectLayoutService> layout_service,
@@ -123,6 +197,9 @@ auto PreambleManager::BuildFromLayout(
   packages_.clear();
   packages_.reserve(packages.size());
 
+  // Build package_map_ for cross-compilation binding
+  package_map_.clear();
+
   for (const auto* package : packages) {
     if (package == nullptr) {
       continue;
@@ -135,7 +212,23 @@ auto PreambleManager::BuildFromLayout(
     packages_.push_back(
         {.name = std::move(package_name),
          .file_path = std::move(package_file_path)});
+
+    // Store PackageSymbol* for cross-compilation binding
+    package_map_[std::string(package->name)] = package;
   }
+
+  // Build symbol_info_ by traversing ALL package symbols
+  logger_->debug("PreambleManager: Building symbol info table");
+  symbol_info_.clear();
+  PreambleSymbolVisitor visitor(symbol_info_, *source_manager_, logger_);
+  for (const auto* pkg : packages) {
+    if (pkg != nullptr) {
+      pkg->visit(visitor);  // Visitor automatically recurses
+    }
+  }
+
+  logger_->debug(
+      "PreambleManager: Indexed {} package symbols", symbol_info_.size());
 
   // Extract interface metadata using safe Slang API
   auto definitions = preamble_compilation_->getDefinitions();
@@ -308,6 +401,29 @@ auto PreambleManager::GetSourceManager() const -> const slang::SourceManager& {
 
 auto PreambleManager::GetVersion() const -> uint64_t {
   return version_;
+}
+
+auto PreambleManager::GetPackage(std::string_view name) const
+    -> const slang::ast::PackageSymbol* {
+  auto it = package_map_.find(std::string(name));
+  if (it != package_map_.end()) {
+    return it->second;
+  }
+  return nullptr;
+}
+
+auto PreambleManager::IsPreambleSymbol(const slang::ast::Symbol* symbol) const
+    -> bool {
+  return symbol_info_.contains(symbol);
+}
+
+auto PreambleManager::GetSymbolInfo(const slang::ast::Symbol* symbol) const
+    -> std::optional<PreambleSymbolInfo> {
+  auto it = symbol_info_.find(symbol);
+  if (it != symbol_info_.end()) {
+    return it->second;
+  }
+  return std::nullopt;
 }
 
 }  // namespace slangd::services

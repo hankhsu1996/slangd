@@ -8,6 +8,7 @@
 #include <slang/text/SourceLocation.h>
 #include <spdlog/spdlog.h>
 
+#include "lsp/basic.hpp"
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/utils/canonical_path.hpp"
 
@@ -15,11 +16,23 @@
 namespace slang {
 namespace ast {
 class Compilation;
-}
+class PackageSymbol;
+class Symbol;
+}  // namespace ast
 class SourceManager;
 }  // namespace slang
 
+namespace slangd::semantic {
+class DefinitionExtractor;
+}
+
 namespace slangd::services {
+
+// Precomputed LSP location info for preamble symbols
+struct PreambleSymbolInfo {
+  std::string file_uri;         // Buffer-independent file path
+  lsp::Range definition_range;  // Precise name range (start + end)
+};
 
 // Package metadata extracted from preamble compilation
 struct PackageInfo {
@@ -89,6 +102,14 @@ class PreambleManager {
   [[nodiscard]] auto GetModule(std::string_view name) const
       -> const ModuleInfo*;
 
+  // Package symbol access for cross-compilation binding
+  [[nodiscard]] auto GetPackage(std::string_view name) const
+      -> const slang::ast::PackageSymbol*;
+  [[nodiscard]] auto IsPreambleSymbol(const slang::ast::Symbol* symbol) const
+      -> bool;
+  [[nodiscard]] auto GetSymbolInfo(const slang::ast::Symbol* symbol) const
+      -> std::optional<PreambleSymbolInfo>;
+
   // Include directories and defines from ProjectLayoutService
   [[nodiscard]] auto GetIncludeDirectories() const
       -> const std::vector<CanonicalPath>&;
@@ -114,6 +135,12 @@ class PreambleManager {
   std::vector<CanonicalPath> include_directories_;
   std::vector<std::string> defines_;
   uint64_t version_ = 1;
+
+  // Package symbol storage for cross-compilation binding
+  std::unordered_map<std::string, const slang::ast::PackageSymbol*>
+      package_map_;
+  std::unordered_map<const slang::ast::Symbol*, PreambleSymbolInfo>
+      symbol_info_;
 
   // Preamble compilation objects
   std::shared_ptr<slang::ast::Compilation> preamble_compilation_;
