@@ -339,8 +339,36 @@ auto LanguageService::OnDocumentOpened(
     co_return;
   }
 
-  // Create session first (time-critical - other handlers may need it)
-  co_await session_manager_->UpdateSession(uri, content, version);
+  // Create diagnostic extraction hook that runs during session creation
+  // This guarantees diagnostics are extracted before session can be evicted
+  auto diagnostic_hook = [this, uri, version](const CompilationState& state) {
+    // Extract diagnostics (on strand, session cannot be evicted)
+    auto parse_diags = semantic::DiagnosticConverter::ExtractParseDiagnostics(
+        *state.compilation, *state.source_manager, state.main_buffer_id,
+        logger_);
+
+    auto semantic_diags =
+        semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
+            *state.compilation, *state.source_manager, state.main_buffer_id,
+            global_catalog_.get());
+
+    // Combine diagnostics
+    parse_diags.insert(
+        parse_diags.end(), semantic_diags.begin(), semantic_diags.end());
+
+    // Post back to main thread to publish
+    if (diagnostic_publisher_) {
+      asio::post(
+          executor_,
+          [this, uri, version, diagnostics = std::move(parse_diags)]() {
+            diagnostic_publisher_(uri, version, diagnostics);
+          });
+    }
+  };
+
+  // Create session with diagnostic hook
+  co_await session_manager_->UpdateSession(
+      uri, content, version, diagnostic_hook);
 
   // Store document state after (less time-critical)
   co_await doc_state_.Update(uri, content, version);
@@ -372,9 +400,33 @@ auto LanguageService::OnDocumentSaved(std::string uri)
     co_return;
   }
 
-  // Rebuild session with saved content
+  // Create diagnostic extraction hook (same as OnDocumentOpened)
+  auto diagnostic_hook = [this, uri, version = doc_state->version](
+                             const CompilationState& state) {
+    auto parse_diags = semantic::DiagnosticConverter::ExtractParseDiagnostics(
+        *state.compilation, *state.source_manager, state.main_buffer_id,
+        logger_);
+
+    auto semantic_diags =
+        semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
+            *state.compilation, *state.source_manager, state.main_buffer_id,
+            global_catalog_.get());
+
+    parse_diags.insert(
+        parse_diags.end(), semantic_diags.begin(), semantic_diags.end());
+
+    if (diagnostic_publisher_) {
+      asio::post(
+          executor_,
+          [this, uri, version, diagnostics = std::move(parse_diags)]() {
+            diagnostic_publisher_(uri, version, diagnostics);
+          });
+    }
+  };
+
+  // Rebuild session with saved content and diagnostic hook
   co_await session_manager_->UpdateSession(
-      uri, doc_state->content, doc_state->version);
+      uri, doc_state->content, doc_state->version, diagnostic_hook);
 }
 
 auto LanguageService::OnDocumentClosed(std::string uri) -> void {

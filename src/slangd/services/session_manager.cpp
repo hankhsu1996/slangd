@@ -40,8 +40,9 @@ SessionManager::~SessionManager() {
 }
 
 auto SessionManager::UpdateSession(
-    std::string uri, std::string content, int version)
-    -> asio::awaitable<void> {
+    std::string uri, std::string content, int version,
+    std::optional<CompilationReadyHook> on_compilation_ready,
+    std::optional<SessionReadyHook> on_session_ready) -> asio::awaitable<void> {
   co_await asio::post(session_strand_, asio::use_awaitable);
 
   logger_->debug(
@@ -74,7 +75,8 @@ auto SessionManager::UpdateSession(
     }
   }
 
-  auto new_pending = StartSessionCreation(uri, content, version);
+  auto new_pending = StartSessionCreation(
+      uri, content, version, on_compilation_ready, on_session_ready);
   pending_sessions_[uri] = new_pending;
 
   co_return;
@@ -164,9 +166,13 @@ auto SessionManager::UpdateCatalog(std::shared_ptr<const GlobalCatalog> catalog)
 }
 
 auto SessionManager::StartSessionCreation(
-    std::string uri, std::string content, int version)
+    std::string uri, std::string content, int version,
+    std::optional<CompilationReadyHook> on_compilation_ready,
+    std::optional<SessionReadyHook> on_session_ready)
     -> std::shared_ptr<PendingCreation> {
   auto pending = std::make_shared<PendingCreation>(executor_, version);
+  pending->on_compilation_ready = std::move(on_compilation_ready);
+  pending->on_session_ready = std::move(on_session_ready);
 
   asio::co_spawn(
       executor_,
@@ -226,6 +232,16 @@ auto SessionManager::StartSessionCreation(
               UpdateAccessOrder(uri);
               EvictOldestIfNeeded();
 
+              // Execute Phase 1 hook if provided (on strand, session cannot be
+              // evicted)
+              if (pending->on_compilation_ready) {
+                CompilationState state{
+                    .source_manager = partial_session->GetSourceManagerPtr(),
+                    .compilation = partial_session->GetCompilationPtr(),
+                    .main_buffer_id = partial_session->GetMainBufferID()};
+                (*pending->on_compilation_ready)(state);
+              }
+
               pending->compilation_ready.Set();
 
               logger_->debug(
@@ -245,6 +261,13 @@ auto SessionManager::StartSessionCreation(
             if (auto cache_it = active_sessions_.find(uri);
                 cache_it != active_sessions_.end()) {
               cache_it->second.phase = SessionPhase::kIndexingComplete;
+
+              // Execute Phase 2 hook if provided (on strand, session cannot be
+              // evicted)
+              if (pending->on_session_ready) {
+                (*pending->on_session_ready)(*cache_it->second.session);
+              }
+
               pending->session_ready.Set();
               logger_->debug(
                   "SessionManager Phase 2 complete (indexing): {}", uri);

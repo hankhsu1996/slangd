@@ -59,26 +59,19 @@ VSCode Response ← JSON-RPC ← LSP Handler ← Result ← Computation Complete
 
 ## Diagnostic Publishing Strategy
 
-**Single-publish approach**: Full diagnostics (parse + semantic) publish after elaboration completes.
+**Hook-based extraction**: Diagnostics extracted during session creation using hooks registered with `UpdateSession()`.
 
 ```
-File Save → Full Diagnostics (parse + semantic) → Publish
+Background thread:
+  Compile → Elaborate → Store → Execute hook → Signal events
+  Hook: Extract diagnostics (on strand) → Post to main → Publish
 ```
 
-**Rationale**: Publishing intermediate parse-only diagnostics causes visual flicker (diagnostics clear then reappear) because LSP replaces all diagnostics on each publish. Industry-standard servers (clangd, rust-analyzer) wait for full analysis to avoid this UX issue.
-
-### Key Architectural Decisions
-
-**File-scoped elaboration**: `SemanticIndex::FromCompilation()` calls `forceElaborate()` on each instance, populating `compilation.diagMap` with semantic diagnostics. This is file-scoped (not full design elaboration).
-
-**On-demand extraction**: Diagnostics live in `compilation.diagMap` and are extracted when requested via `ComputeDiagnostics()`:
-
-- `ExtractParseDiagnostics()`: Parse/syntax errors from syntax trees
-- `ExtractCollectedDiagnostics()`: Semantic errors from diagMap (already populated)
-
-**Two-phase broadcast events**: `SessionManager` signals `compilation_ready` after elaboration (Phase 1) and `session_ready` after indexing (Phase 2). Diagnostics wait on Phase 1 only (faster).
-
-**Why this works**: `forceElaborate()` caches symbol resolutions that `visit()` reuses for indexing. No duplicate work, and diagnostics get faster response by not waiting for full indexing.
+**Key properties**:
+- Hook executes on strand after caching, before signaling events
+- Session cannot be evicted while hook runs (guaranteed execution)
+- Single-publish: full diagnostics (parse + semantic) to avoid visual flicker
+- `forceElaborate()` populates `compilation.diagMap` during indexing (file-scoped)
 
 ## Executor & Threading Model
 
@@ -184,14 +177,16 @@ SlangdLspServer (protocol layer - thin delegates)
   ├─ Document Events (notifications from client - open files)
   │   ├─ OnDidOpen(uri, content, version)
   │   │   → LanguageService.OnDocumentOpened()
-  │   │   → PublishDiagnosticsForDocument()  ← Server pushes diagnostics
+  │   │       └─ SessionManager.UpdateSession(uri, content, version, diagnostic_hook)
+  │   │           └─ Hook extracts diagnostics → Publishes via callback
   │   │
   │   ├─ OnDidChange(uri, content, version)
   │   │   → LanguageService.OnDocumentChanged()
   │   │
   │   ├─ OnDidSave(uri)
   │   │   → LanguageService.OnDocumentSaved()
-  │   │   → PublishDiagnosticsForDocument()  ← Server pushes diagnostics
+  │   │       └─ SessionManager.UpdateSession(uri, content, version, diagnostic_hook)
+  │   │           └─ Hook extracts diagnostics → Publishes via callback
   │   │
   │   └─ OnDidClose(uri) → LanguageService.OnDocumentClosed()
   │
@@ -209,17 +204,16 @@ LanguageService (domain layer - state management + feature implementations)
   ├─ OpenDocumentTracker open_tracker_  ← Tracks which documents are open (shared)
   ├─ DocumentStateManager doc_state_  ← Document state (content + version)
   ├─ SessionManager session_manager_  ← Compilation cache + lifecycle
+  ├─ DiagnosticPublisher diagnostic_publisher_  ← Callback from LSP server
   │
   ├─ Document Lifecycle
-  │   ├─ OnDocumentOpened → doc_state_.Update() + SessionManager.UpdateSession()
+  │   ├─ OnDocumentOpened → doc_state_.Update() + SessionManager.UpdateSession(diagnostic_hook)
   │   ├─ OnDocumentChanged → doc_state_.Update() (no session rebuild - typing is fast!)
-  │   ├─ OnDocumentSaved → doc_state_.Get() + SessionManager.UpdateSession()
+  │   ├─ OnDocumentSaved → doc_state_.Get() + SessionManager.UpdateSession(diagnostic_hook)
   │   ├─ OnDocumentClosed → doc_state_.Remove() (lazy session removal)
   │   └─ OnDocumentsChanged → SessionManager.InvalidateSessions()
   │
   └─ LSP Features (called by protocol layer)
-      ├─ ComputeParseDiagnostics(uri, content) → Parse-only diagnostics
-      ├─ ComputeDiagnostics(uri) → Full diagnostics (parse + semantic)
       ├─ GetDocumentSymbols(uri) → Document symbol tree
       └─ GetDefinitionsForPosition(uri, pos) → Go-to-definition locations
 
@@ -235,9 +229,10 @@ SessionManager (compilation cache)
   ├─ open_tracker_: shared reference  ← Queries for eviction decisions
   ├─ session_strand_: asio::strand  ← Thread-safe access to maps
   ├─ active_sessions_: map<uri, CacheEntry{session, version}>  ← Version-aware cache
-  ├─ pending_sessions_: map<uri, PendingCreation>  ← Being created
+  ├─ pending_sessions_: map<uri, PendingCreation{hooks, events}>  ← Being created
   ├─ access_order_: vector<uri>  ← LRU tracking (MRU first)
-  └─ Cache key: URI + LSP document version (not content hash)
+  ├─ Cache key: URI + LSP document version (not content hash)
+  └─ UpdateSession accepts optional hooks for server-push features
 
 For detailed session management design including memory bounds, eviction policy, and
 VSCode behavioral patterns, see SESSION_MANAGEMENT.md.
@@ -283,29 +278,23 @@ VSCode behavioral patterns, see SESSION_MANAGEMENT.md.
 
 ### Two-Phase Session Creation
 
-**Problem**: Diagnostics need compilation (~126ms) but go-to-def/symbols need indexing (+455ms). Waiting for full session delays diagnostic feedback.
-
-**Solution**: SessionManager uses two-phase broadcast events to signal completion at different stages.
-
 **Phases**:
-- **Phase 1 (compilation_ready)**: Elaboration complete → diagnostics available (~126ms)
-- **Phase 2 (session_ready)**: Indexing complete → symbols/definitions available (~581ms)
+- **Phase 1 (compilation_ready)**: Elaboration complete, diagnostics available
+  - Hooks execute (server-push features)
+  - Broadcast event signals (client-request features)
+- **Phase 2 (session_ready)**: Indexing complete, symbols/definitions available
 
-**Pattern**:
+**Patterns**:
 ```
-// Diagnostics: Wait for Phase 1 only (fast)
-WithCompilationState(uri, callback) → waits for compilation_ready → executes
+// Server-push (diagnostics via hooks)
+UpdateSession(uri, content, version, diagnostic_hook)
+  → Hook extracts during creation → Publishes automatically
 
-// Symbols/definitions: Wait for Phase 2 (slower)
+// Client-request (symbols/definitions via callbacks)
 WithSession(uri, callback) → waits for session_ready → executes
 ```
 
-**Key benefits**:
-
-- **Fast diagnostics**: 126ms vs 581ms (4.6x faster)
-- **No duplicate work**: Multiple requests wait on same broadcast event, share cached result
-- **Event-driven coordination**: Broadcast events avoid polling
-- **No convoy effect**: Cache-first pattern eliminates strand bottleneck
+**Benefits**: Fast diagnostics (Phase 1), guaranteed extraction (hooks), shared results (broadcast events)
 
 ## Extension Patterns
 

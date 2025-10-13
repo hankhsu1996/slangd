@@ -161,46 +161,28 @@ Understanding these patterns is essential to the design decisions below.
 
 ## Request Patterns
 
-### WithSession - Dependency Inversion for Feature Extraction
+### Two Access Patterns
 
-**Problem**: How do LSP features access sessions without holding shared_ptr (causing memory leaks)?
+**1. Hook-based extraction** (server-push features like diagnostics):
+- Hooks execute **during** session creation (before caching) on strand
+- Guaranteed execution - session cannot be evicted while hook runs
+- Solves race condition: when 20 files open rapidly, async extraction after caching can miss evicted sessions
+- Use: `UpdateSession(uri, content, version, diagnostic_hook)`
 
-**Solution**: Dependency inversion - SessionManager executes feature code WITH the session, rather than giving session TO feature code.
+**2. Callback-based access** (client-request features like go-to-def, symbols):
+- SessionManager executes feature code WITH session (dependency inversion)
+- Callbacks get const reference, no shared_ptr escape
+- Strand serializes access - eviction blocked while callback runs
+- Graceful failure if evicted - client can retry
+- Use: `WithSession(uri, [](session) { return session.GetSymbols() })`
 
-**API** (template methods, only way to access sessions):
-```
-WithSession(uri, callback) -> expected<Result, error>
-WithCompilationState(uri, callback) -> expected<Result, error>
-```
+**Memory bound** (both patterns): Strand serializes all operations, so at most 8 cached + 4 building = **12 sessions max**
 
-**Pattern**:
-```
-WithSession(uri, callback):
-  acquire strand
-  find session in cache (or wait for pending creation)
-  execute callback(session) synchronously on strand
-  release strand
-  return result or error
-
-Feature example:
-  result = WithSession(uri, [](session) { return session.GetDocumentSymbols() })
-  if (!result) return error_to_client
-  return *result
-```
-
-**Why this works**:
-
-- **No shared_ptr escape**: Callback gets const reference, not ownership
-- **Strand as lock**: While callback runs on strand, eviction cannot proceed
-- **Separation preserved**: SessionManager controls lifecycle, LanguageService implements features
-- **Simple**: No manual refcounting, no in_use_count tracking
-- **Graceful failure**: Returns error if session not found (evicted/cancelled) - no rebuild
-
-**Memory bound**: Strand serializes all operations (create/evict/extract). Only one extraction at a time, so at most:
-
-- 8 cached sessions
-- 4 building in pool
-- **12 sessions max (4.2GB)**
+| Aspect | Hook-Based | Callback-Based |
+|--------|------------|----------------|
+| **Timing** | During creation | After caching |
+| **Guarantee** | Always executes | Best-effort |
+| **Use cases** | Diagnostics | Go-to-def, symbols |
 
 ### Multi-Waiter Coordination (Broadcast Events)
 

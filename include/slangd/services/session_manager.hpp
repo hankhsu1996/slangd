@@ -29,6 +29,11 @@ struct CompilationState {
   slang::BufferID main_buffer_id;
 };
 
+// Hook types for extracting data during session creation (before caching)
+// Hooks execute on background thread where compilation completes
+using CompilationReadyHook = std::function<void(const CompilationState&)>;
+using SessionReadyHook = std::function<void(const OverlaySession&)>;
+
 // Session creation phase tracking
 enum class SessionPhase {
   kElaborationComplete,  // Phase 1: Diagnostics can run
@@ -58,7 +63,12 @@ class SessionManager {
   auto operator=(SessionManager&&) -> SessionManager& = delete;
 
   // Document event handlers (ONLY these create/invalidate sessions)
-  auto UpdateSession(std::string uri, std::string content, int version)
+  // Optional hooks execute during session creation (before caching) - useful
+  // for server-push features like diagnostics that need guaranteed execution
+  auto UpdateSession(
+      std::string uri, std::string content, int version,
+      std::optional<CompilationReadyHook> on_compilation_ready = std::nullopt,
+      std::optional<SessionReadyHook> on_session_ready = std::nullopt)
       -> asio::awaitable<void>;
 
   auto InvalidateSessions(std::vector<std::string> uris) -> void;
@@ -98,10 +108,19 @@ class SessionManager {
     int version;                         // LSP document version
     std::atomic<bool> cancelled{false};  // Lock-free cancellation flag
 
+    // Optional hooks that execute during session creation (before caching)
+    // Useful for server-push features like diagnostics that need guaranteed
+    // execution
+    std::optional<CompilationReadyHook> on_compilation_ready;
+    std::optional<SessionReadyHook> on_session_ready;
+
     explicit PendingCreation(asio::any_io_executor executor, int doc_version);
   };
 
-  auto StartSessionCreation(std::string uri, std::string content, int version)
+  auto StartSessionCreation(
+      std::string uri, std::string content, int version,
+      std::optional<CompilationReadyHook> on_compilation_ready,
+      std::optional<SessionReadyHook> on_session_ready)
       -> std::shared_ptr<PendingCreation>;
 
   // LRU cache management helpers

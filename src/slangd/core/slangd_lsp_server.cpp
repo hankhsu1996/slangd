@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include "lsp/document_features.hpp"
+#include "slangd/services/language_service.hpp"
 #include "slangd/utils/canonical_path.hpp"
 #include "slangd/utils/path_utils.hpp"
 
@@ -31,6 +32,26 @@ SlangdLspServer::SlangdLspServer(
       logger_(logger ? logger : spdlog::default_logger()),
       executor_(executor),
       language_service_(std::move(language_service)) {
+  // Set up diagnostic publisher callback
+  // LanguageService will use this to publish diagnostics extracted during
+  // session creation (via hooks), eliminating race condition from cache
+  // eviction
+  if (auto* service =
+          dynamic_cast<services::LanguageService*>(language_service_.get())) {
+    service->SetDiagnosticPublisher([this](
+                                        std::string uri, int version,
+                                        std::vector<lsp::Diagnostic>
+                                            diagnostics) {
+      asio::co_spawn(
+          executor_,
+          [this, uri, version,
+           diagnostics = std::move(diagnostics)]() -> asio::awaitable<void> {
+            co_await PublishDiagnostics(
+                {.uri = uri, .version = version, .diagnostics = diagnostics});
+          },
+          asio::detached);
+    });
+  }
 }
 
 auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
@@ -120,14 +141,6 @@ auto SlangdLspServer::OnDidOpenTextDocument(
   co_await language_service_->OnDocumentOpened(
       text_doc.uri, text_doc.text, text_doc.version);
 
-  asio::co_spawn(
-      executor_,
-      [this, uri = text_doc.uri, text = text_doc.text,
-       version = text_doc.version]() -> asio::awaitable<void> {
-        co_await PublishDiagnosticsForDocument(uri, text, version);
-      },
-      asio::detached);
-
   co_return Ok();
 }
 
@@ -151,7 +164,6 @@ auto SlangdLspServer::OnDidSaveTextDocument(
   Logger()->debug(
       "OnDidSaveTextDocument received: {}", params.textDocument.uri);
   co_await language_service_->OnDocumentSaved(params.textDocument.uri);
-  co_await ProcessDiagnosticsForUri(params.textDocument.uri);
   co_return Ok();
 }
 

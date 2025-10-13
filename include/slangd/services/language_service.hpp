@@ -70,6 +70,15 @@ class LanguageService : public LanguageServiceBase {
   auto GetAllOpenDocumentUris()
       -> asio::awaitable<std::vector<std::string>> override;
 
+  // Set callback for publishing diagnostics to LSP client
+  // This decouples LanguageService from LSP protocol layer
+  using DiagnosticPublisher = std::function<void(
+      std::string uri, int version, std::vector<lsp::Diagnostic>)>;
+
+  auto SetDiagnosticPublisher(DiagnosticPublisher publisher) -> void {
+    diagnostic_publisher_ = std::move(publisher);
+  }
+
  private:
   // Core dependencies
   std::shared_ptr<ProjectLayoutService> layout_service_;
@@ -88,6 +97,9 @@ class LanguageService : public LanguageServiceBase {
   // Background thread pool for parse diagnostics
   std::unique_ptr<asio::thread_pool> compilation_pool_;
   static constexpr size_t kThreadPoolSize = 4;
+
+  // Callback for publishing diagnostics (set by LSP server layer)
+  DiagnosticPublisher diagnostic_publisher_;
 };
 
 }  // namespace slangd::services
