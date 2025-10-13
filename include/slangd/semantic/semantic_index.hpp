@@ -19,7 +19,7 @@
 #include "slangd/utils/canonical_path.hpp"
 
 namespace slangd::services {
-class GlobalCatalog;
+class PreambleManager;
 }
 
 namespace slangd::semantic {
@@ -60,7 +60,7 @@ struct SemanticEntry {
   bool is_definition;                   // true = self-ref, false = cross-ref
   slang::SourceRange definition_range;  // Target definition location
 
-  // Cross-file definitions (from GlobalCatalog, compilation-independent)
+  // Cross-file definitions (from PreambleManager, compilation-independent)
   std::optional<CanonicalPath> cross_file_path;
   std::optional<lsp::Range> cross_file_range;
 
@@ -81,7 +81,7 @@ struct DefinitionLocation {
   // For same-file definitions (buffer exists in current compilation)
   std::optional<slang::SourceRange> same_file_range;
 
-  // For cross-file definitions (from GlobalCatalog, compilation-independent)
+  // For cross-file definitions (from PreambleManager, compilation-independent)
   std::optional<CanonicalPath> cross_file_path;
   std::optional<lsp::Range> cross_file_range;
 };
@@ -110,7 +110,7 @@ class SemanticIndex {
       slang::ast::Compilation& compilation,
       const slang::SourceManager& source_manager,
       const std::string& current_file_uri,
-      const services::GlobalCatalog* catalog = nullptr,
+      const services::PreambleManager* preamble_manager = nullptr,
       std::shared_ptr<spdlog::logger> logger = nullptr)
       -> std::unique_ptr<SemanticIndex>;
 
@@ -167,11 +167,12 @@ class SemanticIndex {
    public:
     explicit IndexVisitor(
         SemanticIndex& index, const slang::SourceManager& source_manager,
-        std::string current_file_uri, const services::GlobalCatalog* catalog)
+        std::string current_file_uri,
+        const services::PreambleManager* preamble_manager)
         : index_(index),
           source_manager_(source_manager),
           current_file_uri_(std::move(current_file_uri)),
-          catalog_(catalog),
+          preamble_manager_(preamble_manager),
           definition_extractor_(index.logger_) {
     }
 
@@ -221,7 +222,7 @@ class SemanticIndex {
     std::reference_wrapper<SemanticIndex> index_;
     std::reference_wrapper<const slang::SourceManager> source_manager_;
     std::string current_file_uri_;
-    const services::GlobalCatalog* catalog_;
+    const services::PreambleManager* preamble_manager_;
 
     // Definition extractor for precise symbol range extraction
     DefinitionExtractor definition_extractor_;
@@ -254,7 +255,7 @@ class SemanticIndex {
     void AddCrossFileReference(
         const slang::ast::Symbol& symbol, std::string_view name,
         slang::SourceRange source_range, slang::SourceRange definition_range,
-        const slang::SourceManager& catalog_source_manager,
+        const slang::SourceManager& preamble_manager_source_manager,
         const slang::ast::Scope* parent_scope);
 
     // Unified type traversal - handles all type structure recursively

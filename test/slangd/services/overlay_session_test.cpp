@@ -59,7 +59,7 @@ TEST_CASE(
   });
 }
 
-TEST_CASE("OverlaySession works without GlobalCatalog", "[overlay_session]") {
+TEST_CASE("OverlaySession works without PreambleManager", "[overlay_session]") {
   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     auto workspace_root = slangd::CanonicalPath::CurrentPath();
     auto layout_service = slangd::ProjectLayoutService::Create(
@@ -75,7 +75,7 @@ TEST_CASE("OverlaySession works without GlobalCatalog", "[overlay_session]") {
 
     const std::string uri = "file:///simple.sv";
 
-    // Create session with explicit nullptr catalog (single-file mode)
+    // Create session with explicit nullptr preamble_manager (single-file mode)
     auto session = slangd::services::OverlaySession::Create(
         uri, test_content, layout_service, nullptr);
 

@@ -186,9 +186,9 @@ Module navigation differs from other features due to cross-compilation metadata 
 
 **Two-Compilation Design:**
 
-- **GlobalCatalog**: Compiles all files once, extracts module metadata (ModuleInfo with ports/parameters)
+- **PreambleManager**: Compiles all files once, extracts module metadata (ModuleInfo with ports/parameters)
 - **OverlaySession**: Compiles current file + packages + interfaces only
-- **SemanticIndex**: Indexes local symbols, queries GlobalCatalog for cross-file metadata
+- **SemanticIndex**: Indexes local symbols, queries PreambleManager for cross-file metadata
 
 ### UninstantiatedDefSymbol Pattern
 
@@ -201,19 +201,19 @@ When a module is instantiated but its definition is not in the current compilati
 1. Instance name self-definition (via `AddDefinition`)
 2. Parameter expression navigation (visit `symbol.paramExpressions`)
 3. Port connection navigation (visit `symbol.getPortConnections()`)
-4. Cross-file module type navigation (query `catalog_->GetModule()`)
+4. Cross-file module type navigation (query `preamble_manager_->GetModule()`)
 
 **Pattern:** Following generate loop expression preservation, visit expressions stored in `UninstantiatedDefSymbol` directly without manual syntax parsing.
 
 **Integration:**
 
 - Add `CompilationFlags::IgnoreUnknownModules` to suppress unknown module diagnostics
-- SemanticIndex receives optional `GlobalCatalog*` parameter (nullptr for single-file mode)
+- SemanticIndex receives optional `PreambleManager*` parameter (nullptr for single-file mode)
 - O(1) module lookup via hash map, O(n) port/parameter lookup (~20 entries)
 
 **Cross-File Reference Resolution:**
 
-Module definitions exist in GlobalCatalog's compilation (different `SourceManager`), not OverlaySession's. Use `AddCrossFileReference()` to store compilation-independent `FilePosition` instead of compilation-specific `SourceLocation`. This enables go-to-definition across compilations by converting target ranges to file paths + line/column positions.
+Module definitions exist in PreambleManager's compilation (different `SourceManager`), not OverlaySession's. Use `AddCrossFileReference()` to store compilation-independent `FilePosition` instead of compilation-specific `SourceLocation`. This enables go-to-definition across compilations by converting target ranges to file paths + line/column positions.
 
 ## Slang Fork Modifications
 

@@ -77,7 +77,7 @@ SystemVerilog LSP server with modular design:
 - **`lsp/`**: Generic LSP protocol implementation (JSON-RPC, ASIO coroutines)
 - **`slangd/`**: SystemVerilog server using Slang library
 - **SessionManager**: Centralized session lifecycle (create/cache/invalidate). **Features are read-only - never create sessions directly.**
-- **GlobalCatalog + OverlaySession**: 1-5ms response times with cross-file support
+- **PreambleManager + OverlaySession**: 1-5ms response times with cross-file support
 - **SemanticIndex**: Unified reference+definition storage with file-scoped traversal optimization (99.8% perf improvement)
   - Single-hop go-to-definition lookup using embedded definition ranges
   - ReferenceEntry structs combine source location + target definition for robust cross-file navigation

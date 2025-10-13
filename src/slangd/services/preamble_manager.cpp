@@ -1,4 +1,4 @@
-#include "slangd/services/global_catalog.hpp"
+#include "slangd/services/preamble_manager.hpp"
 
 #include <slang/ast/Compilation.h>
 #include <slang/ast/SemanticFacts.h>
@@ -13,12 +13,13 @@
 
 namespace slangd::services {
 
-auto GlobalCatalog::CreateFromProjectLayout(
+auto PreambleManager::CreateFromProjectLayout(
     std::shared_ptr<ProjectLayoutService> layout_service,
-    std::shared_ptr<spdlog::logger> logger) -> std::shared_ptr<GlobalCatalog> {
+    std::shared_ptr<spdlog::logger> logger)
+    -> std::shared_ptr<PreambleManager> {
   if (!layout_service) {
     if (logger) {
-      logger->error("GlobalCatalog: ProjectLayoutService is null");
+      logger->error("PreambleManager: ProjectLayoutService is null");
     }
     return nullptr;
   }
@@ -27,27 +28,27 @@ auto GlobalCatalog::CreateFromProjectLayout(
     logger = spdlog::default_logger();
   }
 
-  logger->debug("GlobalCatalog: Creating from ProjectLayoutService");
+  logger->debug("PreambleManager: Creating from ProjectLayoutService");
 
-  // Create catalog instance and initialize it
-  auto catalog = std::make_shared<GlobalCatalog>();
-  catalog->BuildFromLayout(layout_service, logger);
+  // Create preamble_manager instance and initialize it
+  auto preamble_manager = std::make_shared<PreambleManager>();
+  preamble_manager->BuildFromLayout(layout_service, logger);
 
   logger->debug(
-      "GlobalCatalog: Created with {} packages, version {}",
-      catalog->packages_.size(), catalog->version_);
+      "PreambleManager: Created with {} packages, version {}",
+      preamble_manager->packages_.size(), preamble_manager->version_);
 
-  return catalog;
+  return preamble_manager;
 }
 
-auto GlobalCatalog::BuildFromLayout(
+auto PreambleManager::BuildFromLayout(
     std::shared_ptr<ProjectLayoutService> layout_service,
     std::shared_ptr<spdlog::logger> logger) -> void {
   logger_ = logger;
-  utils::ScopedTimer timer("GlobalCatalog build", logger_);
-  logger_->debug("GlobalCatalog: Building from layout service");
+  utils::ScopedTimer timer("PreambleManager build", logger_);
+  logger_->debug("PreambleManager: Building from layout service");
 
-  // Create fresh source manager for global compilation
+  // Create fresh source manager for preamble compilation
   source_manager_ = std::make_shared<slang::SourceManager>();
 
   // Prepare preprocessor options from layout service
@@ -89,34 +90,35 @@ auto GlobalCatalog::BuildFromLayout(
   comp_options.errorLimit = 0;
   options.set(comp_options);
 
-  // Create global compilation with options
-  global_compilation_ = std::make_shared<slang::ast::Compilation>(options);
+  // Create preamble compilation with options
+  preamble_compilation_ = std::make_shared<slang::ast::Compilation>(options);
 
   logger_->debug(
-      "GlobalCatalog: Applied {} include dirs, {} defines",
+      "PreambleManager: Applied {} include dirs, {} defines",
       include_directories_.size(), defines_.size());
 
   // Get all source files from layout service
   auto source_files = layout_service->GetSourceFiles();
   logger_->debug(
-      "GlobalCatalog: Processing {} source files", source_files.size());
+      "PreambleManager: Processing {} source files", source_files.size());
 
-  // Add all source files to global compilation
+  // Add all source files to preamble compilation
   for (const auto& file_path : source_files) {
     auto tree_result = slang::syntax::SyntaxTree::fromFile(
         file_path.Path().string(), *source_manager_, options);
 
     if (tree_result) {
-      global_compilation_->addSyntaxTree(tree_result.value());
+      preamble_compilation_->addSyntaxTree(tree_result.value());
     } else {
       logger_->warn(
-          "GlobalCatalog: Failed to parse file: {}", file_path.Path().string());
+          "PreambleManager: Failed to parse file: {}",
+          file_path.Path().string());
     }
   }
 
   // Extract package metadata using safe Slang API (NO getRoot() call!)
-  auto packages = global_compilation_->getPackages();
-  logger_->debug("GlobalCatalog: Extracting {} packages", packages.size());
+  auto packages = preamble_compilation_->getPackages();
+  logger_->debug("PreambleManager: Extracting {} packages", packages.size());
 
   packages_.clear();
   packages_.reserve(packages.size());
@@ -136,9 +138,9 @@ auto GlobalCatalog::BuildFromLayout(
   }
 
   // Extract interface metadata using safe Slang API
-  auto definitions = global_compilation_->getDefinitions();
+  auto definitions = preamble_compilation_->getDefinitions();
   logger_->debug(
-      "GlobalCatalog: Extracting interfaces from {} definitions",
+      "PreambleManager: Extracting interfaces from {} definitions",
       definitions.size());
 
   interfaces_.clear();
@@ -166,7 +168,7 @@ auto GlobalCatalog::BuildFromLayout(
   }
 
   // Extract module metadata using safe Slang API
-  logger_->debug("GlobalCatalog: Extracting modules from definitions");
+  logger_->debug("PreambleManager: Extracting modules from definitions");
 
   modules_.clear();
   modules_.reserve(definitions.size());  // Upper bound estimate
@@ -262,25 +264,27 @@ auto GlobalCatalog::BuildFromLayout(
 
   auto elapsed = timer.GetElapsed();
   logger_->info(
-      "GlobalCatalog: Build complete - {} packages, {} interfaces, {} modules "
+      "PreambleManager: Build complete - {} packages, {} interfaces, {} "
+      "modules "
       "({})",
       packages_.size(), interfaces_.size(), modules_.size(),
       utils::ScopedTimer::FormatDuration(elapsed));
 }
 
-auto GlobalCatalog::GetPackages() const -> const std::vector<PackageInfo>& {
+auto PreambleManager::GetPackages() const -> const std::vector<PackageInfo>& {
   return packages_;
 }
 
-auto GlobalCatalog::GetInterfaces() const -> const std::vector<InterfaceInfo>& {
+auto PreambleManager::GetInterfaces() const
+    -> const std::vector<InterfaceInfo>& {
   return interfaces_;
 }
 
-auto GlobalCatalog::GetModules() const -> const std::vector<ModuleInfo>& {
+auto PreambleManager::GetModules() const -> const std::vector<ModuleInfo>& {
   return modules_;
 }
 
-auto GlobalCatalog::GetModule(std::string_view name) const
+auto PreambleManager::GetModule(std::string_view name) const
     -> const ModuleInfo* {
   auto it = module_lookup_.find(std::string(name));
   if (it != module_lookup_.end()) {
@@ -289,20 +293,20 @@ auto GlobalCatalog::GetModule(std::string_view name) const
   return nullptr;
 }
 
-auto GlobalCatalog::GetIncludeDirectories() const
+auto PreambleManager::GetIncludeDirectories() const
     -> const std::vector<CanonicalPath>& {
   return include_directories_;
 }
 
-auto GlobalCatalog::GetDefines() const -> const std::vector<std::string>& {
+auto PreambleManager::GetDefines() const -> const std::vector<std::string>& {
   return defines_;
 }
 
-auto GlobalCatalog::GetSourceManager() const -> const slang::SourceManager& {
+auto PreambleManager::GetSourceManager() const -> const slang::SourceManager& {
   return *source_manager_;
 }
 
-auto GlobalCatalog::GetVersion() const -> uint64_t {
+auto PreambleManager::GetVersion() const -> uint64_t {
   return version_;
 }
 

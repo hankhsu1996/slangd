@@ -15,9 +15,9 @@
 #include <spdlog/spdlog.h>
 
 #include "slangd/core/project_layout_service.hpp"
-#include "slangd/services/global_catalog.hpp"
 #include "slangd/services/open_document_tracker.hpp"
 #include "slangd/services/overlay_session.hpp"
+#include "slangd/services/preamble_manager.hpp"
 #include "slangd/utils/broadcast_event.hpp"
 
 namespace slangd::services {
@@ -50,7 +50,7 @@ class SessionManager {
   explicit SessionManager(
       asio::any_io_executor executor,
       std::shared_ptr<ProjectLayoutService> layout_service,
-      std::shared_ptr<const GlobalCatalog> catalog,
+      std::shared_ptr<const PreambleManager> preamble_manager,
       std::shared_ptr<OpenDocumentTracker> open_tracker,
       std::shared_ptr<spdlog::logger> logger);
 
@@ -73,14 +73,15 @@ class SessionManager {
 
   auto InvalidateSessions(std::vector<std::string> uris) -> void;
 
-  auto InvalidateAllSessions() -> void;  // For catalog version change
+  auto InvalidateAllSessions() -> void;  // For preamble_manager version change
 
   // Cancel pending session compilation (called when document is closed)
   auto CancelPendingSession(std::string uri) -> void;
 
-  // Updates the catalog pointer used for all future session creations
-  // Must be called when GlobalCatalog is rebuilt (e.g., config changes)
-  auto UpdateCatalog(std::shared_ptr<const GlobalCatalog> catalog) -> void;
+  // Updates the preamble_manager pointer used for all future session creations
+  // Must be called when PreambleManager is rebuilt (e.g., config changes)
+  auto UpdatePreambleManager(
+      std::shared_ptr<const PreambleManager> preamble_manager) -> void;
 
   // Callback-based session access - prevents shared_ptr escape
   // Executes callback on session_strand_ with const reference to session
@@ -137,7 +138,7 @@ class SessionManager {
   // Dependencies
   asio::any_io_executor executor_;
   std::shared_ptr<ProjectLayoutService> layout_service_;
-  std::shared_ptr<const GlobalCatalog> catalog_;
+  std::shared_ptr<const PreambleManager> preamble_manager_;
   std::shared_ptr<OpenDocumentTracker> open_tracker_;
   std::shared_ptr<spdlog::logger> logger_;
 

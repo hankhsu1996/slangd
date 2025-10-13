@@ -11,16 +11,16 @@
 #include "slangd/core/language_service_base.hpp"
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/services/document_state_manager.hpp"
-#include "slangd/services/global_catalog.hpp"
 #include "slangd/services/open_document_tracker.hpp"
 #include "slangd/services/overlay_session.hpp"
+#include "slangd/services/preamble_manager.hpp"
 #include "slangd/services/session_manager.hpp"
 
 namespace slangd::services {
 
 // Service implementation using SessionManager for lifecycle management
 // Creates fresh Compilation + SemanticIndex per LSP request
-// Supports GlobalCatalog integration for cross-file functionality
+// Supports PreambleManager integration for cross-file functionality
 class LanguageService : public LanguageServiceBase {
  public:
   // Constructor for late initialization (workspace set up later)
@@ -75,7 +75,7 @@ class LanguageService : public LanguageServiceBase {
 
   // Core dependencies
   std::shared_ptr<ProjectLayoutService> layout_service_;
-  std::shared_ptr<const GlobalCatalog> global_catalog_;
+  std::shared_ptr<const PreambleManager> preamble_manager_;
   std::shared_ptr<spdlog::logger> logger_;
   asio::any_io_executor executor_;
 

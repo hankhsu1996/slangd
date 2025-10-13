@@ -8,7 +8,7 @@
 namespace slangd::test {
 
 // Reusable async test runner for coroutine-based tests
-// Extracted from global_catalog_test.cpp and overlay_session_test.cpp
+// Extracted from preamble_manager_test.cpp and overlay_session_test.cpp
 // to eliminate duplication
 template <typename F>
 void RunAsyncTest(F&& test_fn) {

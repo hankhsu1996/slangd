@@ -30,7 +30,7 @@
 #include "slangd/semantic/definition_extractor.hpp"
 #include "slangd/semantic/document_symbol_builder.hpp"
 #include "slangd/semantic/symbol_utils.hpp"
-#include "slangd/services/global_catalog.hpp"
+#include "slangd/services/preamble_manager.hpp"
 #include "slangd/utils/conversion.hpp"
 #include "slangd/utils/path_utils.hpp"
 #include "slangd/utils/scoped_timer.hpp"
@@ -40,7 +40,8 @@ namespace slangd::semantic {
 auto SemanticIndex::FromCompilation(
     slang::ast::Compilation& compilation,
     const slang::SourceManager& source_manager,
-    const std::string& current_file_uri, const services::GlobalCatalog* catalog,
+    const std::string& current_file_uri,
+    const services::PreambleManager* preamble_manager,
     std::shared_ptr<spdlog::logger> logger) -> std::unique_ptr<SemanticIndex> {
   if (!logger) {
     logger = spdlog::default_logger();
@@ -55,7 +56,7 @@ auto SemanticIndex::FromCompilation(
 
   // Create visitor for comprehensive symbol collection and reference tracking
   auto visitor =
-      IndexVisitor(*index, source_manager, current_file_uri, catalog);
+      IndexVisitor(*index, source_manager, current_file_uri, preamble_manager);
 
   // Normalize current file URI for comparison
   auto normalized_target = NormalizeUri(current_file_uri);
@@ -274,18 +275,19 @@ void SemanticIndex::IndexVisitor::AddReference(
 void SemanticIndex::IndexVisitor::AddCrossFileReference(
     const slang::ast::Symbol& symbol, std::string_view name,
     slang::SourceRange source_range, slang::SourceRange definition_range,
-    const slang::SourceManager& catalog_source_manager,
+    const slang::SourceManager& preamble_manager_source_manager,
     const slang::ast::Scope* parent_scope) {
   // Create base entry
   auto entry = SemanticEntry::Make(
       symbol, name, source_range, false, definition_range, parent_scope);
 
-  // Convert definition_range to compilation-independent format using catalog's
-  // source manager
-  auto file_name = catalog_source_manager.getFileName(definition_range.start());
+  // Convert definition_range to compilation-independent format using
+  // preamble_manager's source manager
+  auto file_name =
+      preamble_manager_source_manager.getFileName(definition_range.start());
   entry.cross_file_path = CanonicalPath(std::filesystem::path(file_name));
-  entry.cross_file_range =
-      ConvertSlangRangeToLspRange(definition_range, catalog_source_manager);
+  entry.cross_file_range = ConvertSlangRangeToLspRange(
+      definition_range, preamble_manager_source_manager);
 
   AddEntry(std::move(entry));
 }
@@ -2099,7 +2101,8 @@ void SemanticIndex::IndexVisitor::handle(
   }
 
   // Visit parameter and port expressions (for same-file cases)
-  // UninstantiatedDefSymbol stores these expressions even without catalog
+  // UninstantiatedDefSymbol stores these expressions even without
+  // preamble_manager
   for (const auto* expr : symbol.paramExpressions) {
     if (expr != nullptr) {
       expr->visit(*this);
@@ -2190,14 +2193,14 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
 
-  // Cross-file handling requires catalog
-  if (catalog_ == nullptr) {
-    return;  // No cross-file indexing without catalog
+  // Cross-file handling requires preamble_manager
+  if (preamble_manager_ == nullptr) {
+    return;  // No cross-file indexing without preamble_manager
   }
 
-  const auto* module_info = catalog_->GetModule(symbol.definitionName);
+  const auto* module_info = preamble_manager_->GetModule(symbol.definitionName);
   if (module_info == nullptr) {
-    return;  // Module not found in catalog
+    return;  // Module not found in preamble_manager
   }
 
   // The syntax is HierarchicalInstanceSyntax, whose parent is
@@ -2212,13 +2215,14 @@ void SemanticIndex::IndexVisitor::handle(
           parent_syntax->as<slang::syntax::HierarchyInstantiationSyntax>();
       auto type_range = inst_syntax.type.range();
 
-      // Module definitions are in GlobalCatalog's compilation, not
+      // Module definitions are in PreambleManager's compilation, not
       // OverlaySession Use AddCrossFileReference to store
       // compilation-independent location
-      const auto& catalog_sm = catalog_->GetSourceManager();
+      const auto& preamble_manager_sm = preamble_manager_->GetSourceManager();
       AddCrossFileReference(
           symbol, symbol.definitionName, type_range,
-          module_info->definition_range, catalog_sm, symbol.getParentScope());
+          module_info->definition_range, preamble_manager_sm,
+          symbol.getParentScope());
 
       // Handle port connections (named ports only, skip positional)
       const auto& hier_inst_syntax =
@@ -2235,7 +2239,7 @@ void SemanticIndex::IndexVisitor::handle(
             const auto* port_info = it->second;
             AddCrossFileReference(
                 symbol, port_name, npc.name.range(), port_info->def_range,
-                catalog_sm, symbol.getParentScope());
+                preamble_manager_sm, symbol.getParentScope());
           }
         }
       }
@@ -2256,7 +2260,7 @@ void SemanticIndex::IndexVisitor::handle(
               const auto* param_info = it->second;
               AddCrossFileReference(
                   symbol, param_name, npa.name.range(), param_info->def_range,
-                  catalog_sm, symbol.getParentScope());
+                  preamble_manager_sm, symbol.getParentScope());
             }
           }
         }
@@ -2379,13 +2383,13 @@ void SemanticIndex::ValidateSymbolCoverage(
   };
 
   // Collect identifiers ONLY from the current file's syntax tree
-  // (not from catalog files - this is the key optimization!)
+  // (not from preamble_manager files - this is the key optimization!)
   IdentifierCollector collector;
   for (const auto& tree : compilation.getSyntaxTrees()) {
     // Check if this tree is for the current file
     auto tree_location = tree->root().sourceRange().start();
     if (!is_current_file(tree_location)) {
-      continue;  // Skip catalog files - only process current file
+      continue;  // Skip preamble_manager files - only process current file
     }
 
     // Found the current file's tree - collect identifiers from it

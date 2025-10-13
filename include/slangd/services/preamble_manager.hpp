@@ -21,7 +21,7 @@ class SourceManager;
 
 namespace slangd::services {
 
-// Package metadata extracted from global compilation
+// Package metadata extracted from preamble compilation
 struct PackageInfo {
   std::string name;
   CanonicalPath file_path;
@@ -47,7 +47,7 @@ struct ParameterInfo {
   slang::SourceRange def_range;
 };
 
-// Module metadata extracted from global compilation
+// Module metadata extracted from preamble compilation
 struct ModuleInfo {
   std::string name;
   CanonicalPath file_path;
@@ -60,28 +60,29 @@ struct ModuleInfo {
   std::unordered_map<std::string, const ParameterInfo*> parameter_lookup;
 };
 
-// GlobalCatalog: Immutable snapshot of package/interface metadata from global
-// compilation. Use CreateFromProjectLayout() factory method for convenience.
-class GlobalCatalog {
+// PreambleManager: Immutable snapshot of package/interface metadata from
+// preamble compilation. Use CreateFromProjectLayout() factory method for
+// convenience.
+class PreambleManager {
  public:
   // Default constructor
-  GlobalCatalog() = default;
+  PreambleManager() = default;
 
-  // Factory method - convenient way to create and initialize a GlobalCatalog
-  // Creates a global compilation from all project files and extracts metadata
+  // Factory method - convenient way to create and initialize a PreambleManager
+  // Creates a preamble compilation from all project files and extracts metadata
   [[nodiscard]] static auto CreateFromProjectLayout(
       std::shared_ptr<ProjectLayoutService> layout_service,
       std::shared_ptr<spdlog::logger> logger = nullptr)
-      -> std::shared_ptr<GlobalCatalog>;
+      -> std::shared_ptr<PreambleManager>;
 
   // Non-copyable, non-movable
-  GlobalCatalog(const GlobalCatalog&) = delete;
-  GlobalCatalog(GlobalCatalog&&) = delete;
-  auto operator=(const GlobalCatalog&) -> GlobalCatalog& = delete;
-  auto operator=(GlobalCatalog&&) -> GlobalCatalog& = delete;
-  ~GlobalCatalog() = default;
+  PreambleManager(const PreambleManager&) = delete;
+  PreambleManager(PreambleManager&&) = delete;
+  auto operator=(const PreambleManager&) -> PreambleManager& = delete;
+  auto operator=(PreambleManager&&) -> PreambleManager& = delete;
+  ~PreambleManager() = default;
 
-  // Accessors for catalog data
+  // Accessors for preamble_manager data
   [[nodiscard]] auto GetPackages() const -> const std::vector<PackageInfo>&;
   [[nodiscard]] auto GetInterfaces() const -> const std::vector<InterfaceInfo>&;
   [[nodiscard]] auto GetModules() const -> const std::vector<ModuleInfo>&;
@@ -99,13 +100,13 @@ class GlobalCatalog {
   // Version tracking for cache invalidation
   [[nodiscard]] auto GetVersion() const -> uint64_t;
 
-  // Build catalog from ProjectLayoutService - public method
+  // Build preamble_manager from ProjectLayoutService - public method
   auto BuildFromLayout(
       std::shared_ptr<ProjectLayoutService> layout_service,
       std::shared_ptr<spdlog::logger> logger) -> void;
 
  private:
-  // Catalog data
+  // PreambleManager data
   std::vector<PackageInfo> packages_;
   std::vector<InterfaceInfo> interfaces_;  // Empty for MVP
   std::vector<ModuleInfo> modules_;
@@ -114,8 +115,8 @@ class GlobalCatalog {
   std::vector<std::string> defines_;
   uint64_t version_ = 1;
 
-  // Global compilation objects
-  std::shared_ptr<slang::ast::Compilation> global_compilation_;
+  // Preamble compilation objects
+  std::shared_ptr<slang::ast::Compilation> preamble_compilation_;
   std::shared_ptr<slang::SourceManager> source_manager_;
 
   // Logger

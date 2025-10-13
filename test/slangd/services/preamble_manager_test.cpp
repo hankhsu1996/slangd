@@ -1,4 +1,4 @@
-#include "slangd/services/global_catalog.hpp"
+#include "slangd/services/preamble_manager.hpp"
 
 #include <cstdlib>
 #include <fstream>
@@ -29,16 +29,16 @@ auto main(int argc, char* argv[]) -> int {
 using slangd::test::RunAsyncTest;
 
 // Helper to create test files in temporary directory
-class GlobalCatalogTestFixture {
+class PreambleManagerTestFixture {
  public:
-  GlobalCatalogTestFixture() {
+  PreambleManagerTestFixture() {
     // Create a temporary directory for test files
     temp_dir_ =
-        std::filesystem::temp_directory_path() / "slangd_global_catalog_test";
+        std::filesystem::temp_directory_path() / "slangd_preamble_manager_test";
     std::filesystem::create_directories(temp_dir_);
   }
 
-  ~GlobalCatalogTestFixture() {
+  ~PreambleManagerTestFixture() {
     // Clean up test files
     std::error_code ec;
     std::filesystem::remove_all(temp_dir_, ec);
@@ -46,12 +46,12 @@ class GlobalCatalogTestFixture {
 
   // Explicitly delete copy and move operations (not needed for this test
   // fixture)
-  GlobalCatalogTestFixture(const GlobalCatalogTestFixture&) = delete;
-  auto operator=(const GlobalCatalogTestFixture&)
-      -> GlobalCatalogTestFixture& = delete;
-  GlobalCatalogTestFixture(GlobalCatalogTestFixture&&) = delete;
-  auto operator=(GlobalCatalogTestFixture&&)
-      -> GlobalCatalogTestFixture& = delete;
+  PreambleManagerTestFixture(const PreambleManagerTestFixture&) = delete;
+  auto operator=(const PreambleManagerTestFixture&)
+      -> PreambleManagerTestFixture& = delete;
+  PreambleManagerTestFixture(PreambleManagerTestFixture&&) = delete;
+  auto operator=(PreambleManagerTestFixture&&)
+      -> PreambleManagerTestFixture& = delete;
 
   auto CreateFile(std::string_view filename, std::string_view content) const
       -> slangd::CanonicalPath {
@@ -62,18 +62,18 @@ class GlobalCatalogTestFixture {
     return slangd::CanonicalPath(file_path);
   }
 
-  [[nodiscard]] auto BuildCatalog(asio::any_io_executor executor) const
-      -> std::shared_ptr<slangd::services::GlobalCatalog> {
+  [[nodiscard]] auto BuildPreambleManager(asio::any_io_executor executor) const
+      -> std::shared_ptr<slangd::services::PreambleManager> {
     auto layout_service = slangd::ProjectLayoutService::Create(
         executor, slangd::CanonicalPath(temp_dir_), spdlog::default_logger());
-    return slangd::services::GlobalCatalog::CreateFromProjectLayout(
+    return slangd::services::PreambleManager::CreateFromProjectLayout(
         layout_service, spdlog::default_logger());
   }
 
   static void AssertModuleExists(
-      const slangd::services::GlobalCatalog& catalog, std::string_view name,
-      std::string_view expected_filename) {
-    const auto& modules = catalog.GetModules();
+      const slangd::services::PreambleManager& preamble_manager,
+      std::string_view name, std::string_view expected_filename) {
+    const auto& modules = preamble_manager.GetModules();
     for (const auto& mod : modules) {
       if (mod.name == name) {
         REQUIRE(mod.file_path.Path().filename() == expected_filename);
@@ -85,9 +85,9 @@ class GlobalCatalogTestFixture {
   }
 
   static void AssertPackageExists(
-      const slangd::services::GlobalCatalog& catalog, std::string_view name,
-      std::string_view expected_filename) {
-    const auto& packages = catalog.GetPackages();
+      const slangd::services::PreambleManager& preamble_manager,
+      std::string_view name, std::string_view expected_filename) {
+    const auto& packages = preamble_manager.GetPackages();
     for (const auto& pkg : packages) {
       if (pkg.name == name) {
         REQUIRE(pkg.file_path.Path().filename() == expected_filename);
@@ -98,9 +98,9 @@ class GlobalCatalogTestFixture {
   }
 
   static void AssertInterfaceExists(
-      const slangd::services::GlobalCatalog& catalog, std::string_view name,
-      std::string_view expected_filename) {
-    const auto& interfaces = catalog.GetInterfaces();
+      const slangd::services::PreambleManager& preamble_manager,
+      std::string_view name, std::string_view expected_filename) {
+    const auto& interfaces = preamble_manager.GetInterfaces();
     for (const auto& iface : interfaces) {
       if (iface.name == name) {
         REQUIRE(iface.file_path.Path().filename() == expected_filename);
@@ -140,9 +140,9 @@ class GlobalCatalogTestFixture {
   std::filesystem::path temp_dir_;
 };
 
-TEST_CASE("GlobalCatalog package discovery", "[global_catalog]") {
+TEST_CASE("PreambleManager package discovery", "[preamble_manager]") {
   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
-    GlobalCatalogTestFixture fixture;
+    PreambleManagerTestFixture fixture;
     fixture.CreateFile("math_pkg.sv", R"(
       package math_pkg;
         parameter BUS_WIDTH = 64;
@@ -150,20 +150,20 @@ TEST_CASE("GlobalCatalog package discovery", "[global_catalog]") {
       endpackage
     )");
 
-    auto catalog = fixture.BuildCatalog(executor);
+    auto preamble_manager = fixture.BuildPreambleManager(executor);
 
-    REQUIRE(catalog != nullptr);
-    REQUIRE(catalog->GetVersion() == 1);
-    GlobalCatalogTestFixture::AssertPackageExists(
-        *catalog, "math_pkg", "math_pkg.sv");
+    REQUIRE(preamble_manager != nullptr);
+    REQUIRE(preamble_manager->GetVersion() == 1);
+    PreambleManagerTestFixture::AssertPackageExists(
+        *preamble_manager, "math_pkg", "math_pkg.sv");
 
     co_return;
   });
 }
 
-TEST_CASE("GlobalCatalog interface discovery", "[global_catalog]") {
+TEST_CASE("PreambleManager interface discovery", "[preamble_manager]") {
   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
-    GlobalCatalogTestFixture fixture;
+    PreambleManagerTestFixture fixture;
     fixture.CreateFile("test_interface.sv", R"(
       interface test_interface;
         logic [7:0] data;
@@ -173,20 +173,20 @@ TEST_CASE("GlobalCatalog interface discovery", "[global_catalog]") {
       endinterface
     )");
 
-    auto catalog = fixture.BuildCatalog(executor);
+    auto preamble_manager = fixture.BuildPreambleManager(executor);
 
-    REQUIRE(catalog != nullptr);
-    REQUIRE(catalog->GetVersion() == 1);
-    GlobalCatalogTestFixture::AssertInterfaceExists(
-        *catalog, "test_interface", "test_interface.sv");
+    REQUIRE(preamble_manager != nullptr);
+    REQUIRE(preamble_manager->GetVersion() == 1);
+    PreambleManagerTestFixture::AssertInterfaceExists(
+        *preamble_manager, "test_interface", "test_interface.sv");
 
     co_return;
   });
 }
 
-TEST_CASE("GlobalCatalog mixed content discovery", "[global_catalog]") {
+TEST_CASE("PreambleManager mixed content discovery", "[preamble_manager]") {
   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
-    GlobalCatalogTestFixture fixture;
+    PreambleManagerTestFixture fixture;
     fixture.CreateFile("types_pkg.sv", R"(
       package types_pkg;
         typedef logic [31:0] word_t;
@@ -207,24 +207,24 @@ TEST_CASE("GlobalCatalog mixed content discovery", "[global_catalog]") {
       endmodule
     )");
 
-    auto catalog = fixture.BuildCatalog(executor);
+    auto preamble_manager = fixture.BuildPreambleManager(executor);
 
-    REQUIRE(catalog != nullptr);
-    REQUIRE(catalog->GetPackages().size() == 2);
-    REQUIRE(catalog->GetInterfaces().size() == 1);
+    REQUIRE(preamble_manager != nullptr);
+    REQUIRE(preamble_manager->GetPackages().size() == 2);
+    REQUIRE(preamble_manager->GetInterfaces().size() == 1);
 
-    GlobalCatalogTestFixture::AssertPackageExists(
-        *catalog, "types_pkg", "types_pkg.sv");
-    GlobalCatalogTestFixture::AssertInterfaceExists(
-        *catalog, "bus_interface", "bus_interface.sv");
+    PreambleManagerTestFixture::AssertPackageExists(
+        *preamble_manager, "types_pkg", "types_pkg.sv");
+    PreambleManagerTestFixture::AssertInterfaceExists(
+        *preamble_manager, "bus_interface", "bus_interface.sv");
 
     co_return;
   });
 }
 
-TEST_CASE("GlobalCatalog module discovery", "[global_catalog]") {
+TEST_CASE("PreambleManager module discovery", "[preamble_manager]") {
   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
-    GlobalCatalogTestFixture fixture;
+    PreambleManagerTestFixture fixture;
     fixture.CreateFile("alu_module.sv", R"(
       module ALU #(parameter WIDTH = 8) (
         input logic [WIDTH-1:0] a,
@@ -235,18 +235,18 @@ TEST_CASE("GlobalCatalog module discovery", "[global_catalog]") {
       endmodule
     )");
 
-    auto catalog = fixture.BuildCatalog(executor);
-    REQUIRE(catalog != nullptr);
-    GlobalCatalogTestFixture::AssertModuleExists(
-        *catalog, "ALU", "alu_module.sv");
+    auto preamble_manager = fixture.BuildPreambleManager(executor);
+    REQUIRE(preamble_manager != nullptr);
+    PreambleManagerTestFixture::AssertModuleExists(
+        *preamble_manager, "ALU", "alu_module.sv");
 
     co_return;
   });
 }
 
-TEST_CASE("GlobalCatalog module parameter extraction", "[global_catalog]") {
+TEST_CASE("PreambleManager module parameter extraction", "[preamble_manager]") {
   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
-    GlobalCatalogTestFixture fixture;
+    PreambleManagerTestFixture fixture;
     fixture.CreateFile("fifo_module.sv", R"(
       module FIFO #(
         parameter DEPTH = 16,
@@ -259,21 +259,21 @@ TEST_CASE("GlobalCatalog module parameter extraction", "[global_catalog]") {
       endmodule
     )");
 
-    auto catalog = fixture.BuildCatalog(executor);
-    const auto* fifo_module = catalog->GetModule("FIFO");
+    auto preamble_manager = fixture.BuildPreambleManager(executor);
+    const auto* fifo_module = preamble_manager->GetModule("FIFO");
     REQUIRE(fifo_module != nullptr);
     REQUIRE(fifo_module->parameters.size() == 2);
 
-    GlobalCatalogTestFixture::AssertParameterExists(*fifo_module, "DEPTH");
-    GlobalCatalogTestFixture::AssertParameterExists(*fifo_module, "WIDTH");
+    PreambleManagerTestFixture::AssertParameterExists(*fifo_module, "DEPTH");
+    PreambleManagerTestFixture::AssertParameterExists(*fifo_module, "WIDTH");
 
     co_return;
   });
 }
 
-TEST_CASE("GlobalCatalog module port extraction", "[global_catalog]") {
+TEST_CASE("PreambleManager module port extraction", "[preamble_manager]") {
   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
-    GlobalCatalogTestFixture fixture;
+    PreambleManagerTestFixture fixture;
     fixture.CreateFile("register_module.sv", R"(
       module Register (
         input logic clk,
@@ -284,23 +284,23 @@ TEST_CASE("GlobalCatalog module port extraction", "[global_catalog]") {
       endmodule
     )");
 
-    auto catalog = fixture.BuildCatalog(executor);
-    const auto* register_module = catalog->GetModule("Register");
+    auto preamble_manager = fixture.BuildPreambleManager(executor);
+    const auto* register_module = preamble_manager->GetModule("Register");
     REQUIRE(register_module != nullptr);
     REQUIRE(register_module->ports.size() == 4);
 
-    GlobalCatalogTestFixture::AssertPortExists(*register_module, "clk");
-    GlobalCatalogTestFixture::AssertPortExists(*register_module, "reset");
-    GlobalCatalogTestFixture::AssertPortExists(*register_module, "data_in");
-    GlobalCatalogTestFixture::AssertPortExists(*register_module, "data_out");
+    PreambleManagerTestFixture::AssertPortExists(*register_module, "clk");
+    PreambleManagerTestFixture::AssertPortExists(*register_module, "reset");
+    PreambleManagerTestFixture::AssertPortExists(*register_module, "data_in");
+    PreambleManagerTestFixture::AssertPortExists(*register_module, "data_out");
 
     co_return;
   });
 }
 
-TEST_CASE("GlobalCatalog GetModule lookup", "[global_catalog]") {
+TEST_CASE("PreambleManager GetModule lookup", "[preamble_manager]") {
   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
-    GlobalCatalogTestFixture fixture;
+    PreambleManagerTestFixture fixture;
     fixture.CreateFile("counter.sv", R"(
       module Counter (
         input logic clk,
@@ -317,17 +317,17 @@ TEST_CASE("GlobalCatalog GetModule lookup", "[global_catalog]") {
       endmodule
     )");
 
-    auto catalog = fixture.BuildCatalog(executor);
+    auto preamble_manager = fixture.BuildPreambleManager(executor);
 
-    const auto* counter = catalog->GetModule("Counter");
+    const auto* counter = preamble_manager->GetModule("Counter");
     REQUIRE(counter != nullptr);
     REQUIRE(counter->name == "Counter");
 
-    const auto* timer = catalog->GetModule("Timer");
+    const auto* timer = preamble_manager->GetModule("Timer");
     REQUIRE(timer != nullptr);
     REQUIRE(timer->name == "Timer");
 
-    const auto* nonexistent = catalog->GetModule("NonExistent");
+    const auto* nonexistent = preamble_manager->GetModule("NonExistent");
     REQUIRE(nonexistent == nullptr);
 
     co_return;

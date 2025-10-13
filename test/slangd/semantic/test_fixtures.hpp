@@ -21,8 +21,8 @@
 
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/semantic/semantic_index.hpp"
-#include "slangd/services/global_catalog.hpp"
 #include "slangd/services/overlay_session.hpp"
+#include "slangd/services/preamble_manager.hpp"
 #include "test/slangd/common/file_fixture.hpp"
 
 namespace slangd::semantic::test {
@@ -421,31 +421,32 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
     });
   }
 
-  // Build GlobalCatalog from temp directory files
+  // Build PreambleManager from temp directory files
   // Requires files to be written via CreateFile() first
-  auto BuildCatalog(asio::any_io_executor executor) const
-      -> std::shared_ptr<slangd::services::GlobalCatalog> {
+  auto BuildPreambleManager(asio::any_io_executor executor) const
+      -> std::shared_ptr<slangd::services::PreambleManager> {
     auto layout_service = slangd::ProjectLayoutService::Create(
         executor, GetTempDir(), spdlog::default_logger());
-    return slangd::services::GlobalCatalog::CreateFromProjectLayout(
+    return slangd::services::PreambleManager::CreateFromProjectLayout(
         layout_service, spdlog::default_logger());
   }
 
-  struct SessionWithCatalog {
+  struct SessionWithPreambleManager {
     std::shared_ptr<slangd::services::OverlaySession> session;
-    std::shared_ptr<slangd::services::GlobalCatalog> catalog;
+    std::shared_ptr<slangd::services::PreambleManager> preamble_manager;
   };
 
-  // Build OverlaySession from disk files with GlobalCatalog
+  // Build OverlaySession from disk files with PreambleManager
   // Used for cross-file navigation tests
-  // Returns both session and catalog for test access
-  auto BuildSessionFromDiskWithCatalog(
+  // Returns both session and preamble_manager for test access
+  auto BuildSessionFromDiskWithPreambleManager(
       std::string_view current_file_name, asio::any_io_executor executor)
-      -> SessionWithCatalog {
+      -> SessionWithPreambleManager {
     auto layout_service = slangd::ProjectLayoutService::Create(
         executor, GetTempDir(), spdlog::default_logger());
-    auto catalog = slangd::services::GlobalCatalog::CreateFromProjectLayout(
-        layout_service, spdlog::default_logger());
+    auto preamble_manager =
+        slangd::services::PreambleManager::CreateFromProjectLayout(
+            layout_service, spdlog::default_logger());
 
     // Read current file content from disk
     auto current_path = GetTempDir().Path() / current_file_name;
@@ -456,11 +457,12 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
 
     std::string uri = "file:///" + std::string(current_file_name);
 
-    // Create OverlaySession with catalog (handles all compilation setup)
+    // Create OverlaySession with preamble_manager (handles all compilation
+    // setup)
     auto session = slangd::services::OverlaySession::Create(
-        uri, content, layout_service, catalog);
+        uri, content, layout_service, preamble_manager);
 
-    return {.session = session, .catalog = catalog};
+    return {.session = session, .preamble_manager = preamble_manager};
   }
 
   static auto FindAllOccurrencesInSession(
@@ -517,7 +519,7 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
   }
 
   static void AssertCrossFileDefinition(
-      const SessionWithCatalog& result, std::string_view symbol,
+      const SessionWithPreambleManager& result, std::string_view symbol,
       std::string_view expected_source_file,
       std::string_view expected_def_file) {
     auto location = FindLocationInSession(*result.session, symbol);
@@ -548,7 +550,7 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
   }
 
   static void AssertCrossFileDef(
-      const SessionWithCatalog& result, std::string_view ref_content,
+      const SessionWithPreambleManager& result, std::string_view ref_content,
       std::string_view def_content, std::string_view symbol, size_t ref_index,
       size_t def_index) {
     auto ref_offsets =
@@ -575,7 +577,7 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
   }
 
   static void AssertCrossFileDefinitionAt(
-      const SessionWithCatalog& result, std::string_view symbol,
+      const SessionWithPreambleManager& result, std::string_view symbol,
       size_t occurrence_index, std::string_view expected_source_file,
       std::string_view expected_def_file) {
     auto occurrences = FindAllOccurrencesInSession(*result.session, symbol);

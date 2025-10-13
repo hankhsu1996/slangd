@@ -12,7 +12,7 @@
 #include <spdlog/spdlog.h>
 
 namespace slangd::services {
-class GlobalCatalog;
+class PreambleManager;
 }
 
 namespace slangd::semantic {
@@ -38,7 +38,7 @@ class DiagnosticConverter {
       slang::ast::Compilation& compilation,
       const slang::SourceManager& source_manager,
       slang::BufferID main_buffer_id,
-      const services::GlobalCatalog* global_catalog = nullptr)
+      const services::PreambleManager* preamble_manager = nullptr)
       -> std::vector<lsp::Diagnostic>;
 
   // Extract diagnostics from pre-computed slang::Diagnostics
@@ -49,11 +49,11 @@ class DiagnosticConverter {
       slang::BufferID main_buffer_id) -> std::vector<lsp::Diagnostic>;
 
   // Apply LSP-specific filtering
-  // global_catalog: Optional GlobalCatalog for filtering false-positive
+  // preamble_manager: Optional PreambleManager for filtering false-positive
   // UnknownModule errors
   static auto FilterDiagnostics(
       std::vector<lsp::Diagnostic> diagnostics,
-      const services::GlobalCatalog* global_catalog = nullptr)
+      const services::PreambleManager* preamble_manager = nullptr)
       -> std::vector<lsp::Diagnostic>;
 
  private:

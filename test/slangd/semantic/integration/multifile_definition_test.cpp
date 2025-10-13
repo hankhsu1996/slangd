@@ -103,9 +103,10 @@ TEST_CASE(
     fixture.CreateFile("alu.sv", alu_content);
     fixture.CreateFile("top.sv", top_content);
 
-    auto result = fixture.BuildSessionFromDiskWithCatalog("top.sv", executor);
+    auto result =
+        fixture.BuildSessionFromDiskWithPreambleManager("top.sv", executor);
     REQUIRE(result.session != nullptr);
-    REQUIRE(result.catalog != nullptr);
+    REQUIRE(result.preamble_manager != nullptr);
 
     Fixture::AssertCrossFileDefinition(result, "ALU", "top.sv", "alu.sv");
 
@@ -176,9 +177,10 @@ TEST_CASE(
     fixture.CreateFile("adder.sv", def);
     fixture.CreateFile("top.sv", ref);
 
-    auto result = fixture.BuildSessionFromDiskWithCatalog("top.sv", executor);
+    auto result =
+        fixture.BuildSessionFromDiskWithPreambleManager("top.sv", executor);
     REQUIRE(result.session != nullptr);
-    REQUIRE(result.catalog != nullptr);
+    REQUIRE(result.preamble_manager != nullptr);
 
     Fixture::AssertCrossFileDef(result, ref, def, "a_port", 0, 0);
     Fixture::AssertCrossFileDef(result, ref, def, "c_port", 0, 0);
@@ -223,9 +225,10 @@ TEST_CASE(
     fixture.CreateFile("configurable.sv", def);
     fixture.CreateFile("top.sv", ref);
 
-    auto result = fixture.BuildSessionFromDiskWithCatalog("top.sv", executor);
+    auto result =
+        fixture.BuildSessionFromDiskWithPreambleManager("top.sv", executor);
     REQUIRE(result.session != nullptr);
-    REQUIRE(result.catalog != nullptr);
+    REQUIRE(result.preamble_manager != nullptr);
 
     Fixture::AssertCrossFileDef(result, ref, def, "PARAM_A", 0, 0);
     Fixture::AssertCrossFileDef(result, ref, def, "PARAM_C", 0, 0);
@@ -272,9 +275,10 @@ TEST_CASE(
     fixture.CreateFile("alu.sv", def);
     fixture.CreateFile("top.sv", ref);
 
-    auto result = fixture.BuildSessionFromDiskWithCatalog("top.sv", executor);
+    auto result =
+        fixture.BuildSessionFromDiskWithPreambleManager("top.sv", executor);
     REQUIRE(result.session != nullptr);
-    REQUIRE(result.catalog != nullptr);
+    REQUIRE(result.preamble_manager != nullptr);
 
     Fixture::AssertCrossFileDefinition(result, "ALU", "top.sv", "alu.sv");
 

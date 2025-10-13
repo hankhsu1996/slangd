@@ -15,7 +15,7 @@ namespace slangd::services {
 auto OverlaySession::Create(
     std::string uri, std::string content,
     std::shared_ptr<ProjectLayoutService> layout_service,
-    std::shared_ptr<const GlobalCatalog> catalog,
+    std::shared_ptr<const PreambleManager> preamble_manager,
     std::shared_ptr<spdlog::logger> logger) -> std::shared_ptr<OverlaySession> {
   if (!logger) {
     logger = spdlog::default_logger();
@@ -24,16 +24,17 @@ auto OverlaySession::Create(
   utils::ScopedTimer timer("OverlaySession creation", logger);
   logger->debug("Creating overlay session for: {}", uri);
 
-  // Build fresh compilation with current buffer and optional catalog files
+  // Build fresh compilation with current buffer and optional preamble_manager
+  // files
   auto [source_manager, compilation, main_buffer_id] =
-      BuildCompilation(uri, content, layout_service, catalog, logger);
+      BuildCompilation(uri, content, layout_service, preamble_manager, logger);
 
   // Create unified semantic index (replaces DefinitionIndex + SymbolIndex)
   // Note: FromCompilation calls forceElaborate() which populates
   // compilation.diagMap Diagnostics are extracted on-demand via
   // ComputeDiagnostics()
   auto semantic_index = semantic::SemanticIndex::FromCompilation(
-      *compilation, *source_manager, uri, catalog.get(), logger);
+      *compilation, *source_manager, uri, preamble_manager.get(), logger);
 
   auto elapsed = timer.GetElapsed();
   auto entry_count = semantic_index->GetSemanticEntries().size();
@@ -73,7 +74,7 @@ OverlaySession::OverlaySession(
 auto OverlaySession::BuildCompilation(
     std::string uri, std::string content,
     std::shared_ptr<ProjectLayoutService> layout_service,
-    std::shared_ptr<const GlobalCatalog> catalog,
+    std::shared_ptr<const PreambleManager> preamble_manager,
     std::shared_ptr<spdlog::logger> logger)
     -> std::tuple<
         std::shared_ptr<slang::SourceManager>,
@@ -145,10 +146,10 @@ auto OverlaySession::BuildCompilation(
         file_path.Path().string());
   }
 
-  // Add files from global catalog if available
-  if (catalog) {
-    // Add packages from catalog
-    for (const auto& package_info : catalog->GetPackages()) {
+  // Add files from preamble manager if available
+  if (preamble_manager) {
+    // Add packages from preamble manager
+    for (const auto& package_info : preamble_manager->GetPackages()) {
       // Skip if this is the same file as our buffer (deduplication)
       if (package_info.file_path.Path() == file_path.Path()) {
         continue;
@@ -161,12 +162,12 @@ auto OverlaySession::BuildCompilation(
       }
     }
 
-    // Add interfaces from catalog
-    for (const auto& interface_info : catalog->GetInterfaces()) {
+    // Add interfaces from preamble manager
+    for (const auto& interface_info : preamble_manager->GetInterfaces()) {
       // Skip if this is the same file as our buffer (deduplication)
       if (interface_info.file_path.Path() == file_path.Path()) {
         logger->debug(
-            "Skipping buffer file from catalog: {}",
+            "Skipping buffer file from preamble manager: {}",
             interface_info.file_path.Path().string());
         continue;
       }
@@ -179,7 +180,7 @@ auto OverlaySession::BuildCompilation(
     }
 
   } else {
-    logger->debug("No catalog provided - single-file mode");
+    logger->debug("No preamble manager provided - single-file mode");
   }
 
   return std::make_tuple(

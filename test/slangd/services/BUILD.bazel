@@ -19,10 +19,10 @@ cc_test(
 )
 
 cc_test(
-    name = "global_catalog_test",
+    name = "preamble_manager_test",
     timeout = "short",
     srcs = [
-        "global_catalog_test.cpp",
+        "preamble_manager_test.cpp",
     ],
     deps = [
         "//:slangd_core",

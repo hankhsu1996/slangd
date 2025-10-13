@@ -145,30 +145,30 @@ SlangdLspServer (LSP protocol layer)
 
 **Two-compilation design:**
 
-- **GlobalCatalog**: Compiles ALL project files once → extracts packages, interfaces, module metadata
+- **PreambleManager**: Compiles ALL project files once → extracts packages, interfaces, module metadata
 
   - Built from ProjectLayoutService (config file + file discovery)
   - Shared across ALL OverlaySessions
   - Immutable snapshot with version tracking
 
-- **OverlaySession**: Compiles current file + uses GlobalCatalog data
+- **OverlaySession**: Compiles current file + uses PreambleManager data
   - Current file buffer (in-memory, authoritative)
-  - Packages from GlobalCatalog (read from disk via `SyntaxTree::fromFile`)
-  - Interfaces from GlobalCatalog (read from disk via `SyntaxTree::fromFile`)
+  - Packages from PreambleManager (read from disk via `SyntaxTree::fromFile`)
+  - Interfaces from PreambleManager (read from disk via `SyntaxTree::fromFile`)
   - Per-file, cached by SessionManager (LRU eviction)
 
-**Critical insight:** OverlaySession reads packages/interfaces from disk, not from GlobalCatalog compilation. GlobalCatalog only provides metadata (which files to include).
+**Critical insight:** OverlaySession reads packages/interfaces from disk, not from PreambleManager compilation. PreambleManager only provides metadata (which files to include).
 
 **Invalidation rules:**
 
-| Event                   | GlobalCatalog | OverlaySession            | Reason                                                     |
+| Event                   | PreambleManager | OverlaySession            | Reason                                                     |
 | ----------------------- | ------------- | ------------------------- | ---------------------------------------------------------- |
 | Config change           | Rebuild       | Invalidate + rebuild open | Config affects compilation settings (macros, search paths) |
 | Closed SV file change   | No change     | Invalidate all            | OverlaySession reads fresh content from disk               |
 | SV file created/deleted | Rebuild       | Invalidate all            | File discovery changes (new package/interface/module)      |
 | Open file change        | No change     | Invalidate one            | Handled by text sync (didChange/didSave)                   |
 
-**Config change behavior:** After rebuilding GlobalCatalog and invalidating all sessions, proactively rebuilds sessions for all open files to restore LSP features immediately (no on-demand lazy rebuild).
+**Config change behavior:** After rebuilding PreambleManager and invalidating all sessions, proactively rebuilds sessions for all open files to restore LSP features immediately (no on-demand lazy rebuild).
 
 **Event-driven model**:
 
@@ -193,7 +193,7 @@ SlangdLspServer (protocol layer - thin delegates)
   ├─ File Watcher Events (external changes - closed files only)
   │   └─ OnDidChangeWatchedFiles(changes[])
   │       ├─ Filter open files (handled by text sync above)
-  │       ├─ Config changes → HandleConfigChange() (rebuild GlobalCatalog)
+  │       ├─ Config changes → HandleConfigChange() (rebuild PreambleManager)
   │       └─ SV file changes → HandleSourceFileChange() (invalidate sessions)
   │
   └─ LSP Feature Handlers (requests from client - respond with data)
