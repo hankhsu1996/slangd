@@ -41,10 +41,6 @@ class LanguageServiceBase {
       -> asio::awaitable<
           std::expected<std::vector<lsp::Diagnostic>, LspError>> = 0;
 
-  // Compute full diagnostics (parse + semantic analysis)
-  virtual auto ComputeDiagnostics(std::string uri) -> asio::awaitable<
-      std::expected<std::vector<lsp::Diagnostic>, LspError>> = 0;
-
   // Find definitions at the given position
   virtual auto GetDefinitionsForPosition(
       std::string uri, lsp::Position position)
@@ -87,13 +83,8 @@ class LanguageServiceBase {
   // Called when external file changes are detected
   virtual auto OnDocumentsChanged(std::vector<std::string> uris) -> void = 0;
 
-  // Get document state (content and version) for a URI
-  virtual auto GetDocumentState(std::string uri)
-      -> asio::awaitable<std::optional<DocumentState>> = 0;
-
-  // Get all open document URIs
-  virtual auto GetAllOpenDocumentUris()
-      -> asio::awaitable<std::vector<std::string>> = 0;
+  // Check if document is currently open in editor (synchronous)
+  virtual auto IsDocumentOpen(const std::string& uri) const -> bool = 0;
 };
 
 }  // namespace slangd

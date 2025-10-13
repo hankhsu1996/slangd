@@ -35,12 +35,6 @@ class SlangdLspServer : public lsp::LspServer {
   // Language service - unified interface for all domain operations
   std::shared_ptr<LanguageServiceBase> language_service_{nullptr};
 
-  // Helper methods for diagnostics orchestration
-  auto PublishDiagnosticsForDocument(
-      std::string uri, std::string content, int version)
-      -> asio::awaitable<void>;
-  auto ProcessDiagnosticsForUri(std::string uri) -> asio::awaitable<void>;
-
   // Helper method to determine if a path is a config file
   static auto IsConfigFile(const std::string& path) -> bool;
 

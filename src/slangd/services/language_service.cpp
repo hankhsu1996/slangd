@@ -128,55 +128,6 @@ auto LanguageService::ComputeParseDiagnostics(
   co_return diagnostics;
 }
 
-auto LanguageService::ComputeDiagnostics(std::string uri)
-    -> asio::awaitable<std::expected<std::vector<lsp::Diagnostic>, LspError>> {
-  utils::ScopedTimer timer("ComputeDiagnostics", logger_);
-
-  if (!layout_service_) {
-    logger_->error("LanguageService: Workspace not initialized");
-    co_return LspError::UnexpectedFromCode(
-        lsp::error::LspErrorCode::kInternalError, "Workspace not initialized");
-  }
-
-  // Use callback pattern to access compilation state without shared_ptr escape
-  auto result = co_await session_manager_->WithCompilationState(
-      uri, [this, uri](const CompilationState& state) {
-        // Extract parse diagnostics (syntax errors from syntax trees)
-        auto parse_diags =
-            semantic::DiagnosticConverter::ExtractParseDiagnostics(
-                *state.compilation, *state.source_manager, state.main_buffer_id,
-                logger_);
-
-        // Extract semantic diagnostics (from diagMap, populated by
-        // forceElaborate) Pass GlobalCatalog to filter false-positive
-        // UnknownModule diagnostics
-        auto semantic_diags =
-            semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
-                *state.compilation, *state.source_manager, state.main_buffer_id,
-                global_catalog_.get());
-
-        // Combine parse + semantic diagnostics
-        parse_diags.insert(
-            parse_diags.end(), semantic_diags.begin(), semantic_diags.end());
-
-        return parse_diags;
-      });
-
-  if (!result) {
-    logger_->debug(
-        "LanguageService: No compilation state for {} ({})", uri,
-        result.error());
-    co_return LspError::UnexpectedFromCode(
-        lsp::error::LspErrorCode::kInternalError, result.error());
-  }
-
-  logger_->debug(
-      "LanguageService computed {} diagnostics for: {} ({})", result->size(),
-      uri, utils::ScopedTimer::FormatDuration(timer.GetElapsed()));
-
-  co_return *result;
-}
-
 auto LanguageService::GetDefinitionsForPosition(
     std::string uri, lsp::Position position)
     -> asio::awaitable<std::expected<std::vector<lsp::Location>, LspError>> {
@@ -324,7 +275,8 @@ auto LanguageService::HandleConfigChange() -> asio::awaitable<void> {
     auto state = co_await doc_state_.Get(uri);
     if (state) {
       co_await session_manager_->UpdateSession(
-          uri, state->content, state->version);
+          uri, state->content, state->version,
+          CreateDiagnosticHook(uri, state->version));
     }
   }
 
@@ -431,26 +383,15 @@ auto LanguageService::OnDocumentClosed(std::string uri) -> void {
   // LRU eviction will handle cleanup when cache size limit is reached
 }
 
-auto LanguageService::OnDocumentsChanged(std::vector<std::string> uris)
+auto LanguageService::OnDocumentsChanged(std::vector<std::string> /*uris*/)
     -> void {
-  if (!session_manager_) {
-    logger_->error("LanguageService: SessionManager not initialized");
-    return;
-  }
-
-  logger_->debug("LanguageService::OnDocumentsChanged: {} files", uris.size());
-  session_manager_->InvalidateSessions(uris);
-  logger_->debug("SessionManager cache invalidated for {} files", uris.size());
+  // Reserved for future use - currently no external callers
+  // Sessions are managed through OnDocumentOpened/Changed/Saved/Closed
+  // lifecycle
 }
 
-auto LanguageService::GetDocumentState(std::string uri)
-    -> asio::awaitable<std::optional<DocumentState>> {
-  co_return co_await doc_state_.Get(uri);
-}
-
-auto LanguageService::GetAllOpenDocumentUris()
-    -> asio::awaitable<std::vector<std::string>> {
-  co_return co_await doc_state_.GetAllUris();
+auto LanguageService::IsDocumentOpen(const std::string& uri) const -> bool {
+  return open_tracker_->Contains(uri);
 }
 
 }  // namespace slangd::services

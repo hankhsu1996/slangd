@@ -305,7 +305,7 @@ WithSession(uri, callback) → waits for session_ready → executes
 3. Add handler to `SlangdLspServer` (coordinate with strand)
 4. Register handler in base `LspServer` framework
 
-**Note**: Only add domain operations to the base interface (e.g., ComputeDiagnostics, GetDefinitions). Document lifecycle events (OnDocumentOpened, OnDocumentSaved, etc.) are already defined and should not be extended.
+**Note**: Only add domain operations to the base interface (e.g., GetDefinitions, GetDocumentSymbols). Document lifecycle events (OnDocumentOpened, OnDocumentSaved, etc.) are already defined and should not be extended.
 
 ### Alternative Service Implementations
 

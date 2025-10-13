@@ -36,9 +36,6 @@ class LanguageService : public LanguageServiceBase {
       -> asio::awaitable<std::expected<
           std::vector<lsp::Diagnostic>, lsp::error::LspError>> override;
 
-  auto ComputeDiagnostics(std::string uri) -> asio::awaitable<std::expected<
-      std::vector<lsp::Diagnostic>, lsp::error::LspError>> override;
-
   auto GetDefinitionsForPosition(std::string uri, lsp::Position position)
       -> asio::awaitable<std::expected<
           std::vector<lsp::Location>, lsp::error::LspError>> override;
@@ -64,11 +61,7 @@ class LanguageService : public LanguageServiceBase {
 
   auto OnDocumentsChanged(std::vector<std::string> uris) -> void override;
 
-  auto GetDocumentState(std::string uri)
-      -> asio::awaitable<std::optional<DocumentState>> override;
-
-  auto GetAllOpenDocumentUris()
-      -> asio::awaitable<std::vector<std::string>> override;
+  auto IsDocumentOpen(const std::string& uri) const -> bool override;
 
   // Set callback for publishing diagnostics to LSP client
   auto SetDiagnosticPublisher(DiagnosticPublisher publisher) -> void override {

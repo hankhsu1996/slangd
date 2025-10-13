@@ -171,25 +171,6 @@ auto SlangdLspServer::OnDidCloseTextDocument(
   co_return Ok();
 }
 
-auto SlangdLspServer::PublishDiagnosticsForDocument(
-    std::string uri, std::string content, int version)
-    -> asio::awaitable<void> {
-  auto all_diags_result = co_await language_service_->ComputeDiagnostics(uri);
-  if (all_diags_result.has_value()) {
-    co_await PublishDiagnostics(
-        {.uri = uri, .version = version, .diagnostics = *all_diags_result});
-  }
-}
-
-auto SlangdLspServer::ProcessDiagnosticsForUri(std::string uri)
-    -> asio::awaitable<void> {
-  auto doc_state = co_await language_service_->GetDocumentState(uri);
-  if (doc_state) {
-    co_await PublishDiagnosticsForDocument(
-        uri, doc_state->content, doc_state->version);
-  }
-}
-
 auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
     -> asio::awaitable<
         std::expected<lsp::DocumentSymbolResult, lsp::LspError>> {
@@ -224,7 +205,7 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
           if (IsSystemVerilogFile(path.Path())) {
             // Ignore open files - managed by LSP text sync
             // (VSCode prompts "reload?" and sends didChange with new version)
-            if (co_await language_service_->GetDocumentState(change.uri)) {
+            if (language_service_->IsDocumentOpen(change.uri)) {
               continue;
             }
 
@@ -236,14 +217,10 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
         }
 
         // Config changes affect everything (search paths, macros, etc.)
+        // HandleConfigChange rebuilds sessions with diagnostic hooks,
+        // so diagnostics are published automatically
         if (has_config_change) {
           co_await language_service_->HandleConfigChange();
-
-          // Republish diagnostics for all open files after rebuild
-          auto open_uris = co_await language_service_->GetAllOpenDocumentUris();
-          for (const auto& uri : open_uris) {
-            co_await ProcessDiagnosticsForUri(uri);
-          }
         }
 
         co_return;
