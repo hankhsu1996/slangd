@@ -6,7 +6,6 @@
 #include <spdlog/spdlog.h>
 
 #include "lsp/document_features.hpp"
-#include "slangd/services/language_service.hpp"
 #include "slangd/utils/canonical_path.hpp"
 #include "slangd/utils/path_utils.hpp"
 
@@ -36,22 +35,18 @@ SlangdLspServer::SlangdLspServer(
   // LanguageService will use this to publish diagnostics extracted during
   // session creation (via hooks), eliminating race condition from cache
   // eviction
-  if (auto* service =
-          dynamic_cast<services::LanguageService*>(language_service_.get())) {
-    service->SetDiagnosticPublisher([this](
-                                        std::string uri, int version,
-                                        std::vector<lsp::Diagnostic>
-                                            diagnostics) {
-      asio::co_spawn(
-          executor_,
-          [this, uri, version,
-           diagnostics = std::move(diagnostics)]() -> asio::awaitable<void> {
-            co_await PublishDiagnostics(
-                {.uri = uri, .version = version, .diagnostics = diagnostics});
-          },
-          asio::detached);
-    });
-  }
+  language_service_->SetDiagnosticPublisher(
+      [this](
+          std::string uri, int version,
+          std::vector<lsp::Diagnostic> diagnostics) {
+        auto coroutine =
+            [this, uri = std::move(uri), version,
+             diagnostics = std::move(diagnostics)]() -> asio::awaitable<void> {
+          co_await PublishDiagnostics(
+              {.uri = uri, .version = version, .diagnostics = diagnostics});
+        };
+        asio::co_spawn(executor_, std::move(coroutine), asio::detached);
+      });
 }
 
 auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)

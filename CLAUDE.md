@@ -109,6 +109,7 @@ SystemVerilog LSP server with modular design:
 - Use `toString(symbol.kind) -> std::string_view` for Slang enum printing
 - Use `slang::syntax::toString(syntax.kind) -> std::string_view` for SyntaxKind printing
 - Print source ranges: `range.start().offset()..range.end().offset()` for offsets, or use `source_manager.getLineNumber(range.start())` for line numbers
+- Naming: prefer full words over abbreviations; remove redundant context from names
 
 **General Debugging:**
 

@@ -26,6 +26,36 @@ LanguageService::LanguageService(
       "LanguageService created with {} compilation threads", kThreadPoolSize);
 }
 
+auto LanguageService::CreateDiagnosticHook(std::string uri, int version)
+    -> std::function<void(const CompilationState&)> {
+  return [this, uri = std::move(uri), version](const CompilationState& state) {
+    // Extract diagnostics (on strand, session cannot be evicted)
+    auto parse_diagnostics =
+        semantic::DiagnosticConverter::ExtractParseDiagnostics(
+            *state.compilation, *state.source_manager, state.main_buffer_id,
+            logger_);
+
+    auto semantic_diagnostics =
+        semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
+            *state.compilation, *state.source_manager, state.main_buffer_id,
+            global_catalog_.get());
+
+    // Combine diagnostics
+    parse_diagnostics.insert(
+        parse_diagnostics.end(), semantic_diagnostics.begin(),
+        semantic_diagnostics.end());
+
+    // Post back to main thread to publish
+    if (diagnostic_publisher_) {
+      asio::post(
+          executor_,
+          [this, uri, version, diagnostics = std::move(parse_diagnostics)]() {
+            diagnostic_publisher_(uri, version, diagnostics);
+          });
+    }
+  };
+}
+
 auto LanguageService::InitializeWorkspace(std::string workspace_uri)
     -> asio::awaitable<void> {
   utils::ScopedTimer timer("Workspace initialization", logger_);
@@ -339,36 +369,9 @@ auto LanguageService::OnDocumentOpened(
     co_return;
   }
 
-  // Create diagnostic extraction hook that runs during session creation
-  // This guarantees diagnostics are extracted before session can be evicted
-  auto diagnostic_hook = [this, uri, version](const CompilationState& state) {
-    // Extract diagnostics (on strand, session cannot be evicted)
-    auto parse_diags = semantic::DiagnosticConverter::ExtractParseDiagnostics(
-        *state.compilation, *state.source_manager, state.main_buffer_id,
-        logger_);
-
-    auto semantic_diags =
-        semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
-            *state.compilation, *state.source_manager, state.main_buffer_id,
-            global_catalog_.get());
-
-    // Combine diagnostics
-    parse_diags.insert(
-        parse_diags.end(), semantic_diags.begin(), semantic_diags.end());
-
-    // Post back to main thread to publish
-    if (diagnostic_publisher_) {
-      asio::post(
-          executor_,
-          [this, uri, version, diagnostics = std::move(parse_diags)]() {
-            diagnostic_publisher_(uri, version, diagnostics);
-          });
-    }
-  };
-
   // Create session with diagnostic hook
   co_await session_manager_->UpdateSession(
-      uri, content, version, diagnostic_hook);
+      uri, content, version, CreateDiagnosticHook(uri, version));
 
   // Store document state after (less time-critical)
   co_await doc_state_.Update(uri, content, version);
@@ -400,33 +403,10 @@ auto LanguageService::OnDocumentSaved(std::string uri)
     co_return;
   }
 
-  // Create diagnostic extraction hook (same as OnDocumentOpened)
-  auto diagnostic_hook = [this, uri, version = doc_state->version](
-                             const CompilationState& state) {
-    auto parse_diags = semantic::DiagnosticConverter::ExtractParseDiagnostics(
-        *state.compilation, *state.source_manager, state.main_buffer_id,
-        logger_);
-
-    auto semantic_diags =
-        semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
-            *state.compilation, *state.source_manager, state.main_buffer_id,
-            global_catalog_.get());
-
-    parse_diags.insert(
-        parse_diags.end(), semantic_diags.begin(), semantic_diags.end());
-
-    if (diagnostic_publisher_) {
-      asio::post(
-          executor_,
-          [this, uri, version, diagnostics = std::move(parse_diags)]() {
-            diagnostic_publisher_(uri, version, diagnostics);
-          });
-    }
-  };
-
   // Rebuild session with saved content and diagnostic hook
   co_await session_manager_->UpdateSession(
-      uri, doc_state->content, doc_state->version, diagnostic_hook);
+      uri, doc_state->content, doc_state->version,
+      CreateDiagnosticHook(uri, doc_state->version));
 }
 
 auto LanguageService::OnDocumentClosed(std::string uri) -> void {

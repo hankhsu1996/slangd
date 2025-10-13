@@ -71,15 +71,15 @@ class LanguageService : public LanguageServiceBase {
       -> asio::awaitable<std::vector<std::string>> override;
 
   // Set callback for publishing diagnostics to LSP client
-  // This decouples LanguageService from LSP protocol layer
-  using DiagnosticPublisher = std::function<void(
-      std::string uri, int version, std::vector<lsp::Diagnostic>)>;
-
-  auto SetDiagnosticPublisher(DiagnosticPublisher publisher) -> void {
+  auto SetDiagnosticPublisher(DiagnosticPublisher publisher) -> void override {
     diagnostic_publisher_ = std::move(publisher);
   }
 
  private:
+  // Helper to create diagnostic extraction hook for session creation
+  auto CreateDiagnosticHook(std::string uri, int version)
+      -> std::function<void(const CompilationState&)>;
+
   // Core dependencies
   std::shared_ptr<ProjectLayoutService> layout_service_;
   std::shared_ptr<const GlobalCatalog> global_catalog_;

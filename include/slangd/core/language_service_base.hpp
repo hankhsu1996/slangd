@@ -28,6 +28,13 @@ class LanguageServiceBase {
   auto operator=(LanguageServiceBase&&) -> LanguageServiceBase& = delete;
   virtual ~LanguageServiceBase() = default;
 
+  // Diagnostic publishing is fundamental to all LSP implementations
+  using DiagnosticPublisher = std::function<void(
+      std::string uri, int version, std::vector<lsp::Diagnostic>)>;
+
+  virtual auto SetDiagnosticPublisher(DiagnosticPublisher publisher)
+      -> void = 0;
+
   // Diagnostics computation - async operations
   // Compute diagnostics from parsing only (syntax errors)
   virtual auto ComputeParseDiagnostics(std::string uri, std::string content)
