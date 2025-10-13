@@ -31,6 +31,22 @@ SlangdLspServer::SlangdLspServer(
       logger_(logger ? logger : spdlog::default_logger()),
       executor_(executor),
       language_service_(std::move(language_service)) {
+  // Set up diagnostic publisher callback
+  // LanguageService will use this to publish diagnostics extracted during
+  // session creation (via hooks), eliminating race condition from cache
+  // eviction
+  language_service_->SetDiagnosticPublisher(
+      [this](
+          std::string uri, int version,
+          std::vector<lsp::Diagnostic> diagnostics) {
+        auto coroutine =
+            [this, uri = std::move(uri), version,
+             diagnostics = std::move(diagnostics)]() -> asio::awaitable<void> {
+          co_await PublishDiagnostics(
+              {.uri = uri, .version = version, .diagnostics = diagnostics});
+        };
+        asio::co_spawn(executor_, std::move(coroutine), asio::detached);
+      });
 }
 
 auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
@@ -120,14 +136,6 @@ auto SlangdLspServer::OnDidOpenTextDocument(
   co_await language_service_->OnDocumentOpened(
       text_doc.uri, text_doc.text, text_doc.version);
 
-  asio::co_spawn(
-      executor_,
-      [this, uri = text_doc.uri, text = text_doc.text,
-       version = text_doc.version]() -> asio::awaitable<void> {
-        co_await PublishDiagnosticsForDocument(uri, text, version);
-      },
-      asio::detached);
-
   co_return Ok();
 }
 
@@ -151,7 +159,6 @@ auto SlangdLspServer::OnDidSaveTextDocument(
   Logger()->debug(
       "OnDidSaveTextDocument received: {}", params.textDocument.uri);
   co_await language_service_->OnDocumentSaved(params.textDocument.uri);
-  co_await ProcessDiagnosticsForUri(params.textDocument.uri);
   co_return Ok();
 }
 
@@ -162,25 +169,6 @@ auto SlangdLspServer::OnDidCloseTextDocument(
       "OnDidCloseTextDocument received: {}", params.textDocument.uri);
   language_service_->OnDocumentClosed(params.textDocument.uri);
   co_return Ok();
-}
-
-auto SlangdLspServer::PublishDiagnosticsForDocument(
-    std::string uri, std::string content, int version)
-    -> asio::awaitable<void> {
-  auto all_diags_result = co_await language_service_->ComputeDiagnostics(uri);
-  if (all_diags_result.has_value()) {
-    co_await PublishDiagnostics(
-        {.uri = uri, .version = version, .diagnostics = *all_diags_result});
-  }
-}
-
-auto SlangdLspServer::ProcessDiagnosticsForUri(std::string uri)
-    -> asio::awaitable<void> {
-  auto doc_state = co_await language_service_->GetDocumentState(uri);
-  if (doc_state) {
-    co_await PublishDiagnosticsForDocument(
-        uri, doc_state->content, doc_state->version);
-  }
 }
 
 auto SlangdLspServer::OnDocumentSymbols(lsp::DocumentSymbolParams params)
@@ -217,7 +205,7 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
           if (IsSystemVerilogFile(path.Path())) {
             // Ignore open files - managed by LSP text sync
             // (VSCode prompts "reload?" and sends didChange with new version)
-            if (co_await language_service_->GetDocumentState(change.uri)) {
+            if (language_service_->IsDocumentOpen(change.uri)) {
               continue;
             }
 
@@ -229,14 +217,10 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
         }
 
         // Config changes affect everything (search paths, macros, etc.)
+        // HandleConfigChange rebuilds sessions with diagnostic hooks,
+        // so diagnostics are published automatically
         if (has_config_change) {
           co_await language_service_->HandleConfigChange();
-
-          // Republish diagnostics for all open files after rebuild
-          auto open_uris = co_await language_service_->GetAllOpenDocumentUris();
-          for (const auto& uri : open_uris) {
-            co_await ProcessDiagnosticsForUri(uri);
-          }
         }
 
         co_return;

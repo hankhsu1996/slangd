@@ -2,19 +2,18 @@
 Build file for slangd utils tests.
 """
 
-# Placeholder for future utils tests
-# When adding utils tests, follow this pattern:
-#
-# cc_test(
-#     name = "example_utils_test",
-#     timeout = "short",
-#     srcs = [
-#         "example_utils_test.cpp",
-#     ],
-#     deps = [
-#         "//test/slangd:simple_fixture",
-#         "//:slangd_core",
-#         "@catch2",
-#         "@slang",
-#     ],
-# )
+load("@rules_cc//cc:defs.bzl", "cc_test")
+
+cc_test(
+    name = "broadcast_event_test",
+    timeout = "short",
+    srcs = [
+        "broadcast_event_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "//test/slangd:async_fixture",
+        "@catch2",
+        "@spdlog",
+    ],
+)

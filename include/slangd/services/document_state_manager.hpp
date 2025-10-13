@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -7,6 +8,7 @@
 #include <asio.hpp>
 
 #include "slangd/core/document_state.hpp"
+#include "slangd/services/open_document_tracker.hpp"
 
 namespace slangd::services {
 
@@ -14,7 +16,9 @@ namespace slangd::services {
 // Manages document content and version tracking with strand synchronization
 class DocumentStateManager {
  public:
-  explicit DocumentStateManager(asio::any_io_executor executor);
+  explicit DocumentStateManager(
+      asio::any_io_executor executor,
+      std::shared_ptr<OpenDocumentTracker> open_tracker);
 
   // Update document state (awaitable for thread safety)
   auto Update(std::string uri, std::string content, int version)
@@ -38,6 +42,9 @@ class DocumentStateManager {
 
   // Strand for thread-safe access
   asio::strand<asio::any_io_executor> strand_;
+
+  // Tracks which documents are open (shared with SessionManager)
+  std::shared_ptr<OpenDocumentTracker> open_tracker_;
 };
 
 }  // namespace slangd::services

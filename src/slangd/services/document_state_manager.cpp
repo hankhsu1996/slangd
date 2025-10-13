@@ -2,8 +2,11 @@
 
 namespace slangd::services {
 
-DocumentStateManager::DocumentStateManager(asio::any_io_executor executor)
-    : strand_(asio::make_strand(executor)) {
+DocumentStateManager::DocumentStateManager(
+    asio::any_io_executor executor,
+    std::shared_ptr<OpenDocumentTracker> open_tracker)
+    : strand_(asio::make_strand(executor)),
+      open_tracker_(std::move(open_tracker)) {
 }
 
 auto DocumentStateManager::Update(
@@ -15,6 +18,10 @@ auto DocumentStateManager::Update(
       .content = std::move(content),
       .version = version,
   };
+
+  // Mark document as open
+  open_tracker_->Add(uri);
+
   co_return;
 }
 
@@ -33,6 +40,10 @@ auto DocumentStateManager::Remove(std::string uri) -> asio::awaitable<void> {
   co_await asio::post(strand_, asio::use_awaitable);
 
   documents_.erase(uri);
+
+  // Mark document as closed
+  open_tracker_->Remove(uri);
+
   co_return;
 }
 

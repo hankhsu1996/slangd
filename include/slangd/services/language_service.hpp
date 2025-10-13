@@ -12,6 +12,8 @@
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/services/document_state_manager.hpp"
 #include "slangd/services/global_catalog.hpp"
+#include "slangd/services/open_document_tracker.hpp"
+#include "slangd/services/overlay_session.hpp"
 #include "slangd/services/session_manager.hpp"
 
 namespace slangd::services {
@@ -33,9 +35,6 @@ class LanguageService : public LanguageServiceBase {
   auto ComputeParseDiagnostics(std::string uri, std::string content)
       -> asio::awaitable<std::expected<
           std::vector<lsp::Diagnostic>, lsp::error::LspError>> override;
-
-  auto ComputeDiagnostics(std::string uri) -> asio::awaitable<std::expected<
-      std::vector<lsp::Diagnostic>, lsp::error::LspError>> override;
 
   auto GetDefinitionsForPosition(std::string uri, lsp::Position position)
       -> asio::awaitable<std::expected<
@@ -62,18 +61,26 @@ class LanguageService : public LanguageServiceBase {
 
   auto OnDocumentsChanged(std::vector<std::string> uris) -> void override;
 
-  auto GetDocumentState(std::string uri)
-      -> asio::awaitable<std::optional<DocumentState>> override;
+  auto IsDocumentOpen(const std::string& uri) const -> bool override;
 
-  auto GetAllOpenDocumentUris()
-      -> asio::awaitable<std::vector<std::string>> override;
+  // Set callback for publishing diagnostics to LSP client
+  auto SetDiagnosticPublisher(DiagnosticPublisher publisher) -> void override {
+    diagnostic_publisher_ = std::move(publisher);
+  }
 
  private:
+  // Helper to create diagnostic extraction hook for session creation
+  auto CreateDiagnosticHook(std::string uri, int version)
+      -> std::function<void(const CompilationState&)>;
+
   // Core dependencies
   std::shared_ptr<ProjectLayoutService> layout_service_;
   std::shared_ptr<const GlobalCatalog> global_catalog_;
   std::shared_ptr<spdlog::logger> logger_;
   asio::any_io_executor executor_;
+
+  // Open document tracking (shared by doc_state_ and session_manager_)
+  std::shared_ptr<OpenDocumentTracker> open_tracker_;
 
   // Document state management
   DocumentStateManager doc_state_;
@@ -83,6 +90,9 @@ class LanguageService : public LanguageServiceBase {
   // Background thread pool for parse diagnostics
   std::unique_ptr<asio::thread_pool> compilation_pool_;
   static constexpr size_t kThreadPoolSize = 4;
+
+  // Callback for publishing diagnostics (set by LSP server layer)
+  DiagnosticPublisher diagnostic_publisher_;
 };
 
 }  // namespace slangd::services

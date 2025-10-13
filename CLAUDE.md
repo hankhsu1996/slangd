@@ -87,6 +87,7 @@ SystemVerilog LSP server with modular design:
 
 - **`docs/DESIGN_PRINCIPLES.md`**: Core philosophy and case studies for working with Slang library infrastructure
 - **`docs/SERVER_ARCHITECTURE.md`**: Server layers, session lifecycle, two-phase diagnostics, and threading model
+- **`docs/SESSION_MANAGEMENT.md`**: Session lifecycle management, memory-bounded caching, eviction policy, and VSCode interaction patterns
 - **`docs/CONFIGURATION.md`**: .slangd config file format, file discovery modes, and path filtering
 - **`docs/SEMANTIC_INDEXING.md`**: SemanticIndex implementation patterns and guide to adding new symbol support
 - **`docs/COMPILATION_OPTIONS.md`**: Slang compilation flags and preprocessor options used for LSP operation
@@ -108,6 +109,7 @@ SystemVerilog LSP server with modular design:
 - Use `toString(symbol.kind) -> std::string_view` for Slang enum printing
 - Use `slang::syntax::toString(syntax.kind) -> std::string_view` for SyntaxKind printing
 - Print source ranges: `range.start().offset()..range.end().offset()` for offsets, or use `source_manager.getLineNumber(range.start())` for line numbers
+- Naming: prefer full words over abbreviations; remove redundant context from names
 
 **General Debugging:**
 

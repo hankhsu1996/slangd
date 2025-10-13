@@ -1,5 +1,6 @@
 #include "slangd/services/overlay_session.hpp"
 
+#include <fmt/format.h>
 #include <slang/ast/Compilation.h>
 #include <slang/parsing/Preprocessor.h>
 #include <slang/syntax/SyntaxTree.h>
@@ -77,6 +78,12 @@ auto OverlaySession::BuildCompilation(
     -> std::tuple<
         std::shared_ptr<slang::SourceManager>,
         std::unique_ptr<slang::ast::Compilation>, slang::BufferID> {
+  if (!logger) {
+    logger = spdlog::default_logger();
+  }
+
+  utils::ScopedTimer timer(fmt::format("BuildCompilation [{}]", uri), logger);
+
   // Create fresh source manager
   auto source_manager = std::make_shared<slang::SourceManager>();
 

@@ -2,6 +2,7 @@
 
 #include <filesystem>
 
+#include <fmt/format.h>
 #include <slang/ast/Compilation.h>
 #include <slang/ast/HierarchicalReference.h>
 #include <slang/ast/Symbol.h>
@@ -32,6 +33,7 @@
 #include "slangd/services/global_catalog.hpp"
 #include "slangd/utils/conversion.hpp"
 #include "slangd/utils/path_utils.hpp"
+#include "slangd/utils/scoped_timer.hpp"
 
 namespace slangd::semantic {
 
@@ -40,6 +42,14 @@ auto SemanticIndex::FromCompilation(
     const slang::SourceManager& source_manager,
     const std::string& current_file_uri, const services::GlobalCatalog* catalog,
     std::shared_ptr<spdlog::logger> logger) -> std::unique_ptr<SemanticIndex> {
+  if (!logger) {
+    logger = spdlog::default_logger();
+  }
+
+  utils::ScopedTimer timer(
+      fmt::format("SemanticIndex::FromCompilation [{}]", current_file_uri),
+      logger);
+
   auto index =
       std::unique_ptr<SemanticIndex>(new SemanticIndex(source_manager, logger));
 
@@ -2368,21 +2378,24 @@ void SemanticIndex::ValidateSymbolCoverage(
     }
   };
 
-  // Collect all identifiers from syntax trees
+  // Collect identifiers ONLY from the current file's syntax tree
+  // (not from catalog files - this is the key optimization!)
   IdentifierCollector collector;
   for (const auto& tree : compilation.getSyntaxTrees()) {
-    collector.visit(tree->root());
-  }
-
-  // Filter to only identifiers from current file and check which don't have
-  // definitions
-  std::vector<slang::parsing::Token> missing;
-  for (const auto& token : collector.identifiers) {
-    // Only check identifiers from the current file
-    if (!is_current_file(token.location())) {
-      continue;
+    // Check if this tree is for the current file
+    auto tree_location = tree->root().sourceRange().start();
+    if (!is_current_file(tree_location)) {
+      continue;  // Skip catalog files - only process current file
     }
 
+    // Found the current file's tree - collect identifiers from it
+    collector.visit(tree->root());
+    break;  // We found and processed the current file, done
+  }
+
+  // Check which identifiers don't have definitions
+  std::vector<slang::parsing::Token> missing;
+  for (const auto& token : collector.identifiers) {
     auto result = LookupDefinitionAt(token.location());
     if (!result) {
       missing.push_back(token);
