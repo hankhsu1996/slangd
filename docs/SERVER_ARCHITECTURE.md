@@ -68,6 +68,7 @@ Background thread:
 ```
 
 **Key properties**:
+
 - Hook executes on strand after caching, before signaling events
 - Session cannot be evicted while hook runs (guaranteed execution)
 - Single-publish: full diagnostics (parse + semantic) to avoid visual flicker
@@ -153,20 +154,20 @@ SlangdLspServer (LSP protocol layer)
 
 - **OverlaySession**: Compiles current file + uses PreambleManager data
   - Current file buffer (in-memory, authoritative)
-  - Packages from PreambleManager (read from disk via `SyntaxTree::fromFile`)
+  - Packages via cross-compilation binding (PackageSymbol\* pointers from preamble)
   - Interfaces from PreambleManager (read from disk via `SyntaxTree::fromFile`)
   - Per-file, cached by SessionManager (LRU eviction)
 
-**Critical insight:** OverlaySession reads packages/interfaces from disk, not from PreambleManager compilation. PreambleManager only provides metadata (which files to include).
+**Critical insight:** Packages are NOT loaded as syntax trees - PreambleAwareCompilation injects preamble PackageSymbol\* pointers directly into packageMap for cross-compilation binding. Interfaces are still read from disk for port resolution. See `PACKAGE_PREAMBLE.md` for details.
 
 **Invalidation rules:**
 
 | Event                   | PreambleManager | OverlaySession            | Reason                                                     |
-| ----------------------- | ------------- | ------------------------- | ---------------------------------------------------------- |
-| Config change           | Rebuild       | Invalidate + rebuild open | Config affects compilation settings (macros, search paths) |
-| Closed SV file change   | No change     | Invalidate all            | OverlaySession reads fresh content from disk               |
-| SV file created/deleted | Rebuild       | Invalidate all            | File discovery changes (new package/interface/module)      |
-| Open file change        | No change     | Invalidate one            | Handled by text sync (didChange/didSave)                   |
+| ----------------------- | --------------- | ------------------------- | ---------------------------------------------------------- |
+| Config change           | Rebuild         | Invalidate + rebuild open | Config affects compilation settings (macros, search paths) |
+| Closed SV file change   | No change       | Invalidate all            | OverlaySession reads fresh content from disk               |
+| SV file created/deleted | Rebuild         | Invalidate all            | File discovery changes (new package/interface/module)      |
+| Open file change        | No change       | Invalidate one            | Handled by text sync (didChange/didSave)                   |
 
 **Config change behavior:** After rebuilding PreambleManager and invalidating all sessions, proactively rebuilds sessions for all open files to restore LSP features immediately (no on-demand lazy rebuild).
 
@@ -279,12 +280,14 @@ VSCode behavioral patterns, see SESSION_MANAGEMENT.md.
 ### Two-Phase Session Creation
 
 **Phases**:
+
 - **Phase 1 (compilation_ready)**: Elaboration complete, diagnostics available
   - Hooks execute (server-push features)
   - Broadcast event signals (client-request features)
 - **Phase 2 (session_ready)**: Indexing complete, symbols/definitions available
 
 **Patterns**:
+
 ```
 // Server-push (diagnostics via hooks)
 UpdateSession(uri, content, version, diagnostic_hook)
