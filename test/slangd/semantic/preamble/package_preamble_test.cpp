@@ -3,6 +3,7 @@
 
 #include <asio.hpp>
 #include <catch2/catch_all.hpp>
+#include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
 #include "../../common/async_fixture.hpp"
@@ -142,6 +143,53 @@ TEST_CASE(
     Fixture::AssertCrossFileDef(*session, ref, def, "MAX_COUNT", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "MIN_COUNT", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "clamp", 0, 0);
+
+    co_return;
+  });
+}
+
+TEST_CASE(
+    "Stress test with many preamble packages to detect BufferID mismatch bugs",
+    "[package][preamble][stress]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    // Create 60 preamble packages to ensure BufferID mismatch
+    // This simulates real-world scenarios with many packages (like 120
+    // packages) When IsInCurrentFile doesn't check IsPreambleSymbol(), it will
+    // try to convert preamble symbol locations using overlay's SourceManager,
+    // causing BufferID out-of-bounds access → segfault
+    for (int i = 0; i < 60; i++) {
+      std::string pkg_content = fmt::format(
+          R"(
+        package pkg_{};
+          parameter VALUE_{} = {};
+        endpackage
+      )",
+          i, i, i * 10);
+
+      fixture.CreateFile(fmt::format("pkg_{}.sv", i), pkg_content);
+    }
+
+    // Overlay file that imports from first package
+    const std::string ref = R"(
+      module test;
+        import pkg_0::*;
+        logic [VALUE_0-1:0] data;
+      endmodule
+    )";
+
+    fixture.CreateFile("test.sv", ref);
+
+    // This will trigger the bug if IsInCurrentFile doesn't check preamble
+    // because compilation.getPackages() will iterate through all 60 preamble
+    // packages and try to check if they're in current file using wrong
+    // SourceManager
+    auto session = fixture.BuildSession("test.sv", executor);
+    REQUIRE(session != nullptr);
+
+    // Just verify session was created without crashing
+    // The real test is that it doesn't segfault during BuildSession
 
     co_return;
   });

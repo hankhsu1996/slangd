@@ -152,6 +152,18 @@ class SemanticIndex {
         logger_(logger ? logger : spdlog::default_logger()) {
   }
 
+  // Helper to check if a symbol is defined in the current file
+  // Returns false for preamble symbols (separate compilation)
+  static auto IsInCurrentFile(
+      const slang::ast::Symbol& symbol, const std::string& current_file_uri,
+      const slang::SourceManager& source_manager,
+      const services::PreambleManager* preamble_manager) -> bool;
+
+  // Helper for syntax tree locations (use IsInCurrentFile for symbols)
+  static auto IsInCurrentFile(
+      slang::SourceLocation loc, const std::string& current_file_uri,
+      const slang::SourceManager& source_manager) -> bool;
+
   // Core data storage
   // Unified storage combining definitions and references
   std::vector<SemanticEntry> semantic_entries_;

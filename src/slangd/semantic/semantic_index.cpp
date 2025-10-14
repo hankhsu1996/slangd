@@ -37,6 +37,37 @@
 
 namespace slangd::semantic {
 
+auto SemanticIndex::IsInCurrentFile(
+    const slang::ast::Symbol& symbol, const std::string& current_file_uri,
+    const slang::SourceManager& source_manager,
+    const services::PreambleManager* preamble_manager) -> bool {
+  // Preamble symbols are NEVER in current file (separate compilation)
+  if (preamble_manager != nullptr &&
+      preamble_manager->IsPreambleSymbol(&symbol)) {
+    return false;
+  }
+
+  if (!symbol.location.valid()) {
+    return false;
+  }
+
+  auto uri = std::string(
+      ConvertSlangLocationToLspLocation(symbol.location, source_manager).uri);
+  return NormalizeUri(uri) == NormalizeUri(current_file_uri);
+}
+
+auto SemanticIndex::IsInCurrentFile(
+    slang::SourceLocation loc, const std::string& current_file_uri,
+    const slang::SourceManager& source_manager) -> bool {
+  if (!loc.valid()) {
+    return false;
+  }
+
+  auto uri =
+      std::string(ConvertSlangLocationToLspLocation(loc, source_manager).uri);
+  return NormalizeUri(uri) == NormalizeUri(current_file_uri);
+}
+
 auto SemanticIndex::FromCompilation(
     slang::ast::Compilation& compilation,
     const slang::SourceManager& source_manager,
@@ -57,19 +88,6 @@ auto SemanticIndex::FromCompilation(
   // Create visitor for comprehensive symbol collection and reference tracking
   auto visitor =
       IndexVisitor(*index, source_manager, current_file_uri, preamble_manager);
-
-  // Normalize current file URI for comparison
-  auto normalized_target = NormalizeUri(current_file_uri);
-
-  // Helper function to check if a symbol's location matches the current file
-  auto matches_current_file = [&](slang::SourceLocation loc) -> bool {
-    if (!loc.valid()) {
-      return false;
-    }
-    auto uri =
-        std::string(ConvertSlangLocationToLspLocation(loc, source_manager).uri);
-    return NormalizeUri(uri) == normalized_target;
-  };
 
   // THREE-PATH TRAVERSAL APPROACH
   // Slang's API provides disjoint symbol collections:
@@ -103,7 +121,8 @@ auto SemanticIndex::FromCompilation(
     }
 
     const auto& definition = def->as<slang::ast::DefinitionSymbol>();
-    if (!matches_current_file(definition.location)) {
+    if (!IsInCurrentFile(
+            definition, current_file_uri, source_manager, preamble_manager)) {
       continue;
     }
 
@@ -145,7 +164,8 @@ auto SemanticIndex::FromCompilation(
 
   // PATH 2: Index packages
   for (const auto* pkg : compilation.getPackages()) {
-    if (matches_current_file(pkg->location)) {
+    if (IsInCurrentFile(
+            *pkg, current_file_uri, source_manager, preamble_manager)) {
       pkg->visit(visitor);  // Packages are Scopes, members auto-traversed
     }
   }
@@ -155,7 +175,8 @@ auto SemanticIndex::FromCompilation(
   // filter children by file URI
   for (const auto* unit : compilation.getCompilationUnits()) {
     for (const auto& child : unit->members()) {
-      if (matches_current_file(child.location)) {
+      if (IsInCurrentFile(
+              child, current_file_uri, source_manager, preamble_manager)) {
         // Skip packages - already handled in PATH 2
         if (child.kind == slang::ast::SymbolKind::Package) {
           continue;
@@ -2368,19 +2389,6 @@ void SemanticIndex::ValidateNoRangeOverlaps() const {
 void SemanticIndex::ValidateSymbolCoverage(
     slang::ast::Compilation& compilation,
     const std::string& current_file_uri) const {
-  // Normalize current file URI for comparison
-  auto normalized_target = NormalizeUri(current_file_uri);
-
-  // Helper to check if a location is from the current file
-  auto is_current_file = [&](slang::SourceLocation loc) -> bool {
-    if (!loc.valid()) {
-      return false;
-    }
-    auto uri = std::string(
-        ConvertSlangLocationToLspLocation(loc, source_manager_.get()).uri);
-    return NormalizeUri(uri) == normalized_target;
-  };
-
   // Helper visitor to collect all identifier tokens from syntax tree
   struct IdentifierCollector {
     std::vector<slang::parsing::Token> identifiers;
@@ -2408,7 +2416,8 @@ void SemanticIndex::ValidateSymbolCoverage(
   for (const auto& tree : compilation.getSyntaxTrees()) {
     // Check if this tree is for the current file
     auto tree_location = tree->root().sourceRange().start();
-    if (!is_current_file(tree_location)) {
+    if (!IsInCurrentFile(
+            tree_location, current_file_uri, source_manager_.get())) {
       continue;  // Skip preamble_manager files - only process current file
     }
 
