@@ -43,6 +43,16 @@ build:static --cxxopt='-DNDEBUG'
 build:static --cxxopt='-std=c++23'
 build:static --features=fully_static_link
 
+# Static debug build (for debugging distribution binaries)
+build:static-debug --compilation_mode=dbg
+build:static-debug --cxxopt='-O0'
+build:static-debug --cxxopt='-g3'
+build:static-debug --cxxopt='-std=c++23'
+build:static-debug --cxxopt='-fno-omit-frame-pointer'
+build:static-debug --cxxopt='-fno-optimize-sibling-calls'
+build:static-debug --linkopt='-rdynamic'
+build:static-debug --features=fully_static_link
+
 # Fastbuild configuration
 build:fastbuild --compilation_mode=fastbuild
 build:fastbuild --cxxopt='-O1'
