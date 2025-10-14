@@ -22,11 +22,18 @@ class PreambleAwareCompilation : public slang::ast::Compilation {
  public:
   PreambleAwareCompilation(
       const slang::Bag& options,
-      std::shared_ptr<const PreambleManager> preamble_manager)
+      std::shared_ptr<const PreambleManager> preamble_manager,
+      const CanonicalPath& current_file_path)
       : Compilation(options), preamble_manager_(std::move(preamble_manager)) {
     // Populate packageMap with preamble packages (direct injection)
     // Enables cross-compilation: overlay can reference preamble symbols
     for (const auto& package_info : preamble_manager_->GetPackages()) {
+      // Skip if this package is defined in current file (deduplication)
+      // Let overlay's version be used instead of preamble's
+      if (package_info.file_path.Path() == current_file_path.Path()) {
+        continue;
+      }
+
       const auto* pkg = preamble_manager_->GetPackage(package_info.name);
       if (pkg != nullptr) {
         packageMap[pkg->name] = pkg;
@@ -160,12 +167,15 @@ auto OverlaySession::BuildCompilation(
   comp_options.errorLimit = 0;
   options.set(comp_options);
 
+  // Get file path for deduplication (needed before creating compilation)
+  auto file_path = CanonicalPath::FromUri(uri);
+
   // Create compilation with options
   // Use PreambleAwareCompilation when preamble available for cross-compilation
   std::unique_ptr<slang::ast::Compilation> compilation;
   if (preamble_manager) {
-    compilation =
-        std::make_unique<PreambleAwareCompilation>(options, preamble_manager);
+    compilation = std::make_unique<PreambleAwareCompilation>(
+        options, preamble_manager, file_path);
     logger->debug(
         "Created PreambleAwareCompilation with {} packages",
         preamble_manager->GetPackages().size());
@@ -174,7 +184,6 @@ auto OverlaySession::BuildCompilation(
   }
 
   // Add current buffer content (authoritative)
-  auto file_path = CanonicalPath::FromUri(uri);
   auto buffer = source_manager->assignText(file_path.String(), content);
   auto main_buffer_id = buffer.id;
   auto buffer_tree =
