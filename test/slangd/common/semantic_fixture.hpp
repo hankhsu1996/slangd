@@ -17,7 +17,7 @@
 
 #include "slangd/semantic/semantic_index.hpp"
 
-namespace slangd::semantic::test {
+namespace slangd::test {
 
 // Base fixture for all semantic index tests
 class SemanticTestFixture {
@@ -172,4 +172,4 @@ class SemanticTestFixture {
   slang::BufferID buffer_id_;
 };
 
-}  // namespace slangd::semantic::test
+}  // namespace slangd::test

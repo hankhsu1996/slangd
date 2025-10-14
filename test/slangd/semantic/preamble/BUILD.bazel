@@ -1,5 +1,5 @@
 """
-Build file for slangd semantic integration tests.
+Build file for slangd semantic preamble tests.
 """
 
 load("@rules_cc//cc:cc_test.bzl", "cc_test")

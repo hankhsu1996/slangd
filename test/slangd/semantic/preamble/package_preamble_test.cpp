@@ -21,7 +21,7 @@ auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
 }
 
-using slangd::semantic::test::MultiFileSemanticFixture;
+using slangd::test::MultiFileSemanticFixture;
 using slangd::test::RunAsyncTest;
 using Fixture = MultiFileSemanticFixture;
 

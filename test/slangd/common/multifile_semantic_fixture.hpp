@@ -19,14 +19,13 @@
 #include "test/slangd/common/file_fixture.hpp"
 #include "test/slangd/common/semantic_fixture.hpp"
 
-namespace slangd::semantic::test {
+namespace slangd::test {
 
 // Extended fixture for multifile tests
 class MultiFileSemanticFixture : public SemanticTestFixture,
-                                 public slangd::test::FileTestFixture {
+                                 public FileTestFixture {
  public:
-  MultiFileSemanticFixture()
-      : slangd::test::FileTestFixture("slangd_semantic_multifile") {
+  MultiFileSemanticFixture() : FileTestFixture("slangd_semantic_multifile") {
   }
 
   ~MultiFileSemanticFixture() = default;
@@ -249,12 +248,13 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
   // Helper to check if cross-file references exist
   static auto HasCrossFileReferences(const SemanticIndex& index) -> bool {
     const auto& entries = index.GetSemanticEntries();
-    return std::ranges::any_of(entries, [](const SemanticEntry& entry) {
-      // Check if source and definition are in different buffers
-      return !entry.is_definition &&
-             entry.source_range.start().buffer().getId() !=
-                 entry.definition_range.start().buffer().getId();
-    });
+    return std::ranges::any_of(
+        entries, [](const slangd::semantic::SemanticEntry& entry) {
+          // Check if source and definition are in different buffers
+          return !entry.is_definition &&
+                 entry.source_range.start().buffer().getId() !=
+                     entry.definition_range.start().buffer().getId();
+        });
   }
 
   // Build PreambleManager from temp directory files
@@ -410,4 +410,4 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
   }
 };
 
-}  // namespace slangd::semantic::test
+}  // namespace slangd::test
