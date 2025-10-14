@@ -40,12 +40,25 @@ cc_library(
 )
 
 cc_library(
-    name = "semantic_fixtures",
-    hdrs = ["common/semantic_fixtures.hpp"],
+    name = "semantic_fixture",
+    hdrs = ["common/semantic_fixture.hpp"],
+    visibility = ["//test/slangd:__subpackages__"],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@fmt",
+        "@slang",
+    ],
+)
+
+cc_library(
+    name = "multifile_semantic_fixture",
+    hdrs = ["common/multifile_semantic_fixture.hpp"],
     visibility = ["//test/slangd:__subpackages__"],
     deps = [
         ":async_fixture",
         ":file_fixture",
+        ":semantic_fixture",
         "//:slangd_core",
         "@catch2",
         "@fmt",

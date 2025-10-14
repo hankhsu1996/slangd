@@ -5,14 +5,14 @@ Build file for slangd semantic integration tests.
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 cc_test(
-    name = "multifile_definition_test",
+    name = "module_preamble_test",
     timeout = "short",
     srcs = [
-        "multifile_definition_test.cpp",
+        "module_preamble_test.cpp",
     ],
     deps = [
         "//:slangd_core",
-        "//test/slangd:semantic_fixtures",
+        "//test/slangd:multifile_semantic_fixture",
         "@catch2",
         "@fmt",
         "@slang",
@@ -27,7 +27,7 @@ cc_test(
     ],
     deps = [
         "//:slangd_core",
-        "//test/slangd:semantic_fixtures",
+        "//test/slangd:multifile_semantic_fixture",
         "@catch2",
         "@fmt",
         "@slang",

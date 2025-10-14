@@ -6,7 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include "../../common/async_fixture.hpp"
-#include "../../common/semantic_fixtures.hpp"
+#include "../../common/multifile_semantic_fixture.hpp"
 
 constexpr auto kLogLevel = spdlog::level::debug;
 
@@ -27,7 +27,7 @@ using Fixture = MultiFileSemanticFixture;
 
 TEST_CASE(
     "Cross-compilation package binding with PreambleManager",
-    "[package][preamble][cross-compilation]") {
+    "[package][preamble]") {
   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     Fixture fixture;
 
@@ -66,7 +66,7 @@ TEST_CASE(
 
 TEST_CASE(
     "Multiple package imports with cross-compilation binding",
-    "[package][preamble][cross-compilation]") {
+    "[package][preamble]") {
   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     Fixture fixture;
 
@@ -107,7 +107,7 @@ TEST_CASE(
 
 TEST_CASE(
     "Scoped package references with go-to-definition",
-    "[package][preamble][cross-compilation][goto-def]") {
+    "[package][preamble][scoped]") {
   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     Fixture fixture;
 
