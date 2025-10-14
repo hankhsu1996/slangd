@@ -18,7 +18,7 @@
 namespace slangd::test {
 
 // Helper to create LSP-style compilation options
-// This matches the configuration used in OverlaySession and GlobalCatalog
+// This matches the configuration used in OverlaySession and PreambleManager
 static auto CreateLspCompilationOptions(bool enable_lint_mode = true)
     -> slang::Bag {
   slang::Bag options;

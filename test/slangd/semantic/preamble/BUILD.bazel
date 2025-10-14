@@ -1,33 +1,35 @@
 """
-Build file for slangd services tests.
+Build file for slangd semantic preamble tests.
 """
 
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 cc_test(
-    name = "overlay_session_test",
+    name = "module_preamble_test",
     timeout = "short",
     srcs = [
-        "overlay_session_test.cpp",
+        "module_preamble_test.cpp",
     ],
     deps = [
         "//:slangd_core",
-        "//test/slangd:async_fixture",
+        "//test/slangd:multifile_semantic_fixture",
         "@catch2",
+        "@fmt",
         "@slang",
     ],
 )
 
 cc_test(
-    name = "preamble_manager_test",
+    name = "package_preamble_test",
     timeout = "short",
     srcs = [
-        "preamble_manager_test.cpp",
+        "package_preamble_test.cpp",
     ],
     deps = [
         "//:slangd_core",
-        "//test/slangd:async_fixture",
+        "//test/slangd:multifile_semantic_fixture",
         "@catch2",
+        "@fmt",
         "@slang",
     ],
 )

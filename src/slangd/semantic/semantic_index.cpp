@@ -30,17 +30,49 @@
 #include "slangd/semantic/definition_extractor.hpp"
 #include "slangd/semantic/document_symbol_builder.hpp"
 #include "slangd/semantic/symbol_utils.hpp"
-#include "slangd/services/global_catalog.hpp"
+#include "slangd/services/preamble_manager.hpp"
 #include "slangd/utils/conversion.hpp"
 #include "slangd/utils/path_utils.hpp"
 #include "slangd/utils/scoped_timer.hpp"
 
 namespace slangd::semantic {
 
+auto SemanticIndex::IsInCurrentFile(
+    const slang::ast::Symbol& symbol, const std::string& current_file_uri,
+    const slang::SourceManager& source_manager,
+    const services::PreambleManager* preamble_manager) -> bool {
+  // Preamble symbols are NEVER in current file (separate compilation)
+  if (preamble_manager != nullptr &&
+      preamble_manager->IsPreambleSymbol(&symbol)) {
+    return false;
+  }
+
+  if (!symbol.location.valid()) {
+    return false;
+  }
+
+  auto uri = std::string(
+      ConvertSlangLocationToLspLocation(symbol.location, source_manager).uri);
+  return NormalizeUri(uri) == NormalizeUri(current_file_uri);
+}
+
+auto SemanticIndex::IsInCurrentFile(
+    slang::SourceLocation loc, const std::string& current_file_uri,
+    const slang::SourceManager& source_manager) -> bool {
+  if (!loc.valid()) {
+    return false;
+  }
+
+  auto uri =
+      std::string(ConvertSlangLocationToLspLocation(loc, source_manager).uri);
+  return NormalizeUri(uri) == NormalizeUri(current_file_uri);
+}
+
 auto SemanticIndex::FromCompilation(
     slang::ast::Compilation& compilation,
     const slang::SourceManager& source_manager,
-    const std::string& current_file_uri, const services::GlobalCatalog* catalog,
+    const std::string& current_file_uri,
+    const services::PreambleManager* preamble_manager,
     std::shared_ptr<spdlog::logger> logger) -> std::unique_ptr<SemanticIndex> {
   if (!logger) {
     logger = spdlog::default_logger();
@@ -55,20 +87,7 @@ auto SemanticIndex::FromCompilation(
 
   // Create visitor for comprehensive symbol collection and reference tracking
   auto visitor =
-      IndexVisitor(*index, source_manager, current_file_uri, catalog);
-
-  // Normalize current file URI for comparison
-  auto normalized_target = NormalizeUri(current_file_uri);
-
-  // Helper function to check if a symbol's location matches the current file
-  auto matches_current_file = [&](slang::SourceLocation loc) -> bool {
-    if (!loc.valid()) {
-      return false;
-    }
-    auto uri =
-        std::string(ConvertSlangLocationToLspLocation(loc, source_manager).uri);
-    return NormalizeUri(uri) == normalized_target;
-  };
+      IndexVisitor(*index, source_manager, current_file_uri, preamble_manager);
 
   // THREE-PATH TRAVERSAL APPROACH
   // Slang's API provides disjoint symbol collections:
@@ -102,7 +121,8 @@ auto SemanticIndex::FromCompilation(
     }
 
     const auto& definition = def->as<slang::ast::DefinitionSymbol>();
-    if (!matches_current_file(definition.location)) {
+    if (!IsInCurrentFile(
+            definition, current_file_uri, source_manager, preamble_manager)) {
       continue;
     }
 
@@ -144,7 +164,8 @@ auto SemanticIndex::FromCompilation(
 
   // PATH 2: Index packages
   for (const auto* pkg : compilation.getPackages()) {
-    if (matches_current_file(pkg->location)) {
+    if (IsInCurrentFile(
+            *pkg, current_file_uri, source_manager, preamble_manager)) {
       pkg->visit(visitor);  // Packages are Scopes, members auto-traversed
     }
   }
@@ -154,7 +175,8 @@ auto SemanticIndex::FromCompilation(
   // filter children by file URI
   for (const auto* unit : compilation.getCompilationUnits()) {
     for (const auto& child : unit->members()) {
-      if (matches_current_file(child.location)) {
+      if (IsInCurrentFile(
+              child, current_file_uri, source_manager, preamble_manager)) {
         // Skip packages - already handled in PATH 2
         if (child.kind == slang::ast::SymbolKind::Package) {
           continue;
@@ -266,6 +288,26 @@ void SemanticIndex::IndexVisitor::AddReference(
     const slang::ast::Symbol& symbol, std::string_view name,
     slang::SourceRange source_range, slang::SourceRange definition_range,
     const slang::ast::Scope* parent_scope) {
+  // Check if symbol is from preamble (automatic cross-compilation binding)
+  if (preamble_manager_ != nullptr &&
+      preamble_manager_->IsPreambleSymbol(&symbol)) {
+    // Get precomputed location from Phase 1 (no extraction needed)
+    auto info = preamble_manager_->GetSymbolInfo(&symbol);
+    if (info.has_value()) {
+      // Create entry with precomputed cross-file location
+      auto entry = SemanticEntry::Make(
+          symbol, name, source_range, false, definition_range, parent_scope);
+      entry.cross_file_path = CanonicalPath::FromUri(info->file_uri);
+      entry.cross_file_range = info->definition_range;
+      AddEntry(std::move(entry));
+      return;
+    }
+    // If GetSymbolInfo failed for a preamble symbol, fall through to create
+    // a normal same-file reference (symbol might be from std package or other
+    // built-in that wasn't indexed)
+  }
+
+  // Overlay symbol or preamble symbol without location info - same-file ref
   AddEntry(
       SemanticEntry::Make(
           symbol, name, source_range, false, definition_range, parent_scope));
@@ -274,18 +316,19 @@ void SemanticIndex::IndexVisitor::AddReference(
 void SemanticIndex::IndexVisitor::AddCrossFileReference(
     const slang::ast::Symbol& symbol, std::string_view name,
     slang::SourceRange source_range, slang::SourceRange definition_range,
-    const slang::SourceManager& catalog_source_manager,
+    const slang::SourceManager& preamble_manager_source_manager,
     const slang::ast::Scope* parent_scope) {
   // Create base entry
   auto entry = SemanticEntry::Make(
       symbol, name, source_range, false, definition_range, parent_scope);
 
-  // Convert definition_range to compilation-independent format using catalog's
-  // source manager
-  auto file_name = catalog_source_manager.getFileName(definition_range.start());
+  // Convert definition_range to compilation-independent format using
+  // preamble_manager's source manager
+  auto file_name =
+      preamble_manager_source_manager.getFileName(definition_range.start());
   entry.cross_file_path = CanonicalPath(std::filesystem::path(file_name));
-  entry.cross_file_range =
-      ConvertSlangRangeToLspRange(definition_range, catalog_source_manager);
+  entry.cross_file_range = ConvertSlangRangeToLspRange(
+      definition_range, preamble_manager_source_manager);
 
   AddEntry(std::move(entry));
 }
@@ -2099,7 +2142,8 @@ void SemanticIndex::IndexVisitor::handle(
   }
 
   // Visit parameter and port expressions (for same-file cases)
-  // UninstantiatedDefSymbol stores these expressions even without catalog
+  // UninstantiatedDefSymbol stores these expressions even without
+  // preamble_manager
   for (const auto* expr : symbol.paramExpressions) {
     if (expr != nullptr) {
       expr->visit(*this);
@@ -2190,14 +2234,14 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
 
-  // Cross-file handling requires catalog
-  if (catalog_ == nullptr) {
-    return;  // No cross-file indexing without catalog
+  // Cross-file handling requires preamble_manager
+  if (preamble_manager_ == nullptr) {
+    return;  // No cross-file indexing without preamble_manager
   }
 
-  const auto* module_info = catalog_->GetModule(symbol.definitionName);
+  const auto* module_info = preamble_manager_->GetModule(symbol.definitionName);
   if (module_info == nullptr) {
-    return;  // Module not found in catalog
+    return;  // Module not found in preamble_manager
   }
 
   // The syntax is HierarchicalInstanceSyntax, whose parent is
@@ -2212,13 +2256,14 @@ void SemanticIndex::IndexVisitor::handle(
           parent_syntax->as<slang::syntax::HierarchyInstantiationSyntax>();
       auto type_range = inst_syntax.type.range();
 
-      // Module definitions are in GlobalCatalog's compilation, not
+      // Module definitions are in PreambleManager's compilation, not
       // OverlaySession Use AddCrossFileReference to store
       // compilation-independent location
-      const auto& catalog_sm = catalog_->GetSourceManager();
+      const auto& preamble_manager_sm = preamble_manager_->GetSourceManager();
       AddCrossFileReference(
           symbol, symbol.definitionName, type_range,
-          module_info->definition_range, catalog_sm, symbol.getParentScope());
+          module_info->definition_range, preamble_manager_sm,
+          symbol.getParentScope());
 
       // Handle port connections (named ports only, skip positional)
       const auto& hier_inst_syntax =
@@ -2235,7 +2280,7 @@ void SemanticIndex::IndexVisitor::handle(
             const auto* port_info = it->second;
             AddCrossFileReference(
                 symbol, port_name, npc.name.range(), port_info->def_range,
-                catalog_sm, symbol.getParentScope());
+                preamble_manager_sm, symbol.getParentScope());
           }
         }
       }
@@ -2256,7 +2301,7 @@ void SemanticIndex::IndexVisitor::handle(
               const auto* param_info = it->second;
               AddCrossFileReference(
                   symbol, param_name, npa.name.range(), param_info->def_range,
-                  catalog_sm, symbol.getParentScope());
+                  preamble_manager_sm, symbol.getParentScope());
             }
           }
         }
@@ -2344,19 +2389,6 @@ void SemanticIndex::ValidateNoRangeOverlaps() const {
 void SemanticIndex::ValidateSymbolCoverage(
     slang::ast::Compilation& compilation,
     const std::string& current_file_uri) const {
-  // Normalize current file URI for comparison
-  auto normalized_target = NormalizeUri(current_file_uri);
-
-  // Helper to check if a location is from the current file
-  auto is_current_file = [&](slang::SourceLocation loc) -> bool {
-    if (!loc.valid()) {
-      return false;
-    }
-    auto uri = std::string(
-        ConvertSlangLocationToLspLocation(loc, source_manager_.get()).uri);
-    return NormalizeUri(uri) == normalized_target;
-  };
-
   // Helper visitor to collect all identifier tokens from syntax tree
   struct IdentifierCollector {
     std::vector<slang::parsing::Token> identifiers;
@@ -2379,13 +2411,14 @@ void SemanticIndex::ValidateSymbolCoverage(
   };
 
   // Collect identifiers ONLY from the current file's syntax tree
-  // (not from catalog files - this is the key optimization!)
+  // (not from preamble_manager files - this is the key optimization!)
   IdentifierCollector collector;
   for (const auto& tree : compilation.getSyntaxTrees()) {
     // Check if this tree is for the current file
     auto tree_location = tree->root().sourceRange().start();
-    if (!is_current_file(tree_location)) {
-      continue;  // Skip catalog files - only process current file
+    if (!IsInCurrentFile(
+            tree_location, current_file_uri, source_manager_.get())) {
+      continue;  // Skip preamble_manager files - only process current file
     }
 
     // Found the current file's tree - collect identifiers from it

@@ -22,7 +22,7 @@ This document describes all Slang compilation flags and preprocessor options use
 When adding/modifying options, update all three locations:
 
 1. `src/slangd/services/overlay_session.cpp` - Per-file compilation
-2. `src/slangd/services/global_catalog.cpp` - Project-wide compilation
+2. `src/slangd/services/preamble_manager.cpp` - Project-wide compilation
 3. `test/slangd/common/simple_fixture.cpp` - Test fixtures
 
 **CRITICAL:** All three must use identical options. Tests that don't match production behavior are worse than no tests.

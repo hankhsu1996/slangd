@@ -4,11 +4,6 @@ Build file for slangd tests - shared fixtures and utilities.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
-filegroup(
-    name = "fixtures",
-    srcs = glob(["fixtures/**"]),
-)
-
 cc_library(
     name = "simple_fixture",
     srcs = ["common/simple_fixture.cpp"],
@@ -36,5 +31,32 @@ cc_library(
     visibility = ["//test/slangd:__subpackages__"],
     deps = [
         "@catch2",
+    ],
+)
+
+cc_library(
+    name = "semantic_fixture",
+    hdrs = ["common/semantic_fixture.hpp"],
+    visibility = ["//test/slangd:__subpackages__"],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@fmt",
+        "@slang",
+    ],
+)
+
+cc_library(
+    name = "multifile_semantic_fixture",
+    hdrs = ["common/multifile_semantic_fixture.hpp"],
+    visibility = ["//test/slangd:__subpackages__"],
+    deps = [
+        ":async_fixture",
+        ":file_fixture",
+        ":semantic_fixture",
+        "//:slangd_core",
+        "@catch2",
+        "@fmt",
+        "@slang",
     ],
 )

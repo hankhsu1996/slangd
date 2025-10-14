@@ -81,7 +81,7 @@ while (is_running_) {
 **Executor usage:**
 
 - Runs on `executor_` (called from LSP layer)
-- Spawns to `compilation_pool_` for GlobalCatalog builds
+- Spawns to `compilation_pool_` for PreambleManager builds
 - Waits for SessionManager async operations via `co_await`
 
 ### Layer 4: Session Manager
@@ -281,7 +281,7 @@ auto session = co_await GetSession(uri);  // Blocks strand for seconds!
    ↓
 4. Handler spawns background work (detached) and returns
    ↓ (background continues)
-5. Language service updates GlobalCatalog (spawned to compilation_pool_)
+5. Language service updates PreambleManager (spawned to compilation_pool_)
    ↓
 6. SessionManager::UpdateSession()
    - Cancels old pending session (emit signal)

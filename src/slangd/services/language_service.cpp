@@ -5,7 +5,7 @@
 #include <slang/syntax/SyntaxTree.h>
 
 #include "slangd/semantic/diagnostic_converter.hpp"
-#include "slangd/services/global_catalog.hpp"
+#include "slangd/services/preamble_manager.hpp"
 #include "slangd/utils/canonical_path.hpp"
 #include "slangd/utils/conversion.hpp"
 #include "slangd/utils/scoped_timer.hpp"
@@ -16,7 +16,7 @@ using lsp::error::LspError;
 
 LanguageService::LanguageService(
     asio::any_io_executor executor, std::shared_ptr<spdlog::logger> logger)
-    : global_catalog_(nullptr),
+    : preamble_manager_(nullptr),
       logger_(logger ? logger : spdlog::default_logger()),
       executor_(executor),
       open_tracker_(std::make_shared<OpenDocumentTracker>()),
@@ -38,7 +38,7 @@ auto LanguageService::CreateDiagnosticHook(std::string uri, int version)
     auto semantic_diagnostics =
         semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
             *state.compilation, *state.source_manager, state.main_buffer_id,
-            global_catalog_.get());
+            preamble_manager_.get());
 
     // Combine diagnostics
     parse_diagnostics.insert(
@@ -66,19 +66,20 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
       ProjectLayoutService::Create(executor_, workspace_path, logger_);
   co_await layout_service_->LoadConfig(workspace_path);
 
-  global_catalog_ =
-      GlobalCatalog::CreateFromProjectLayout(layout_service_, logger_);
+  preamble_manager_ =
+      PreambleManager::CreateFromProjectLayout(layout_service_, logger_);
 
-  if (global_catalog_) {
+  if (preamble_manager_) {
     logger_->debug(
-        "LanguageService created GlobalCatalog with {} packages, version {}",
-        global_catalog_->GetPackages().size(), global_catalog_->GetVersion());
+        "LanguageService created PreambleManager with {} packages, version {}",
+        preamble_manager_->GetPackages().size(),
+        preamble_manager_->GetVersion());
   } else {
-    logger_->error("LanguageService failed to create GlobalCatalog");
+    logger_->error("LanguageService failed to create PreambleManager");
   }
 
   session_manager_ = std::make_unique<SessionManager>(
-      executor_, layout_service_, global_catalog_, open_tracker_, logger_);
+      executor_, layout_service_, preamble_manager_, open_tracker_, logger_);
 
   auto elapsed = timer.GetElapsed();
   logger_->info(
@@ -105,7 +106,7 @@ auto LanguageService::ComputeParseDiagnostics(
   auto diagnostics = co_await asio::co_spawn(
       compilation_pool_->get_executor(),
       [this, uri, content]() -> asio::awaitable<std::vector<lsp::Diagnostic>> {
-        // Build parse-only compilation (no catalog → single file only)
+        // Build parse-only compilation (no preamble_manager → single file only)
         auto [source_manager, compilation, main_buffer_id] =
             OverlaySession::BuildCompilation(
                 uri, content, layout_service_,
@@ -248,20 +249,22 @@ auto LanguageService::HandleConfigChange() -> asio::awaitable<void> {
 
   layout_service_->RebuildLayout();
 
-  // Rebuild GlobalCatalog with new configuration (search paths, macros, etc.)
-  global_catalog_ =
-      GlobalCatalog::CreateFromProjectLayout(layout_service_, logger_);
+  // Rebuild PreambleManager with new configuration (search paths, macros, etc.)
+  preamble_manager_ =
+      PreambleManager::CreateFromProjectLayout(layout_service_, logger_);
 
-  if (global_catalog_) {
+  if (preamble_manager_) {
     logger_->debug(
-        "LanguageService rebuilt GlobalCatalog with {} packages, version {}",
-        global_catalog_->GetPackages().size(), global_catalog_->GetVersion());
+        "LanguageService rebuilt PreambleManager with {} packages, version {}",
+        preamble_manager_->GetPackages().size(),
+        preamble_manager_->GetVersion());
   } else {
-    logger_->error("LanguageService failed to rebuild GlobalCatalog");
+    logger_->error("LanguageService failed to rebuild PreambleManager");
   }
 
-  // Update SessionManager's catalog reference for future session creations
-  session_manager_->UpdateCatalog(global_catalog_);
+  // Update SessionManager's preamble_manager reference for future session
+  // creations
+  session_manager_->UpdatePreambleManager(preamble_manager_);
 
   session_manager_->InvalidateAllSessions();
 

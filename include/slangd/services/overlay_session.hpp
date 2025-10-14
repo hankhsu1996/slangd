@@ -9,14 +9,15 @@
 
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/semantic/semantic_index.hpp"
-#include "slangd/services/global_catalog.hpp"
+#include "slangd/services/preamble_manager.hpp"
 
 namespace slangd::services {
 
 // Forward declaration for friend
 class LanguageService;
 
-// Compilation session with current buffer + catalog files for LSP queries
+// Compilation session with current buffer + preamble_manager files for LSP
+// queries
 class OverlaySession {
  public:
   friend class LanguageService;
@@ -24,16 +25,16 @@ class OverlaySession {
   static auto Create(
       std::string uri, std::string content,
       std::shared_ptr<ProjectLayoutService> layout_service,
-      std::shared_ptr<const GlobalCatalog> catalog = nullptr,
+      std::shared_ptr<const PreambleManager> preamble_manager = nullptr,
       std::shared_ptr<spdlog::logger> logger = nullptr)
       -> std::shared_ptr<OverlaySession>;
 
   // Core compilation building logic (used by Create and parse diagnostics)
-  // Pass catalog=nullptr for single-file mode
+  // Pass preamble_manager=nullptr for single-file mode
   static auto BuildCompilation(
       std::string uri, std::string content,
       std::shared_ptr<ProjectLayoutService> layout_service,
-      std::shared_ptr<const GlobalCatalog> catalog,
+      std::shared_ptr<const PreambleManager> preamble_manager,
       std::shared_ptr<spdlog::logger> logger)
       -> std::tuple<
           std::shared_ptr<slang::SourceManager>,
@@ -45,7 +46,8 @@ class OverlaySession {
       std::shared_ptr<slang::SourceManager> source_manager,
       std::shared_ptr<slang::ast::Compilation> compilation,
       std::unique_ptr<semantic::SemanticIndex> semantic_index,
-      slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger)
+      slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger,
+      std::shared_ptr<const PreambleManager> preamble_manager = nullptr)
       -> std::shared_ptr<OverlaySession>;
 
   OverlaySession(const OverlaySession&) = delete;
@@ -88,13 +90,15 @@ class OverlaySession {
       std::shared_ptr<slang::SourceManager> source_manager,
       std::shared_ptr<slang::ast::Compilation> compilation,
       std::unique_ptr<semantic::SemanticIndex> semantic_index,
-      slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger);
+      slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger,
+      std::shared_ptr<const PreambleManager> preamble_manager = nullptr);
 
   std::shared_ptr<slang::SourceManager> source_manager_;
   std::shared_ptr<slang::ast::Compilation> compilation_;
   std::unique_ptr<semantic::SemanticIndex> semantic_index_;
   slang::BufferID main_buffer_id_;
   std::shared_ptr<spdlog::logger> logger_;
+  std::shared_ptr<const PreambleManager> preamble_manager_;
 };
 
 }  // namespace slangd::services

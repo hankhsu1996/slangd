@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <fstream>
 #include <memory>
-#include <regex>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -12,185 +10,22 @@
 #include <asio.hpp>
 #include <catch2/catch_all.hpp>
 #include <fmt/format.h>
-#include <slang/ast/Compilation.h>
-#include <slang/syntax/SyntaxTree.h>
 #include <slang/text/SourceLocation.h>
-#include <slang/text/SourceManager.h>
-#include <slang/util/Bag.h>
 #include <spdlog/spdlog.h>
 
 #include "slangd/core/project_layout_service.hpp"
-#include "slangd/semantic/semantic_index.hpp"
-#include "slangd/services/global_catalog.hpp"
 #include "slangd/services/overlay_session.hpp"
+#include "slangd/services/preamble_manager.hpp"
 #include "test/slangd/common/file_fixture.hpp"
+#include "test/slangd/common/semantic_fixture.hpp"
 
-namespace slangd::semantic::test {
-
-// Base fixture for all semantic index tests
-class SemanticTestFixture {
- public:
-  using SemanticIndex = slangd::semantic::SemanticIndex;
-  using SymbolKey = slangd::semantic::SymbolKey;
-  auto BuildIndexFromSource(const std::string& source)
-      -> std::unique_ptr<SemanticIndex> {
-    constexpr std::string_view kTestFilename = "test.sv";
-
-    // Use consistent URI/path format
-    std::string test_uri = "file:///" + std::string(kTestFilename);
-    std::string test_path = "/" + std::string(kTestFilename);
-
-    SetSourceManager(std::make_shared<slang::SourceManager>());
-    auto buffer = GetSourceManager()->assignText(test_path, source);
-    SetBufferId(buffer.id);
-    auto tree =
-        slang::syntax::SyntaxTree::fromBuffer(buffer, *GetSourceManager());
-
-    slang::Bag options;
-    SetCompilation(std::make_unique<slang::ast::Compilation>(options));
-    GetCompilation()->addSyntaxTree(tree);
-
-    return SemanticIndex::FromCompilation(
-        *GetCompilation(), *GetSourceManager(), test_uri);
-  }
-
-  auto MakeKey(const std::string& source, const std::string& symbol)
-      -> SymbolKey {
-    size_t offset = source.find(symbol);
-
-    if (offset == std::string::npos) {
-      throw std::runtime_error(
-          fmt::format("MakeKey: Symbol '{}' not found in source", symbol));
-    }
-
-    // Detect ambiguous symbol names early
-    size_t second_occurrence = source.find(symbol, offset + 1);
-    if (second_occurrence != std::string::npos) {
-      throw std::runtime_error(
-          fmt::format(
-              "MakeKey: Ambiguous symbol '{}' found at multiple locations. "
-              "Use unique descriptive names (e.g., 'test_signal' not 'signal') "
-              "or use MakeKeyAt({}) for specific occurrence.",
-              symbol, offset));
-    }
-
-    return SymbolKey{.bufferId = buffer_id_.getId(), .offset = offset};
-  }
-
-  // Alternative method for cases where multiple occurrences are expected
-  auto MakeKeyAt(
-      const std::string& source, const std::string& symbol,
-      size_t occurrence = 0) -> SymbolKey {
-    size_t offset = 0;
-    for (size_t i = 0; i <= occurrence; ++i) {
-      offset = source.find(symbol, offset);
-      if (offset == std::string::npos) {
-        throw std::runtime_error(
-            fmt::format(
-                "MakeKeyAt: Symbol '{}' occurrence {} not found in source",
-                symbol, occurrence));
-      }
-      if (i < occurrence) {
-        offset += symbol.length();
-      }
-    }
-    return SymbolKey{.bufferId = buffer_id_.getId(), .offset = offset};
-  }
-
-  auto MakeRange(
-      const std::string& source, const std::string& search_string,
-      size_t symbol_size) -> slang::SourceRange {
-    size_t offset = source.find(search_string);
-    auto start = slang::SourceLocation{buffer_id_, offset};
-    auto end = slang::SourceLocation{buffer_id_, offset + symbol_size};
-    return slang::SourceRange{start, end};
-  }
-
-  auto FindLocation(const std::string& source, const std::string& text)
-      -> slang::SourceLocation {
-    size_t offset = source.find(text);
-    if (offset == std::string::npos) {
-      return {};
-    }
-    return slang::SourceLocation{buffer_id_, offset};
-  }
-
-  static auto FindSymbolOffsetsInText(
-      const std::string& text, std::string_view symbol_name)
-      -> std::vector<size_t> {
-    std::vector<size_t> offsets;
-    std::string pattern = R"((?:^|[\s.]))" + std::string(symbol_name) + R"(\b)";
-    std::regex symbol_regex(pattern);
-
-    auto begin = std::sregex_iterator(text.begin(), text.end(), symbol_regex);
-    auto end = std::sregex_iterator();
-
-    for (auto it = begin; it != end; ++it) {
-      auto match_pos = static_cast<size_t>(it->position());
-      if (match_pos < text.size() && (std::isalnum(text[match_pos]) == 0) &&
-          text[match_pos] != '_') {
-        match_pos += 1;
-      }
-      offsets.push_back(match_pos);
-    }
-
-    return offsets;
-  }
-
-  auto FindAllOccurrences(
-      const std::string& code, const std::string& symbol_name)
-      -> std::vector<slang::SourceLocation> {
-    auto offsets = FindSymbolOffsetsInText(code, symbol_name);
-
-    if (offsets.empty()) {
-      throw std::runtime_error(
-          fmt::format(
-              "FindAllOccurrences: No occurrences of '{}' found", symbol_name));
-    }
-
-    std::vector<slang::SourceLocation> occurrences;
-    for (size_t offset : offsets) {
-      occurrences.emplace_back(buffer_id_, offset);
-    }
-
-    return occurrences;
-  }
-
-  // Public accessors for derived classes and tests
-  [[nodiscard]] auto GetBufferId() const -> uint32_t {
-    return buffer_id_.getId();
-  }
-  [[nodiscard]] auto GetSourceManager() const -> slang::SourceManager* {
-    return source_manager_.get();
-  }
-  [[nodiscard]] auto GetCompilation() const -> slang::ast::Compilation* {
-    return compilation_.get();
-  }
-
- protected:
-  // Protected setters for derived classes to modify state
-  void SetSourceManager(std::shared_ptr<slang::SourceManager> sm) {
-    source_manager_ = std::move(sm);
-  }
-  void SetCompilation(std::unique_ptr<slang::ast::Compilation> comp) {
-    compilation_ = std::move(comp);
-  }
-  void SetBufferId(slang::BufferID id) {
-    buffer_id_ = id;
-  }
-
- private:
-  std::shared_ptr<slang::SourceManager> source_manager_;
-  std::unique_ptr<slang::ast::Compilation> compilation_;
-  slang::BufferID buffer_id_;
-};
+namespace slangd::test {
 
 // Extended fixture for multifile tests
 class MultiFileSemanticFixture : public SemanticTestFixture,
-                                 public slangd::test::FileTestFixture {
+                                 public FileTestFixture {
  public:
-  MultiFileSemanticFixture()
-      : slangd::test::FileTestFixture("slangd_semantic_multifile") {
+  MultiFileSemanticFixture() : FileTestFixture("slangd_semantic_multifile") {
   }
 
   ~MultiFileSemanticFixture() = default;
@@ -413,39 +248,35 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
   // Helper to check if cross-file references exist
   static auto HasCrossFileReferences(const SemanticIndex& index) -> bool {
     const auto& entries = index.GetSemanticEntries();
-    return std::ranges::any_of(entries, [](const SemanticEntry& entry) {
-      // Check if source and definition are in different buffers
-      return !entry.is_definition &&
-             entry.source_range.start().buffer().getId() !=
-                 entry.definition_range.start().buffer().getId();
-    });
+    return std::ranges::any_of(
+        entries, [](const slangd::semantic::SemanticEntry& entry) {
+          // Check if source and definition are in different buffers
+          return !entry.is_definition &&
+                 entry.source_range.start().buffer().getId() !=
+                     entry.definition_range.start().buffer().getId();
+        });
   }
 
-  // Build GlobalCatalog from temp directory files
+  // Build PreambleManager from temp directory files
   // Requires files to be written via CreateFile() first
-  auto BuildCatalog(asio::any_io_executor executor) const
-      -> std::shared_ptr<slangd::services::GlobalCatalog> {
+  auto BuildPreambleManager(asio::any_io_executor executor) const
+      -> std::shared_ptr<slangd::services::PreambleManager> {
     auto layout_service = slangd::ProjectLayoutService::Create(
         executor, GetTempDir(), spdlog::default_logger());
-    return slangd::services::GlobalCatalog::CreateFromProjectLayout(
+    return slangd::services::PreambleManager::CreateFromProjectLayout(
         layout_service, spdlog::default_logger());
   }
 
-  struct SessionWithCatalog {
-    std::shared_ptr<slangd::services::OverlaySession> session;
-    std::shared_ptr<slangd::services::GlobalCatalog> catalog;
-  };
-
-  // Build OverlaySession from disk files with GlobalCatalog
-  // Used for cross-file navigation tests
-  // Returns both session and catalog for test access
-  auto BuildSessionFromDiskWithCatalog(
+  // Build OverlaySession from disk files
+  // Used for cross-file navigation tests with preamble support
+  auto BuildSession(
       std::string_view current_file_name, asio::any_io_executor executor)
-      -> SessionWithCatalog {
+      -> std::shared_ptr<slangd::services::OverlaySession> {
     auto layout_service = slangd::ProjectLayoutService::Create(
         executor, GetTempDir(), spdlog::default_logger());
-    auto catalog = slangd::services::GlobalCatalog::CreateFromProjectLayout(
-        layout_service, spdlog::default_logger());
+    auto preamble_manager =
+        slangd::services::PreambleManager::CreateFromProjectLayout(
+            layout_service, spdlog::default_logger());
 
     // Read current file content from disk
     auto current_path = GetTempDir().Path() / current_file_name;
@@ -456,11 +287,10 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
 
     std::string uri = "file:///" + std::string(current_file_name);
 
-    // Create OverlaySession with catalog (handles all compilation setup)
-    auto session = slangd::services::OverlaySession::Create(
-        uri, content, layout_service, catalog);
-
-    return {.session = session, .catalog = catalog};
+    // Create OverlaySession with preamble_manager (handles all compilation
+    // setup)
+    return slangd::services::OverlaySession::Create(
+        uri, content, layout_service, preamble_manager);
   }
 
   static auto FindAllOccurrencesInSession(
@@ -498,59 +328,26 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
 
   // High-level assertion helpers
 
-  void AssertCrossFileDefinition(
-      const SemanticIndex& index, const std::string& code,
-      const std::string& symbol) {
-    auto location = FindLocation(code, symbol);
-    REQUIRE(location.valid());
-
-    auto def_loc = index.LookupDefinitionAt(location);
-    REQUIRE(def_loc.has_value());
-
-    // For package imports, they're in overlay so should be same_file_range
-    // For modules, they should be cross_file_path
-    bool is_cross_file =
-        def_loc->cross_file_path.has_value() ||
-        (def_loc->same_file_range.has_value() &&
-         def_loc->same_file_range->start().buffer() != location.buffer());
-    REQUIRE(is_cross_file);
-  }
-
-  static void AssertCrossFileDefinition(
-      const SessionWithCatalog& result, std::string_view symbol,
-      std::string_view expected_source_file,
-      std::string_view expected_def_file) {
-    auto location = FindLocationInSession(*result.session, symbol);
-    REQUIRE(location.valid());
-
-    auto def_loc =
-        result.session->GetSemanticIndex().LookupDefinitionAt(location);
-    REQUIRE(def_loc.has_value());
-
-    auto location_file =
-        result.session->GetSourceManager().getFileName(location);
-    REQUIRE(location_file.find(expected_source_file) != std::string_view::npos);
-
-    REQUIRE(def_loc->cross_file_path.has_value());
-    REQUIRE(def_loc->cross_file_range.has_value());
-
-    auto def_file = def_loc->cross_file_path->String();
-    REQUIRE(def_file.find(expected_def_file) != std::string_view::npos);
-
-    REQUIRE(def_loc->cross_file_range->start.line >= 0);
-    REQUIRE(def_loc->cross_file_range->start.character >= 0);
-    REQUIRE(def_loc->cross_file_range->end.line >= 0);
-    REQUIRE(def_loc->cross_file_range->end.character >= 0);
-
-    auto range_length = def_loc->cross_file_range->end.character -
-                        def_loc->cross_file_range->start.character;
-    REQUIRE(range_length == static_cast<int>(symbol.length()));
-  }
-
+  // Canonical assertion for cross-file definition navigation
+  // Verifies that go-to-definition from a symbol reference resolves correctly
+  // to its definition in a different file
+  //
+  // Parameters:
+  //   session: OverlaySession with PreambleManager for cross-file support
+  //   ref_content: Source code containing the symbol reference
+  //   def_content: Source code containing the symbol definition
+  //   symbol: Symbol name to test (must exist in both files)
+  //   ref_index: Which occurrence of symbol to use as reference (0-based)
+  //   def_index: Which occurrence of symbol to expect as definition (0-based)
+  //
+  // Example:
+  //   AssertCrossFileDef(*session, "import pkg::data_t;", "typedef logic
+  //   data_t;",
+  //                      "data_t", 0, 0);
   static void AssertCrossFileDef(
-      const SessionWithCatalog& result, std::string_view ref_content,
-      std::string_view def_content, std::string_view symbol, size_t ref_index,
-      size_t def_index) {
+      const slangd::services::OverlaySession& session,
+      std::string_view ref_content, std::string_view def_content,
+      std::string_view symbol, size_t ref_index, size_t def_index) {
     auto ref_offsets =
         FindSymbolOffsetsInText(std::string(ref_content), symbol);
     REQUIRE(ref_index < ref_offsets.size());
@@ -559,49 +356,13 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
         FindSymbolOffsetsInText(std::string(def_content), symbol);
     REQUIRE(def_index < def_offsets.size());
 
-    auto ref_location =
-        FindLocationInSession(*result.session, symbol, ref_index);
+    auto ref_location = FindLocationInSession(session, symbol, ref_index);
     REQUIRE(ref_location.valid());
 
-    auto def_loc =
-        result.session->GetSemanticIndex().LookupDefinitionAt(ref_location);
+    auto def_loc = session.GetSemanticIndex().LookupDefinitionAt(ref_location);
     REQUIRE(def_loc.has_value());
     REQUIRE(def_loc->cross_file_path.has_value());
     REQUIRE(def_loc->cross_file_range.has_value());
-
-    auto range_length = def_loc->cross_file_range->end.character -
-                        def_loc->cross_file_range->start.character;
-    REQUIRE(range_length == static_cast<int>(symbol.length()));
-  }
-
-  static void AssertCrossFileDefinitionAt(
-      const SessionWithCatalog& result, std::string_view symbol,
-      size_t occurrence_index, std::string_view expected_source_file,
-      std::string_view expected_def_file) {
-    auto occurrences = FindAllOccurrencesInSession(*result.session, symbol);
-    REQUIRE(occurrence_index < occurrences.size());
-
-    auto location = occurrences[occurrence_index];
-    REQUIRE(location.valid());
-
-    auto def_loc =
-        result.session->GetSemanticIndex().LookupDefinitionAt(location);
-    REQUIRE(def_loc.has_value());
-
-    auto location_file =
-        result.session->GetSourceManager().getFileName(location);
-    REQUIRE(location_file.find(expected_source_file) != std::string_view::npos);
-
-    REQUIRE(def_loc->cross_file_path.has_value());
-    REQUIRE(def_loc->cross_file_range.has_value());
-
-    auto def_file = def_loc->cross_file_path->String();
-    REQUIRE(def_file.find(expected_def_file) != std::string_view::npos);
-
-    REQUIRE(def_loc->cross_file_range->start.line >= 0);
-    REQUIRE(def_loc->cross_file_range->start.character >= 0);
-    REQUIRE(def_loc->cross_file_range->end.line >= 0);
-    REQUIRE(def_loc->cross_file_range->end.character >= 0);
 
     auto range_length = def_loc->cross_file_range->end.character -
                         def_loc->cross_file_range->start.character;
@@ -649,4 +410,4 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
   }
 };
 
-}  // namespace slangd::semantic::test
+}  // namespace slangd::test

@@ -5,7 +5,7 @@
 #include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/diagnostics/Diagnostics.h>
 
-#include "slangd/services/global_catalog.hpp"
+#include "slangd/services/preamble_manager.hpp"
 #include "slangd/utils/conversion.hpp"
 
 namespace slangd::semantic {
@@ -27,13 +27,13 @@ auto DiagnosticConverter::ExtractParseDiagnostics(
 auto DiagnosticConverter::ExtractCollectedDiagnostics(
     slang::ast::Compilation& compilation,
     const slang::SourceManager& source_manager, slang::BufferID main_buffer_id,
-    const services::GlobalCatalog* global_catalog)
+    const services::PreambleManager* preamble_manager)
     -> std::vector<lsp::Diagnostic> {
   // Get diagnostics from diagMap without triggering elaboration
   auto slang_diagnostics = compilation.getCollectedDiagnostics();
   auto diagnostics =
       ExtractDiagnostics(slang_diagnostics, source_manager, main_buffer_id);
-  return FilterDiagnostics(diagnostics, global_catalog);
+  return FilterDiagnostics(diagnostics, preamble_manager);
 }
 
 auto DiagnosticConverter::ExtractDiagnostics(
@@ -53,7 +53,7 @@ auto DiagnosticConverter::ExtractDiagnostics(
 
 auto DiagnosticConverter::FilterDiagnostics(
     std::vector<lsp::Diagnostic> diagnostics,
-    const services::GlobalCatalog* global_catalog)
+    const services::PreambleManager* preamble_manager)
     -> std::vector<lsp::Diagnostic> {
   std::vector<lsp::Diagnostic> result;
 
@@ -63,10 +63,10 @@ auto DiagnosticConverter::FilterDiagnostics(
       continue;
     }
 
-    // Filter UnknownModule if GlobalCatalog has the definition
+    // Filter UnknownModule if PreambleManager has the definition
     // This handles OverlaySession limitation: it excludes submodules by design,
-    // but GlobalCatalog provides them for semantic indexing
-    if (diag.code == "UnknownModule" && global_catalog != nullptr) {
+    // but PreambleManager provides them for semantic indexing
+    if (diag.code == "UnknownModule" && preamble_manager != nullptr) {
       // Message format: "unknown module 'foo_module'"
       // Extract module name between single quotes
       std::string_view message = diag.message;
@@ -78,9 +78,9 @@ auto DiagnosticConverter::FilterDiagnostics(
         auto module_name =
             message.substr(start_pos + 1, end_pos - start_pos - 1);
 
-        // If GlobalCatalog has this module, it's a false positive
+        // If PreambleManager has this module, it's a false positive
         // (module exists in project, just not in OverlaySession)
-        if (global_catalog->GetModule(module_name) != nullptr) {
+        if (preamble_manager->GetModule(module_name) != nullptr) {
           continue;  // Skip this diagnostic
         }
       }

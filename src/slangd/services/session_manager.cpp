@@ -23,12 +23,12 @@ SessionManager::PendingCreation::PendingCreation(
 SessionManager::SessionManager(
     asio::any_io_executor executor,
     std::shared_ptr<ProjectLayoutService> layout_service,
-    std::shared_ptr<const GlobalCatalog> catalog,
+    std::shared_ptr<const PreambleManager> preamble_manager,
     std::shared_ptr<OpenDocumentTracker> open_tracker,
     std::shared_ptr<spdlog::logger> logger)
     : executor_(executor),
       layout_service_(std::move(layout_service)),
-      catalog_(std::move(catalog)),
+      preamble_manager_(std::move(preamble_manager)),
       open_tracker_(std::move(open_tracker)),
       logger_(std::move(logger)),
       session_strand_(asio::make_strand(executor)),
@@ -145,20 +145,21 @@ auto SessionManager::CancelPendingSession(std::string uri) -> void {
       asio::detached);
 }
 
-auto SessionManager::UpdateCatalog(std::shared_ptr<const GlobalCatalog> catalog)
-    -> void {
+auto SessionManager::UpdatePreambleManager(
+    std::shared_ptr<const PreambleManager> preamble_manager) -> void {
   asio::co_spawn(
       executor_,
-      [this, catalog]() -> asio::awaitable<void> {
+      [this, preamble_manager]() -> asio::awaitable<void> {
         co_await asio::post(session_strand_, asio::use_awaitable);
 
         logger_->debug(
-            "SessionManager::UpdateCatalog: Updating catalog pointer (old "
+            "SessionManager::UpdatePreambleManager: Updating preamble manager "
+            "pointer (old "
             "version: {}, new version: {})",
-            catalog_ ? catalog_->GetVersion() : 0,
-            catalog ? catalog->GetVersion() : 0);
+            preamble_manager_ ? preamble_manager_->GetVersion() : 0,
+            preamble_manager ? preamble_manager->GetVersion() : 0);
 
-        catalog_ = catalog;
+        preamble_manager_ = preamble_manager;
 
         co_return;
       },
@@ -194,7 +195,8 @@ auto SessionManager::StartSessionCreation(
 
               auto [source_manager, compilation, main_buffer_id] =
                   OverlaySession::BuildCompilation(
-                      uri, content, layout_service_, catalog_, logger_);
+                      uri, content, layout_service_, preamble_manager_,
+                      logger_);
 
               // Check again after expensive BuildCompilation
               if (pending->cancelled.load(std::memory_order_acquire)) {
@@ -204,7 +206,8 @@ auto SessionManager::StartSessionCreation(
               }
 
               auto semantic_index = semantic::SemanticIndex::FromCompilation(
-                  *compilation, *source_manager, uri, catalog_.get(), logger_);
+                  *compilation, *source_manager, uri, preamble_manager_.get(),
+                  logger_);
 
               // Check if still current before storing
               co_await asio::post(session_strand_, asio::use_awaitable);
@@ -223,7 +226,7 @@ auto SessionManager::StartSessionCreation(
                       std::move(compilation));
               auto partial_session = OverlaySession::CreateFromParts(
                   source_manager, compilation_shared, std::move(semantic_index),
-                  main_buffer_id, logger_);
+                  main_buffer_id, logger_, preamble_manager_);
 
               active_sessions_[uri] = CacheEntry{
                   .session = partial_session,
