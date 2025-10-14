@@ -98,7 +98,7 @@ class OverlaySession {
   std::unique_ptr<semantic::SemanticIndex> semantic_index_;
   slang::BufferID main_buffer_id_;
   std::shared_ptr<spdlog::logger> logger_;
-  std::shared_ptr<const PreambleManager> preamble_manager_;  // Keep preamble alive
+  std::shared_ptr<const PreambleManager> preamble_manager_;
 };
 
 }  // namespace slangd::services

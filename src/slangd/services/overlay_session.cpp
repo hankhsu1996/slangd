@@ -25,7 +25,7 @@ class PreambleAwareCompilation : public slang::ast::Compilation {
       std::shared_ptr<const PreambleManager> preamble_manager)
       : Compilation(options), preamble_manager_(std::move(preamble_manager)) {
     // Populate packageMap with preamble packages (direct injection)
-    // This enables cross-compilation binding: overlay references preamble symbols
+    // Enables cross-compilation: overlay can reference preamble symbols
     for (const auto& package_info : preamble_manager_->GetPackages()) {
       const auto* pkg = preamble_manager_->GetPackage(package_info.name);
       if (pkg != nullptr) {
@@ -161,11 +161,11 @@ auto OverlaySession::BuildCompilation(
   options.set(comp_options);
 
   // Create compilation with options
-  // Use PreambleAwareCompilation for cross-compilation binding when preamble available
+  // Use PreambleAwareCompilation when preamble available for cross-compilation
   std::unique_ptr<slang::ast::Compilation> compilation;
   if (preamble_manager) {
-    compilation = std::make_unique<PreambleAwareCompilation>(
-        options, preamble_manager);
+    compilation =
+        std::make_unique<PreambleAwareCompilation>(options, preamble_manager);
     logger->debug(
         "Created PreambleAwareCompilation with {} packages",
         preamble_manager->GetPackages().size());

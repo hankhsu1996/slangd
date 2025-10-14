@@ -1,0 +1,35 @@
+"""
+Build file for slangd semantic integration tests.
+"""
+
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+cc_test(
+    name = "multifile_definition_test",
+    timeout = "short",
+    srcs = [
+        "multifile_definition_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "//test/slangd:semantic_fixtures",
+        "@catch2",
+        "@fmt",
+        "@slang",
+    ],
+)
+
+cc_test(
+    name = "package_preamble_test",
+    timeout = "short",
+    srcs = [
+        "package_preamble_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "//test/slangd:semantic_fixtures",
+        "@catch2",
+        "@fmt",
+        "@slang",
+    ],
+)

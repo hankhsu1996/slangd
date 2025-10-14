@@ -5,40 +5,6 @@ Build file for slangd semantic tests.
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 cc_test(
-    name = "multifile_definition_test",
-    timeout = "short",
-    srcs = [
-        "integration/multifile_definition_test.cpp",
-        "test_fixtures.hpp",
-    ],
-    deps = [
-        "//:slangd_core",
-        "//test/slangd:async_fixture",
-        "//test/slangd:file_fixture",
-        "@catch2",
-        "@fmt",
-        "@slang",
-    ],
-)
-
-cc_test(
-    name = "package_preamble_test",
-    timeout = "short",
-    srcs = [
-        "integration/package_preamble_test.cpp",
-        "test_fixtures.hpp",
-    ],
-    deps = [
-        "//:slangd_core",
-        "//test/slangd:async_fixture",
-        "//test/slangd:file_fixture",
-        "@catch2",
-        "@fmt",
-        "@slang",
-    ],
-)
-
-cc_test(
     name = "document_symbol_test",
     timeout = "short",
     srcs = [

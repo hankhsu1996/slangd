@@ -38,3 +38,17 @@ cc_library(
         "@catch2",
     ],
 )
+
+cc_library(
+    name = "semantic_fixtures",
+    hdrs = ["common/semantic_fixtures.hpp"],
+    visibility = ["//test/slangd:__subpackages__"],
+    deps = [
+        ":async_fixture",
+        ":file_fixture",
+        "//:slangd_core",
+        "@catch2",
+        "@fmt",
+        "@slang",
+    ],
+)

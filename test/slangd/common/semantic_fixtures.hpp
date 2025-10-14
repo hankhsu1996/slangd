@@ -119,19 +119,14 @@ class SemanticTestFixture {
       const std::string& text, std::string_view symbol_name)
       -> std::vector<size_t> {
     std::vector<size_t> offsets;
-    std::string pattern = R"((?:^|[\s.]))" + std::string(symbol_name) + R"(\b)";
+    std::string pattern = R"(\b)" + std::string(symbol_name) + R"(\b)";
     std::regex symbol_regex(pattern);
 
     auto begin = std::sregex_iterator(text.begin(), text.end(), symbol_regex);
     auto end = std::sregex_iterator();
 
     for (auto it = begin; it != end; ++it) {
-      auto match_pos = static_cast<size_t>(it->position());
-      if (match_pos < text.size() && (std::isalnum(text[match_pos]) == 0) &&
-          text[match_pos] != '_') {
-        match_pos += 1;
-      }
-      offsets.push_back(match_pos);
+      offsets.push_back(static_cast<size_t>(it->position()));
     }
 
     return offsets;
@@ -431,17 +426,11 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
         layout_service, spdlog::default_logger());
   }
 
-  struct SessionWithPreambleManager {
-    std::shared_ptr<slangd::services::OverlaySession> session;
-    std::shared_ptr<slangd::services::PreambleManager> preamble_manager;
-  };
-
-  // Build OverlaySession from disk files with PreambleManager
-  // Used for cross-file navigation tests
-  // Returns both session and preamble_manager for test access
-  auto BuildSessionWithPreamble(
+  // Build OverlaySession from disk files
+  // Used for cross-file navigation tests with preamble support
+  auto BuildSession(
       std::string_view current_file_name, asio::any_io_executor executor)
-      -> SessionWithPreambleManager {
+      -> std::shared_ptr<slangd::services::OverlaySession> {
     auto layout_service = slangd::ProjectLayoutService::Create(
         executor, GetTempDir(), spdlog::default_logger());
     auto preamble_manager =
@@ -459,10 +448,8 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
 
     // Create OverlaySession with preamble_manager (handles all compilation
     // setup)
-    auto session = slangd::services::OverlaySession::Create(
+    return slangd::services::OverlaySession::Create(
         uri, content, layout_service, preamble_manager);
-
-    return {.session = session, .preamble_manager = preamble_manager};
   }
 
   static auto FindAllOccurrencesInSession(
@@ -500,59 +487,26 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
 
   // High-level assertion helpers
 
-  void AssertCrossFileDefinition(
-      const SemanticIndex& index, const std::string& code,
-      const std::string& symbol) {
-    auto location = FindLocation(code, symbol);
-    REQUIRE(location.valid());
-
-    auto def_loc = index.LookupDefinitionAt(location);
-    REQUIRE(def_loc.has_value());
-
-    // For package imports, they're in overlay so should be same_file_range
-    // For modules, they should be cross_file_path
-    bool is_cross_file =
-        def_loc->cross_file_path.has_value() ||
-        (def_loc->same_file_range.has_value() &&
-         def_loc->same_file_range->start().buffer() != location.buffer());
-    REQUIRE(is_cross_file);
-  }
-
-  static void AssertCrossFileDefinition(
-      const SessionWithPreambleManager& result, std::string_view symbol,
-      std::string_view expected_source_file,
-      std::string_view expected_def_file) {
-    auto location = FindLocationInSession(*result.session, symbol);
-    REQUIRE(location.valid());
-
-    auto def_loc =
-        result.session->GetSemanticIndex().LookupDefinitionAt(location);
-    REQUIRE(def_loc.has_value());
-
-    auto location_file =
-        result.session->GetSourceManager().getFileName(location);
-    REQUIRE(location_file.find(expected_source_file) != std::string_view::npos);
-
-    REQUIRE(def_loc->cross_file_path.has_value());
-    REQUIRE(def_loc->cross_file_range.has_value());
-
-    auto def_file = def_loc->cross_file_path->String();
-    REQUIRE(def_file.find(expected_def_file) != std::string_view::npos);
-
-    REQUIRE(def_loc->cross_file_range->start.line >= 0);
-    REQUIRE(def_loc->cross_file_range->start.character >= 0);
-    REQUIRE(def_loc->cross_file_range->end.line >= 0);
-    REQUIRE(def_loc->cross_file_range->end.character >= 0);
-
-    auto range_length = def_loc->cross_file_range->end.character -
-                        def_loc->cross_file_range->start.character;
-    REQUIRE(range_length == static_cast<int>(symbol.length()));
-  }
-
+  // Canonical assertion for cross-file definition navigation
+  // Verifies that go-to-definition from a symbol reference resolves correctly
+  // to its definition in a different file
+  //
+  // Parameters:
+  //   session: OverlaySession with PreambleManager for cross-file support
+  //   ref_content: Source code containing the symbol reference
+  //   def_content: Source code containing the symbol definition
+  //   symbol: Symbol name to test (must exist in both files)
+  //   ref_index: Which occurrence of symbol to use as reference (0-based)
+  //   def_index: Which occurrence of symbol to expect as definition (0-based)
+  //
+  // Example:
+  //   AssertCrossFileDef(*session, "import pkg::data_t;", "typedef logic
+  //   data_t;",
+  //                      "data_t", 0, 0);
   static void AssertCrossFileDef(
-      const SessionWithPreambleManager& result, std::string_view ref_content,
-      std::string_view def_content, std::string_view symbol, size_t ref_index,
-      size_t def_index) {
+      const slangd::services::OverlaySession& session,
+      std::string_view ref_content, std::string_view def_content,
+      std::string_view symbol, size_t ref_index, size_t def_index) {
     auto ref_offsets =
         FindSymbolOffsetsInText(std::string(ref_content), symbol);
     REQUIRE(ref_index < ref_offsets.size());
@@ -561,49 +515,13 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
         FindSymbolOffsetsInText(std::string(def_content), symbol);
     REQUIRE(def_index < def_offsets.size());
 
-    auto ref_location =
-        FindLocationInSession(*result.session, symbol, ref_index);
+    auto ref_location = FindLocationInSession(session, symbol, ref_index);
     REQUIRE(ref_location.valid());
 
-    auto def_loc =
-        result.session->GetSemanticIndex().LookupDefinitionAt(ref_location);
+    auto def_loc = session.GetSemanticIndex().LookupDefinitionAt(ref_location);
     REQUIRE(def_loc.has_value());
     REQUIRE(def_loc->cross_file_path.has_value());
     REQUIRE(def_loc->cross_file_range.has_value());
-
-    auto range_length = def_loc->cross_file_range->end.character -
-                        def_loc->cross_file_range->start.character;
-    REQUIRE(range_length == static_cast<int>(symbol.length()));
-  }
-
-  static void AssertCrossFileDefinitionAt(
-      const SessionWithPreambleManager& result, std::string_view symbol,
-      size_t occurrence_index, std::string_view expected_source_file,
-      std::string_view expected_def_file) {
-    auto occurrences = FindAllOccurrencesInSession(*result.session, symbol);
-    REQUIRE(occurrence_index < occurrences.size());
-
-    auto location = occurrences[occurrence_index];
-    REQUIRE(location.valid());
-
-    auto def_loc =
-        result.session->GetSemanticIndex().LookupDefinitionAt(location);
-    REQUIRE(def_loc.has_value());
-
-    auto location_file =
-        result.session->GetSourceManager().getFileName(location);
-    REQUIRE(location_file.find(expected_source_file) != std::string_view::npos);
-
-    REQUIRE(def_loc->cross_file_path.has_value());
-    REQUIRE(def_loc->cross_file_range.has_value());
-
-    auto def_file = def_loc->cross_file_path->String();
-    REQUIRE(def_file.find(expected_def_file) != std::string_view::npos);
-
-    REQUIRE(def_loc->cross_file_range->start.line >= 0);
-    REQUIRE(def_loc->cross_file_range->start.character >= 0);
-    REQUIRE(def_loc->cross_file_range->end.line >= 0);
-    REQUIRE(def_loc->cross_file_range->end.character >= 0);
 
     auto range_length = def_loc->cross_file_range->end.character -
                         def_loc->cross_file_range->start.character;

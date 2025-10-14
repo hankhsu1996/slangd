@@ -267,6 +267,26 @@ void SemanticIndex::IndexVisitor::AddReference(
     const slang::ast::Symbol& symbol, std::string_view name,
     slang::SourceRange source_range, slang::SourceRange definition_range,
     const slang::ast::Scope* parent_scope) {
+  // Check if symbol is from preamble (automatic cross-compilation binding)
+  if (preamble_manager_ != nullptr &&
+      preamble_manager_->IsPreambleSymbol(&symbol)) {
+    // Get precomputed location from Phase 1 (no extraction needed)
+    auto info = preamble_manager_->GetSymbolInfo(&symbol);
+    if (info.has_value()) {
+      // Create entry with precomputed cross-file location
+      auto entry = SemanticEntry::Make(
+          symbol, name, source_range, false, definition_range, parent_scope);
+      entry.cross_file_path = CanonicalPath::FromUri(info->file_uri);
+      entry.cross_file_range = info->definition_range;
+      AddEntry(std::move(entry));
+      return;
+    }
+    // If GetSymbolInfo failed for a preamble symbol, fall through to create
+    // a normal same-file reference (symbol might be from std package or other
+    // built-in that wasn't indexed)
+  }
+
+  // Overlay symbol or preamble symbol without location info - same-file ref
   AddEntry(
       SemanticEntry::Make(
           symbol, name, source_range, false, definition_range, parent_scope));

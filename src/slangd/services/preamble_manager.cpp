@@ -46,20 +46,17 @@ class PreambleSymbolVisitor
     auto file_uri = canonical_path.ToUri();
 
     // Extract precise definition range using preamble's SourceManager
-    lsp::Range definition_range{};
-    if (const auto* syntax = symbol.getSyntax()) {
-      // Use DefinitionExtractor to get precise name range from syntax
-      auto range =
-          definition_extractor_.ExtractDefinitionRange(symbol, *syntax);
-      definition_range =
-          ConvertSlangRangeToLspRange(range, source_manager_.get());
-    } else {
-      // No syntax - log error and skip
-      logger_->error(
-          "PreambleManager: Symbol '{}' (kind: {}) has location but no syntax",
-          symbol.name, slang::ast::toString(symbol.kind));
+    const auto* syntax = symbol.getSyntax();
+    if (syntax == nullptr) {
+      // No syntax - skip silently (expected for built-in symbols like std
+      // package)
       return;
     }
+
+    // Use DefinitionExtractor to get precise name range from syntax
+    auto range = definition_extractor_.ExtractDefinitionRange(symbol, *syntax);
+    lsp::Range definition_range =
+        ConvertSlangRangeToLspRange(range, source_manager_.get());
 
     // Store in map (symbol pointer as key)
     symbol_info_.get()[&symbol] = PreambleSymbolInfo{

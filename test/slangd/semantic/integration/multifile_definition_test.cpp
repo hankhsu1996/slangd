@@ -6,7 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include "../../common/async_fixture.hpp"
-#include "../test_fixtures.hpp"
+#include "../../common/semantic_fixtures.hpp"
 
 constexpr auto kLogLevel = spdlog::level::debug;
 
@@ -26,57 +26,67 @@ using slangd::test::RunAsyncTest;
 using Fixture = MultiFileSemanticFixture;
 
 TEST_CASE("Definition lookup for package imports", "[definition][multifile]") {
-  Fixture fixture;
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
 
-  const std::string package_content = R"(
+    const std::string package_content = R"(
     package test_pkg;
       parameter WIDTH = 32;
       typedef logic [WIDTH-1:0] data_t;
     endpackage
   )";
 
-  const std::string module_content = R"(
+    const std::string module_content = R"(
     module test_module;
       import test_pkg::*;
       data_t my_data;
     endmodule
   )";
 
-  auto result = fixture.CreateBuilder()
-                    .SetCurrentFile(module_content, "test_module")
-                    .AddUnopendFile(package_content, "test_pkg")
-                    .Build();
-  REQUIRE(result.index != nullptr);
+    fixture.CreateFile("test_pkg.sv", package_content);
+    fixture.CreateFile("test_module.sv", module_content);
 
-  fixture.AssertCrossFileDefinition(*result.index, module_content, "data_t");
+    auto session = fixture.BuildSession("test_module.sv", executor);
+    REQUIRE(session != nullptr);
+
+    Fixture::AssertCrossFileDef(
+        *session, module_content, package_content, "data_t", 0, 0);
+
+    co_return;
+  });
 }
 
 TEST_CASE(
     "Definition lookup for package name in import statement",
     "[definition][multifile]") {
-  Fixture fixture;
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
 
-  const std::string package_content = R"(
+    const std::string package_content = R"(
     package my_pkg;
       parameter WIDTH = 32;
       typedef logic [WIDTH-1:0] data_t;
     endpackage
   )";
 
-  const std::string module_content = R"(
+    const std::string module_content = R"(
     module test_module;
       import my_pkg::*;
       data_t my_data;
     endmodule
   )";
 
-  auto result = fixture.CreateBuilder()
-                    .SetCurrentFile(module_content, "test_module")
-                    .AddUnopendFile(package_content, "my_pkg")
-                    .Build();
-  REQUIRE(result.index != nullptr);
+    fixture.CreateFile("my_pkg.sv", package_content);
+    fixture.CreateFile("test_module.sv", module_content);
 
-  fixture.AssertCrossFileDefinition(*result.index, module_content, "my_pkg");
+    auto session = fixture.BuildSession("test_module.sv", executor);
+    REQUIRE(session != nullptr);
+
+    Fixture::AssertCrossFileDef(
+        *session, module_content, package_content, "my_pkg", 0, 0);
+
+    co_return;
+  });
 }
 
 TEST_CASE(
@@ -103,11 +113,11 @@ TEST_CASE(
     fixture.CreateFile("alu.sv", alu_content);
     fixture.CreateFile("top.sv", top_content);
 
-    auto result = fixture.BuildSessionWithPreamble("top.sv", executor);
-    REQUIRE(result.session != nullptr);
-    REQUIRE(result.preamble_manager != nullptr);
+    auto session = fixture.BuildSession("top.sv", executor);
+    REQUIRE(session != nullptr);
 
-    Fixture::AssertCrossFileDefinition(result, "ALU", "top.sv", "alu.sv");
+    Fixture::AssertCrossFileDef(
+        *session, top_content, alu_content, "ALU", 0, 0);
 
     co_return;
   });
@@ -176,18 +186,15 @@ TEST_CASE(
     fixture.CreateFile("adder.sv", def);
     fixture.CreateFile("top.sv", ref);
 
-    auto result = fixture.BuildSessionWithPreamble("top.sv", executor);
-    REQUIRE(result.session != nullptr);
-    REQUIRE(result.preamble_manager != nullptr);
+    auto session = fixture.BuildSession("top.sv", executor);
+    REQUIRE(session != nullptr);
 
-    Fixture::AssertCrossFileDef(result, ref, def, "a_port", 0, 0);
-    Fixture::AssertCrossFileDef(result, ref, def, "c_port", 0, 0);
-    Fixture::AssertCrossFileDef(result, ref, def, "sum_port", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "a_port", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "c_port", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "sum_port", 0, 0);
 
-    auto location =
-        Fixture::FindLocationInSession(*result.session, "nonexistent");
-    auto def_loc =
-        result.session->GetSemanticIndex().LookupDefinitionAt(location);
+    auto location = Fixture::FindLocationInSession(*session, "nonexistent");
+    auto def_loc = session->GetSemanticIndex().LookupDefinitionAt(location);
 
     co_return;
   });
@@ -223,16 +230,14 @@ TEST_CASE(
     fixture.CreateFile("configurable.sv", def);
     fixture.CreateFile("top.sv", ref);
 
-    auto result = fixture.BuildSessionWithPreamble("top.sv", executor);
-    REQUIRE(result.session != nullptr);
-    REQUIRE(result.preamble_manager != nullptr);
+    auto session = fixture.BuildSession("top.sv", executor);
+    REQUIRE(session != nullptr);
 
-    Fixture::AssertCrossFileDef(result, ref, def, "PARAM_A", 0, 0);
-    Fixture::AssertCrossFileDef(result, ref, def, "PARAM_C", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "PARAM_A", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "PARAM_C", 0, 0);
 
-    auto location = Fixture::FindLocationInSession(*result.session, "INVALID");
-    auto def_loc =
-        result.session->GetSemanticIndex().LookupDefinitionAt(location);
+    auto location = Fixture::FindLocationInSession(*session, "INVALID");
+    auto def_loc = session->GetSemanticIndex().LookupDefinitionAt(location);
 
     co_return;
   });
@@ -272,19 +277,18 @@ TEST_CASE(
     fixture.CreateFile("alu.sv", def);
     fixture.CreateFile("top.sv", ref);
 
-    auto result = fixture.BuildSessionWithPreamble("top.sv", executor);
-    REQUIRE(result.session != nullptr);
-    REQUIRE(result.preamble_manager != nullptr);
+    auto session = fixture.BuildSession("top.sv", executor);
+    REQUIRE(session != nullptr);
 
-    Fixture::AssertCrossFileDefinition(result, "ALU", "top.sv", "alu.sv");
+    Fixture::AssertCrossFileDef(*session, ref, def, "ALU", 0, 0);
 
-    Fixture::AssertCrossFileDef(result, ref, def, "DATA_WIDTH", 0, 0);
-    Fixture::AssertCrossFileDef(result, ref, def, "OP_WIDTH", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "DATA_WIDTH", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "OP_WIDTH", 0, 0);
 
-    Fixture::AssertCrossFileDef(result, ref, def, "operand_a", 0, 0);
-    Fixture::AssertCrossFileDef(result, ref, def, "operand_b", 0, 0);
-    Fixture::AssertCrossFileDef(result, ref, def, "operation", 0, 0);
-    Fixture::AssertCrossFileDef(result, ref, def, "result", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "operand_a", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "operand_b", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "operation", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "result", 0, 0);
 
     co_return;
   });
