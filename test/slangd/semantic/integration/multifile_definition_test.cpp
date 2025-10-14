@@ -103,8 +103,7 @@ TEST_CASE(
     fixture.CreateFile("alu.sv", alu_content);
     fixture.CreateFile("top.sv", top_content);
 
-    auto result =
-        fixture.BuildSessionFromDiskWithPreambleManager("top.sv", executor);
+    auto result = fixture.BuildSessionWithPreamble("top.sv", executor);
     REQUIRE(result.session != nullptr);
     REQUIRE(result.preamble_manager != nullptr);
 
@@ -177,8 +176,7 @@ TEST_CASE(
     fixture.CreateFile("adder.sv", def);
     fixture.CreateFile("top.sv", ref);
 
-    auto result =
-        fixture.BuildSessionFromDiskWithPreambleManager("top.sv", executor);
+    auto result = fixture.BuildSessionWithPreamble("top.sv", executor);
     REQUIRE(result.session != nullptr);
     REQUIRE(result.preamble_manager != nullptr);
 
@@ -225,8 +223,7 @@ TEST_CASE(
     fixture.CreateFile("configurable.sv", def);
     fixture.CreateFile("top.sv", ref);
 
-    auto result =
-        fixture.BuildSessionFromDiskWithPreambleManager("top.sv", executor);
+    auto result = fixture.BuildSessionWithPreamble("top.sv", executor);
     REQUIRE(result.session != nullptr);
     REQUIRE(result.preamble_manager != nullptr);
 
@@ -275,8 +272,7 @@ TEST_CASE(
     fixture.CreateFile("alu.sv", def);
     fixture.CreateFile("top.sv", ref);
 
-    auto result =
-        fixture.BuildSessionFromDiskWithPreambleManager("top.sv", executor);
+    auto result = fixture.BuildSessionWithPreamble("top.sv", executor);
     REQUIRE(result.session != nullptr);
     REQUIRE(result.preamble_manager != nullptr);
 

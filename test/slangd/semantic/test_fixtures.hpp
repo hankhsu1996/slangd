@@ -439,7 +439,7 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
   // Build OverlaySession from disk files with PreambleManager
   // Used for cross-file navigation tests
   // Returns both session and preamble_manager for test access
-  auto BuildSessionFromDiskWithPreambleManager(
+  auto BuildSessionWithPreamble(
       std::string_view current_file_name, asio::any_io_executor executor)
       -> SessionWithPreambleManager {
     auto layout_service = slangd::ProjectLayoutService::Create(

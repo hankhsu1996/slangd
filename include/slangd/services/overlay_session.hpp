@@ -46,7 +46,8 @@ class OverlaySession {
       std::shared_ptr<slang::SourceManager> source_manager,
       std::shared_ptr<slang::ast::Compilation> compilation,
       std::unique_ptr<semantic::SemanticIndex> semantic_index,
-      slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger)
+      slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger,
+      std::shared_ptr<const PreambleManager> preamble_manager = nullptr)
       -> std::shared_ptr<OverlaySession>;
 
   OverlaySession(const OverlaySession&) = delete;
@@ -89,13 +90,15 @@ class OverlaySession {
       std::shared_ptr<slang::SourceManager> source_manager,
       std::shared_ptr<slang::ast::Compilation> compilation,
       std::unique_ptr<semantic::SemanticIndex> semantic_index,
-      slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger);
+      slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger,
+      std::shared_ptr<const PreambleManager> preamble_manager = nullptr);
 
   std::shared_ptr<slang::SourceManager> source_manager_;
   std::shared_ptr<slang::ast::Compilation> compilation_;
   std::unique_ptr<semantic::SemanticIndex> semantic_index_;
   slang::BufferID main_buffer_id_;
   std::shared_ptr<spdlog::logger> logger_;
+  std::shared_ptr<const PreambleManager> preamble_manager_;  // Keep preamble alive
 };
 
 }  // namespace slangd::services

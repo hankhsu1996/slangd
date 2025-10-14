@@ -12,6 +12,35 @@
 
 namespace slangd::services {
 
+namespace {
+
+// PreambleAwareCompilation: Subclass for cross-compilation symbol binding
+// Directly populates protected packageMap with preamble PackageSymbol pointers
+// Note: getPackage() is NOT virtual, so we cannot override it. Instead, we
+// populate the packageMap directly, which getPackage() uses for lookups.
+class PreambleAwareCompilation : public slang::ast::Compilation {
+ public:
+  PreambleAwareCompilation(
+      const slang::Bag& options,
+      std::shared_ptr<const PreambleManager> preamble_manager)
+      : Compilation(options), preamble_manager_(std::move(preamble_manager)) {
+    // Populate packageMap with preamble packages (direct injection)
+    // This enables cross-compilation binding: overlay references preamble symbols
+    for (const auto& package_info : preamble_manager_->GetPackages()) {
+      const auto* pkg = preamble_manager_->GetPackage(package_info.name);
+      if (pkg != nullptr) {
+        packageMap[pkg->name] = pkg;
+      }
+    }
+  }
+
+ private:
+  // Keep preamble alive for the lifetime of this compilation
+  std::shared_ptr<const PreambleManager> preamble_manager_;
+};
+
+}  // anonymous namespace
+
 auto OverlaySession::Create(
     std::string uri, std::string content,
     std::shared_ptr<ProjectLayoutService> layout_service,
@@ -45,30 +74,33 @@ auto OverlaySession::Create(
   return std::shared_ptr<OverlaySession>(new OverlaySession(
       std::move(source_manager),
       std::shared_ptr<slang::ast::Compilation>(std::move(compilation)),
-      std::move(semantic_index), main_buffer_id, logger));
+      std::move(semantic_index), main_buffer_id, logger, preamble_manager));
 }
 
 auto OverlaySession::CreateFromParts(
     std::shared_ptr<slang::SourceManager> source_manager,
     std::shared_ptr<slang::ast::Compilation> compilation,
     std::unique_ptr<semantic::SemanticIndex> semantic_index,
-    slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger)
+    slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger,
+    std::shared_ptr<const PreambleManager> preamble_manager)
     -> std::shared_ptr<OverlaySession> {
   return std::shared_ptr<OverlaySession>(new OverlaySession(
       std::move(source_manager), std::move(compilation),
-      std::move(semantic_index), main_buffer_id, logger));
+      std::move(semantic_index), main_buffer_id, logger, preamble_manager));
 }
 
 OverlaySession::OverlaySession(
     std::shared_ptr<slang::SourceManager> source_manager,
     std::shared_ptr<slang::ast::Compilation> compilation,
     std::unique_ptr<semantic::SemanticIndex> semantic_index,
-    slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger)
+    slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger,
+    std::shared_ptr<const PreambleManager> preamble_manager)
     : source_manager_(std::move(source_manager)),
       compilation_(std::move(compilation)),
       semantic_index_(std::move(semantic_index)),
       main_buffer_id_(main_buffer_id),
-      logger_(std::move(logger)) {
+      logger_(std::move(logger)),
+      preamble_manager_(std::move(preamble_manager)) {
 }
 
 auto OverlaySession::BuildCompilation(
@@ -129,7 +161,17 @@ auto OverlaySession::BuildCompilation(
   options.set(comp_options);
 
   // Create compilation with options
-  auto compilation = std::make_unique<slang::ast::Compilation>(options);
+  // Use PreambleAwareCompilation for cross-compilation binding when preamble available
+  std::unique_ptr<slang::ast::Compilation> compilation;
+  if (preamble_manager) {
+    compilation = std::make_unique<PreambleAwareCompilation>(
+        options, preamble_manager);
+    logger->debug(
+        "Created PreambleAwareCompilation with {} packages",
+        preamble_manager->GetPackages().size());
+  } else {
+    compilation = std::make_unique<slang::ast::Compilation>(options);
+  }
 
   // Add current buffer content (authoritative)
   auto file_path = CanonicalPath::FromUri(uri);
@@ -148,19 +190,10 @@ auto OverlaySession::BuildCompilation(
 
   // Add files from preamble manager if available
   if (preamble_manager) {
-    // Add packages from preamble manager
-    for (const auto& package_info : preamble_manager->GetPackages()) {
-      // Skip if this is the same file as our buffer (deduplication)
-      if (package_info.file_path.Path() == file_path.Path()) {
-        continue;
-      }
-
-      auto package_tree_result = slang::syntax::SyntaxTree::fromFile(
-          package_info.file_path.Path().string(), *source_manager, options);
-      if (package_tree_result) {
-        compilation->addSyntaxTree(package_tree_result.value());
-      }
-    }
+    // NOTE: Packages are NOT loaded as syntax trees!
+    // PreambleAwareCompilation injects preamble PackageSymbol* pointers
+    // directly into packageMap for cross-compilation binding.
+    // This eliminates duplicate package loading per session.
 
     // Add interfaces from preamble manager
     for (const auto& interface_info : preamble_manager->GetInterfaces()) {

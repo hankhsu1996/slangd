@@ -226,7 +226,7 @@ auto SessionManager::StartSessionCreation(
                       std::move(compilation));
               auto partial_session = OverlaySession::CreateFromParts(
                   source_manager, compilation_shared, std::move(semantic_index),
-                  main_buffer_id, logger_);
+                  main_buffer_id, logger_, preamble_manager_);
 
               active_sessions_[uri] = CacheEntry{
                   .session = partial_session,
