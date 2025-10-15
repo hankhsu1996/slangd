@@ -26,8 +26,8 @@ class DocumentSymbolBuilder {
 
  private:
   // Create DocumentSymbol from SemanticEntry (returns nullopt if name is empty)
-  static auto CreateDocumentSymbol(
-      const SemanticEntry& entry, const slang::SourceManager& source_manager)
+  // Uses stored LSP coordinates directly (no SourceManager conversion needed)
+  static auto CreateDocumentSymbol(const SemanticEntry& entry)
       -> std::optional<lsp::DocumentSymbol>;
 
   // Recursive attachment of child symbols to parent DocumentSymbol
