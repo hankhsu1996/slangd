@@ -307,8 +307,8 @@ auto PreambleManager::BuildFromLayout(
               {.name = std::string(param.name), .def_range = param_range_lsp});
         }
 
-        // Extract ports (ANSI ports only for Phase 1) and convert to LSP
-        // coordinates
+        // Extract ports (ANSI ports only - non-ANSI ports not yet supported)
+        // and convert to LSP coordinates
         std::vector<PortInfo> ports;
         if (definition.portList != nullptr &&
             definition.portList->kind ==

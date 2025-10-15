@@ -30,26 +30,24 @@ namespace slangd::semantic {
 // INVARIANT: All entries in a SemanticIndex have source locations in the same
 // file (the file being indexed). Symbols from included files are filtered out.
 struct SemanticEntry {
-  // LSP Coordinate Fields
-  // Note: source location is always in current_file_uri (enforced by AddEntry)
-  lsp::Range source_range;      // Where this entry appears (LSP coords)
-  lsp::Range definition_range;  // Target definition location (LSP coords)
-  std::string definition_uri;   // File where definition is
-  bool is_cross_file;           // true = from preamble, false = local
+  // LSP coordinates (source location always in current_file_uri)
+  lsp::Range source_range;
+  lsp::Range definition_range;
+  std::string definition_uri;
+  bool is_cross_file;  // true = from preamble, false = local
 
-  // Symbol Information
-  const slang::ast::Symbol* symbol;  // The actual symbol
-  lsp::SymbolKind lsp_kind;          // LSP classification
-  std::string name;                  // Display name
+  // Symbol information
+  const slang::ast::Symbol* symbol;
+  lsp::SymbolKind lsp_kind;
+  std::string name;
 
-  // Hierarchy (DocumentSymbol tree)
-  const slang::ast::Scope* parent;          // Parent scope for tree building
-  const slang::ast::Scope* children_scope;  // Where to find children (for
-                                            // non-Scope symbols like
-                                            // GenericClassDef)
+  // Hierarchy for DocumentSymbol tree
+  const slang::ast::Scope* parent;
+  const slang::ast::Scope* children_scope;  // For non-Scope symbols like
+                                            // GenericClassDef
 
-  // Reference Tracking (Go-to-definition)
-  bool is_definition;  // true = self-ref, false = cross-ref
+  // Reference tracking
+  bool is_definition;
 };
 
 }  // namespace slangd::semantic
@@ -88,18 +86,14 @@ class SemanticIndex {
     return semantic_entries_;
   }
 
-  // Find definition using LSP coordinates
-  // No SourceManager needed - works with LSP ranges directly
+  // Find definition using LSP coordinates (no SourceManager needed)
   [[nodiscard]] auto LookupDefinitionAt(
       const std::string& uri, lsp::Position position) const
       -> std::optional<lsp::Location>;
 
-  // Validation method to check for overlapping ranges
   void ValidateNoRangeOverlaps() const;
 
-  // Validation method to check symbol coverage
   // Logs identifiers that don't have definitions in the semantic index
-  // Only checks identifiers from the specified file URI
   void ValidateSymbolCoverage(
       slang::ast::Compilation& compilation,
       const std::string& current_file_uri) const;
@@ -113,30 +107,24 @@ class SemanticIndex {
         logger_(logger ? logger : spdlog::default_logger()) {
   }
 
-  // Helper to check if a symbol is defined in the current file
   // Returns false for preamble symbols (separate compilation)
   static auto IsInCurrentFile(
       const slang::ast::Symbol& symbol, const std::string& current_file_uri,
       const slang::SourceManager& source_manager,
       const services::PreambleManager* preamble_manager) -> bool;
 
-  // Helper for syntax tree locations (use IsInCurrentFile for symbols)
   static auto IsInCurrentFile(
       slang::SourceLocation loc, const std::string& current_file_uri,
       const slang::SourceManager& source_manager) -> bool;
 
-  // Core data storage
-  // Unified storage combining definitions and references
+  // Unified storage for definitions and references
   std::vector<SemanticEntry> semantic_entries_;
 
-  // Store source manager reference for symbol processing
   std::reference_wrapper<const slang::SourceManager> source_manager_;
 
-  // The file being indexed - all entries must have source locations in this
-  // file
+  // All entries must have source locations in this file
   std::string current_file_uri_;
 
-  // Logger for error reporting
   std::shared_ptr<spdlog::logger> logger_;
 
   // Visitor for symbol collection and reference tracking
@@ -229,42 +217,32 @@ class SemanticIndex {
         slang::SourceRange source_range, slang::SourceRange definition_range,
         const slang::ast::Scope* parent_scope);
 
-    // Helper for adding references with pre-converted LSP definition
-    // coordinates Used when definition location comes from PreambleManager
-    // (already in LSP coords)
+    // For references where PreambleManager provides pre-converted LSP
+    // definition coordinates
     void AddReferenceWithLspDefinition(
         const slang::ast::Symbol& symbol, std::string_view name,
         slang::SourceRange source_range, lsp::Range definition_range,
         std::string definition_uri, const slang::ast::Scope* parent_scope);
 
-    // Unified type traversal - handles all type structure recursively
     void TraverseType(const slang::ast::Type& type);
 
-    // Helper for indexing class specialization (e.g., Class#(.PARAM(value)))
-    // Traverses call syntax to find ClassNameSyntax nodes and link to
-    // genericClass
     void IndexClassSpecialization(
         const slang::ast::ClassType& class_type,
         const slang::syntax::SyntaxNode* call_syntax);
 
-    // Recursively traverse scoped names to find and index ClassName nodes
     void TraverseClassNames(
         const slang::syntax::SyntaxNode* node,
         const slang::ast::ClassType& class_type,
         slang::SourceRange definition_range);
 
-    // Helper for indexing class parameter names in specialization
     void IndexClassParameters(
         const slang::ast::ClassType& class_type,
         const slang::syntax::ParameterValueAssignmentSyntax& params);
 
-    // Helper for indexing interface/module parameter names in instantiation
     void IndexInstanceParameters(
         const slang::ast::InstanceSymbol& instance,
         const slang::syntax::ParameterValueAssignmentSyntax& params);
 
-    // Helper for indexing package names in scoped references
-    // (e.g., pkg::PARAM, pkg::func())
     void IndexPackageInScopedName(
         const slang::syntax::SyntaxNode* syntax,
         const slang::ast::Symbol& target_symbol);

@@ -253,8 +253,6 @@ void SemanticIndex::IndexVisitor::AddDefinition(
     const slang::ast::Symbol& symbol, std::string_view name,
     slang::SourceRange range, const slang::ast::Scope* parent_scope,
     const slang::ast::Scope* children_scope) {
-  // Convert Slang coordinates to LSP coordinates during indexing
-  // This is the single conversion point for definitions
   const auto& unwrapped = UnwrapSymbol(symbol);
 
   lsp::Range lsp_range =
@@ -262,8 +260,6 @@ void SemanticIndex::IndexVisitor::AddDefinition(
   lsp::Location lsp_location =
       ConvertSlangLocationToLspLocation(range.start(), source_manager_.get());
 
-  // Create entry with LSP coordinates
-  // Note: source location validated by AddEntry (must be in current file)
   auto entry = SemanticEntry{
       .source_range = lsp_range,
       .definition_range = lsp_range,       // Self-reference
@@ -283,20 +279,16 @@ void SemanticIndex::IndexVisitor::AddReference(
     const slang::ast::Symbol& symbol, std::string_view name,
     slang::SourceRange source_range, slang::SourceRange definition_range,
     const slang::ast::Scope* parent_scope) {
-  // Convert Slang coordinates to LSP coordinates during indexing
-  // This is the single conversion point for references
   const auto& unwrapped = UnwrapSymbol(symbol);
 
   lsp::Range source_lsp_range =
       ConvertSlangRangeToLspRange(source_range, source_manager_.get());
 
-  // Check if symbol is from preamble (cross-file reference)
   if (preamble_manager_ != nullptr &&
       preamble_manager_->IsPreambleSymbol(&symbol)) {
-    // Get precomputed location from preamble (already in LSP coordinates)
+    // Preamble symbols provide pre-converted LSP coordinates
     auto info = preamble_manager_->GetSymbolInfo(&symbol);
     if (info.has_value()) {
-      // Create entry with preamble definition location
       auto entry = SemanticEntry{
           .source_range = source_lsp_range,
           .definition_range = info->definition_range,
@@ -343,16 +335,13 @@ void SemanticIndex::IndexVisitor::AddReferenceWithLspDefinition(
     const slang::ast::Symbol& symbol, std::string_view name,
     slang::SourceRange source_range, lsp::Range definition_range,
     std::string definition_uri, const slang::ast::Scope* parent_scope) {
-  // Helper for module instantiation references where PreambleManager already
-  // provides LSP coordinates for port/parameter definitions
+  // For module/port/parameter references where PreambleManager provides
+  // pre-converted LSP definition coordinates
   const auto& unwrapped = UnwrapSymbol(symbol);
 
-  // Convert source range using overlay SourceManager (where the reference
-  // appears)
   lsp::Range source_lsp_range =
       ConvertSlangRangeToLspRange(source_range, source_manager_.get());
 
-  // Definition coordinates already in LSP format (from PreambleManager)
   auto entry = SemanticEntry{
       .source_range = source_lsp_range,
       .definition_range = definition_range,
