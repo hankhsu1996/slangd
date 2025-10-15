@@ -51,20 +51,20 @@ struct InterfaceInfo {
 // Port metadata extracted from module definitions
 struct PortInfo {
   std::string name;
-  slang::SourceRange def_range;
+  lsp::Range def_range;
 };
 
 // Parameter metadata extracted from module definitions
 struct ParameterInfo {
   std::string name;
-  slang::SourceRange def_range;
+  lsp::Range def_range;
 };
 
 // Module metadata extracted from preamble compilation
 struct ModuleInfo {
   std::string name;
   CanonicalPath file_path;
-  slang::SourceRange definition_range;
+  lsp::Range definition_range;
   std::vector<PortInfo> ports;
   std::vector<ParameterInfo> parameters;
 

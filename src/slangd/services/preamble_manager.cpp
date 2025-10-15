@@ -277,31 +277,38 @@ auto PreambleManager::BuildFromLayout(
         auto file_path_str = source_manager_->getFileName(definition.location);
         CanonicalPath module_file_path(file_path_str);
 
-        // Extract definition range from module declaration syntax
-        slang::SourceRange definition_range;
+        // Extract definition range from module declaration syntax and convert
+        // to LSP
+        lsp::Range definition_range_lsp{};
         if (const auto* syntax = definition.getSyntax()) {
           if (syntax->kind == slang::syntax::SyntaxKind::ModuleDeclaration) {
             const auto& module_syntax =
                 syntax->as<slang::syntax::ModuleDeclarationSyntax>();
             if (module_syntax.header != nullptr) {
-              definition_range = module_syntax.header->name.range();
+              slang::SourceRange slang_range =
+                  module_syntax.header->name.range();
+              definition_range_lsp =
+                  ConvertSlangRangeToLspRange(slang_range, *source_manager_);
             }
           }
         }
 
-        // Extract parameters
+        // Extract parameters and convert to LSP coordinates
         std::vector<ParameterInfo> parameters;
         parameters.reserve(definition.parameters.size());
         for (const auto& param : definition.parameters) {
           auto end_offset = param.location.offset() + param.name.length();
           auto end_loc =
               slang::SourceLocation(param.location.buffer(), end_offset);
+          slang::SourceRange slang_range(param.location, end_loc);
+          lsp::Range param_range_lsp =
+              ConvertSlangRangeToLspRange(slang_range, *source_manager_);
           parameters.push_back(
-              {.name = std::string(param.name),
-               .def_range = slang::SourceRange(param.location, end_loc)});
+              {.name = std::string(param.name), .def_range = param_range_lsp});
         }
 
-        // Extract ports (ANSI ports only for Phase 1)
+        // Extract ports (ANSI ports only for Phase 1) and convert to LSP
+        // coordinates
         std::vector<PortInfo> ports;
         if (definition.portList != nullptr &&
             definition.portList->kind ==
@@ -315,10 +322,14 @@ auto PreambleManager::BuildFromLayout(
                   port->as<slang::syntax::ImplicitAnsiPortSyntax>();
               if (implicit_port.declarator != nullptr &&
                   implicit_port.declarator->name.valueText().length() > 0) {
+                slang::SourceRange slang_range =
+                    implicit_port.declarator->name.range();
+                lsp::Range port_range_lsp =
+                    ConvertSlangRangeToLspRange(slang_range, *source_manager_);
                 ports.push_back(
                     {.name = std::string(
                          implicit_port.declarator->name.valueText()),
-                     .def_range = implicit_port.declarator->name.range()});
+                     .def_range = port_range_lsp});
               }
             }
           }
@@ -327,7 +338,7 @@ auto PreambleManager::BuildFromLayout(
         modules_.push_back(
             {.name = std::move(module_name),
              .file_path = std::move(module_file_path),
-             .definition_range = definition_range,
+             .definition_range = definition_range_lsp,
              .ports = std::move(ports),
              .parameters = std::move(parameters),
              .port_lookup = {},

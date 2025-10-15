@@ -78,7 +78,8 @@ class PreambleManagerTestFixture {
     for (const auto& mod : modules) {
       if (mod.name == name) {
         REQUIRE(mod.file_path.Path().filename() == expected_filename);
-        REQUIRE(mod.definition_range.start().valid());
+        REQUIRE(mod.definition_range.start.line >= 0);
+        REQUIRE(mod.definition_range.start.character >= 0);
         return;
       }
     }
@@ -115,7 +116,8 @@ class PreambleManagerTestFixture {
       const slangd::services::ModuleInfo& module, std::string_view param_name) {
     for (const auto& param : module.parameters) {
       if (param.name == param_name) {
-        REQUIRE(param.def_range.start().valid());
+        REQUIRE(param.def_range.start.line >= 0);
+        REQUIRE(param.def_range.start.character >= 0);
         return;
       }
     }
@@ -128,7 +130,8 @@ class PreambleManagerTestFixture {
       const slangd::services::ModuleInfo& module, std::string_view port_name) {
     for (const auto& port : module.ports) {
       if (port.name == port_name) {
-        REQUIRE(port.def_range.start().valid());
+        REQUIRE(port.def_range.start.line >= 0);
+        REQUIRE(port.def_range.start.character >= 0);
         return;
       }
     }

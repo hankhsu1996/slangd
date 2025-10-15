@@ -80,8 +80,8 @@ auto SemanticIndex::FromCompilation(
       fmt::format("SemanticIndex::FromCompilation [{}]", current_file_uri),
       logger);
 
-  auto index =
-      std::unique_ptr<SemanticIndex>(new SemanticIndex(source_manager, logger));
+  auto index = std::unique_ptr<SemanticIndex>(
+      new SemanticIndex(source_manager, current_file_uri, logger));
 
   // Create visitor for comprehensive symbol collection and reference tracking
   auto visitor =
@@ -213,19 +213,13 @@ auto SemanticIndex::FromCompilation(
     }
   }
 
-  // Sort entries by source location for O(n) validation and potential lookup
+  // Sort entries by source location for O(n) validation and lookup
   // optimizations O(n log n) - trivially fast even for 100k entries
+  // Sort by position only - all entries are in same file (invariant)
   std::sort(
       index->semantic_entries_.begin(), index->semantic_entries_.end(),
       [](const SemanticEntry& a, const SemanticEntry& b) -> bool {
-        // Sort by buffer ID first, then by offset
-        if (a.source_range.start().buffer().getId() !=
-            b.source_range.start().buffer().getId()) {
-          return a.source_range.start().buffer().getId() <
-                 b.source_range.start().buffer().getId();
-        }
-        return a.source_range.start().offset() <
-               b.source_range.start().offset();
+        return a.source_range.start < b.source_range.start;
       });
 
   // Validate no overlaps using O(n) algorithm (entries are now sorted)
@@ -237,45 +231,6 @@ auto SemanticIndex::FromCompilation(
   return index;
 }
 
-auto SemanticEntry::Make(
-    const slang::ast::Symbol& symbol, std::string_view name,
-    slang::SourceRange source_range, bool is_definition,
-    slang::SourceRange definition_range, const slang::ast::Scope* parent_scope,
-    const slang::ast::Scope* children_scope) -> SemanticEntry {
-  // Unwrap symbol to handle TransparentMember recursion
-  const auto& unwrapped = UnwrapSymbol(symbol);
-
-  return SemanticEntry{
-      // NEW: LSP coordinate fields (Phase 1 - initialized with defaults)
-      // Will be populated in Phase 2 by Add* methods
-      .source_range_lsp = lsp::Range{},
-      .location_lsp = lsp::Position{},
-      .definition_range_lsp = lsp::Range{},
-      .source_uri = "",
-      .definition_uri = "",
-      .is_cross_file = false,
-      // OLD: Slang coordinate fields (still used during migration)
-      .source_range = source_range,
-      .location = unwrapped.location,
-      // Symbol information
-      .symbol = &unwrapped,
-      .lsp_kind = ConvertToLspKind(unwrapped),
-      .name = std::string(name),
-      // Hierarchy
-      .parent = parent_scope,
-      .children_scope = children_scope,
-      // Reference tracking
-      .is_definition = is_definition,
-      .definition_range = definition_range,
-      // Cross-file (old)
-      .cross_file_path = std::nullopt,
-      .cross_file_range = std::nullopt,
-      // buffer_id should be the REFERENCE location (where it appears in code),
-      // not the definition location. This ensures file filtering works
-      // correctly.
-      .buffer_id = source_range.start().buffer()};
-}
-
 auto SemanticIndex::GetDocumentSymbols(const std::string& uri) const
     -> std::vector<lsp::DocumentSymbol> {
   return DocumentSymbolBuilder::BuildDocumentSymbolTree(uri, *this);
@@ -283,6 +238,14 @@ auto SemanticIndex::GetDocumentSymbols(const std::string& uri) const
 
 // IndexVisitor helper methods
 void SemanticIndex::IndexVisitor::AddEntry(SemanticEntry entry) {
+  // INVARIANT: All entries have source locations in current_file_uri_
+  // This is guaranteed by:
+  // 1. IsInCurrentFile() checks at module/package level before traversal
+  // 2. All Add* methods populate source_range from symbols in current file
+  //
+  // No additional filtering needed - preamble symbols have source in current
+  // file (where the reference appears) even though definition is elsewhere
+
   index_.get().semantic_entries_.push_back(std::move(entry));
 }
 
@@ -290,26 +253,28 @@ void SemanticIndex::IndexVisitor::AddDefinition(
     const slang::ast::Symbol& symbol, std::string_view name,
     slang::SourceRange range, const slang::ast::Scope* parent_scope,
     const slang::ast::Scope* children_scope) {
-  // PHASE 2: Convert Slang coordinates to LSP coordinates during indexing
-  // This is the SINGLE CONVERSION POINT for definitions
+  // Convert Slang coordinates to LSP coordinates during indexing
+  // This is the single conversion point for definitions
+  const auto& unwrapped = UnwrapSymbol(symbol);
 
-  // Convert range using overlay SourceManager
   lsp::Range lsp_range =
       ConvertSlangRangeToLspRange(range, source_manager_.get());
   lsp::Location lsp_location =
       ConvertSlangLocationToLspLocation(range.start(), source_manager_.get());
 
-  // Create entry with both old and new fields (parallel data during migration)
-  auto entry = SemanticEntry::Make(
-      symbol, name, range, true, range, parent_scope, children_scope);
-
-  // Populate new LSP fields
-  entry.source_range_lsp = lsp_range;
-  entry.location_lsp = lsp_range.start;
-  entry.definition_range_lsp = lsp_range;  // Self-reference
-  entry.source_uri = lsp_location.uri;
-  entry.definition_uri = lsp_location.uri;  // Same file
-  entry.is_cross_file = false;              // Local symbol
+  // Create entry with LSP coordinates
+  // Note: source location validated by AddEntry (must be in current file)
+  auto entry = SemanticEntry{
+      .source_range = lsp_range,
+      .definition_range = lsp_range,       // Self-reference
+      .definition_uri = lsp_location.uri,  // Same file
+      .is_cross_file = false,              // Local symbol
+      .symbol = &unwrapped,
+      .lsp_kind = ConvertToLspKind(unwrapped),
+      .name = std::string(name),
+      .parent = parent_scope,
+      .children_scope = children_scope,
+      .is_definition = true};
 
   AddEntry(std::move(entry));
 }
@@ -318,24 +283,12 @@ void SemanticIndex::IndexVisitor::AddReference(
     const slang::ast::Symbol& symbol, std::string_view name,
     slang::SourceRange source_range, slang::SourceRange definition_range,
     const slang::ast::Scope* parent_scope) {
-  // PHASE 2: Convert Slang coordinates to LSP coordinates during indexing
-  // This is the SINGLE CONVERSION POINT for references
+  // Convert Slang coordinates to LSP coordinates during indexing
+  // This is the single conversion point for references
+  const auto& unwrapped = UnwrapSymbol(symbol);
 
-  // Convert source range using overlay SourceManager (where the reference
-  // appears)
   lsp::Range source_lsp_range =
       ConvertSlangRangeToLspRange(source_range, source_manager_.get());
-  lsp::Location source_lsp_location = ConvertSlangLocationToLspLocation(
-      source_range.start(), source_manager_.get());
-
-  // Create entry with both old and new fields
-  auto entry = SemanticEntry::Make(
-      symbol, name, source_range, false, definition_range, parent_scope);
-
-  // Populate source LSP fields
-  entry.source_range_lsp = source_lsp_range;
-  entry.location_lsp = source_lsp_range.start;
-  entry.source_uri = source_lsp_location.uri;
 
   // Check if symbol is from preamble (cross-file reference)
   if (preamble_manager_ != nullptr &&
@@ -343,14 +296,18 @@ void SemanticIndex::IndexVisitor::AddReference(
     // Get precomputed location from preamble (already in LSP coordinates)
     auto info = preamble_manager_->GetSymbolInfo(&symbol);
     if (info.has_value()) {
-      // Populate definition LSP fields from preamble
-      entry.definition_range_lsp = info->definition_range;
-      entry.definition_uri = info->file_uri;
-      entry.is_cross_file = true;
-
-      // Also populate old cross_file fields for backward compatibility
-      entry.cross_file_path = CanonicalPath::FromUri(info->file_uri);
-      entry.cross_file_range = info->definition_range;
+      // Create entry with preamble definition location
+      auto entry = SemanticEntry{
+          .source_range = source_lsp_range,
+          .definition_range = info->definition_range,
+          .definition_uri = info->file_uri,
+          .is_cross_file = true,
+          .symbol = &unwrapped,
+          .lsp_kind = ConvertToLspKind(unwrapped),
+          .name = std::string(name),
+          .parent = parent_scope,
+          .children_scope = nullptr,
+          .is_definition = false};
 
       AddEntry(std::move(entry));
       return;
@@ -361,56 +318,52 @@ void SemanticIndex::IndexVisitor::AddReference(
   }
 
   // Overlay symbol or preamble symbol without location info - same-file
-  // reference Convert definition range using overlay SourceManager
+  // reference
   lsp::Range definition_lsp_range =
       ConvertSlangRangeToLspRange(definition_range, source_manager_.get());
   lsp::Location definition_lsp_location = ConvertSlangLocationToLspLocation(
       definition_range.start(), source_manager_.get());
 
-  entry.definition_range_lsp = definition_lsp_range;
-  entry.definition_uri = definition_lsp_location.uri;
-  entry.is_cross_file = false;  // Local symbol
+  auto entry = SemanticEntry{
+      .source_range = source_lsp_range,
+      .definition_range = definition_lsp_range,
+      .definition_uri = definition_lsp_location.uri,
+      .is_cross_file = false,  // Local symbol
+      .symbol = &unwrapped,
+      .lsp_kind = ConvertToLspKind(unwrapped),
+      .name = std::string(name),
+      .parent = parent_scope,
+      .children_scope = nullptr,
+      .is_definition = false};
 
   AddEntry(std::move(entry));
 }
 
-void SemanticIndex::IndexVisitor::AddCrossFileReference(
+void SemanticIndex::IndexVisitor::AddReferenceWithLspDefinition(
     const slang::ast::Symbol& symbol, std::string_view name,
-    slang::SourceRange source_range, slang::SourceRange definition_range,
-    const slang::SourceManager& preamble_manager_source_manager,
-    const slang::ast::Scope* parent_scope) {
-  // PHASE 2: Convert Slang coordinates to LSP coordinates during indexing
-  // Use unified LSP model - no separate cross_file vs local fields
+    slang::SourceRange source_range, lsp::Range definition_range,
+    std::string definition_uri, const slang::ast::Scope* parent_scope) {
+  // Helper for module instantiation references where PreambleManager already
+  // provides LSP coordinates for port/parameter definitions
+  const auto& unwrapped = UnwrapSymbol(symbol);
 
   // Convert source range using overlay SourceManager (where the reference
   // appears)
   lsp::Range source_lsp_range =
       ConvertSlangRangeToLspRange(source_range, source_manager_.get());
-  lsp::Location source_lsp_location = ConvertSlangLocationToLspLocation(
-      source_range.start(), source_manager_.get());
 
-  // Convert definition range using PREAMBLE SourceManager (where the definition
-  // is)
-  lsp::Range definition_lsp_range = ConvertSlangRangeToLspRange(
-      definition_range, preamble_manager_source_manager);
-  lsp::Location definition_lsp_location = ConvertSlangLocationToLspLocation(
-      definition_range.start(), preamble_manager_source_manager);
-
-  // Create entry with both old and new fields
-  auto entry = SemanticEntry::Make(
-      symbol, name, source_range, false, definition_range, parent_scope);
-
-  // Populate new LSP fields
-  entry.source_range_lsp = source_lsp_range;
-  entry.location_lsp = source_lsp_range.start;
-  entry.definition_range_lsp = definition_lsp_range;
-  entry.source_uri = source_lsp_location.uri;
-  entry.definition_uri = definition_lsp_location.uri;
-  entry.is_cross_file = true;  // Cross-file reference
-
-  // Also populate old cross_file fields for backward compatibility
-  entry.cross_file_path = CanonicalPath::FromUri(definition_lsp_location.uri);
-  entry.cross_file_range = definition_lsp_range;
+  // Definition coordinates already in LSP format (from PreambleManager)
+  auto entry = SemanticEntry{
+      .source_range = source_lsp_range,
+      .definition_range = definition_range,
+      .definition_uri = std::move(definition_uri),
+      .is_cross_file = true,  // Always cross-file (preamble symbols)
+      .symbol = &unwrapped,
+      .lsp_kind = ConvertToLspKind(unwrapped),
+      .name = std::string(name),
+      .parent = parent_scope,
+      .children_scope = nullptr,
+      .is_definition = false};
 
   AddEntry(std::move(entry));
 }
@@ -2338,13 +2291,10 @@ void SemanticIndex::IndexVisitor::handle(
           parent_syntax->as<slang::syntax::HierarchyInstantiationSyntax>();
       auto type_range = inst_syntax.type.range();
 
-      // Module definitions are in PreambleManager's compilation, not
-      // OverlaySession Use AddCrossFileReference to store
-      // compilation-independent location
-      const auto& preamble_manager_sm = preamble_manager_->GetSourceManager();
-      AddCrossFileReference(
+      // Module definitions are in PreambleManager (already in LSP coordinates)
+      AddReferenceWithLspDefinition(
           symbol, symbol.definitionName, type_range,
-          module_info->definition_range, preamble_manager_sm,
+          module_info->definition_range, module_info->file_path.ToUri(),
           symbol.getParentScope());
 
       // Handle port connections (named ports only, skip positional)
@@ -2360,9 +2310,9 @@ void SemanticIndex::IndexVisitor::handle(
           auto it = module_info->port_lookup.find(std::string(port_name));
           if (it != module_info->port_lookup.end()) {
             const auto* port_info = it->second;
-            AddCrossFileReference(
+            AddReferenceWithLspDefinition(
                 symbol, port_name, npc.name.range(), port_info->def_range,
-                preamble_manager_sm, symbol.getParentScope());
+                module_info->file_path.ToUri(), symbol.getParentScope());
           }
         }
       }
@@ -2381,9 +2331,9 @@ void SemanticIndex::IndexVisitor::handle(
                 module_info->parameter_lookup.find(std::string(param_name));
             if (it != module_info->parameter_lookup.end()) {
               const auto* param_info = it->second;
-              AddCrossFileReference(
+              AddReferenceWithLspDefinition(
                   symbol, param_name, npa.name.range(), param_info->def_range,
-                  preamble_manager_sm, symbol.getParentScope());
+                  module_info->file_path.ToUri(), symbol.getParentScope());
             }
           }
         }
@@ -2393,77 +2343,34 @@ void SemanticIndex::IndexVisitor::handle(
   // UninstantiatedDefSymbol has no children to visit - done
 }
 
-// NEW (Phase 3): Go-to-definition using LSP coordinates
+// Go-to-definition using LSP coordinates
 auto SemanticIndex::LookupDefinitionAt(
     const std::string& uri, lsp::Position position) const
     -> std::optional<lsp::Location> {
-  // Binary search in sorted entries by (uri, position)
-  // Note: Entries are currently sorted by Slang coords (buffer_id, offset)
-  // but within same URI they maintain order, so we can still use binary search
+  // Validate URI first - all entries must be from current_file_uri_
+  if (uri != current_file_uri_) {
+    return std::nullopt;  // Wrong file!
+  }
 
-  // Use std::pair for composite key - automatically gets lexicographic
-  // comparison thanks to Position::operator<=>
-  const auto target = std::pair{std::string_view(uri), position};
-
-  // Projection function: extract (uri, position) key from each entry for
-  // comparison
+  // Binary search in sorted entries by position
+  // Entries are sorted by source_range.start within the single file
   const auto projection = [](const SemanticEntry& e) {
-    return std::pair{std::string_view(e.source_uri), e.location_lsp};
+    return e.source_range.start;
   };
 
-  // upper_bound returns the first entry whose start is AFTER target position
   auto it = std::ranges::upper_bound(
-      semantic_entries_, target, std::ranges::less{}, projection);
+      semantic_entries_, position, std::ranges::less{}, projection);
 
   // Move back one entry - this is the candidate that might contain our position
   // (since its start is <= target, but the next entry's start is > target)
   if (it != semantic_entries_.begin()) {
     --it;
 
-    // Verify the entry is in the same URI and contains the target position
-    if (it->source_uri == uri && it->source_range_lsp.Contains(position)) {
+    // Verify the entry contains the target position
+    if (it->source_range.Contains(position)) {
       // Return the definition location using standard LSP type
       return lsp::Location{
-          .uri = it->definition_uri, .range = it->definition_range_lsp};
-    }
-  }
-
-  return std::nullopt;
-}
-
-// OLD (DEPRECATED): Go-to-definition using Slang coordinates
-auto SemanticIndex::LookupDefinitionAt(slang::SourceLocation loc) const
-    -> std::optional<DefinitionLocation> {
-  // Binary search in sorted entries by (buffer_id, offset)
-  const auto target = std::pair{loc.buffer().getId(), loc.offset()};
-
-  const auto proj = [](const SemanticEntry& e) -> std::pair<unsigned, size_t> {
-    return std::pair{
-        e.source_range.start().buffer().getId(),
-        e.source_range.start().offset()};
-  };
-
-  // upper_bound returns the first entry whose start is AFTER target location
-  auto it = std::ranges::upper_bound(
-      semantic_entries_, target, std::ranges::less{}, proj);
-
-  // Move back one entry - this is the candidate that might contain our location
-  // (since its start is <= target, but the next entry's start is > target)
-  if (it != semantic_entries_.begin()) {
-    --it;
-    // Check if the candidate entry actually contains the target location
-    if (it->source_range.contains(loc)) {
-      DefinitionLocation def_loc;
-
-      // Check if this is a cross-file reference (has cross_file_path set)
-      if (it->cross_file_path.has_value()) {
-        def_loc.cross_file_path = it->cross_file_path;
-        def_loc.cross_file_range = it->cross_file_range;
-      } else {
-        def_loc.same_file_range = it->definition_range;
-      }
-
-      return def_loc;
+          .uri = it->definition_uri, .range = it->definition_range};
     }
   }
 
@@ -2477,29 +2384,29 @@ void SemanticIndex::ValidateNoRangeOverlaps() const {
 
   // O(n) validation - entries are pre-sorted, so we only check adjacent pairs
   // This is much faster than O(n²) and catches all overlaps in sorted data
+  // All entries are in same file (current_file_uri_) by invariant
   for (size_t i = 1; i < semantic_entries_.size(); ++i) {
     const auto& prev = semantic_entries_[i - 1];
     const auto& curr = semantic_entries_[i];
 
     // Check if current overlaps with previous (they should be disjoint)
     // Two ranges [a,b) and [c,d) overlap if: a < d && c < b
+    // Using LSP Position comparison (operator<=> provides full ordering)
     bool overlap =
-        (prev.source_range.start() < curr.source_range.end() &&
-         curr.source_range.start() < prev.source_range.end());
+        (prev.source_range.start < curr.source_range.end &&
+         curr.source_range.start < prev.source_range.end);
 
     if (overlap) {
       // Log warning but don't crash - LSP server should continue working
-      auto prev_loc = prev.source_range.start();
-      auto curr_loc = curr.source_range.start();
       logger_->warn(
-          "Range overlap detected: prev=[{}:{}..{}:{}] '{}', "
+          "Range overlap detected in '{}': prev=[{}:{}..{}:{}] '{}', "
           "curr=[{}:{}..{}:{}] '{}'. Please report this bug.",
-          prev_loc.buffer().getId(), prev_loc.offset(),
-          prev.source_range.end().buffer().getId(),
-          prev.source_range.end().offset(), prev.name,
-          curr_loc.buffer().getId(), curr_loc.offset(),
-          curr.source_range.end().buffer().getId(),
-          curr.source_range.end().offset(), curr.name);
+          current_file_uri_, prev.source_range.start.line,
+          prev.source_range.start.character, prev.source_range.end.line,
+          prev.source_range.end.character, prev.name,
+          curr.source_range.start.line, curr.source_range.start.character,
+          curr.source_range.end.line, curr.source_range.end.character,
+          curr.name);
       // Don't throw in production - continue processing
     }
   }

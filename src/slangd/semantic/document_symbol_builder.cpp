@@ -183,7 +183,7 @@ auto DocumentSymbolBuilder::CreateDocumentSymbol(const SemanticEntry& entry)
   doc_symbol.name = entry.name;
   doc_symbol.kind = entry.lsp_kind;
   // Use stored LSP coordinates directly (no SourceManager conversion needed)
-  doc_symbol.range = entry.definition_range_lsp;
+  doc_symbol.range = entry.definition_range;
   doc_symbol.selectionRange = doc_symbol.range;  // Use same range for now
   doc_symbol.children =
       std::vector<lsp::DocumentSymbol>();  // Always initialize empty vector
