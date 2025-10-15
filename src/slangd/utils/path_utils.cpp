@@ -92,13 +92,11 @@ auto PathToUri(std::filesystem::path path) -> std::string {
 
 auto NormalizePath(std::filesystem::path path) -> std::filesystem::path {
   try {
-    // Only canonicalize if the file actually exists
-    // For synthetic/test files, just return the path as-is
-    if (std::filesystem::exists(path)) {
-      return std::filesystem::canonical(path);
-    }
-    return path;
-  } catch (const std::exception&) {
+    // weakly_canonical resolves .. and . components and makes path absolute
+    // Works even if the file doesn't exist (unlike canonical)
+    return std::filesystem::weakly_canonical(path);
+  } catch (const std::filesystem::filesystem_error& e) {
+    spdlog::warn("Failed to normalize path '{}': {}", path.string(), e.what());
     return path;
   }
 }
@@ -108,13 +106,10 @@ auto NormalizeUri(std::string_view uri) -> std::string {
     return std::string(uri);
   }
 
-  try {
-    auto path = std::filesystem::path(uri.substr(7));  // Remove "file://"
-    auto canonical = std::filesystem::weakly_canonical(path);
-    return "file://" + canonical.string();
-  } catch (...) {
-    return std::string(uri);  // Return original if normalization fails
-  }
+  // Compose using existing functions - single source of truth for normalization
+  auto path = UriToPath(uri);
+  auto normalized = NormalizePath(path);
+  return PathToUri(normalized);
 }
 
 auto IsLocationInDocument(

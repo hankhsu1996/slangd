@@ -7,7 +7,7 @@
 #include <slang/util/Enum.h>
 #include <spdlog/spdlog.h>
 
-#include "../../common/simple_fixture.hpp"
+#include "../../common/semantic_fixture.hpp"
 
 constexpr auto kLogLevel = spdlog::level::debug;
 
@@ -23,11 +23,10 @@ auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
 }
 
-using slangd::test::SimpleTestFixture;
+using Fixture = slangd::test::SemanticTestFixture;
 
 TEST_CASE(
     "SemanticIndex typedef self-definition lookup works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module typedef_test;
       typedef logic [7:0] byte_t;
@@ -35,13 +34,14 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "byte_t", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "word_t", 0, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "byte_t", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "word_t", 0, 0);
 }
 
 TEST_CASE("SemanticIndex type cast reference lookup works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module typecast_test;
       typedef logic [7:0] unique_cast_type;
@@ -53,14 +53,14 @@ TEST_CASE("SemanticIndex type cast reference lookup works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "unique_cast_type", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "unique_cast_type", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex complex typedef cast should compile correctly",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     typedef struct packed { logic [7:0] x, y; } complex_t;
 
@@ -73,13 +73,13 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "complex_t", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "complex_t", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex constant size cast reference lookup works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module sizecast_test;
       parameter WIDTH = 8;
@@ -91,13 +91,12 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "WIDTH", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "WIDTH", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex variable size cast reference lookup works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module sizecast_variable_test;
       parameter WIDTH = 8;
@@ -112,15 +111,14 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "WIDTH", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "SIZE", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "WIDTH", 2, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "WIDTH", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "SIZE", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "WIDTH", 2, 0);
 }
 
 TEST_CASE(
     "SemanticIndex parameter type in module port list works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     typedef enum logic [1:0] {
       ALU_KIND,
@@ -136,13 +134,13 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "t_unit_kind", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "t_unit_kind", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex parameter type inside module body works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     typedef struct {
       logic [7:0] data;
@@ -154,14 +152,14 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "t_bus_data", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "t_bus_data", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex localparam type definition reference works",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     typedef union packed {
       logic [15:0] word;
@@ -173,12 +171,12 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "t_data_union", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "t_data_union", 1, 0);
 }
 
 TEST_CASE("SemanticIndex package type in parameter works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package config_pkg;
       typedef enum logic [1:0] {
@@ -197,12 +195,12 @@ TEST_CASE("SemanticIndex package type in parameter works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "t_mode", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "t_mode", 1, 0);
 }
 
 TEST_CASE("SemanticIndex enum type in parameter works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     typedef enum logic [2:0] {
       STATE_IDLE   = 3'b001,
@@ -218,13 +216,13 @@ TEST_CASE("SemanticIndex enum type in parameter works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "t_state", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "t_state", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex mixed parameter types comprehensive test", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     typedef logic [7:0] byte_t;
     typedef enum { RED, GREEN, BLUE } color_t;
@@ -243,21 +241,26 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
   // Test all parameter type references in port list
-  fixture.AssertGoToDefinition(*index, code, "byte_t", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "color_t", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "point_t", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "byte_t", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "color_t", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "point_t", 1, 0);
 
   // Test all parameter type references in body
-  fixture.AssertGoToDefinition(*index, code, "byte_t", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "color_t", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "point_t", 2, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "byte_t", 2, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "color_t", 2, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "point_t", 2, 0);
 }
 
 TEST_CASE("SemanticIndex enum value self-definition works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     typedef enum logic [1:0] {
       STATE_IDLE,
@@ -266,14 +269,16 @@ TEST_CASE("SemanticIndex enum value self-definition works", "[definition]") {
     } state_t;
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "STATE_IDLE", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "STATE_BUSY", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "STATE_DONE", 0, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "STATE_IDLE", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "STATE_BUSY", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "STATE_DONE", 0, 0);
 }
 
 TEST_CASE("SemanticIndex enum value reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     typedef enum logic [1:0] {
       STATE_IDLE,
@@ -292,14 +297,16 @@ TEST_CASE("SemanticIndex enum value reference works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "STATE_IDLE", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "STATE_BUSY", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "STATE_DONE", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "STATE_IDLE", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "STATE_BUSY", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "STATE_DONE", 1, 0);
 }
 
 TEST_CASE("SemanticIndex anonymous enum works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module anon_enum_test;
       enum {
@@ -315,15 +322,18 @@ TEST_CASE("SemanticIndex anonymous enum works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "ANON_FIRST", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "ANON_SECOND", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "ANON_FIRST", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "ANON_SECOND", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "ANON_FIRST", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "ANON_SECOND", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "ANON_FIRST", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "ANON_SECOND", 1, 0);
 }
 
 TEST_CASE("SemanticIndex struct field member access works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     typedef struct {
       logic [31:0] data;
@@ -346,17 +356,16 @@ TEST_CASE("SemanticIndex struct field member access works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "data", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "valid", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "id", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "valid", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "data", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "id", 2, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "data", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "valid", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "id", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "valid", 2, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "data", 2, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "id", 2, 0);
 }
 
 TEST_CASE("SemanticIndex nested struct member access works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     typedef struct {
       logic [31:0] data;
@@ -379,16 +388,18 @@ TEST_CASE("SemanticIndex nested struct member access works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "header", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "data", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "header", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "valid", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "payload", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "header", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "data", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "header", 2, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "valid", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "payload", 1, 0);
 }
 
 TEST_CASE("SemanticIndex union member access works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     typedef union {
       logic [31:0] word;
@@ -411,17 +422,18 @@ TEST_CASE("SemanticIndex union member access works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "word", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "bytes", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "halves", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "low", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "halves", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "high", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "word", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "bytes", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "halves", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "low", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "halves", 2, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "high", 1, 0);
 }
 
 TEST_CASE("SemanticIndex direct struct declaration works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module direct_struct_test;
       struct {
@@ -436,15 +448,14 @@ TEST_CASE("SemanticIndex direct struct declaration works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "x", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "y", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "x", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "y", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex typedef used in both declaration and cast expression",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module test;
       typedef logic [7:0] counter_t;
@@ -461,18 +472,21 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
-  fixture.AssertGoToDefinition(*index, code, "counter_t", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "counter_t", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "counter_t", 3, 0);
-  fixture.AssertGoToDefinition(*index, code, "counter_t", 4, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "counter_t", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "counter_t", 2, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "counter_t", 3, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "counter_t", 4, 0);
 }
 
 TEST_CASE(
     "SemanticIndex system function type argument reference works",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module system_func_type_test;
       typedef logic [7:0] byte_t;
@@ -485,15 +499,17 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "byte_t", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "packet_t", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "byte_t", 2, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "byte_t", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "packet_t", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "byte_t", 2, 0);
 }
 
 TEST_CASE(
     "SemanticIndex assignment pattern field references work", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     typedef enum logic [1:0] {
       MODE_A,
@@ -512,23 +528,24 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
   // Test field name references in assignment patterns
-  fixture.AssertGoToDefinition(*index, code, "mode", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "index", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "mode", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "index", 2, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "mode", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "index", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "mode", 2, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "index", 2, 0);
 
   // Test enum value references in assignment patterns
-  fixture.AssertGoToDefinition(*index, code, "MODE_A", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "MODE_B", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "MODE_A", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "MODE_B", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex typed assignment pattern type reference works",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     typedef struct {
       logic [3:0] field_a;
@@ -544,14 +561,16 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "config_t", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "field_a", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "field_b", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "config_t", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "field_a", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "field_b", 1, 0);
 }
 
 TEST_CASE("SemanticIndex enum base type reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     typedef logic [19:0] base_type_t;
 
@@ -566,14 +585,14 @@ TEST_CASE("SemanticIndex enum base type reference works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "base_type_t", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "base_type_t", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex function call in size cast type expression works",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module func_in_cast_test;
       parameter SIZE = 8;
@@ -591,8 +610,9 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "calc_width", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "SIZE", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "SIZE", 2, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "calc_width", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "SIZE", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "SIZE", 2, 0);
 }

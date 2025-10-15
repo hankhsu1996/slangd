@@ -15,6 +15,8 @@
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/services/overlay_session.hpp"
 #include "slangd/services/preamble_manager.hpp"
+#include "slangd/utils/canonical_path.hpp"
+#include "slangd/utils/conversion.hpp"
 #include "test/slangd/common/file_fixture.hpp"
 #include "test/slangd/common/semantic_fixture.hpp"
 
@@ -279,7 +281,8 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
         (std::istreambuf_iterator<char>(file)),
         std::istreambuf_iterator<char>());
 
-    std::string uri = "file:///" + std::string(current_file_name);
+    // Convert actual file path to URI
+    std::string uri = CanonicalPath(current_path).ToUri();
 
     // Create OverlaySession with preamble_manager (handles all compilation
     // setup)
@@ -297,10 +300,10 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
       std::string_view buffer_content = source_mgr.getSourceText(buffer);
       std::string buffer_str(buffer_content);
 
-      // Get URI from buffer (use SourceLocation at offset 0 to query filename)
+      // Get URI from buffer using conversion utility
       slang::SourceLocation loc(buffer, 0);
-      std::string buffer_name = std::string(source_mgr.getFileName(loc));
-      std::string uri = "file://" + buffer_name;
+      auto lsp_location = ConvertSlangLocationToLspLocation(loc, source_mgr);
+      std::string uri = lsp_location.uri;
 
       // Reuse base class helper to find all positions in this buffer
       auto positions = FindAllOccurrences(buffer_str, std::string(symbol_name));

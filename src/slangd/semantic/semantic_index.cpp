@@ -332,7 +332,7 @@ void SemanticIndex::IndexVisitor::AddReference(
   auto entry = SemanticEntry::Make(
       symbol, name, source_range, false, definition_range, parent_scope);
 
-  // Populate source LSP fields (always use overlay SourceManager)
+  // Populate source LSP fields
   entry.source_range_lsp = source_lsp_range;
   entry.location_lsp = source_lsp_range.start;
   entry.source_uri = source_lsp_location.uri;
@@ -2401,11 +2401,12 @@ auto SemanticIndex::LookupDefinitionAt(
   // Note: Entries are currently sorted by Slang coords (buffer_id, offset)
   // but within same URI they maintain order, so we can still use binary search
 
-  // Use std::pair for composite key - automatically gets lexicographic comparison
-  // thanks to Position::operator<=>
+  // Use std::pair for composite key - automatically gets lexicographic
+  // comparison thanks to Position::operator<=>
   const auto target = std::pair{std::string_view(uri), position};
 
-  // Projection function: extract (uri, position) key from each entry for comparison
+  // Projection function: extract (uri, position) key from each entry for
+  // comparison
   const auto projection = [](const SemanticEntry& e) {
     return std::pair{std::string_view(e.source_uri), e.location_lsp};
   };

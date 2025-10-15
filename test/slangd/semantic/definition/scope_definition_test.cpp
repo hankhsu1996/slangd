@@ -7,7 +7,7 @@
 #include <slang/util/Enum.h>
 #include <spdlog/spdlog.h>
 
-#include "../../common/simple_fixture.hpp"
+#include "../../common/semantic_fixture.hpp"
 
 constexpr auto kLogLevel = spdlog::level::debug;
 
@@ -23,34 +23,33 @@ auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
 }
 
-using slangd::test::SimpleTestFixture;
+using Fixture = slangd::test::SemanticTestFixture;
 
 TEST_CASE("SemanticIndex module end label reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module Test;
     endmodule : Test
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "Test", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "Test", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "Test", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "Test", 1, 0);
 }
 
 TEST_CASE("SemanticIndex package end label reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package TestPkg;
     endpackage : TestPkg
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "TestPkg", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "TestPkg", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "TestPkg", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "TestPkg", 1, 0);
 }
 
 TEST_CASE("SemanticIndex wildcard import reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package test_pkg;
       parameter int IMPORTED_PARAM = 16;
@@ -62,12 +61,12 @@ TEST_CASE("SemanticIndex wildcard import reference works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "IMPORTED_PARAM", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "IMPORTED_PARAM", 1, 0);
 }
 
 TEST_CASE("SemanticIndex explicit import reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package explicit_pkg;
       parameter int SPECIFIC_PARAM = 8;
@@ -79,13 +78,13 @@ TEST_CASE("SemanticIndex explicit import reference works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "SPECIFIC_PARAM", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "SPECIFIC_PARAM", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex module header import reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package header_pkg;
       typedef logic [7:0] byte_t;
@@ -98,12 +97,12 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "byte_t", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "byte_t", 1, 0);
 }
 
 TEST_CASE("SemanticIndex local scope import reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package local_pkg;
       parameter int LOCAL_WIDTH = 12;
@@ -117,13 +116,13 @@ TEST_CASE("SemanticIndex local scope import reference works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "LOCAL_WIDTH", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "LOCAL_WIDTH", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex generate block self-definition works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module gen_block_test;
       generate
@@ -134,14 +133,14 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "named_gen", 0, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "named_gen", 0, 0);
 }
 
 TEST_CASE(
     "SemanticIndex generate block array self-definition works",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module gen_array_test;
       genvar i;
@@ -153,14 +152,14 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "gen_loop", 0, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "gen_loop", 0, 0);
 }
 
 TEST_CASE(
     "SemanticIndex genvar self-definition outside generate works",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module genvar_outside_test;
       genvar i;
@@ -172,14 +171,13 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "i", 0, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "i", 0, 0);
 }
 
 TEST_CASE(
     "SemanticIndex genvar self-definition inside generate works",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module genvar_inside_test;
       generate
@@ -190,14 +188,13 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "j", 0, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "j", 0, 0);
 }
 
 TEST_CASE(
     "SemanticIndex for-loop generate parameter references in loop expressions",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module loop_param_refs;
       parameter int START = 0;
@@ -208,16 +205,15 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "START", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "END", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "START", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "END", 1, 0);
   // Note: genvar references in loop expressions resolve to temporary loop
   // variable, not the genvar declaration. This is a Slang limitation.
 }
 
 TEST_CASE(
     "SemanticIndex external genvar loop references work", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module external_genvar_test;
       parameter int COUNT = 2;
@@ -230,25 +226,27 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
   // Test genvar self-definition
-  fixture.AssertGoToDefinition(*index, code, "idx", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "idx", 0, 0);
 
   // Test parameter reference in loop control
-  fixture.AssertGoToDefinition(*index, code, "COUNT", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "COUNT", 1, 0);
 
   // Test genvar references in loop control expressions
   // Note: idx = 0 is NOT indexed (it's syntax-only, not a bound expression)
   // Occurrences: [0] genvar idx, [1] idx = 0 (skip), [2] idx < COUNT, [3]
   // idx++, [4] idx + 1
-  fixture.AssertGoToDefinition(*index, code, "idx", 2, 0);  // idx < COUNT
-  fixture.AssertGoToDefinition(*index, code, "idx", 3, 0);  // idx++ (first idx)
-  fixture.AssertGoToDefinition(*index, code, "idx", 4, 0);  // idx + 1
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "idx", 2, 0);  // idx < COUNT
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "idx", 3, 0);  // idx++ (first idx)
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "idx", 4, 0);  // idx + 1
 }
 
 TEST_CASE("SemanticIndex inline genvar loop references work", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module inline_genvar_test;
       parameter int SIZE = 3;
@@ -260,24 +258,25 @@ TEST_CASE("SemanticIndex inline genvar loop references work", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
   // Test genvar self-definition
-  fixture.AssertGoToDefinition(*index, code, "entry", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "entry", 0, 0);
 
   // Test parameter reference in loop control
-  fixture.AssertGoToDefinition(*index, code, "SIZE", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "SIZE", 1, 0);
 
   // Test genvar references in loop control expressions
   // Occurrences: [0] genvar entry, [1] entry < SIZE, [2] entry++, [3] entry + 1
-  fixture.AssertGoToDefinition(*index, code, "entry", 1, 0);  // entry < SIZE
-  fixture.AssertGoToDefinition(
-      *index, code, "entry", 2, 0);  // entry++ (first entry)
-  fixture.AssertGoToDefinition(*index, code, "entry", 3, 0);  // entry + 1
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "entry", 1, 0);  // entry < SIZE
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "entry", 2, 0);  // entry++ (first entry)
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "entry", 3, 0);  // entry + 1
 }
 
 TEST_CASE("SemanticIndex nested generate blocks work", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module nested_gen_test;
       genvar i, j;
@@ -291,15 +290,17 @@ TEST_CASE("SemanticIndex nested generate blocks work", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
   // Test generate block self-definitions (these work)
-  fixture.AssertGoToDefinition(*index, code, "outer_gen", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "inner_gen", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "outer_gen", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "inner_gen", 0, 0);
 
   // Test genvar self-definitions (these work)
-  fixture.AssertGoToDefinition(*index, code, "i", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "j", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "i", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "j", 0, 0);
 
   // NOTE: Genvar reference tests not included
   // See docs/SEMANTIC_INDEXING.md "Known Limitations"
@@ -308,7 +309,6 @@ TEST_CASE("SemanticIndex nested generate blocks work", "[definition]") {
 TEST_CASE(
     "SemanticIndex generate if conditional parameter references",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module gen_if_param_test;
       parameter int THRESHOLD = 2;
@@ -321,15 +321,15 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
   // Test parameter reference in generate if condition
-  fixture.AssertGoToDefinition(*index, code, "THRESHOLD", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "THRESHOLD", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex generate if else condition expressions indexed",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module gen_if_else_test;
       parameter bit ENABLE_A = 1;
@@ -347,21 +347,25 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
   // Test parameters in if/else conditions are indexed
-  fixture.AssertGoToDefinition(*index, code, "ENABLE_A", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "ENABLE_B", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "ENABLE_A", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "ENABLE_B", 1, 0);
 
   // Test that symbols in all branches are indexed (covered by visitDefault)
-  fixture.AssertGoToDefinition(*index, code, "signal_a", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "signal_b", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "signal_default", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "signal_a", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "signal_b", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "signal_default", 0, 0);
 }
 
 TEST_CASE(
     "SemanticIndex generate case condition and item expressions indexed",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module gen_case_test;
       parameter int MODE_A = 0;
@@ -386,24 +390,31 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
   // Test case condition parameter is indexed
-  fixture.AssertGoToDefinition(*index, code, "SELECTOR", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "SELECTOR", 1, 0);
 
   // Test case item parameters are indexed (go-to-definition from case items)
-  fixture.AssertGoToDefinition(*index, code, "MODE_A", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "MODE_B", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "MODE_C", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "MODE_A", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "MODE_B", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "MODE_C", 1, 0);
 
   // Test that symbols inside case branches are also indexed
-  fixture.AssertGoToDefinition(*index, code, "signal_a", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "signal_b", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "signal_c", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "signal_default", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "signal_a", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "signal_b", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "signal_c", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "signal_default", 0, 0);
 }
 
 TEST_CASE("SemanticIndex package name in function call works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package util_pkg;
       function automatic bit is_valid(int val);
@@ -419,13 +430,13 @@ TEST_CASE("SemanticIndex package name in function call works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "util_pkg", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "util_pkg", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex package name in parameter reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package cfg_pkg;
       parameter int BUS_WIDTH = 32;
@@ -436,13 +447,13 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "cfg_pkg", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "cfg_pkg", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex package name in typedef reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package types_pkg;
       typedef logic [7:0] byte_t;
@@ -453,13 +464,13 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "types_pkg", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "types_pkg", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex package name in class reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package class_pkg;
       class Transaction;
@@ -472,14 +483,14 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "class_pkg", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "class_pkg", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex package name in enum member reference works",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package enum_pkg;
       typedef enum logic [1:0] {
@@ -494,13 +505,13 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "enum_pkg", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "enum_pkg", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex explicit class import reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package source_pkg;
       class DataHandler;
@@ -514,15 +525,17 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "DataHandler", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "DataHandler", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "DataHandler", 2, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "DataHandler", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "DataHandler", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "DataHandler", 2, 0);
 }
 
 TEST_CASE(
     "SemanticIndex package to package class import works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package base_pkg;
       class BaseTransaction;
@@ -538,14 +551,16 @@ TEST_CASE(
     endpackage
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "BaseTransaction", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "BaseTransaction", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "BaseTransaction", 2, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "BaseTransaction", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "BaseTransaction", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "BaseTransaction", 2, 0);
 }
 
 TEST_CASE("SemanticIndex generic class import works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package base_pkg;
       class GenericHandler #(
@@ -560,7 +575,9 @@ TEST_CASE("SemanticIndex generic class import works", "[definition]") {
     endpackage
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "GenericHandler", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "GenericHandler", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "GenericHandler", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "GenericHandler", 1, 0);
 }

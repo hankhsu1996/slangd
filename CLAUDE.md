@@ -111,6 +111,11 @@ SystemVerilog LSP server with modular design:
 - Print source ranges: `range.start().offset()..range.end().offset()` for offsets, or use `source_manager.getLineNumber(range.start())` for line numbers
 - Naming: prefer full words over abbreviations; remove redundant context from names
 
+**Forward Declaration vs Include:**
+
+- Headers: forward declare pointers/references; include for values/methods/inheritance
+- Avoid `auto` for base conversions: `const Symbol& sym = getSymbol()` not `const auto& sym = getSymbol()`
+
 **General Debugging:**
 
 - We are not using GDB, because it's harder to do batch debugging.
