@@ -1,9 +1,6 @@
 #pragma once
 #include <memory>
-#include <optional>
 #include <string>
-
-#include <slang/text/SourceLocation.h>
 
 #include "slangd/semantic/semantic_index.hpp"
 
@@ -19,21 +16,19 @@ class SimpleTestFixture {
   auto CompileSourceAndGetDiagnostics(const std::string& code)
       -> std::vector<lsp::Diagnostic>;
 
-  // Find symbol location in source by name (must be unique)
-  auto FindSymbol(const std::string& code, const std::string& name)
-      -> slang::SourceLocation;
-
-  // Get definition range for symbol at location
-  static auto GetDefinitionRange(
-      semantic::SemanticIndex& index, slang::SourceLocation loc)
-      -> std::optional<slang::SourceRange>;
-
   // High-level API for clean go-to-definition testing
 
+  // Occurrence in LSP coordinates (uri + position)
+  struct LspOccurrence {
+    std::string uri;
+    lsp::Position position;
+  };
+
   // Find all occurrences of a symbol in source code (ordered by appearance)
+  // Returns LSP coordinates for direct use with LookupDefinitionAt
   auto FindAllOccurrences(
       const std::string& code, const std::string& symbol_name)
-      -> std::vector<slang::SourceLocation>;
+      -> std::vector<LspOccurrence>;
 
   // Assert that go-to-definition works: reference at ref_index points to
   // definition at def_index
@@ -80,11 +75,6 @@ class SimpleTestFixture {
   static void AssertError(
       const std::vector<lsp::Diagnostic>& diagnostics,
       const std::string& message_substring = "");
-
-  // Assert that a symbol's definition range has expected length
-  void AssertDefinitionRangeLength(
-      semantic::SemanticIndex& index, const std::string& code,
-      const std::string& symbol_name, size_t expected_length);
 
   // Access to internal state for debugging
   auto SetupCompilation(const std::string& code) -> std::string;

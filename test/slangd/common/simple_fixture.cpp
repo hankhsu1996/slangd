@@ -10,10 +10,12 @@
 #include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/parsing/Preprocessor.h>
 #include <slang/syntax/SyntaxTree.h>
+#include <slang/text/SourceLocation.h>
 #include <slang/text/SourceManager.h>
 #include <slang/util/Bag.h>
 
 #include "slangd/semantic/diagnostic_converter.hpp"
+#include "slangd/utils/conversion.hpp"
 
 namespace slangd::test {
 
@@ -128,42 +130,10 @@ auto SimpleTestFixture::CompileSourceAndGetDiagnostics(const std::string& code)
   return result;
 }
 
-auto SimpleTestFixture::FindSymbol(
-    const std::string& code, const std::string& name) -> slang::SourceLocation {
-  size_t offset = code.find(name);
-  if (offset == std::string::npos) {
-    throw std::runtime_error(
-        fmt::format("FindSymbol: Symbol '{}' not found in source", name));
-  }
-
-  // Detect ambiguous symbol names early
-  size_t second_occurrence = code.find(name, offset + 1);
-  if (second_occurrence != std::string::npos) {
-    throw std::runtime_error(
-        fmt::format(
-            "FindSymbol: Ambiguous symbol '{}' found at multiple locations. "
-            "Use unique descriptive names in test code.",
-            name));
-  }
-
-  return slang::SourceLocation{buffer_id_, offset};
-}
-
-auto SimpleTestFixture::GetDefinitionRange(
-    semantic::SemanticIndex& index, slang::SourceLocation loc)
-    -> std::optional<slang::SourceRange> {
-  auto def_loc = index.LookupDefinitionAt(loc);
-  if (!def_loc) {
-    return std::nullopt;
-  }
-  // Return same_file_range for SimpleTestFixture (no cross-file)
-  return def_loc->same_file_range;
-}
-
 auto SimpleTestFixture::FindAllOccurrences(
     const std::string& code, const std::string& symbol_name)
-    -> std::vector<slang::SourceLocation> {
-  std::vector<slang::SourceLocation> occurrences;
+    -> std::vector<LspOccurrence> {
+  std::vector<LspOccurrence> occurrences;
 
   // Create regex pattern for complete identifier match
   // \b = word boundary, ensures we match complete identifiers only
@@ -174,9 +144,21 @@ auto SimpleTestFixture::FindAllOccurrences(
   auto begin = std::sregex_iterator(code.begin(), code.end(), symbol_regex);
   auto end = std::sregex_iterator();
 
+  // Use Slang conversion for correctness (UTF-16 code units)
+  // The key improvement: test *assertions* still operate purely on LSP
+  // coordinates
   for (auto it = begin; it != end; ++it) {
     const std::smatch& match = *it;
-    occurrences.emplace_back(buffer_id_, match.position());
+    auto offset = static_cast<size_t>(match.position());
+    auto slang_loc = slang::SourceLocation{buffer_id_, offset};
+
+    auto lsp_location =
+        slangd::ConvertSlangLocationToLspLocation(slang_loc, *source_manager_);
+    auto lsp_position =
+        slangd::ConvertSlangLocationToLspPosition(slang_loc, *source_manager_);
+
+    occurrences.push_back(
+        LspOccurrence{.uri = lsp_location.uri, .position = lsp_position});
   }
 
   if (occurrences.empty()) {
@@ -210,11 +192,12 @@ void SimpleTestFixture::AssertGoToDefinition(
             definition_index, symbol_name, occurrences.size()));
   }
 
-  auto reference_loc = occurrences[reference_index];
-  auto expected_def_loc = occurrences[definition_index];
+  const auto& reference_occ = occurrences[reference_index];
+  const auto& expected_def_occ = occurrences[definition_index];
 
-  // Perform go-to-definition lookup
-  auto actual_def_range = index.LookupDefinitionAt(reference_loc);
+  // Perform go-to-definition lookup with LSP coordinates
+  auto actual_def_range =
+      index.LookupDefinitionAt(reference_occ.uri, reference_occ.position);
 
   if (!actual_def_range.has_value()) {
     throw std::runtime_error(
@@ -226,28 +209,27 @@ void SimpleTestFixture::AssertGoToDefinition(
 
   // Verify exact range: must start at expected location and span exactly the
   // symbol name length
-  auto expected_start = expected_def_loc.offset();
-  auto expected_end = expected_start + symbol_name.length();
+  const auto& actual_start = actual_def_range->range.start;
+  const auto& actual_end = actual_def_range->range.end;
+  const auto& expected_start = expected_def_occ.position;
 
-  // Extract range from DefinitionLocation (should be same_file_range for
-  // SimpleTestFixture)
-  if (!actual_def_range->same_file_range.has_value()) {
+  if (actual_start.line != expected_start.line ||
+      actual_start.character != expected_start.character) {
     throw std::runtime_error(
         fmt::format(
-            "AssertGoToDefinition: Expected same_file_range for symbol '{}', "
-            "got cross_file instead",
-            symbol_name));
+            "AssertGoToDefinition: definition start mismatch for symbol '{}'. "
+            "Expected ({}:{}), got ({}:{})",
+            symbol_name, expected_start.line, expected_start.character,
+            actual_start.line, actual_start.character));
   }
-  auto actual_start = actual_def_range->same_file_range->start().offset();
-  auto actual_end = actual_def_range->same_file_range->end().offset();
 
-  if (actual_start != expected_start || actual_end != expected_end) {
+  auto actual_length = actual_end.character - actual_start.character;
+  if (actual_length != static_cast<int>(symbol_name.length())) {
     throw std::runtime_error(
         fmt::format(
-            "AssertGoToDefinition: definition range mismatch for symbol '{}'. "
-            "Expected range [{}, {}), got [{}, {})",
-            symbol_name, expected_start, expected_end, actual_start,
-            actual_end));
+            "AssertGoToDefinition: definition length mismatch for symbol '{}'. "
+            "Expected length {}, got {}",
+            symbol_name, symbol_name.length(), actual_length));
   }
 }
 
@@ -264,10 +246,11 @@ void SimpleTestFixture::AssertReferenceExists(
             reference_index, symbol_name, occurrences.size()));
   }
 
-  auto reference_loc = occurrences[reference_index];
+  const auto& reference_occ = occurrences[reference_index];
 
   // Check that the reference location produces a valid go-to-definition result
-  auto def_range = index.LookupDefinitionAt(reference_loc);
+  auto def_range =
+      index.LookupDefinitionAt(reference_occ.uri, reference_occ.position);
 
   if (!def_range.has_value()) {
     throw std::runtime_error(
@@ -336,36 +319,6 @@ void SimpleTestFixture::AssertDiagnosticExists(
     error_msg += fmt::format(" and message containing '{}'", message_substring);
   }
   throw std::runtime_error(error_msg);
-}
-
-void SimpleTestFixture::AssertDefinitionRangeLength(
-    semantic::SemanticIndex& index, const std::string& code,
-    const std::string& symbol_name, size_t expected_length) {
-  auto symbol_location = FindSymbol(code, symbol_name);
-  if (!symbol_location.valid()) {
-    throw std::runtime_error(
-        fmt::format(
-            "AssertDefinitionRangeLength: Symbol '{}' not found", symbol_name));
-  }
-
-  auto definition_range = GetDefinitionRange(index, symbol_location);
-  if (!definition_range.has_value()) {
-    throw std::runtime_error(
-        fmt::format(
-            "AssertDefinitionRangeLength: No definition range found for '{}'",
-            symbol_name));
-  }
-
-  auto actual_length =
-      definition_range->end().offset() - definition_range->start().offset();
-
-  if (actual_length != expected_length) {
-    throw std::runtime_error(
-        fmt::format(
-            "AssertDefinitionRangeLength: Expected length {} but got {} for "
-            "'{}'",
-            expected_length, actual_length, symbol_name));
-  }
 }
 
 void SimpleTestFixture::AssertDiagnosticsSubset(

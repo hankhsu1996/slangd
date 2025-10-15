@@ -10,7 +10,6 @@
 #include <asio.hpp>
 #include <catch2/catch_all.hpp>
 #include <fmt/format.h>
-#include <slang/text/SourceLocation.h>
 #include <spdlog/spdlog.h>
 
 #include "slangd/core/project_layout_service.hpp"
@@ -40,10 +39,13 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
   auto operator=(MultiFileSemanticFixture&&)
       -> MultiFileSemanticFixture& = delete;
 
-  // Result struct for BuildIndexFromFiles - includes both index and file paths
+  // Result struct for BuildIndexFromFiles - bundles index with dependencies
   struct IndexWithFiles {
     std::unique_ptr<SemanticIndex> index;
+    std::shared_ptr<slang::SourceManager> source_manager;
+    std::unique_ptr<slang::ast::Compilation> compilation;
     std::vector<std::string> file_paths;  // The actual file paths created
+    std::string uri;
   };
 
   // Role-based multifile test setup for clear LSP scenarios
@@ -67,19 +69,21 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
     }
   };
 
-  // Result struct for role-based builds
+  // Result struct for role-based builds - bundles index with dependencies
   struct IndexWithRoles {
     std::unique_ptr<SemanticIndex> index;
+    std::shared_ptr<slang::SourceManager> source_manager;
+    std::unique_ptr<slang::ast::Compilation> compilation;
     std::vector<std::string> file_paths;
     std::string current_file_uri;  // The URI used for indexing
   };
 
   // Build index with explicit file roles for testing LSP scenarios
-  auto BuildIndexWithRoles(const std::vector<FileSpec>& files)
+  auto static BuildIndexWithRoles(const std::vector<FileSpec>& files)
       -> IndexWithRoles {
-    SetSourceManager(std::make_shared<slang::SourceManager>());
+    auto source_manager = std::make_shared<slang::SourceManager>();
     slang::Bag options;
-    SetCompilation(std::make_unique<slang::ast::Compilation>(options));
+    auto compilation = std::make_unique<slang::ast::Compilation>(options);
 
     std::vector<std::string> file_paths;
     std::string current_file_uri;
@@ -116,34 +120,30 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
       std::string file_path = "/" + filename;
       file_paths.push_back(file_path);
 
-      auto buffer =
-          GetSourceManager()->assignText(file_path, file_spec.content);
+      auto buffer = source_manager->assignText(file_path, file_spec.content);
       auto tree =
-          slang::syntax::SyntaxTree::fromBuffer(buffer, *GetSourceManager());
-      GetCompilation()->addSyntaxTree(tree);
-
-      // Store the first buffer ID for key creation compatibility
-      if (i == 0) {
-        SetBufferId(buffer.id);
-      }
+          slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
+      compilation->addSyntaxTree(tree);
     }
 
     // Build index from the current file's perspective
     auto index = SemanticIndex::FromCompilation(
-        *GetCompilation(), *GetSourceManager(), current_file_uri);
+        *compilation, *source_manager, current_file_uri);
 
     return IndexWithRoles{
         .index = std::move(index),
+        .source_manager = std::move(source_manager),
+        .compilation = std::move(compilation),
         .file_paths = std::move(file_paths),
-        .current_file_uri = current_file_uri};
+        .current_file_uri = std::move(current_file_uri)};
   }
 
   // Build index from multiple files (improved version with file path tracking)
-  auto BuildIndexFromFilesWithPaths(
+  auto static BuildIndexFromFilesWithPaths(
       const std::vector<std::string>& file_contents) -> IndexWithFiles {
-    SetSourceManager(std::make_shared<slang::SourceManager>());
+    auto source_manager = std::make_shared<slang::SourceManager>();
     slang::Bag options;
-    SetCompilation(std::make_unique<slang::ast::Compilation>(options));
+    auto compilation = std::make_unique<slang::ast::Compilation>(options);
 
     std::vector<std::string> file_paths;
 
@@ -152,33 +152,31 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
       std::string filename = fmt::format("file_{}.sv", i);
 
       // Use consistent URI/path format
-      std::string file_uri = "file:///" + filename;
       std::string file_path = "/" + filename;
 
       file_paths.push_back(file_path);  // Track the actual file path created
 
-      auto buffer = GetSourceManager()->assignText(file_path, file_contents[i]);
+      auto buffer = source_manager->assignText(file_path, file_contents[i]);
       auto tree =
-          slang::syntax::SyntaxTree::fromBuffer(buffer, *GetSourceManager());
-      GetCompilation()->addSyntaxTree(tree);
-
-      // Store the first buffer ID for key creation
-      if (i == 0) {
-        SetBufferId(buffer.id);
-      }
+          slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
+      compilation->addSyntaxTree(tree);
     }
 
     // Use the first file URI for the index
     std::string first_file_uri = "file:///file_0.sv";
     auto index = SemanticIndex::FromCompilation(
-        *GetCompilation(), *GetSourceManager(), first_file_uri);
+        *compilation, *source_manager, first_file_uri);
 
     return IndexWithFiles{
-        .index = std::move(index), .file_paths = std::move(file_paths)};
+        .index = std::move(index),
+        .source_manager = std::move(source_manager),
+        .compilation = std::move(compilation),
+        .file_paths = std::move(file_paths),
+        .uri = std::move(first_file_uri)};
   }
 
   // Build index from multiple files (simplified interface)
-  auto BuildIndexFromFiles(const std::vector<std::string>& file_contents)
+  auto static BuildIndexFromFiles(const std::vector<std::string>& file_contents)
       -> std::unique_ptr<SemanticIndex> {
     auto result = BuildIndexFromFilesWithPaths(file_contents);
     return std::move(result.index);
@@ -187,9 +185,7 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
   // Builder pattern for even clearer LSP scenario construction
   class IndexBuilder {
    public:
-    explicit IndexBuilder(MultiFileSemanticFixture* fixture)
-        : fixture_(fixture) {
-    }
+    explicit IndexBuilder() = default;
 
     auto SetCurrentFile(std::string content, std::string name = "current")
         -> IndexBuilder& {
@@ -213,7 +209,7 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
     }
 
     auto Build() -> IndexWithRoles {
-      return fixture_->BuildIndexWithRoles(files_);
+      return BuildIndexWithRoles(files_);
     }
 
     auto BuildSimple() -> std::unique_ptr<SemanticIndex> {
@@ -222,27 +218,27 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
     }
 
    private:
-    MultiFileSemanticFixture* fixture_;
     std::vector<FileSpec> files_;
   };
 
-  auto CreateBuilder() -> IndexBuilder {
-    return IndexBuilder(this);
+  auto static CreateBuilder() -> IndexBuilder {
+    return IndexBuilder();
   }
 
   // Helper to verify cross-file reference resolution
-  auto VerifySymbolReference(
-      const SemanticIndex& index, const std::string& source,
-      const std::string& symbol_name) -> bool {
-    // Find the symbol usage location in source
-    auto location = FindLocation(source, symbol_name);
-    if (!location.valid()) {
-      return false;
-    }
+  static auto VerifySymbolReference(
+      const SemanticIndex& index, const std::string& uri,
+      const std::string& source, const std::string& symbol_name) -> bool {
+    // Find the symbol usage location in source (returns LSP position)
+    try {
+      auto position = FindLocation(source, symbol_name);
 
-    // Use LookupDefinitionAt API
-    auto def_range = index.LookupDefinitionAt(location);
-    return def_range.has_value();
+      // Use LookupDefinitionAt API with provided URI
+      auto def_range = index.LookupDefinitionAt(uri, position);
+      return def_range.has_value();
+    } catch (const std::runtime_error&) {
+      return false;  // Symbol not found
+    }
   }
 
   // Helper to check if cross-file references exist
@@ -250,10 +246,8 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
     const auto& entries = index.GetSemanticEntries();
     return std::ranges::any_of(
         entries, [](const slangd::semantic::SemanticEntry& entry) {
-          // Check if source and definition are in different buffers
-          return !entry.is_definition &&
-                 entry.source_range.start().buffer().getId() !=
-                     entry.definition_range.start().buffer().getId();
+          // Check if source and definition are in different files (pure LSP)
+          return !entry.is_definition && entry.is_cross_file;
         });
   }
 
@@ -295,18 +289,31 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
 
   static auto FindAllOccurrencesInSession(
       const slangd::services::OverlaySession& session,
-      std::string_view symbol_name) -> std::vector<slang::SourceLocation> {
+      std::string_view symbol_name) -> std::vector<lsp::Location> {
     const auto& source_mgr = session.GetSourceManager();
-    std::vector<slang::SourceLocation> occurrences;
+    std::vector<lsp::Location> occurrences;
 
     for (slang::BufferID buffer : source_mgr.getAllBuffers()) {
       std::string_view buffer_content = source_mgr.getSourceText(buffer);
       std::string buffer_str(buffer_content);
 
-      auto offsets = FindSymbolOffsetsInText(buffer_str, symbol_name);
+      // Get URI from buffer (use SourceLocation at offset 0 to query filename)
+      slang::SourceLocation loc(buffer, 0);
+      std::string buffer_name = std::string(source_mgr.getFileName(loc));
+      std::string uri = "file://" + buffer_name;
 
-      for (size_t offset : offsets) {
-        occurrences.emplace_back(buffer, offset);
+      // Reuse base class helper to find all positions in this buffer
+      auto positions = FindAllOccurrences(buffer_str, std::string(symbol_name));
+
+      // Convert positions to locations with URI
+      for (const auto& pos : positions) {
+        // Calculate end position (symbol length)
+        lsp::Position end_pos = pos;
+        end_pos.character += static_cast<int>(symbol_name.length());
+
+        occurrences.push_back(
+            lsp::Location{
+                .uri = uri, .range = lsp::Range{.start = pos, .end = end_pos}});
       }
     }
 
@@ -316,11 +323,11 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
   static auto FindLocationInSession(
       const slangd::services::OverlaySession& session,
       std::string_view symbol_name, size_t occurrence_index = 0)
-      -> slang::SourceLocation {
+      -> std::optional<lsp::Location> {
     auto occurrences = FindAllOccurrencesInSession(session, symbol_name);
 
     if (occurrence_index >= occurrences.size()) {
-      return {};
+      return std::nullopt;
     }
 
     return occurrences[occurrence_index];
@@ -328,7 +335,7 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
 
   // High-level assertion helpers
 
-  // Canonical assertion for cross-file definition navigation
+  // Canonical assertion for cross-file definition navigation (LSP-first)
   // Verifies that go-to-definition from a symbol reference resolves correctly
   // to its definition in a different file
   //
@@ -336,9 +343,10 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
   //   session: OverlaySession with PreambleManager for cross-file support
   //   ref_content: Source code containing the symbol reference
   //   def_content: Source code containing the symbol definition
-  //   symbol: Symbol name to test (must exist in both files)
-  //   ref_index: Which occurrence of symbol to use as reference (0-based)
-  //   def_index: Which occurrence of symbol to expect as definition (0-based)
+  //   symbol: Symbol name to test (must exist in both contents)
+  //   ref_index: Which occurrence in ref_content to use as reference (0-based)
+  //   def_index: Which occurrence in def_content to expect as definition
+  //   (0-based)
   //
   // Example:
   //   AssertCrossFileDef(*session, "import pkg::data_t;", "typedef logic
@@ -348,30 +356,49 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
       const slangd::services::OverlaySession& session,
       std::string_view ref_content, std::string_view def_content,
       std::string_view symbol, size_t ref_index, size_t def_index) {
-    auto ref_offsets =
-        FindSymbolOffsetsInText(std::string(ref_content), symbol);
-    REQUIRE(ref_index < ref_offsets.size());
+    // Find all occurrences in entire session (returns LSP locations)
+    auto all_occurrences = FindAllOccurrencesInSession(session, symbol);
 
-    auto def_offsets =
-        FindSymbolOffsetsInText(std::string(def_content), symbol);
-    REQUIRE(def_index < def_offsets.size());
+    // Reuse base class to find positions in source strings
+    auto ref_positions =
+        FindAllOccurrences(std::string(ref_content), std::string(symbol));
+    auto def_positions =
+        FindAllOccurrences(std::string(def_content), std::string(symbol));
 
-    auto ref_location = FindLocationInSession(session, symbol, ref_index);
-    REQUIRE(ref_location.valid());
+    REQUIRE(ref_index < ref_positions.size());
+    REQUIRE(def_index < def_positions.size());
 
-    auto def_loc = session.GetSemanticIndex().LookupDefinitionAt(ref_location);
+    // Find the actual location in session that matches the reference position
+    const lsp::Position& target_ref_pos = ref_positions[ref_index];
+    auto ref_loc_it = std::ranges::find_if(
+        all_occurrences,
+        [&](const auto& loc) { return loc.range.start == target_ref_pos; });
+    REQUIRE(ref_loc_it != all_occurrences.end());
+
+    // Lookup definition using LSP coordinates
+    auto def_loc = session.GetSemanticIndex().LookupDefinitionAt(
+        ref_loc_it->uri, ref_loc_it->range.start);
     REQUIRE(def_loc.has_value());
-    REQUIRE(def_loc->cross_file_path.has_value());
-    REQUIRE(def_loc->cross_file_range.has_value());
 
-    auto range_length = def_loc->cross_file_range->end.character -
-                        def_loc->cross_file_range->start.character;
+    // Verify cross-file (different URIs)
+    REQUIRE(def_loc->uri != ref_loc_it->uri);
+
+    // Verify definition position matches expected
+    const lsp::Position& target_def_pos = def_positions[def_index];
+    REQUIRE(def_loc->range.start.line == target_def_pos.line);
+    REQUIRE(def_loc->range.start.character == target_def_pos.character);
+
+    // Verify range length
+    auto range_length =
+        def_loc->range.end.character - def_loc->range.start.character;
     REQUIRE(range_length == static_cast<int>(symbol.length()));
   }
 
-  void AssertSameFileDefinition(
-      const SemanticIndex& index, const std::string& code,
-      const std::string& symbol, size_t reference_index = 0) {
+  static void AssertSameFileDefinition(
+      const SemanticIndex& index, const std::string& uri,
+      const std::string& code, const std::string& symbol,
+      size_t reference_index = 0) {
+    // Pure LSP: find all occurrences as positions
     auto occurrences = FindAllOccurrences(code, symbol);
 
     if (reference_index >= occurrences.size()) {
@@ -382,31 +409,29 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
               reference_index, symbol, occurrences.size()));
     }
 
-    auto location = occurrences[reference_index];
-    REQUIRE(location.valid());
+    auto position = occurrences[reference_index];
 
-    auto def_loc = index.LookupDefinitionAt(location);
+    // Lookup using LSP coordinates
+    auto def_loc = index.LookupDefinitionAt(uri, position);
     REQUIRE(def_loc.has_value());
 
-    REQUIRE(!def_loc->cross_file_path.has_value());
-    REQUIRE(def_loc->same_file_range.has_value());
+    // For same-file references, verify URI matches
+    REQUIRE(def_loc->uri == uri);
 
-    auto actual_start = def_loc->same_file_range->start().offset();
-    auto actual_end = def_loc->same_file_range->end().offset();
-    auto expected_def_offset = occurrences[0].offset();
-
-    REQUIRE(actual_start == expected_def_offset);
-    REQUIRE(actual_end - actual_start == symbol.length());
+    // Verify range length
+    auto range_length =
+        def_loc->range.end.character - def_loc->range.start.character;
+    REQUIRE(range_length == static_cast<int>(symbol.length()));
   }
 
-  void AssertDefinitionNotCrash(
-      const SemanticIndex& index, const std::string& code,
-      const std::string& symbol) {
-    auto location = FindLocation(code, symbol);
-    REQUIRE(location.valid());
+  static void AssertDefinitionNotCrash(
+      const SemanticIndex& index, const std::string& uri,
+      const std::string& code, const std::string& symbol) {
+    // Pure LSP: FindLocation returns lsp::Position directly
+    auto position = FindLocation(code, symbol);
 
     // Just check it doesn't crash - ignore return value
-    (void)index.LookupDefinitionAt(location);
+    (void)index.LookupDefinitionAt(uri, position);
   }
 };
 

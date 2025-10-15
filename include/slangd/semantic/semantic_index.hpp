@@ -70,13 +70,6 @@ struct SemanticEntry {
       const slang::ast::Scope* children_scope = nullptr) -> SemanticEntry;
 };
 
-// NEW: LSP-based definition location (Phase 1)
-// Single unified model - no need for variant/optional
-struct DefinitionLocationLsp {
-  std::string uri;   // File URI (can be same or different file)
-  lsp::Range range;  // Definition range (LSP coords)
-};
-
 // OLD: Result of definition lookup - can be either same-file or cross-file
 // DEPRECATED - will remove after migration
 struct DefinitionLocation {
@@ -106,6 +99,11 @@ class SemanticIndex {
 
   // Query methods
 
+  // GetSourceManager() - Still needed for:
+  // 1. DocumentSymbolBuilder filtering (will be removed in Phase 5)
+  // 2. Internal indexing (has its own reference)
+  // 3. Validation methods (ValidateSymbolCoverage)
+  // Note: Phase 5 will eliminate DocumentSymbolBuilder dependency
   [[nodiscard]] auto GetSourceManager() const -> const slang::SourceManager& {
     return source_manager_.get();
   }
@@ -120,7 +118,14 @@ class SemanticIndex {
     return semantic_entries_;
   }
 
-  // Find definition location for the symbol at the given location
+  // NEW (Phase 3): Find definition using LSP coordinates
+  // No SourceManager needed - works with LSP ranges directly
+  [[nodiscard]] auto LookupDefinitionAt(
+      const std::string& uri, lsp::Position position) const
+      -> std::optional<lsp::Location>;
+
+  // OLD (DEPRECATED): Find definition using Slang coordinates
+  // Will be removed after all callers migrated to new overload
   [[nodiscard]] auto LookupDefinitionAt(slang::SourceLocation loc) const
       -> std::optional<DefinitionLocation>;
 

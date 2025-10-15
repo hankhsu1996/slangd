@@ -1,5 +1,6 @@
 #pragma once
 
+#include <compare>
 #include <optional>
 #include <variant>
 #include <vector>
@@ -52,6 +53,15 @@ struct Position {
   auto operator==(const Position& other) const -> bool {
     return line == other.line && character == other.character;
   }
+
+  // Three-way comparison for ordering (enables <, <=, >, >=)
+  // Compares line first, then character (lexicographic ordering)
+  auto operator<=>(const Position& other) const -> std::strong_ordering {
+    if (auto cmp = line <=> other.line; cmp != 0) {
+      return cmp;
+    }
+    return character <=> other.character;
+  }
 };
 
 void to_json(nlohmann::json& j, const Position& p);
@@ -73,6 +83,16 @@ struct Range {
 
   auto operator==(const Range& other) const -> bool {
     return start == other.start && end == other.end;
+  }
+
+  // Check if a position is within this range [start, end)
+  // Uses half-open interval: includes start, excludes end
+  [[nodiscard]] auto Contains(const Position& position) const -> bool {
+    return (position.line > start.line ||
+            (position.line == start.line &&
+             position.character >= start.character)) &&
+           (position.line < end.line ||
+            (position.line == end.line && position.character < end.character));
   }
 };
 

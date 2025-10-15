@@ -2393,7 +2393,44 @@ void SemanticIndex::IndexVisitor::handle(
   // UninstantiatedDefSymbol has no children to visit - done
 }
 
-// Go-to-definition implementation
+// NEW (Phase 3): Go-to-definition using LSP coordinates
+auto SemanticIndex::LookupDefinitionAt(
+    const std::string& uri, lsp::Position position) const
+    -> std::optional<lsp::Location> {
+  // Binary search in sorted entries by (uri, position)
+  // Note: Entries are currently sorted by Slang coords (buffer_id, offset)
+  // but within same URI they maintain order, so we can still use binary search
+
+  // Use std::pair for composite key - automatically gets lexicographic comparison
+  // thanks to Position::operator<=>
+  const auto target = std::pair{std::string_view(uri), position};
+
+  // Projection function: extract (uri, position) key from each entry for comparison
+  const auto projection = [](const SemanticEntry& e) {
+    return std::pair{std::string_view(e.source_uri), e.location_lsp};
+  };
+
+  // upper_bound returns the first entry whose start is AFTER target position
+  auto it = std::ranges::upper_bound(
+      semantic_entries_, target, std::ranges::less{}, projection);
+
+  // Move back one entry - this is the candidate that might contain our position
+  // (since its start is <= target, but the next entry's start is > target)
+  if (it != semantic_entries_.begin()) {
+    --it;
+
+    // Verify the entry is in the same URI and contains the target position
+    if (it->source_uri == uri && it->source_range_lsp.Contains(position)) {
+      // Return the definition location using standard LSP type
+      return lsp::Location{
+          .uri = it->definition_uri, .range = it->definition_range_lsp};
+    }
+  }
+
+  return std::nullopt;
+}
+
+// OLD (DEPRECATED): Go-to-definition using Slang coordinates
 auto SemanticIndex::LookupDefinitionAt(slang::SourceLocation loc) const
     -> std::optional<DefinitionLocation> {
   // Binary search in sorted entries by (buffer_id, offset)
@@ -2511,7 +2548,13 @@ void SemanticIndex::ValidateSymbolCoverage(
   // Check which identifiers don't have definitions
   std::vector<slang::parsing::Token> missing;
   for (const auto& token : collector.identifiers) {
-    auto result = LookupDefinitionAt(token.location());
+    // Convert token location to LSP coordinates for new API
+    auto lsp_loc = ConvertSlangLocationToLspLocation(
+        token.location(), source_manager_.get());
+    auto lsp_pos = ConvertSlangLocationToLspPosition(
+        token.location(), source_manager_.get());
+
+    auto result = LookupDefinitionAt(lsp_loc.uri, lsp_pos);
     if (!result) {
       missing.push_back(token);
     }
