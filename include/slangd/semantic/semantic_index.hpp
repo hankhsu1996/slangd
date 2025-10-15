@@ -24,24 +24,18 @@ class PreambleManager;
 
 namespace slangd::semantic {
 
-// Uniquely identifies a symbol by its declaration location
-struct SymbolKey {
-  uint32_t bufferId;
-  size_t offset;
-
-  auto operator==(const SymbolKey&) const -> bool = default;
-
-  // Factory method to create from SourceLocation
-  static auto FromSourceLocation(const slang::SourceLocation& loc)
-      -> SymbolKey {
-    return SymbolKey{.bufferId = loc.buffer().getId(), .offset = loc.offset()};
-  }
-};
-
 // Unified semantic entry combining both definitions and references
 // Replaces dual SymbolInfo/ReferenceEntry architecture with single model
 struct SemanticEntry {
-  // Identity & Location
+  // NEW: LSP Coordinate Fields (Phase 1 - Parallel Data)
+  lsp::Range source_range_lsp;      // Where this entry appears (LSP coords)
+  lsp::Position location_lsp;       // Unique key (LSP coords)
+  lsp::Range definition_range_lsp;  // Target definition location (LSP coords)
+  std::string source_uri;           // File where this entry appears
+  std::string definition_uri;       // File where definition is
+  bool is_cross_file;               // true = from preamble, false = local
+
+  // OLD: Slang Coordinate Fields (DEPRECATED - will remove after migration)
   slang::SourceRange source_range;  // Where this entry appears
   slang::SourceLocation location;   // Unique key
 
@@ -58,13 +52,13 @@ struct SemanticEntry {
 
   // Reference Tracking (Go-to-definition)
   bool is_definition;                   // true = self-ref, false = cross-ref
-  slang::SourceRange definition_range;  // Target definition location
+  slang::SourceRange definition_range;  // Target definition location (OLD)
 
-  // Cross-file definitions (from PreambleManager, compilation-independent)
+  // Cross-file definitions (OLD - replaced by definition_uri)
   std::optional<CanonicalPath> cross_file_path;
   std::optional<lsp::Range> cross_file_range;
 
-  // Metadata
+  // Metadata (OLD - replaced by source_uri filtering)
   slang::BufferID buffer_id;  // For file filtering
 
   // Factory method to construct SemanticEntry from symbol
@@ -76,7 +70,15 @@ struct SemanticEntry {
       const slang::ast::Scope* children_scope = nullptr) -> SemanticEntry;
 };
 
-// Result of definition lookup - can be either same-file or cross-file
+// NEW: LSP-based definition location (Phase 1)
+// Single unified model - no need for variant/optional
+struct DefinitionLocationLsp {
+  std::string uri;   // File URI (can be same or different file)
+  lsp::Range range;  // Definition range (LSP coords)
+};
+
+// OLD: Result of definition lookup - can be either same-file or cross-file
+// DEPRECATED - will remove after migration
 struct DefinitionLocation {
   // For same-file definitions (buffer exists in current compilation)
   std::optional<slang::SourceRange> same_file_range;
@@ -87,18 +89,6 @@ struct DefinitionLocation {
 };
 
 }  // namespace slangd::semantic
-
-namespace std {
-template <>
-struct hash<slangd::semantic::SymbolKey> {
-  auto operator()(const slangd::semantic::SymbolKey& key) const -> size_t {
-    size_t hash = std::hash<uint32_t>()(key.bufferId);
-    hash ^= std::hash<size_t>()(key.offset) + 0x9e3779b9 + (hash << 6) +
-            (hash >> 2);
-    return hash;
-  }
-};
-}  // namespace std
 
 namespace slangd::semantic {
 

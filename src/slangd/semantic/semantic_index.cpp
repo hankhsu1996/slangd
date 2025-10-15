@@ -248,15 +248,28 @@ auto SemanticEntry::Make(
   const auto& unwrapped = UnwrapSymbol(symbol);
 
   return SemanticEntry{
+      // NEW: LSP coordinate fields (Phase 1 - initialized with defaults)
+      // Will be populated in Phase 2 by Add* methods
+      .source_range_lsp = lsp::Range{},
+      .location_lsp = lsp::Position{},
+      .definition_range_lsp = lsp::Range{},
+      .source_uri = "",
+      .definition_uri = "",
+      .is_cross_file = false,
+      // OLD: Slang coordinate fields (still used during migration)
       .source_range = source_range,
       .location = unwrapped.location,
+      // Symbol information
       .symbol = &unwrapped,
       .lsp_kind = ConvertToLspKind(unwrapped),
       .name = std::string(name),
+      // Hierarchy
       .parent = parent_scope,
       .children_scope = children_scope,
+      // Reference tracking
       .is_definition = is_definition,
       .definition_range = definition_range,
+      // Cross-file (old)
       .cross_file_path = std::nullopt,
       .cross_file_range = std::nullopt,
       // buffer_id should be the REFERENCE location (where it appears in code),

@@ -23,7 +23,7 @@ namespace slangd::test {
 class SemanticTestFixture {
  public:
   using SemanticIndex = slangd::semantic::SemanticIndex;
-  using SymbolKey = slangd::semantic::SymbolKey;
+
   auto BuildIndexFromSource(const std::string& source)
       -> std::unique_ptr<SemanticIndex> {
     constexpr std::string_view kTestFilename = "test.sv";
@@ -44,49 +44,6 @@ class SemanticTestFixture {
 
     return SemanticIndex::FromCompilation(
         *GetCompilation(), *GetSourceManager(), test_uri);
-  }
-
-  auto MakeKey(const std::string& source, const std::string& symbol)
-      -> SymbolKey {
-    size_t offset = source.find(symbol);
-
-    if (offset == std::string::npos) {
-      throw std::runtime_error(
-          fmt::format("MakeKey: Symbol '{}' not found in source", symbol));
-    }
-
-    // Detect ambiguous symbol names early
-    size_t second_occurrence = source.find(symbol, offset + 1);
-    if (second_occurrence != std::string::npos) {
-      throw std::runtime_error(
-          fmt::format(
-              "MakeKey: Ambiguous symbol '{}' found at multiple locations. "
-              "Use unique descriptive names (e.g., 'test_signal' not 'signal') "
-              "or use MakeKeyAt({}) for specific occurrence.",
-              symbol, offset));
-    }
-
-    return SymbolKey{.bufferId = buffer_id_.getId(), .offset = offset};
-  }
-
-  // Alternative method for cases where multiple occurrences are expected
-  auto MakeKeyAt(
-      const std::string& source, const std::string& symbol,
-      size_t occurrence = 0) -> SymbolKey {
-    size_t offset = 0;
-    for (size_t i = 0; i <= occurrence; ++i) {
-      offset = source.find(symbol, offset);
-      if (offset == std::string::npos) {
-        throw std::runtime_error(
-            fmt::format(
-                "MakeKeyAt: Symbol '{}' occurrence {} not found in source",
-                symbol, occurrence));
-      }
-      if (i < occurrence) {
-        offset += symbol.length();
-      }
-    }
-    return SymbolKey{.bufferId = buffer_id_.getId(), .offset = offset};
   }
 
   auto MakeRange(
