@@ -50,6 +50,7 @@ TEST_CASE(
       endmodule
     )";
 
+    fixture.CreateBufferIDOffset();
     fixture.CreateFile("package_file.sv", def);
     fixture.CreateFile("module_file.sv", ref);
 
@@ -92,6 +93,7 @@ TEST_CASE(
       endmodule
     )";
 
+    fixture.CreateBufferIDOffset();
     fixture.CreateFile("types_pkg.sv", def1);
     fixture.CreateFile("constants_pkg.sv", def2);
     fixture.CreateFile("top.sv", ref);
@@ -132,6 +134,7 @@ TEST_CASE(
       endmodule
     )";
 
+    fixture.CreateBufferIDOffset();
     fixture.CreateFile("config_pkg.sv", def);
     fixture.CreateFile("counter.sv", ref);
 
@@ -149,47 +152,40 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "Stress test with many preamble packages to detect BufferID mismatch bugs",
-    "[package][preamble][stress]") {
+    "Struct field go-to-definition with cross-file preamble",
+    "[package][preamble][struct]") {
   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
     Fixture fixture;
 
-    // Create 60 preamble packages to ensure BufferID mismatch
-    // This simulates real-world scenarios with many packages (like 120
-    // packages) When IsInCurrentFile doesn't check IsPreambleSymbol(), it will
-    // try to convert preamble symbol locations using overlay's SourceManager,
-    // causing BufferID out-of-bounds access → segfault
-    for (int i = 0; i < 60; i++) {
-      std::string pkg_content = fmt::format(
-          R"(
-        package pkg_{};
-          parameter VALUE_{} = {};
-        endpackage
-      )",
-          i, i, i * 10);
+    const std::string def = R"(
+      package types_pkg;
+        typedef struct {
+          logic [7:0] field_a;
+          logic [3:0] field_b;
+        } my_struct_t;
+      endpackage
+    )";
 
-      fixture.CreateFile(fmt::format("pkg_{}.sv", i), pkg_content);
-    }
-
-    // Overlay file that imports from first package
     const std::string ref = R"(
       module test;
-        import pkg_0::*;
-        logic [VALUE_0-1:0] data;
+        import types_pkg::*;
+        my_struct_t s1, s2;
+
+        initial begin
+          s2 = '{field_a: s1.field_a, field_b: s1.field_b};
+        end
       endmodule
     )";
 
+    fixture.CreateBufferIDOffset();
+    fixture.CreateFile("types_pkg.sv", def);
     fixture.CreateFile("test.sv", ref);
 
-    // This will trigger the bug if IsInCurrentFile doesn't check preamble
-    // because compilation.getPackages() will iterate through all 60 preamble
-    // packages and try to check if they're in current file using wrong
-    // SourceManager
     auto session = fixture.BuildSession("test.sv", executor);
     REQUIRE(session != nullptr);
 
-    // Just verify session was created without crashing
-    // The real test is that it doesn't segfault during BuildSession
+    Fixture::AssertCrossFileDef(*session, ref, def, "field_a", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "field_b", 0, 0);
 
     co_return;
   });

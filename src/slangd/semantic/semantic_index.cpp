@@ -71,7 +71,8 @@ auto SemanticIndex::FromCompilation(
     const slang::SourceManager& source_manager,
     const std::string& current_file_uri,
     const services::PreambleManager* preamble_manager,
-    std::shared_ptr<spdlog::logger> logger) -> std::unique_ptr<SemanticIndex> {
+    std::shared_ptr<spdlog::logger> logger)
+    -> std::expected<std::unique_ptr<SemanticIndex>, std::string> {
   if (!logger) {
     logger = spdlog::default_logger();
   }
@@ -224,6 +225,12 @@ auto SemanticIndex::FromCompilation(
 
   // Validate no overlaps using O(n) algorithm (entries are now sorted)
   index->ValidateNoRangeOverlaps();
+
+  // Validate all coordinates are valid (line != -1) - FAIL FAST
+  auto validation_result = index->ValidateCoordinates();
+  if (!validation_result) {
+    return std::unexpected(validation_result.error());
+  }
 
   // Validate symbol coverage to find unsupported constructs
   index->ValidateSymbolCoverage(compilation, current_file_uri);
@@ -2400,6 +2407,32 @@ void SemanticIndex::ValidateNoRangeOverlaps() const {
     }
   }
   // Range validation passed - no overlaps detected
+}
+
+auto SemanticIndex::ValidateCoordinates() const
+    -> std::expected<void, std::string> {
+  // Check for invalid coordinates (line == -1) from BufferID conversion
+  // failures FATAL: Invalid coordinates will cause crashes on go-to-definition
+  // Common causes: missing preamble symbols, cross-SourceManager conversion
+  size_t invalid_count = 0;
+  for (const auto& entry : semantic_entries_) {
+    if (entry.source_range.start.line == -1 ||
+        entry.source_range.end.line == -1 ||
+        entry.definition_range.start.line == -1 ||
+        entry.definition_range.end.line == -1) {
+      invalid_count++;
+    }
+  }
+
+  if (invalid_count > 0) {
+    return std::unexpected(
+        fmt::format(
+            "Found {} entries with invalid coordinates in '{}'. "
+            "This will cause crashes. Please report this bug.",
+            invalid_count, current_file_uri_));
+  }
+
+  return {};  // Success
 }
 
 void SemanticIndex::ValidateSymbolCoverage(

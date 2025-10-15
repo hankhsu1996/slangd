@@ -129,8 +129,17 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
     }
 
     // Build index from the current file's perspective
-    auto index = SemanticIndex::FromCompilation(
+    auto result = SemanticIndex::FromCompilation(
         *compilation, *source_manager, current_file_uri);
+
+    if (!result) {
+      throw std::runtime_error(
+          fmt::format(
+              "BuildIndexWithRoles: Failed to build semantic index: {}",
+              result.error()));
+    }
+
+    auto index = std::move(*result);
 
     return IndexWithRoles{
         .index = std::move(index),
@@ -166,8 +175,18 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
 
     // Use the first file URI for the index
     std::string first_file_uri = "file:///file_0.sv";
-    auto index = SemanticIndex::FromCompilation(
+    auto result = SemanticIndex::FromCompilation(
         *compilation, *source_manager, first_file_uri);
+
+    if (!result) {
+      throw std::runtime_error(
+          fmt::format(
+              "BuildIndexFromFilesWithPaths: Failed to build semantic index: "
+              "{}",
+              result.error()));
+    }
+
+    auto index = std::move(*result);
 
     return IndexWithFiles{
         .index = std::move(index),
@@ -261,6 +280,26 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
         executor, GetTempDir(), spdlog::default_logger());
     return slangd::services::PreambleManager::CreateFromProjectLayout(
         layout_service, spdlog::default_logger());
+  }
+
+  // Create BufferID offset package to force validation detection of missing
+  // symbols Call this BEFORE creating test files when testing preamble symbol
+  // coverage
+  //
+  // Why needed: Without BufferID offset, preamble BufferID 0 matches overlay
+  // BufferID 0, causing missing symbol_info_ entries to produce
+  // valid-but-wrong coordinates (false positive). With offset, preamble uses
+  // BufferID 1+, causing conversion to produce invalid coordinates (line ==
+  // -1), which validation catches.
+  //
+  // Use when: Testing new symbol types that might not be indexed properly
+  auto CreateBufferIDOffset() -> void {
+    const std::string offset_pkg = R"(
+      package offset_pkg;
+        parameter OFFSET = 1;
+      endpackage
+    )";
+    CreateFile("offset_pkg.sv", offset_pkg);
   }
 
   // Build OverlaySession from disk files

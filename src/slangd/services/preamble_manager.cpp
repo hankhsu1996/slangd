@@ -63,11 +63,31 @@ class PreambleSymbolVisitor
         .file_uri = file_uri, .definition_range = definition_range};
   }
 
+  // Helper to traverse type members (struct/union/class fields)
+  void TraverseTypeMembers(const slang::ast::Type& type) {
+    // Slang's getCanonicalType() already unwraps all aliases
+    const auto& canonical = type.getCanonicalType();
+
+    // Check if this is a type with members (struct, union, class)
+    if (canonical.isStruct() || canonical.isUnion() || canonical.isClass()) {
+      // These types implement Scope interface - visit all members
+      const auto& scope = canonical.as<slang::ast::Scope>();
+      for (const auto& member : scope.members()) {
+        member.visit(*this);
+      }
+    }
+  }
+
   template <typename T>
   void handle(const T& node) {
     // For symbols, process and store their info
     if constexpr (std::is_base_of_v<slang::ast::Symbol, T>) {
       ProcessSymbol(node);
+
+      // For type aliases, also traverse into the type's members
+      if constexpr (std::is_same_v<T, slang::ast::TypeAliasType>) {
+        TraverseTypeMembers(node.targetType.getType());
+      }
     }
     // Always recurse to children
     this->visitDefault(node);

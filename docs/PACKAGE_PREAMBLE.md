@@ -44,6 +44,48 @@ Slang symbols are location-independent pointers. A compilation can reference sym
 └────────────────────────────────────────────┘
 ```
 
+## CRITICAL: Missing Symbols Cause Crashes
+
+**FUNDAMENTAL CONSTRAINT**: `symbol_info_` map is the ONLY way to distinguish preamble symbols from overlay symbols. Missing ANY symbol that references preamble locations WILL cause segfaults.
+
+**Why crashes occur:**
+
+1. Preamble visitor misses a symbol (e.g., struct field members not indexed)
+2. Overlay references that symbol → `IsPreambleSymbol()` returns FALSE (not in map)
+3. System assumes symbol is from overlay, tries to convert preamble BufferID with overlay SourceManager
+4. **Result**: Invalid coordinates (line == -1) or SEGFAULT if BufferID maps to different file
+
+**Proven case**: Struct field members (`s1.field_a`) are NOT in `symbol_info_` because visitor doesn't recurse into type definitions. Production crash confirmed.
+
+**High-risk symbol types**: struct/union fields, enum members, class properties, nested types, interface modports.
+
+**Required action when adding new symbol support**: Test with 100+ dummy packages to force high preamble BufferIDs, verify no crashes/invalid coordinates. See `test/slangd/semantic/preamble/package_preamble_test.cpp` for pattern.
+
+### Mitigation Strategy and Limitations
+
+**Current mitigations:**
+
+1. **Type member traversal**: `PreambleSymbolVisitor` recursively traverses struct/union/class members to index field symbols
+2. **Reactive validation**: `SemanticIndex::ValidateCoordinates()` detects invalid coordinates (line == -1) from failed BufferID conversions
+
+**Known limitations:**
+
+**ValidateCoordinates false positives**: Only catches _failed_ conversions (line == -1), not _wrong_ conversions. BufferID overlap between preamble and overlay SourceManagers can produce valid-looking coordinates that point to wrong file.
+
+Example failure case:
+
+```
+Preamble: BufferID=5 → pkg.sv (struct field at line 10)
+Overlay:  BufferID=5 → main.sv (different file)
+Bug: Missing field → treated as local → wrong conversion
+Result: line=10 in main.sv (WRONG FILE, but not -1!)
+Validation: Passes (false positive)
+```
+
+**No independent proactive validation**: Cannot reliably detect "symbol from preamble but missing from symbol*info*" without circular logic. The `is_cross_file` flag is set _by_ checking `symbol_info_`, making independent validation impossible.
+
+**Test-driven coverage**: Primary defense is comprehensive testing of each symbol type. Runtime validation catches symptoms (invalid coordinates) but not root cause (missing symbols).
+
 ## Key Components
 
 ### PreambleAwareCompilation

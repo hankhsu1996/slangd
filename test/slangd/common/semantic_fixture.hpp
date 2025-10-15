@@ -57,8 +57,17 @@ class SemanticTestFixture {
     compilation->addSyntaxTree(tree);
 
     // Build semantic index (triggers forceElaborate internally)
-    auto index =
+    auto result =
         SemanticIndex::FromCompilation(*compilation, *source_manager, test_uri);
+
+    if (!result) {
+      throw std::runtime_error(
+          fmt::format(
+              "BuildIndex: Failed to build semantic index: {}",
+              result.error()));
+    }
+
+    auto index = std::move(*result);
 
     // Extract diagnostics (LSP domain) - buffer_id used locally, not stored
     auto buffer_id = buffer.id;

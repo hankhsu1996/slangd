@@ -1,5 +1,6 @@
 #pragma once
 
+#include <expected>
 #include <memory>
 #include <optional>
 #include <unordered_set>
@@ -64,7 +65,7 @@ class SemanticIndex {
       const std::string& current_file_uri,
       const services::PreambleManager* preamble_manager = nullptr,
       std::shared_ptr<spdlog::logger> logger = nullptr)
-      -> std::unique_ptr<SemanticIndex>;
+      -> std::expected<std::unique_ptr<SemanticIndex>, std::string>;
 
   // Query methods
 
@@ -92,6 +93,11 @@ class SemanticIndex {
       -> std::optional<lsp::Location>;
 
   void ValidateNoRangeOverlaps() const;
+
+  // Check for invalid coordinates (line == -1) which indicate conversion
+  // failures Returns error if any invalid coordinates are found (fail-fast
+  // behavior)
+  auto ValidateCoordinates() const -> std::expected<void, std::string>;
 
   // Logs identifiers that don't have definitions in the semantic index
   void ValidateSymbolCoverage(

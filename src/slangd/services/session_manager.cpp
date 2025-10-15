@@ -205,9 +205,19 @@ auto SessionManager::StartSessionCreation(
                 co_return std::nullopt;
               }
 
-              auto semantic_index = semantic::SemanticIndex::FromCompilation(
+              auto result = semantic::SemanticIndex::FromCompilation(
                   *compilation, *source_manager, uri, preamble_manager_.get(),
                   logger_);
+
+              if (!result) {
+                logger_->error(
+                    "Failed to build semantic index for '{}': {}", uri,
+                    result.error());
+                // Return nullopt - session creation failed
+                co_return std::nullopt;
+              }
+
+              auto semantic_index = std::move(*result);
 
               // Check if still current before storing
               co_await asio::post(session_strand_, asio::use_awaitable);
