@@ -238,7 +238,7 @@ class SemanticIndex {
     // Helper to convert Slang reference ranges to LSP coordinates
     [[nodiscard]] auto ConvertRefRange(slang::SourceRange range) const
         -> lsp::Range {
-      return ConvertSlangRangeToLspRange(range, source_manager_.get());
+      return ToLspRange(range, source_manager_.get());
     }
 
     void TraverseType(const slang::ast::Type& type);

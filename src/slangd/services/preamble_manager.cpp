@@ -33,20 +33,15 @@ class PreambleSymbolVisitor
   }
 
   void ProcessSymbol(const slang::ast::Symbol& symbol) {
-    // Create LSP range for symbol name
-    auto definition_range = CreateSymbolLspRange(symbol, source_manager_.get());
-    if (!definition_range) {
-      return;  // Skip symbols without valid location
+    // Create LSP location (URI + range) using symbol's own SourceManager
+    auto definition_loc = CreateSymbolLspLocation(symbol);
+    if (!definition_loc) {
+      return;  // Skip symbols without valid location or parent scope
     }
 
-    // Convert symbol location to file URI
-    auto file_name = source_manager_.get().getFileName(symbol.location);
-    auto canonical_path = CanonicalPath(std::filesystem::path(file_name));
-    auto file_uri = canonical_path.ToUri();
-
     // Store in map (symbol pointer as key)
-    symbol_info_.get()[&symbol] = PreambleSymbolInfo{
-        .def_loc = {.uri = file_uri, .range = *definition_range}};
+    symbol_info_.get()[&symbol] =
+        PreambleSymbolInfo{.def_loc = *definition_loc};
   }
 
   // Helper to traverse type members (struct/union/class/enum fields)
@@ -293,8 +288,7 @@ auto PreambleManager::BuildFromLayout(
             if (module_syntax.header != nullptr) {
               slang::SourceRange slang_range =
                   module_syntax.header->name.range();
-              definition_range_lsp =
-                  ConvertSlangRangeToLspRange(slang_range, *source_manager_);
+              definition_range_lsp = ToLspRange(slang_range, *source_manager_);
             }
           }
         }
@@ -308,7 +302,7 @@ auto PreambleManager::BuildFromLayout(
               slang::SourceLocation(param.location.buffer(), end_offset);
           slang::SourceRange slang_range(param.location, end_loc);
           lsp::Range param_range_lsp =
-              ConvertSlangRangeToLspRange(slang_range, *source_manager_);
+              ToLspRange(slang_range, *source_manager_);
           parameters.push_back(
               {.name = std::string(param.name), .def_range = param_range_lsp});
         }
@@ -331,7 +325,7 @@ auto PreambleManager::BuildFromLayout(
                 slang::SourceRange slang_range =
                     implicit_port.declarator->name.range();
                 lsp::Range port_range_lsp =
-                    ConvertSlangRangeToLspRange(slang_range, *source_manager_);
+                    ToLspRange(slang_range, *source_manager_);
                 ports.push_back(
                     {.name = std::string(
                          implicit_port.declarator->name.valueText()),

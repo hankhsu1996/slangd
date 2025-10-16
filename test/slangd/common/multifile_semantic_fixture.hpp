@@ -341,7 +341,7 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
 
       // Get URI from buffer using conversion utility
       slang::SourceLocation loc(buffer, 0);
-      auto lsp_location = ConvertSlangLocationToLspLocation(loc, source_mgr);
+      auto lsp_location = ToLspLocation(loc, source_mgr);
       std::string uri = lsp_location.uri;
 
       // Reuse base class helper to find all positions in this buffer

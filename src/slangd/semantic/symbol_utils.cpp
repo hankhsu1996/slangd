@@ -16,7 +16,7 @@ auto ComputeLspRange(
     const slang::ast::Symbol& symbol,
     const slang::SourceManager& source_manager) -> lsp::Range {
   if (symbol.location) {
-    return ConvertSlangLocationToLspRange(symbol.location, source_manager);
+    return ToLspRange(symbol.location, source_manager);
   }
   // Return zero range for symbols without location
   return lsp::Range{
