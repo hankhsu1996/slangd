@@ -761,7 +761,8 @@ void SemanticIndex::IndexVisitor::IndexPackageInScopedName(
       std::optional<lsp::Location> ref_loc;
       if (syntax_owner.has_value()) {
         // Symbol Path: derive SM from syntax_owner's compilation
-        ref_loc = CreateLspLocation(syntax_owner->get(), ident.identifier.range());
+        ref_loc =
+            CreateLspLocation(syntax_owner->get(), ident.identifier.range());
       } else {
         // Expression Path: use IndexVisitor's SM (whitelisted expression only)
         ref_loc = ConvertExpressionRange(ident.identifier.range());
@@ -1041,7 +1042,8 @@ void SemanticIndex::IndexVisitor::handle(
       expr.syntax->kind == slang::syntax::SyntaxKind::InvocationExpression) {
     const auto& invocation =
         expr.syntax->as<slang::syntax::InvocationExpressionSyntax>();
-    IndexPackageInScopedName(invocation.left, std::nullopt, **subroutine_symbol);
+    IndexPackageInScopedName(
+        invocation.left, std::nullopt, **subroutine_symbol);
   }
 
   // Convert to LSP coordinates using safe conversion
@@ -1295,9 +1297,13 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::ParameterSymbol& param) {
-  auto def_loc = CreateSymbolLspLocation(param);
-  if (def_loc) {
-    AddDefinition(param, param.name, *def_loc, param.getParentScope());
+  // Skip implicit genvar localparams (they're automatically created by Slang
+  // for each generate block iteration). The GenvarSymbol is already indexed.
+  if (!param.isFromGenvar()) {
+    auto def_loc = CreateSymbolLspLocation(param);
+    if (def_loc) {
+      AddDefinition(param, param.name, *def_loc, param.getParentScope());
+    }
   }
 
   TraverseType(param.getType());
