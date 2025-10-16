@@ -2347,14 +2347,14 @@ void SemanticIndex::ValidateNoRangeOverlaps() const {
 
     if (overlap) {
       // Log warning but don't crash - LSP server should continue working
+      // Extract filename from URI for more readable output
+      auto filename = current_file_uri_.substr(
+          current_file_uri_.find_last_of('/') + 1);
       logger_->warn(
-          "Range overlap detected in '{}': prev=[{}:{}..{}:{}] '{}', "
-          "curr=[{}:{}..{}:{}] '{}'. Please report this bug.",
-          current_file_uri_, prev.ref_range.start.line,
-          prev.ref_range.start.character, prev.ref_range.end.line,
-          prev.ref_range.end.character, prev.name, curr.ref_range.start.line,
-          curr.ref_range.start.character, curr.ref_range.end.line,
-          curr.ref_range.end.character, curr.name);
+          "Range overlap for symbol '{}' at line {} (char {}-{}) in '{}'",
+          curr.name, curr.ref_range.start.line + 1,
+          curr.ref_range.start.character, curr.ref_range.end.character,
+          filename);
       // Don't throw in production - continue processing
     }
   }
