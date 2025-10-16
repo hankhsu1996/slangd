@@ -16,6 +16,8 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
+#include "slangd/utils/conversion.hpp"
+
 namespace slangd::services {
 class PreambleManager;
 }
@@ -223,15 +225,21 @@ class SemanticIndex {
 
     void AddReference(
         const slang::ast::Symbol& symbol, std::string_view name,
-        slang::SourceRange ref_range, lsp::Location def_loc,
+        lsp::Range ref_range, lsp::Location def_loc,
         const slang::ast::Scope* parent_scope);
 
     // For references where PreambleManager provides pre-converted LSP
     // definition coordinates
     void AddReferenceWithLspDefinition(
         const slang::ast::Symbol& symbol, std::string_view name,
-        slang::SourceRange ref_range, lsp::Location def_loc,
+        lsp::Range ref_range, lsp::Location def_loc,
         const slang::ast::Scope* parent_scope);
+
+    // Helper to convert Slang reference ranges to LSP coordinates
+    [[nodiscard]] auto ConvertRefRange(slang::SourceRange range) const
+        -> lsp::Range {
+      return ConvertSlangRangeToLspRange(range, source_manager_.get());
+    }
 
     void TraverseType(const slang::ast::Type& type);
 

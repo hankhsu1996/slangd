@@ -272,8 +272,7 @@ void SemanticIndex::IndexVisitor::AddDefinition(
     const slang::ast::Scope* children_scope) {
   const auto& unwrapped = UnwrapSymbol(symbol);
 
-  lsp::Range lsp_range =
-      ConvertSlangRangeToLspRange(range, source_manager_.get());
+  lsp::Range lsp_range = ConvertRefRange(range);
   lsp::Location lsp_location =
       ConvertSlangLocationToLspLocation(range.start(), source_manager_.get());
 
@@ -294,12 +293,9 @@ void SemanticIndex::IndexVisitor::AddDefinition(
 
 void SemanticIndex::IndexVisitor::AddReference(
     const slang::ast::Symbol& symbol, std::string_view name,
-    slang::SourceRange ref_range, lsp::Location def_loc,
+    lsp::Range ref_range, lsp::Location def_loc,
     const slang::ast::Scope* parent_scope) {
   const auto& unwrapped = UnwrapSymbol(symbol);
-
-  lsp::Range ref_lsp_range =
-      ConvertSlangRangeToLspRange(ref_range, source_manager_.get());
 
   if (preamble_manager_ != nullptr &&
       preamble_manager_->IsPreambleSymbol(&symbol)) {
@@ -307,7 +303,7 @@ void SemanticIndex::IndexVisitor::AddReference(
     auto info = preamble_manager_->GetSymbolInfo(&symbol);
     if (info.has_value()) {
       auto entry = SemanticEntry{
-          .ref_range = ref_lsp_range,
+          .ref_range = ref_range,
           .def_loc = info->def_loc,
           .is_cross_file = true,
           .symbol = &unwrapped,
@@ -350,7 +346,7 @@ void SemanticIndex::IndexVisitor::AddReference(
 
   // Overlay symbol - use provided LSP coordinates
   auto entry = SemanticEntry{
-      .ref_range = ref_lsp_range,
+      .ref_range = ref_range,
       .def_loc = def_loc,
       .is_cross_file = false,  // Local symbol
       .symbol = &unwrapped,
@@ -365,17 +361,14 @@ void SemanticIndex::IndexVisitor::AddReference(
 
 void SemanticIndex::IndexVisitor::AddReferenceWithLspDefinition(
     const slang::ast::Symbol& symbol, std::string_view name,
-    slang::SourceRange ref_range, lsp::Location def_loc,
+    lsp::Range ref_range, lsp::Location def_loc,
     const slang::ast::Scope* parent_scope) {
   // For module/port/parameter references where PreambleManager provides
   // pre-converted LSP definition coordinates
   const auto& unwrapped = UnwrapSymbol(symbol);
 
-  lsp::Range ref_lsp_range =
-      ConvertSlangRangeToLspRange(ref_range, source_manager_.get());
-
   auto entry = SemanticEntry{
-      .ref_range = ref_lsp_range,
+      .ref_range = ref_range,
       .def_loc = def_loc,
       .is_cross_file = true,  // Always cross-file (preamble symbols)
       .symbol = &unwrapped,
@@ -464,8 +457,9 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
             usage_range = scoped.right->sourceRange();
           }
           AddReference(
-              *typedef_target, typedef_target->name, usage_range,
-              *definition_loc, typedef_target->getParentScope());
+              *typedef_target, typedef_target->name,
+              ConvertRefRange(usage_range), *definition_loc,
+              typedef_target->getParentScope());
         }
       } else if (
           const auto* class_target =
@@ -487,8 +481,8 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
             usage_range = scoped.right->sourceRange();
           }
           AddReference(
-              *class_target, class_target->name, usage_range, *definition_loc,
-              class_target->getParentScope());
+              *class_target, class_target->name, ConvertRefRange(usage_range),
+              *definition_loc, class_target->getParentScope());
         }
       }
       break;
@@ -583,14 +577,13 @@ void SemanticIndex::IndexVisitor::TraverseClassNames(
     const auto& class_name = node->as<slang::syntax::ClassNameSyntax>();
 
     // Convert SourceRange to LSP coordinates
-    auto definition_lsp_range =
-        ConvertSlangRangeToLspRange(definition_range, source_manager_.get());
+    auto definition_lsp_range = ConvertRefRange(definition_range);
     auto definition_location = ConvertSlangLocationToLspLocation(
         definition_range.start(), source_manager_.get());
 
     AddReference(
         *class_type.genericClass, class_type.genericClass->name,
-        class_name.identifier.range(),
+        ConvertRefRange(class_name.identifier.range()),
         lsp::Location{
             .uri = definition_location.uri, .range = definition_lsp_range},
         class_type.genericClass->getParentScope());
@@ -646,8 +639,9 @@ void SemanticIndex::IndexVisitor::IndexClassParameters(
             CreateSymbolLspLocation(param_symbol, source_manager_.get());
         if (param_def_loc) {
           AddReference(
-              param_symbol, param_symbol.name, named_param.name.range(),
-              *param_def_loc, param_symbol.getParentScope());
+              param_symbol, param_symbol.name,
+              ConvertRefRange(named_param.name.range()), *param_def_loc,
+              param_symbol.getParentScope());
         }
         break;
       }
@@ -701,8 +695,9 @@ void SemanticIndex::IndexVisitor::IndexInstanceParameters(
             CreateSymbolLspLocation(param_symbol, source_manager_.get());
         if (param_def_loc) {
           AddReference(
-              param_symbol, param_symbol.name, named_param.name.range(),
-              *param_def_loc, param_symbol.getParentScope());
+              param_symbol, param_symbol.name,
+              ConvertRefRange(named_param.name.range()), *param_def_loc,
+              param_symbol.getParentScope());
         }
         break;
       }
@@ -743,8 +738,8 @@ void SemanticIndex::IndexVisitor::IndexPackageInScopedName(
       auto pkg_def_loc = CreateSymbolLspLocation(pkg, source_manager_.get());
       if (pkg_def_loc) {
         AddReference(
-            pkg, pkg.name, ident.identifier.range(), *pkg_def_loc,
-            pkg.getParentScope());
+            pkg, pkg.name, ConvertRefRange(ident.identifier.range()),
+            *pkg_def_loc, pkg.getParentScope());
       }
       break;  // Found package, stop searching
     }
@@ -898,13 +893,12 @@ void SemanticIndex::IndexVisitor::handle(
           ref_start + static_cast<uint32_t>(target_symbol->name.length()));
 
       // Convert definition_range to LSP coordinates
-      auto definition_lsp_range =
-          ConvertSlangRangeToLspRange(definition_range, source_manager_.get());
+      auto definition_lsp_range = ConvertRefRange(definition_range);
       auto definition_location = ConvertSlangLocationToLspLocation(
           definition_range.start(), source_manager_.get());
 
       AddReference(
-          *target_symbol, target_symbol->name, reference_range,
+          *target_symbol, target_symbol->name, ConvertRefRange(reference_range),
           lsp::Location{
               .uri = definition_location.uri, .range = definition_lsp_range},
           target_symbol->getParentScope());
@@ -1020,13 +1014,13 @@ void SemanticIndex::IndexVisitor::handle(
   }
 
   // Convert definition_range to LSP coordinates
-  auto definition_lsp_range =
-      ConvertSlangRangeToLspRange(*definition_range, source_manager_.get());
+  auto definition_lsp_range = ConvertRefRange(*definition_range);
   auto definition_location = ConvertSlangLocationToLspLocation(
       definition_range->start(), source_manager_.get());
 
   AddReference(
-      **subroutine_symbol, (*subroutine_symbol)->name, *call_range,
+      **subroutine_symbol, (*subroutine_symbol)->name,
+      ConvertRefRange(*call_range),
       lsp::Location{
           .uri = definition_location.uri, .range = definition_lsp_range},
       (*subroutine_symbol)->getParentScope());
@@ -1064,8 +1058,8 @@ void SemanticIndex::IndexVisitor::handle(
       CreateSymbolLspLocation(expr.member, source_manager_.get());
   if (definition_loc) {
     AddReference(
-        expr.member, expr.member.name, expr.memberNameRange(), *definition_loc,
-        expr.member.getParentScope());
+        expr.member, expr.member.name, ConvertRefRange(expr.memberNameRange()),
+        *definition_loc, expr.member.getParentScope());
   }
   this->visitDefault(expr);
 }
@@ -1085,8 +1079,8 @@ void SemanticIndex::IndexVisitor::handle(
         CreateSymbolLspLocation(member_symbol, source_manager_.get());
     if (definition_loc) {
       AddReference(
-          member_symbol, member_symbol.name, setter.keyRange, *definition_loc,
-          member_symbol.getParentScope());
+          member_symbol, member_symbol.name, ConvertRefRange(setter.keyRange),
+          *definition_loc, member_symbol.getParentScope());
     }
   }
 
@@ -1124,8 +1118,8 @@ void SemanticIndex::IndexVisitor::handle(
           CreateSymbolLspLocation(*symbol, source_manager_.get());
       if (definition_loc) {
         AddReference(
-            *symbol, symbol->name, elem.sourceRange, *definition_loc,
-            symbol->getParentScope());
+            *symbol, symbol->name, ConvertRefRange(elem.sourceRange),
+            *definition_loc, symbol->getParentScope());
       }
     }
   }
@@ -1282,8 +1276,8 @@ void SemanticIndex::IndexVisitor::handle(
       CreateSymbolLspLocation(*package, source_manager_.get());
   if (definition_loc) {
     AddReference(
-        *package, package->name, import_item.package.range(), *definition_loc,
-        package->getParentScope());
+        *package, package->name, ConvertRefRange(import_item.package.range()),
+        *definition_loc, package->getParentScope());
   }
   this->visitDefault(import_symbol);
 }
@@ -1310,8 +1304,8 @@ void SemanticIndex::IndexVisitor::handle(
       CreateSymbolLspLocation(*package, source_manager_.get());
   if (definition_loc) {
     AddReference(
-        *package, package->name, import_item.package.range(), *definition_loc,
-        package->getParentScope());
+        *package, package->name, ConvertRefRange(import_item.package.range()),
+        *definition_loc, package->getParentScope());
   }
 
   // Create entry for the imported symbol name
@@ -1321,8 +1315,9 @@ void SemanticIndex::IndexVisitor::handle(
         CreateSymbolLspLocation(*imported_symbol, source_manager_.get());
     if (imported_definition_loc) {
       AddReference(
-          *imported_symbol, imported_symbol->name, import_item.item.range(),
-          *imported_definition_loc, imported_symbol->getParentScope());
+          *imported_symbol, imported_symbol->name,
+          ConvertRefRange(import_item.item.range()), *imported_definition_loc,
+          imported_symbol->getParentScope());
     }
   }
 
@@ -1363,13 +1358,12 @@ void SemanticIndex::IndexVisitor::handle(
 
           // Add reference for end label (e.g., "endfunction : my_func")
           if (func_syntax.endBlockName != nullptr) {
-            auto definition_lsp_range = ConvertSlangRangeToLspRange(
-                definition_range, source_manager_.get());
+            auto definition_lsp_range = ConvertRefRange(definition_range);
             auto definition_location = ConvertSlangLocationToLspLocation(
                 definition_range.start(), source_manager_.get());
             AddReference(
                 subroutine, subroutine.name,
-                func_syntax.endBlockName->name.range(),
+                ConvertRefRange(func_syntax.endBlockName->name.range()),
                 lsp::Location{
                     .uri = definition_location.uri,
                     .range = definition_lsp_range},
@@ -1425,12 +1419,12 @@ void SemanticIndex::IndexVisitor::handle(
 
         // Add reference for end label (e.g., "endmodule : Test")
         if (decl_syntax.blockName != nullptr) {
-          auto definition_lsp_range = ConvertSlangRangeToLspRange(
-              definition_range, source_manager_.get());
+          auto definition_lsp_range = ConvertRefRange(definition_range);
           auto definition_location = ConvertSlangLocationToLspLocation(
               definition_range.start(), source_manager_.get());
           AddReference(
-              definition, definition.name, decl_syntax.blockName->name.range(),
+              definition, definition.name,
+              ConvertRefRange(decl_syntax.blockName->name.range()),
               lsp::Location{
                   .uri = definition_location.uri,
                   .range = definition_lsp_range},
@@ -1571,13 +1565,12 @@ void SemanticIndex::IndexVisitor::handle(
 
         // Add reference for end label (e.g., "endclass : MyClass")
         if (class_syntax.endBlockName != nullptr) {
-          auto definition_lsp_range = ConvertSlangRangeToLspRange(
-              definition_range, source_manager_.get());
+          auto definition_lsp_range = ConvertRefRange(definition_range);
           auto definition_location = ConvertSlangLocationToLspLocation(
               definition_range.start(), source_manager_.get());
           AddReference(
               class_def, class_def.name,
-              class_syntax.endBlockName->name.range(),
+              ConvertRefRange(class_syntax.endBlockName->name.range()),
               lsp::Location{
                   .uri = definition_location.uri,
                   .range = definition_lsp_range},
@@ -1615,12 +1608,12 @@ void SemanticIndex::IndexVisitor::handle(
                     auto base_def_range =
                         base_syntax->as<slang::syntax::ClassDeclarationSyntax>()
                             .name.range();
-                    auto base_def_lsp_range = ConvertSlangRangeToLspRange(
-                        base_def_range, source_manager_.get());
+                    auto base_def_lsp_range = ConvertRefRange(base_def_range);
                     auto base_def_location = ConvertSlangLocationToLspLocation(
                         base_def_range.start(), source_manager_.get());
                     AddReference(
-                        *base_symbol, base_symbol->name, base_ref_range,
+                        *base_symbol, base_symbol->name,
+                        ConvertRefRange(base_ref_range),
                         lsp::Location{
                             .uri = base_def_location.uri,
                             .range = base_def_lsp_range},
@@ -1675,13 +1668,12 @@ void SemanticIndex::IndexVisitor::handle(
 
         // Add reference for end label (e.g., "endclass : MyClass")
         if (class_syntax.endBlockName != nullptr) {
-          auto definition_lsp_range = ConvertSlangRangeToLspRange(
-              definition_range, source_manager_.get());
+          auto definition_lsp_range = ConvertRefRange(definition_range);
           auto definition_location = ConvertSlangLocationToLspLocation(
               definition_range.start(), source_manager_.get());
           AddReference(
               class_type, class_type.name,
-              class_syntax.endBlockName->name.range(),
+              ConvertRefRange(class_syntax.endBlockName->name.range()),
               lsp::Location{
                   .uri = definition_location.uri,
                   .range = definition_lsp_range},
@@ -1706,8 +1698,9 @@ void SemanticIndex::IndexVisitor::handle(
                 CreateSymbolLspLocation(*base_symbol, source_manager_.get());
             if (base_definition_loc) {
               AddReference(
-                  *base_symbol, base_symbol->name, base_ref_range,
-                  *base_definition_loc, base_symbol->getParentScope());
+                  *base_symbol, base_symbol->name,
+                  ConvertRefRange(base_ref_range), *base_definition_loc,
+                  base_symbol->getParentScope());
             }
           }
         }
@@ -1767,7 +1760,8 @@ void SemanticIndex::IndexVisitor::handle(
           if (interface_definition_loc) {
             AddReference(
                 *interface_port.interfaceDef, interface_port.interfaceDef->name,
-                interface_name_range, *interface_definition_loc,
+                ConvertRefRange(interface_name_range),
+                *interface_definition_loc,
                 interface_port.interfaceDef->getParentScope());
           }
         }
@@ -1783,8 +1777,8 @@ void SemanticIndex::IndexVisitor::handle(
           if (modport_definition_loc) {
             AddReference(
                 *interface_port.modportSymbol,
-                interface_port.modportSymbol->name, modport_name_range,
-                *modport_definition_loc,
+                interface_port.modportSymbol->name,
+                ConvertRefRange(modport_name_range), *modport_definition_loc,
                 interface_port.modportSymbol->getParentScope());
           }
         }
@@ -1825,8 +1819,9 @@ void SemanticIndex::IndexVisitor::handle(
               *modport_port.internalSymbol, source_manager_.get());
           if (target_loc) {
             AddReference(
-                *modport_port.internalSymbol, modport_port.name, source_range,
-                *target_loc, modport_port.getParentScope());
+                *modport_port.internalSymbol, modport_port.name,
+                ConvertRefRange(source_range), *target_loc,
+                modport_port.getParentScope());
           }
         }
       }
@@ -1896,7 +1891,8 @@ void SemanticIndex::IndexVisitor::handle(
                 CreateSymbolLspLocation(interface_def, source_manager_.get());
             if (interface_definition_loc) {
               AddReference(
-                  interface_def, interface_def.name, inst_syntax.type.range(),
+                  interface_def, interface_def.name,
+                  ConvertRefRange(inst_syntax.type.range()),
                   *interface_definition_loc, interface_def.getParentScope());
             }
 
@@ -1957,7 +1953,8 @@ void SemanticIndex::IndexVisitor::handle(
           CreateSymbolLspLocation(interface_def, source_manager_.get());
       if (interface_definition_loc) {
         AddReference(
-            interface_def, interface_def.name, inst_syntax.type.range(),
+            interface_def, interface_def.name,
+            ConvertRefRange(inst_syntax.type.range()),
             *interface_definition_loc, interface_def.getParentScope());
       }
 
@@ -2001,8 +1998,9 @@ void SemanticIndex::IndexVisitor::handle(
                                            connected_instance->name.length()));
 
             AddReference(
-                *connected_instance, connected_instance->name, reference_range,
-                *definition_loc, connected_instance->getParentScope());
+                *connected_instance, connected_instance->name,
+                ConvertRefRange(reference_range), *definition_loc,
+                connected_instance->getParentScope());
           }
         }
       }
@@ -2044,8 +2042,9 @@ void SemanticIndex::IndexVisitor::handle(
     if (definition_loc) {
       auto ref_range = *generate_array.externalGenvarRefRange;
       AddReference(
-          *generate_array.genvar, generate_array.genvar->name, ref_range,
-          *definition_loc, generate_array.genvar->getParentScope());
+          *generate_array.genvar, generate_array.genvar->name,
+          ConvertRefRange(ref_range), *definition_loc,
+          generate_array.genvar->getParentScope());
     }
   }
 
@@ -2153,12 +2152,12 @@ void SemanticIndex::IndexVisitor::handle(
 
         // Add reference for end label (e.g., "endpackage : TestPkg")
         if (decl_syntax.blockName != nullptr) {
-          auto definition_lsp_range = ConvertSlangRangeToLspRange(
-              definition_range, source_manager_.get());
+          auto definition_lsp_range = ConvertRefRange(definition_range);
           auto definition_location = ConvertSlangLocationToLspLocation(
               definition_range.start(), source_manager_.get());
           AddReference(
-              package, package.name, decl_syntax.blockName->name.range(),
+              package, package.name,
+              ConvertRefRange(decl_syntax.blockName->name.range()),
               lsp::Location{
                   .uri = definition_location.uri,
                   .range = definition_lsp_range},
@@ -2242,8 +2241,9 @@ void SemanticIndex::IndexVisitor::handle(
               if (definition_loc) {
                 // Create reference using the expression's source range
                 AddReference(
-                    instance_symbol, instance_symbol.name, expr.sourceRange,
-                    *definition_loc, instance_symbol.getParentScope());
+                    instance_symbol, instance_symbol.name,
+                    ConvertRefRange(expr.sourceRange), *definition_loc,
+                    instance_symbol.getParentScope());
               }
             }
           } else if (ref_symbol.kind == slang::ast::SymbolKind::InstanceArray) {
@@ -2262,8 +2262,9 @@ void SemanticIndex::IndexVisitor::handle(
                 if (definition_loc) {
                   // Create reference using the expression's source range
                   AddReference(
-                      instance_array, instance_array.name, expr.sourceRange,
-                      *definition_loc, instance_array.getParentScope());
+                      instance_array, instance_array.name,
+                      ConvertRefRange(expr.sourceRange), *definition_loc,
+                      instance_array.getParentScope());
                 }
               }
             }
@@ -2275,8 +2276,9 @@ void SemanticIndex::IndexVisitor::handle(
             if (definition_loc) {
               // Create reference using the expression's source range
               AddReference(
-                  iface_port, iface_port.name, expr.sourceRange,
-                  *definition_loc, iface_port.getParentScope());
+                  iface_port, iface_port.name,
+                  ConvertRefRange(expr.sourceRange), *definition_loc,
+                  iface_port.getParentScope());
             }
           }
         }
@@ -2308,7 +2310,7 @@ void SemanticIndex::IndexVisitor::handle(
 
       // Module definitions are in PreambleManager (already in LSP coordinates)
       AddReferenceWithLspDefinition(
-          symbol, symbol.definitionName, type_range,
+          symbol, symbol.definitionName, ConvertRefRange(type_range),
           lsp::Location{
               .uri = module_info->file_path.ToUri(),
               .range = module_info->def_range},
@@ -2328,7 +2330,7 @@ void SemanticIndex::IndexVisitor::handle(
           if (it != module_info->port_lookup.end()) {
             const auto* port_info = it->second;
             AddReferenceWithLspDefinition(
-                symbol, port_name, npc.name.range(),
+                symbol, port_name, ConvertRefRange(npc.name.range()),
                 lsp::Location{
                     .uri = module_info->file_path.ToUri(),
                     .range = port_info->def_range},
@@ -2352,7 +2354,7 @@ void SemanticIndex::IndexVisitor::handle(
             if (it != module_info->parameter_lookup.end()) {
               const auto* param_info = it->second;
               AddReferenceWithLspDefinition(
-                  symbol, param_name, npa.name.range(),
+                  symbol, param_name, ConvertRefRange(npa.name.range()),
                   lsp::Location{
                       .uri = module_info->file_path.ToUri(),
                       .range = param_info->def_range},
