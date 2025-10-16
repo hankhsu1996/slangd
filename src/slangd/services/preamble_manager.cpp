@@ -424,11 +424,6 @@ auto PreambleManager::GetPackage(std::string_view name) const
   return nullptr;
 }
 
-auto PreambleManager::IsPreambleSymbol(const slang::ast::Symbol* symbol) const
-    -> bool {
-  return symbol_info_.contains(symbol);
-}
-
 auto PreambleManager::GetSymbolInfo(const slang::ast::Symbol* symbol) const
     -> std::optional<PreambleSymbolInfo> {
   auto it = symbol_info_.find(symbol);

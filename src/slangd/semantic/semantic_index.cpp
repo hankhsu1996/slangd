@@ -39,9 +39,16 @@ auto SemanticIndex::IsInCurrentFile(
     const slang::SourceManager& source_manager,
     const services::PreambleManager* preamble_manager) -> bool {
   // Preamble symbols are NEVER in current file (separate compilation)
-  if (preamble_manager != nullptr &&
-      preamble_manager->IsPreambleSymbol(&symbol)) {
-    return false;
+  // Check by comparing symbol's compilation with preamble compilation
+  if (preamble_manager != nullptr) {
+    const auto* symbol_scope = symbol.getParentScope();
+    if (symbol_scope != nullptr) {
+      const auto& symbol_compilation = symbol_scope->getCompilation();
+      const auto& preamble_compilation = preamble_manager->GetCompilation();
+      if (&symbol_compilation == &preamble_compilation) {
+        return false;  // Symbol from preamble compilation, not current file
+      }
+    }
   }
 
   if (!symbol.location.valid()) {
@@ -290,31 +297,7 @@ void SemanticIndex::IndexVisitor::AddReference(
     const slang::ast::Scope* parent_scope) {
   const auto& unwrapped = UnwrapSymbol(symbol);
 
-  if (preamble_manager_ != nullptr &&
-      preamble_manager_->IsPreambleSymbol(&symbol)) {
-    // Preamble symbols provide pre-converted LSP coordinates
-    auto info = preamble_manager_->GetSymbolInfo(&symbol);
-    if (info.has_value()) {
-      auto entry = SemanticEntry{
-          .ref_range = ref_range,
-          .def_loc = info->def_loc,
-          .is_cross_file = true,
-          .symbol = &unwrapped,
-          .lsp_kind = ConvertToLspKind(unwrapped),
-          .name = std::string(name),
-          .parent = parent_scope,
-          .children_scope = nullptr,
-          .is_definition = false};
-
-      AddEntry(std::move(entry));
-      return;
-    }
-    // If GetSymbolInfo failed for a preamble symbol, fall through to create
-    // a normal same-file reference (symbol might be from std package or other
-    // built-in that wasn't indexed)
-  }
-
-  // Overlay symbol - SAFETY CHECK: Verify belongs to overlay compilation
+  // Check if symbol is from preamble by comparing compilations
   if (preamble_manager_ != nullptr) {
     const auto* symbol_scope = symbol.getParentScope();
     if (symbol_scope != nullptr) {
@@ -322,15 +305,29 @@ void SemanticIndex::IndexVisitor::AddReference(
       const auto& preamble_compilation = preamble_manager_->GetCompilation();
 
       if (&symbol_compilation == &preamble_compilation) {
-        // Symbol is from preamble BUT missing from symbol_info_!
-        // Cannot safely convert - would cause BufferID mismatch crash
+        // Preamble symbol - use pre-converted LSP coordinates from symbol_info_
+        auto info = preamble_manager_->GetSymbolInfo(&symbol);
+        if (info.has_value()) {
+          auto entry = SemanticEntry{
+              .ref_range = ref_range,
+              .def_loc = info->def_loc,
+              .is_cross_file = true,
+              .symbol = &unwrapped,
+              .lsp_kind = ConvertToLspKind(unwrapped),
+              .name = std::string(name),
+              .parent = parent_scope,
+              .children_scope = nullptr,
+              .is_definition = false};
+          AddEntry(std::move(entry));
+          return;
+        }
+
+        // Symbol from preamble BUT missing from symbol_info_
         indexing_errors_.push_back(
             fmt::format(
                 "Symbol '{}' belongs to preamble compilation but is missing "
-                "from "
-                "symbol_info_. "
-                "PreambleSymbolVisitor needs to index this symbol type. "
-                "Skipping reference to avoid crash.",
+                "from symbol_info_. PreambleSymbolVisitor needs to index this "
+                "symbol type. Skipping reference to avoid crash.",
                 name));
         return;
       }

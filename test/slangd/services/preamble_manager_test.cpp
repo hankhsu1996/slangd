@@ -381,12 +381,7 @@ TEST_CASE("PreambleManager symbol info table", "[preamble_manager]") {
     const auto* pkg = preamble_manager->GetPackage("types_pkg");
     REQUIRE(pkg != nullptr);
 
-    // Verify package itself is indexed
-    REQUIRE(
-        preamble_manager->IsPreambleSymbol(
-            static_cast<const slang::ast::Symbol*>(pkg)) == true);
-
-    // Get symbol info for the package
+    // Get symbol info for the package (verifies indexing)
     auto pkg_info = preamble_manager->GetSymbolInfo(
         static_cast<const slang::ast::Symbol*>(pkg));
     REQUIRE(pkg_info.has_value());
@@ -396,32 +391,6 @@ TEST_CASE("PreambleManager symbol info table", "[preamble_manager]") {
     // Verify definition range is valid
     REQUIRE(pkg_info->def_loc.range.start.line >= 0);
     REQUIRE(pkg_info->def_loc.range.start.character >= 0);
-
-    co_return;
-  });
-}
-
-TEST_CASE("PreambleManager IsPreambleSymbol check", "[preamble_manager]") {
-  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
-    PreambleManagerTestFixture fixture;
-    fixture.CreateFile("math_pkg.sv", R"(
-      package math_pkg;
-        parameter MAX_VALUE = 100;
-      endpackage
-    )");
-
-    auto preamble_manager = fixture.BuildPreambleManager(executor);
-
-    const auto* pkg = preamble_manager->GetPackage("math_pkg");
-    REQUIRE(pkg != nullptr);
-
-    // Test that package symbol is recognized as preamble symbol
-    REQUIRE(
-        preamble_manager->IsPreambleSymbol(
-            static_cast<const slang::ast::Symbol*>(pkg)) == true);
-
-    // Test with nullptr (should return false, not crash)
-    REQUIRE(preamble_manager->IsPreambleSymbol(nullptr) == false);
 
     co_return;
   });
@@ -488,15 +457,7 @@ TEST_CASE(
     REQUIRE(pkg_a != nullptr);
     REQUIRE(pkg_b != nullptr);
 
-    // Both should be recognized as preamble symbols
-    REQUIRE(
-        preamble_manager->IsPreambleSymbol(
-            static_cast<const slang::ast::Symbol*>(pkg_a)) == true);
-    REQUIRE(
-        preamble_manager->IsPreambleSymbol(
-            static_cast<const slang::ast::Symbol*>(pkg_b)) == true);
-
-    // Both should have symbol info
+    // Both should have symbol info (verifies indexing)
     auto info_a = preamble_manager->GetSymbolInfo(
         static_cast<const slang::ast::Symbol*>(pkg_a));
     auto info_b = preamble_manager->GetSymbolInfo(
