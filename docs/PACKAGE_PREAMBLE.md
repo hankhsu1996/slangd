@@ -46,7 +46,7 @@ Slang symbols are location-independent pointers. A compilation can reference sym
 
 ## CRITICAL: Missing Symbols Cause Crashes
 
-**FUNDAMENTAL CONSTRAINT**: `symbol_info_` map is the ONLY way to distinguish preamble symbols from overlay symbols. Missing ANY symbol that references preamble locations WILL cause segfaults.
+**FUNDAMENTAL CONSTRAINT**: Preamble and overlay use separate SourceManagers with independent BufferID spaces. Attempting to convert a preamble BufferID using overlay's SourceManager causes immediate crashes. The `symbol_info_` map enables safe conversion by providing pre-converted coordinates. Missing symbols require compilation identity checking to avoid crashes.
 
 **Why crashes occur:**
 
@@ -61,30 +61,42 @@ Slang symbols are location-independent pointers. A compilation can reference sym
 
 **Required action when adding new symbol support**: Test with 100+ dummy packages to force high preamble BufferIDs, verify no crashes/invalid coordinates. See `test/slangd/semantic/preamble/package_preamble_test.cpp` for pattern.
 
-### Mitigation Strategy and Limitations
+### Crash Prevention Strategy
 
-**Current mitigations:**
+**Critical Discovery**: Cannot safely call SourceManager methods (getFileName, getLineNumber, etc.) with BufferIDs from a different SourceManager - they crash immediately. Validation must happen BEFORE attempting conversion.
 
-1. **Type member traversal**: `PreambleSymbolVisitor` recursively traverses struct/union/class members to index field symbols
-2. **Reactive validation**: `SemanticIndex::ValidateCoordinates()` detects invalid coordinates (line == -1) from failed BufferID conversions
+**Solution**: Check symbol's compilation via pointer comparison:
 
-**Known limitations:**
+```cpp
+// In AddReference() - BEFORE calling ConvertSlangRangeToLspRange
+const auto& symbol_compilation = symbol.getParentScope()->getCompilation();
+const auto& preamble_compilation = preamble_manager->GetCompilation();
 
-**ValidateCoordinates false positives**: Only catches _failed_ conversions (line == -1), not _wrong_ conversions. BufferID overlap between preamble and overlay SourceManagers can produce valid-looking coordinates that point to wrong file.
-
-Example failure case:
-
-```
-Preamble: BufferID=5 → pkg.sv (struct field at line 10)
-Overlay:  BufferID=5 → main.sv (different file)
-Bug: Missing field → treated as local → wrong conversion
-Result: line=10 in main.sv (WRONG FILE, but not -1!)
-Validation: Passes (false positive)
+if (&symbol_compilation == &preamble_compilation) {
+  // Symbol is from preamble BUT missing from symbol_info_
+  // Skip reference - cannot safely convert (would crash)
+  indexing_errors_.push_back(...);
+  return;
+}
 ```
 
-**No independent proactive validation**: Cannot reliably detect "symbol from preamble but missing from symbol*info*" without circular logic. The `is_cross_file` flag is set _by_ checking `symbol_info_`, making independent validation impossible.
+**Why this works:**
 
-**Test-driven coverage**: Primary defense is comprehensive testing of each symbol type. Runtime validation catches symptoms (invalid coordinates) but not root cause (missing symbols).
+- No SourceManager calls needed - pure pointer comparison
+- Symbols know their compilation via `getParentScope()->getCompilation()`
+- Cannot crash - no BufferID access, no array lookups
+- 100% reliable - compilation identity is definitive
+
+**Behavior:**
+
+- Production: Gracefully skips invalid references, reports error via std::unexpected
+- Tests: Fail immediately with diagnostic: "Symbol 'X' belongs to preamble compilation but is missing from symbol*info*"
+- Developers: Clear action item - add symbol type to PreambleSymbolVisitor
+
+**Additional mitigations:**
+
+1. **Type member traversal**: PreambleSymbolVisitor recursively traverses struct/union/class members
+2. **Test-driven coverage**: Comprehensive testing of each symbol type with BufferID offset patterns
 
 ## Key Components
 

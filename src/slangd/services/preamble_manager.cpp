@@ -427,6 +427,10 @@ auto PreambleManager::GetSourceManager() const -> const slang::SourceManager& {
   return *source_manager_;
 }
 
+auto PreambleManager::GetCompilation() const -> const slang::ast::Compilation& {
+  return *preamble_compilation_;
+}
+
 auto PreambleManager::GetVersion() const -> uint64_t {
   return version_;
 }

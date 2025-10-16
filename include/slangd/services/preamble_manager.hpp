@@ -118,6 +118,9 @@ class PreambleManager {
   // SourceManager accessor for resolving cross-file buffer IDs
   [[nodiscard]] auto GetSourceManager() const -> const slang::SourceManager&;
 
+  // Compilation accessor for symbol compilation checking
+  [[nodiscard]] auto GetCompilation() const -> const slang::ast::Compilation&;
+
   // Version tracking for cache invalidation
   [[nodiscard]] auto GetVersion() const -> uint64_t;
 

@@ -223,6 +223,17 @@ auto SemanticIndex::FromCompilation(
         return a.source_range.start < b.source_range.start;
       });
 
+  // Check for indexing errors (e.g., BufferID mismatches)
+  const auto& indexing_errors = visitor.GetIndexingErrors();
+  if (!indexing_errors.empty()) {
+    // Report first error + count (multiple errors usually same root cause)
+    return std::unexpected(
+        fmt::format(
+            "Failed to index '{}': {} ({} total error{})", current_file_uri,
+            indexing_errors[0], indexing_errors.size(),
+            indexing_errors.size() > 1 ? "s" : ""));
+  }
+
   // Validate no overlaps using O(n) algorithm (entries are now sorted)
   index->ValidateNoRangeOverlaps();
 
@@ -316,8 +327,31 @@ void SemanticIndex::IndexVisitor::AddReference(
     // built-in that wasn't indexed)
   }
 
-  // Overlay symbol or preamble symbol without location info - same-file
-  // reference
+  // Overlay symbol - convert using overlay's SourceManager
+  // SAFETY CHECK: Verify symbol belongs to overlay compilation, not preamble
+  if (preamble_manager_ != nullptr) {
+    const auto* symbol_scope = symbol.getParentScope();
+    if (symbol_scope != nullptr) {
+      const auto& symbol_compilation = symbol_scope->getCompilation();
+      const auto& preamble_compilation = preamble_manager_->GetCompilation();
+
+      if (&symbol_compilation == &preamble_compilation) {
+        // Symbol is from preamble BUT missing from symbol_info_!
+        // Cannot safely convert - would cause BufferID mismatch crash
+        indexing_errors_.push_back(
+            fmt::format(
+                "Symbol '{}' belongs to preamble compilation but is missing "
+                "from "
+                "symbol_info_. "
+                "PreambleSymbolVisitor needs to index this symbol type. "
+                "Skipping reference to avoid crash.",
+                name));
+        return;
+      }
+    }
+  }
+
+  // Safe to convert - symbol is from overlay compilation
   lsp::Range definition_lsp_range =
       ConvertSlangRangeToLspRange(definition_range, source_manager_.get());
   lsp::Location definition_lsp_location = ConvertSlangLocationToLspLocation(

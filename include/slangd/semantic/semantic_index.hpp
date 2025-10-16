@@ -189,6 +189,12 @@ class SemanticIndex {
       this->visitDefault(node);
     }
 
+    // Get accumulated indexing errors (e.g., BufferID mismatches)
+    [[nodiscard]] auto GetIndexingErrors() const
+        -> const std::vector<std::string>& {
+      return indexing_errors_;
+    }
+
    private:
     std::reference_wrapper<SemanticIndex> index_;
     std::reference_wrapper<const slang::SourceManager> source_manager_;
@@ -209,6 +215,10 @@ class SemanticIndex {
     // condition expression pointer
     std::unordered_set<const slang::ast::Expression*>
         visited_generate_conditions_;
+
+    // Track indexing errors (e.g., BufferID mismatches indicating missing
+    // preamble symbols)
+    std::vector<std::string> indexing_errors_;
 
     // Helper methods for adding semantic entries
     void AddEntry(SemanticEntry entry);
