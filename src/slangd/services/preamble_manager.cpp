@@ -33,7 +33,7 @@ class PreambleSymbolVisitor
   }
 
   void ProcessSymbol(const slang::ast::Symbol& symbol) {
-    // Create LSP location (URI + range) using symbol's own SourceManager
+    // Use safe conversion function (derives SM from symbol's compilation)
     auto definition_loc = CreateSymbolLspLocation(symbol);
     if (!definition_loc) {
       return;  // Skip symbols without valid location or parent scope

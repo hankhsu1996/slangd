@@ -80,9 +80,16 @@ inline auto CreateSymbolLspLocation(const slang::ast::Symbol& symbol)
 }
 
 // Create LSP location from Slang range, using symbol's SourceManager.
-// Use this when symbol.location doesn't point to the name (e.g., GenerateBlock,
-// DefinitionSymbol where symbol.location points to keyword, not name).
-// Derives SM safely from symbol while using explicit range for accuracy.
+// SAFE CONVERSION: Automatically derives correct SourceManager from symbol's
+// compilation, preventing BufferID mismatch crashes.
+//
+// Use this for ANY range conversion where the range might belong to a different
+// compilation than the current session (e.g., preamble symbols).
+//
+// Returns nullopt if:
+// - Symbol has no parent scope
+// - Compilation has no SourceManager
+// - Range is invalid
 inline auto CreateLspLocation(
     const slang::ast::Symbol& symbol, slang::SourceRange range)
     -> std::optional<lsp::Location> {
@@ -98,10 +105,10 @@ inline auto CreateLspLocation(
     return std::nullopt;
   }
 
-  // Convert Slang range to LSP location
-  auto lsp_range = ToLspRange(range, *sm);
-  auto uri = ToLspLocation(range.start(), *sm).uri;
-  return lsp::Location{.uri = uri, .range = lsp_range};
+  // Get location (with URI) and update its range
+  lsp::Location location = ToLspLocation(range.start(), *sm);
+  location.range = ToLspRange(range, *sm);
+  return location;
 }
 
 // convert const std::optional<nlohmann::json>& json to LSP strong type

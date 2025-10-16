@@ -44,9 +44,85 @@ Slang symbols are location-independent pointers. A compilation can reference sym
 └────────────────────────────────────────────┘
 ```
 
+## Safe Conversion Architecture (Safe-First Approach)
+
+**CRITICAL PRINCIPLE: Match SourceManager to BufferID ownership**
+
+BufferIDs in source ranges belong to the SourceManager that parsed the syntax. Using the wrong SourceManager causes crashes or incorrect line numbers. Always derive the correct SourceManager based on where the syntax originated.
+
+### Definition Ranges (from symbol's own syntax)
+
+```cpp
+// For symbol definitions using symbol.location (points to name):
+auto def_loc = CreateSymbolLspLocation(target_symbol);
+
+// For symbol definitions using custom range from symbol's syntax:
+auto def_loc = CreateLspLocation(target_symbol, custom_range);
+```
+
+These functions derive SourceManager from the symbol's compilation via `symbol.getParentScope()->getCompilation()`.
+
+**When to use:** Converting ranges extracted from `symbol.getSyntax()` - the symbol's own definition syntax.
+
+### Reference Ranges (Two Paths)
+
+Reference ranges require different handling based on syntax origin:
+
+**Path 1: Symbol Path** - Range from symbol's own syntax:
+```cpp
+// Example: end block name from function's own syntax
+const auto* syntax = subroutine.getSyntax();
+const auto& func_syntax = syntax->as<FunctionDeclarationSyntax>();
+auto ref_loc = CreateLspLocation(subroutine, func_syntax.endBlockName->name.range());
+```
+
+Use `CreateLspLocation(symbol, range)` because the range comes from the symbol's own syntax tree (same compilation as symbol).
+
+**Path 2: Expression Path** - Range from current file expression:
+```cpp
+// Example: identifier in expression referencing preamble symbol
+auto reference_range = expr.sourceRange;  // From overlay syntax
+auto ref_loc = ConvertExpressionRange(reference_range);
+```
+
+Use `ConvertExpressionRange(range)` because the range comes from current file expressions parsed by overlay's SourceManager.
+
+**Critical distinction:** If you reference a **preamble symbol** from **overlay syntax** (e.g., `pkg::BUS_WIDTH`), the identifier's BufferID belongs to overlay, NOT preamble. Using preamble's SM would cause BufferID mismatch (wrong line numbers or crash).
+
+### Common Reference Scenarios (Expression Path)
+
+All these use **overlay syntax** and require `ConvertExpressionRange`:
+
+```cpp
+// Import statements (syntax from current file)
+auto ref_loc = ConvertExpressionRange(import_item.package.range());
+auto ref_loc = ConvertExpressionRange(import_item.item.range());
+
+// Named parameters (syntax from instance in current file)
+auto ref_loc = ConvertExpressionRange(named_param.name.range());
+
+// Package scoped identifiers (syntax from current file)
+auto ref_loc = ConvertExpressionRange(ident.identifier.range());
+
+// Value expressions (syntax from current file)
+auto ref_loc = ConvertExpressionRange(expr.sourceRange);
+```
+
+### Why This Approach Works
+
+- **Safe:** BufferID and SourceManager always match (no mismatch crashes)
+- **Correct:** Line numbers computed using correct file's SourceManager
+- **Explicit:** Function name clearly indicates which SM path to use
+- **Testable:** Returns `nullopt` on error instead of crashing
+- **Simple:** No manual `IsPreambleSymbol()` checks needed
+
+**Implementation Note:** `ConvertExpressionRange` internally uses `compilation_.get().getSourceManager()` (overlay's SM). This is the "pragmatic exception" documented in SEMANTIC_INDEXING.md - expressions don't provide a way to derive SM from syntax, so we use the IndexVisitor's compilation.
+
+**Legacy approach:** `IsPreambleSymbol()` checks and `symbol_info_` hash map lookups remain for backward compatibility but are no longer the primary safety mechanism.
+
 ## CRITICAL: Missing Symbols Cause Crashes
 
-**FUNDAMENTAL CONSTRAINT**: Preamble and overlay use separate SourceManagers with independent BufferID spaces. Attempting to convert a preamble BufferID using overlay's SourceManager causes immediate crashes. The `symbol_info_` map enables safe conversion by providing pre-converted coordinates. Missing symbols require compilation identity checking to avoid crashes.
+**FUNDAMENTAL CONSTRAINT**: Preamble and overlay use separate SourceManagers with independent BufferID spaces. Attempting to convert a preamble BufferID using overlay's SourceManager causes immediate crashes.
 
 **Why crashes occur:**
 
