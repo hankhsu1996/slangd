@@ -12,6 +12,41 @@
 
 namespace slangd::semantic {
 
+// Helper: Check if a symbol is a genvar or genvar-related parameter
+// Genvars are loop iteration variables (like 'int i' in for-loops)
+// They're indexed for go-to-definition but not shown in document symbols
+static auto IsGenvarSymbol(
+    const slang::ast::Symbol& symbol, const slang::ast::Scope* parent) -> bool {
+  using SK = slang::ast::SymbolKind;
+
+  // Direct genvar symbols
+  if (symbol.kind == SK::Genvar) {
+    return true;
+  }
+
+  // Genvar loop parameters (they also appear as Parameter symbols)
+  // Hierarchy: GenerateBlockArray -> GenerateBlock -> Parameter (localparam)
+  if (symbol.kind == SK::Parameter &&
+      symbol.as<slang::ast::ParameterSymbol>().isLocalParam()) {
+    if (parent != nullptr && parent->asSymbol().kind == SK::GenerateBlock) {
+      const auto* grandparent = parent->asSymbol().getParentScope();
+      if (grandparent != nullptr &&
+          grandparent->asSymbol().kind == SK::GenerateBlockArray) {
+        const auto& gen_array =
+            grandparent->asSymbol().as<slang::ast::GenerateBlockArraySymbol>();
+        // Check if there's a matching genvar with same name
+        for (const auto& gen_member : gen_array.members()) {
+          if (gen_member.kind == SK::Genvar && gen_member.name == symbol.name) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
 auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
     const std::string& uri, const SemanticIndex& semantic_index)
     -> std::vector<lsp::DocumentSymbol> {
@@ -36,9 +71,9 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
       continue;
     }
 
-    // Skip genvar loop variables - they're just counters, not meaningful
-    // symbols
-    if (entry.symbol->kind == slang::ast::SymbolKind::Genvar) {
+    // Skip genvar symbols - they're indexed for go-to-definition but not shown
+    // in document symbols (like for-loop variables in software languages)
+    if (IsGenvarSymbol(*entry.symbol, entry.parent)) {
       continue;
     }
 
@@ -215,26 +250,10 @@ auto DocumentSymbolBuilder::AttachChildrenToSymbol(
 
       // Add all symbols from the template (first entry only)
       for (const auto& member : block_scope.members()) {
-        // Skip genvar loop parameters (they appear as Parameters inside
-        // generate blocks) But keep legitimate user-declared localparams
-        if (member.kind == slang::ast::SymbolKind::Parameter &&
-            member.as<slang::ast::ParameterSymbol>().isLocalParam()) {
-          // Check if this local parameter has the same name as a genvar in the
-          // GenerateBlockArray If so, it's the genvar loop iteration variable
-          // and should be filtered
-          bool is_genvar_param = false;
-
-          // Check GenerateBlockArray members for matching genvar
-          for (const auto& gen_member : gen_array.members()) {
-            if (gen_member.kind == slang::ast::SymbolKind::Genvar &&
-                gen_member.name == member.name) {
-              is_genvar_param = true;
-              break;
-            }
-          }
-          if (is_genvar_param) {
-            continue;  // Skip genvar loop iteration variable
-          }
+        // Skip genvar symbols (they're indexed for go-to-definition but not
+        // shown in document symbols)
+        if (IsGenvarSymbol(member, &block_scope)) {
+          continue;
         }
 
         if (ShouldIndexForDocumentSymbols(member)) {

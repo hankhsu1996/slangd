@@ -220,7 +220,7 @@ class SemanticIndex {
 
     void AddDefinition(
         const slang::ast::Symbol& symbol, std::string_view name,
-        slang::SourceRange range, const slang::ast::Scope* parent_scope,
+        lsp::Location def_loc, const slang::ast::Scope* parent_scope,
         const slang::ast::Scope* children_scope = nullptr);
 
     void AddReference(

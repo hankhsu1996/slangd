@@ -62,6 +62,13 @@ inline auto CreateSymbolLspLocation(const slang::ast::Symbol& symbol)
 
   // Compute range: symbol name location + length
   lsp::Position start = ToLspPosition(symbol.location, *source_manager);
+
+  // Filter out built-in symbols with invalid coordinates (line == -1)
+  // These are added automatically by Slang (e.g., class randomize() methods)
+  if (start.line < 0) {
+    return std::nullopt;
+  }
+
   lsp::Position end = start;
   end.character += static_cast<int>(symbol.name.length());
 
@@ -70,6 +77,31 @@ inline auto CreateSymbolLspLocation(const slang::ast::Symbol& symbol)
   location.range = {.start = start, .end = end};
 
   return location;
+}
+
+// Create LSP location from Slang range, using symbol's SourceManager.
+// Use this when symbol.location doesn't point to the name (e.g., GenerateBlock,
+// DefinitionSymbol where symbol.location points to keyword, not name).
+// Derives SM safely from symbol while using explicit range for accuracy.
+inline auto CreateLspLocation(
+    const slang::ast::Symbol& symbol, slang::SourceRange range)
+    -> std::optional<lsp::Location> {
+  // Derive SourceManager from symbol's compilation (safe!)
+  const auto* scope = symbol.getParentScope();
+  if (scope == nullptr) {
+    return std::nullopt;
+  }
+
+  const auto& compilation = scope->getCompilation();
+  const auto* sm = compilation.getSourceManager();
+  if (sm == nullptr || !range.start().valid()) {
+    return std::nullopt;
+  }
+
+  // Convert Slang range to LSP location
+  auto lsp_range = ToLspRange(range, *sm);
+  auto uri = ToLspLocation(range.start(), *sm).uri;
+  return lsp::Location{.uri = uri, .range = lsp_range};
 }
 
 // convert const std::optional<nlohmann::json>& json to LSP strong type
