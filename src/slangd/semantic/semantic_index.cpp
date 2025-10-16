@@ -2437,6 +2437,14 @@ void SemanticIndex::ValidateSymbolCoverage(
   // Check which identifiers don't have definitions
   std::vector<slang::parsing::Token> missing;
   for (const auto& token : collector.identifiers) {
+    // Skip known built-in enum methods (these have no source definition)
+    std::string_view token_text = token.valueText();
+    if (token_text == "name" || token_text == "num" || token_text == "next" ||
+        token_text == "prev" || token_text == "first" ||
+        token_text == "last") {
+      continue;
+    }
+
     // Convert token location to LSP coordinates for new API
     auto lsp_loc = ToLspLocation(token.location(), source_manager_.get());
     auto lsp_pos = ToLspPosition(token.location(), source_manager_.get());
