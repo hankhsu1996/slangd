@@ -11,7 +11,6 @@
 
 #include "lsp/basic.hpp"
 #include "slangd/core/project_layout_service.hpp"
-#include "slangd/semantic/definition_extractor.hpp"
 #include "slangd/utils/conversion.hpp"
 #include "slangd/utils/scoped_timer.hpp"
 
@@ -30,14 +29,14 @@ class PreambleSymbolVisitor
       std::shared_ptr<spdlog::logger> logger)
       : symbol_info_(symbol_info),
         source_manager_(source_manager),
-        logger_(logger ? logger : spdlog::default_logger()),
-        definition_extractor_(logger) {
+        logger_(logger ? logger : spdlog::default_logger()) {
   }
 
   void ProcessSymbol(const slang::ast::Symbol& symbol) {
-    // Skip symbols without valid location (built-ins, etc.)
-    if (!symbol.location.valid()) {
-      return;
+    // Create LSP range for symbol name
+    auto definition_range = CreateSymbolLspRange(symbol, source_manager_.get());
+    if (!definition_range) {
+      return;  // Skip symbols without valid location
     }
 
     // Convert symbol location to file URI
@@ -45,22 +44,9 @@ class PreambleSymbolVisitor
     auto canonical_path = CanonicalPath(std::filesystem::path(file_name));
     auto file_uri = canonical_path.ToUri();
 
-    // Extract precise definition range using preamble's SourceManager
-    const auto* syntax = symbol.getSyntax();
-    if (syntax == nullptr) {
-      // No syntax - skip silently (expected for built-in symbols like std
-      // package)
-      return;
-    }
-
-    // Use DefinitionExtractor to get precise name range from syntax
-    auto range = definition_extractor_.ExtractDefinitionRange(symbol, *syntax);
-    lsp::Range definition_range =
-        ConvertSlangRangeToLspRange(range, source_manager_.get());
-
     // Store in map (symbol pointer as key)
     symbol_info_.get()[&symbol] = PreambleSymbolInfo{
-        .file_uri = file_uri, .definition_range = definition_range};
+        .file_uri = file_uri, .def_range = *definition_range};
   }
 
   // Helper to traverse type members (struct/union/class/enum fields)
@@ -100,7 +86,6 @@ class PreambleSymbolVisitor
       symbol_info_;
   std::reference_wrapper<const slang::SourceManager> source_manager_;
   std::shared_ptr<spdlog::logger> logger_;
-  semantic::DefinitionExtractor definition_extractor_;
 };
 
 }  // namespace
@@ -359,7 +344,7 @@ auto PreambleManager::BuildFromLayout(
         modules_.push_back(
             {.name = std::move(module_name),
              .file_path = std::move(module_file_path),
-             .definition_range = definition_range_lsp,
+             .def_range = definition_range_lsp,
              .ports = std::move(ports),
              .parameters = std::move(parameters),
              .port_lookup = {},

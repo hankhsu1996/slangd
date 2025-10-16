@@ -78,8 +78,8 @@ class PreambleManagerTestFixture {
     for (const auto& mod : modules) {
       if (mod.name == name) {
         REQUIRE(mod.file_path.Path().filename() == expected_filename);
-        REQUIRE(mod.definition_range.start.line >= 0);
-        REQUIRE(mod.definition_range.start.character >= 0);
+        REQUIRE(mod.def_range.start.line >= 0);
+        REQUIRE(mod.def_range.start.character >= 0);
         return;
       }
     }
@@ -394,8 +394,8 @@ TEST_CASE("PreambleManager symbol info table", "[preamble_manager]") {
     REQUIRE(pkg_info->file_uri.find("types_pkg.sv") != std::string::npos);
 
     // Verify definition range is valid
-    REQUIRE(pkg_info->definition_range.start.line >= 0);
-    REQUIRE(pkg_info->definition_range.start.character >= 0);
+    REQUIRE(pkg_info->def_range.start.line >= 0);
+    REQUIRE(pkg_info->def_range.start.character >= 0);
 
     co_return;
   });
@@ -452,10 +452,9 @@ TEST_CASE("PreambleManager GetSymbolInfo lookup", "[preamble_manager]") {
     REQUIRE(info->file_uri.find("protocol_pkg.sv") != std::string::npos);
 
     // Verify range is valid
-    REQUIRE(info->definition_range.start.line >= 0);
-    REQUIRE(info->definition_range.start.character >= 0);
-    REQUIRE(
-        info->definition_range.end.line >= info->definition_range.start.line);
+    REQUIRE(info->def_range.start.line >= 0);
+    REQUIRE(info->def_range.start.character >= 0);
+    REQUIRE(info->def_range.end.line >= info->def_range.start.line);
 
     // Test with nullptr (should return nullopt)
     auto null_info = preamble_manager->GetSymbolInfo(nullptr);

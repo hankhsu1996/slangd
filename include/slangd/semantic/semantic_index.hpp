@@ -16,8 +16,6 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
-#include "slangd/semantic/definition_extractor.hpp"
-
 namespace slangd::services {
 class PreambleManager;
 }
@@ -31,10 +29,10 @@ namespace slangd::semantic {
 // INVARIANT: All entries in a SemanticIndex have source locations in the same
 // file (the file being indexed). Symbols from included files are filtered out.
 struct SemanticEntry {
-  // LSP coordinates (source location always in current_file_uri)
-  lsp::Range source_range;
-  lsp::Range definition_range;
-  std::string definition_uri;
+  // LSP coordinates (reference location always in current_file_uri)
+  lsp::Range ref_range;
+  lsp::Range def_range;
+  std::string def_uri;
   bool is_cross_file;  // true = from preamble, false = local
 
   // Symbol information
@@ -143,8 +141,7 @@ class SemanticIndex {
         : index_(index),
           source_manager_(source_manager),
           current_file_uri_(std::move(current_file_uri)),
-          preamble_manager_(preamble_manager),
-          definition_extractor_(index.logger_) {
+          preamble_manager_(preamble_manager) {
     }
 
     // Expression handlers
@@ -201,9 +198,6 @@ class SemanticIndex {
     std::string current_file_uri_;
     const services::PreambleManager* preamble_manager_;
 
-    // Definition extractor for precise symbol range extraction
-    DefinitionExtractor definition_extractor_;
-
     // Track which type syntax nodes we've already traversed
     // Prevents duplicate traversal when multiple symbols share the same type
     // syntax (e.g., `logic [WIDTH-1:0] var_a, var_b;` - both variables share
@@ -230,15 +224,15 @@ class SemanticIndex {
 
     void AddReference(
         const slang::ast::Symbol& symbol, std::string_view name,
-        slang::SourceRange source_range, slang::SourceRange definition_range,
+        slang::SourceRange ref_range, lsp::Range def_range, std::string def_uri,
         const slang::ast::Scope* parent_scope);
 
     // For references where PreambleManager provides pre-converted LSP
     // definition coordinates
     void AddReferenceWithLspDefinition(
         const slang::ast::Symbol& symbol, std::string_view name,
-        slang::SourceRange source_range, lsp::Range definition_range,
-        std::string definition_uri, const slang::ast::Scope* parent_scope);
+        slang::SourceRange ref_range, lsp::Range def_range, std::string def_uri,
+        const slang::ast::Scope* parent_scope);
 
     void TraverseType(const slang::ast::Type& type);
 

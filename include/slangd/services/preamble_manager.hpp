@@ -30,8 +30,8 @@ namespace slangd::services {
 
 // Precomputed LSP location info for preamble symbols
 struct PreambleSymbolInfo {
-  std::string file_uri;         // Buffer-independent file path
-  lsp::Range definition_range;  // Precise name range (start + end)
+  std::string file_uri;  // Buffer-independent file path
+  lsp::Range def_range;  // Precise name range (start + end)
 };
 
 // Package metadata extracted from preamble compilation
@@ -64,7 +64,7 @@ struct ParameterInfo {
 struct ModuleInfo {
   std::string name;
   CanonicalPath file_path;
-  lsp::Range definition_range;
+  lsp::Range def_range;
   std::vector<PortInfo> ports;
   std::vector<ParameterInfo> parameters;
 
