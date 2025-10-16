@@ -178,6 +178,111 @@ TEST_CASE("my_symbol self-definition") {
 
 Test parameters: `reference_index` (which occurrence to click), `definition_index` (target occurrence)
 
+## Safe Range Conversion (Critical for Cross-Compilation)
+
+**SAFETY-FIRST PRINCIPLE: Always match SourceManager to BufferID ownership**
+
+With cross-compilation (PreambleManager + OverlaySession), using the wrong SourceManager causes crashes or incorrect line numbers. BufferIDs in source ranges belong to the SourceManager that parsed the syntax.
+
+### Decision Tree for Range Conversion
+
+**Question 1: Is this a definition or reference?**
+
+**If DEFINITION:**
+
+```cpp
+// Use symbol.location (points to definition name)
+auto def_loc = CreateSymbolLspLocation(symbol);
+```
+
+**If REFERENCE, ask Question 2:**
+
+**Question 2: Where does the syntax come from?**
+
+**Path A - Symbol's Own Syntax** (from `symbol.getSyntax()`):
+
+```cpp
+// Example: End block name reference
+const auto* syntax = subroutine.getSyntax();
+const auto& func_syntax = syntax->as<FunctionDeclarationSyntax>();
+auto ref_loc = CreateLspLocation(subroutine, func_syntax.endBlockName->name.range());
+```
+
+Use `CreateLspLocation(symbol, range)` - derives SM from symbol's compilation.
+
+**When:** Range extracted from `symbol.getSyntax()` syntax tree.
+
+**Path B - Current File Expression** (from expression/syntax visitor):
+
+```cpp
+// Example: Expression referencing preamble symbol
+auto reference_range = expr.sourceRange;  // From overlay
+auto ref_loc = ConvertExpressionRange(reference_range);
+```
+
+Use `ConvertExpressionRange(range)` - uses overlay's SM (IndexVisitor's compilation).
+
+**When:** Range from current file expressions, import statements, parameter syntax, etc.
+
+### Why This Matters
+
+**Critical scenario:** Referencing preamble symbol from overlay syntax.
+
+```cpp
+// Current file (overlay): uses pkg::BUS_WIDTH
+// BUS_WIDTH symbol: from preamble compilation
+// identifier "BUS_WIDTH": parsed by overlay's SourceManager
+
+// WRONG - causes line number mismatch:
+auto ref_loc = CreateLspLocation(pkg_symbol, expr.identifier.range());
+// Uses preamble's SM with overlay's BufferID → wrong file mapping
+
+// CORRECT - uses matching SM:
+auto ref_loc = ConvertExpressionRange(expr.identifier.range());
+// Uses overlay's SM with overlay's BufferID → correct mapping
+```
+
+### Common Expression Path Scenarios
+
+All these use syntax from **current file** and require `ConvertExpressionRange`:
+
+```cpp
+// Import statements
+auto ref_loc = ConvertExpressionRange(import_item.package.range());
+auto ref_loc = ConvertExpressionRange(import_item.item.range());
+
+// Named parameters (instance syntax)
+auto ref_loc = ConvertExpressionRange(named_param.name.range());
+
+// Package scoped identifiers (pkg::item)
+auto ref_loc = ConvertExpressionRange(ident.identifier.range());
+
+// Value expressions
+auto ref_loc = ConvertExpressionRange(expr.sourceRange);
+```
+
+### Implementation Notes
+
+**ConvertExpressionRange:** "Pragmatic exception" - expressions don't provide SM derivation, so IndexVisitor uses its compilation's SM (overlay). This is safe because all expression syntax comes from the current file being indexed.
+
+**CreateLspLocation(symbol, range):** Derives SM via `symbol.getParentScope()->getCompilation()`. Use only when range comes from symbol's own syntax tree.
+
+**Rule of thumb:** If you're in an expression handler (`handle(SomeExpression&)`) or processing syntax from import/parameter/instantiation statements, use `ConvertExpressionRange`. If you're processing a symbol's own syntax node retrieved via `symbol.getSyntax()`, use `CreateLspLocation(symbol, range)`.
+
+### Expression Whitelist (Critical Safety Constraint)
+
+**CRITICAL:** `ConvertExpressionRange` is **ONLY** safe for **whitelisted expression handlers**.
+
+After several segfaults from BufferID/SourceManager mismatches, we adopted a safety-first whitelist approach:
+
+**Whitelisted:** Expression handlers (`handle(NamedValueExpression&)`, `handle(CallExpression&)`), import statements, instantiation parameters.
+
+**NOT whitelisted:** TypeReference handlers, symbol-derived syntax (`symbol.getSyntax()`), end block names.
+
+**Pattern:** Functions accepting syntax from multiple contexts use `std::optional<Symbol&> syntax_owner` to explicitly select conversion path. `has_value()` → Symbol Path, `nullopt` → Expression Path (whitelisted only).
+
+See `PACKAGE_PREAMBLE.md` for detailed safety architecture.
+
 ## Cross-File Module Instantiation
 
 Module navigation differs from other features due to cross-compilation metadata lookup.

@@ -4,7 +4,7 @@
 
 namespace slangd {
 
-auto ConvertSlangLocationToLspRange(
+auto ToLspRange(
     const slang::SourceLocation& location,
     const slang::SourceManager& source_manager) -> lsp::Range {
   if (!location) {
@@ -23,7 +23,7 @@ auto ConvertSlangLocationToLspRange(
   return lsp::Range{.start = position, .end = position};
 }
 
-auto ConvertSlangRangeToLspRange(
+auto ToLspRange(
     const slang::SourceRange& range, const slang::SourceManager& source_manager)
     -> lsp::Range {
   if (!range.start() || !range.end()) {
@@ -47,7 +47,7 @@ auto ConvertSlangRangeToLspRange(
   return lsp::Range{.start = start_pos, .end = end_pos};
 }
 
-auto ConvertLspPositionToSlangLocation(
+auto ToSlangLocation(
     const lsp::Position& position, const slang::BufferID& buffer_id,
     const slang::SourceManager& source_manager) -> slang::SourceLocation {
   // Get the text content for this buffer
@@ -95,7 +95,7 @@ auto ConvertLspPositionToSlangLocation(
   return {buffer_id, offset};
 }
 
-auto ConvertSlangLocationToLspLocation(
+auto ToLspLocation(
     const slang::SourceLocation& location,
     const slang::SourceManager& source_manager) -> lsp::Location {
   if (!location) {
@@ -108,13 +108,13 @@ auto ConvertSlangLocationToLspLocation(
   auto uri = canonical_path.ToUri();
 
   // Create a range at this position
-  auto range = ConvertSlangLocationToLspRange(location, source_manager);
+  auto range = ToLspRange(location, source_manager);
 
   // Create and return the LSP location
   return lsp::Location{.uri = lsp::DocumentUri(uri), .range = range};
 }
 
-auto ConvertSlangLocationToLspPosition(
+auto ToLspPosition(
     const slang::SourceLocation& location,
     const slang::SourceManager& source_manager) -> lsp::Position {
   if (!location) {

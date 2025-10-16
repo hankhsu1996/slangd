@@ -124,13 +124,11 @@ auto DiagnosticConverter::ConvertSlangDiagnosticsToLsp(
 
     if (diag.ranges.size() > 0) {
       // Explicitly select the first range
-      lsp_diag.range =
-          ConvertSlangRangeToLspRange(diag.ranges[0], source_manager);
+      lsp_diag.range = ToLspRange(diag.ranges[0], source_manager);
     }
     // Convert location to range
     else if (diag.location) {
-      lsp_diag.range =
-          ConvertSlangLocationToLspRange(diag.location, source_manager);
+      lsp_diag.range = ToLspRange(diag.location, source_manager);
     }
     // Fallback to an empty range at the start of the file
     else {

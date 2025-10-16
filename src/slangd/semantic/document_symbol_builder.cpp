@@ -36,8 +36,9 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
       continue;
     }
 
-    // Skip genvar loop variables - they're just counters, not meaningful
-    // symbols
+    // Skip genvar symbols - they're indexed for go-to-definition but not shown
+    // in document symbols (like for-loop variables in software languages)
+    // Note: Implicit genvar localparams are filtered in semantic_index.cpp
     if (entry.symbol->kind == slang::ast::SymbolKind::Genvar) {
       continue;
     }
@@ -215,26 +216,11 @@ auto DocumentSymbolBuilder::AttachChildrenToSymbol(
 
       // Add all symbols from the template (first entry only)
       for (const auto& member : block_scope.members()) {
-        // Skip genvar loop parameters (they appear as Parameters inside
-        // generate blocks) But keep legitimate user-declared localparams
-        if (member.kind == slang::ast::SymbolKind::Parameter &&
-            member.as<slang::ast::ParameterSymbol>().isLocalParam()) {
-          // Check if this local parameter has the same name as a genvar in the
-          // GenerateBlockArray If so, it's the genvar loop iteration variable
-          // and should be filtered
-          bool is_genvar_param = false;
-
-          // Check GenerateBlockArray members for matching genvar
-          for (const auto& gen_member : gen_array.members()) {
-            if (gen_member.kind == slang::ast::SymbolKind::Genvar &&
-                gen_member.name == member.name) {
-              is_genvar_param = true;
-              break;
-            }
-          }
-          if (is_genvar_param) {
-            continue;  // Skip genvar loop iteration variable
-          }
+        // Skip genvar symbols (they're indexed for go-to-definition but not
+        // shown in document symbols)
+        // Note: Implicit genvar localparams are filtered in semantic_index.cpp
+        if (member.kind == slang::ast::SymbolKind::Genvar) {
+          continue;
         }
 
         if (ShouldIndexForDocumentSymbols(member)) {

@@ -16,8 +16,6 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
-#include "slangd/utils/conversion.hpp"
-
 namespace slangd::services {
 class PreambleManager;
 }
@@ -136,11 +134,11 @@ class SemanticIndex {
   class IndexVisitor : public slang::ast::ASTVisitor<IndexVisitor, true, true> {
    public:
     explicit IndexVisitor(
-        SemanticIndex& index, const slang::SourceManager& source_manager,
+        SemanticIndex& index, slang::ast::Compilation& compilation,
         std::string current_file_uri,
         const services::PreambleManager* preamble_manager)
         : index_(index),
-          source_manager_(source_manager),
+          compilation_(compilation),
           current_file_uri_(std::move(current_file_uri)),
           preamble_manager_(preamble_manager) {
     }
@@ -195,7 +193,7 @@ class SemanticIndex {
 
    private:
     std::reference_wrapper<SemanticIndex> index_;
-    std::reference_wrapper<const slang::SourceManager> source_manager_;
+    std::reference_wrapper<slang::ast::Compilation> compilation_;
     std::string current_file_uri_;
     const services::PreambleManager* preamble_manager_;
 
@@ -220,7 +218,7 @@ class SemanticIndex {
 
     void AddDefinition(
         const slang::ast::Symbol& symbol, std::string_view name,
-        slang::SourceRange range, const slang::ast::Scope* parent_scope,
+        lsp::Location def_loc, const slang::ast::Scope* parent_scope,
         const slang::ast::Scope* children_scope = nullptr);
 
     void AddReference(
@@ -235,11 +233,14 @@ class SemanticIndex {
         lsp::Range ref_range, lsp::Location def_loc,
         const slang::ast::Scope* parent_scope);
 
-    // Helper to convert Slang reference ranges to LSP coordinates
-    [[nodiscard]] auto ConvertRefRange(slang::SourceRange range) const
-        -> lsp::Range {
-      return ConvertSlangRangeToLspRange(range, source_manager_.get());
-    }
+    // PRAGMATIC EXCEPTION: Convert expression ranges using IndexVisitor's
+    // compilation
+    // SAFETY NOTE: This uses IndexVisitor's compilation_ which is scoped to
+    // the current indexing operation. Expression ranges are assumed to be from
+    // current file. This is a controlled exception to the "always derive SM
+    // from symbol" rule. See docs/SEMANTIC_INDEXING.md for safety model.
+    auto ConvertExpressionRange(slang::SourceRange range)
+        -> std::optional<lsp::Location>;
 
     void TraverseType(const slang::ast::Type& type);
 
@@ -260,8 +261,18 @@ class SemanticIndex {
         const slang::ast::InstanceSymbol& instance,
         const slang::syntax::ParameterValueAssignmentSyntax& params);
 
+    // Index package name in scoped references (pkg::item)
+    //
+    // SAFETY-FIRST WHITELIST APPROACH:
+    // - syntax_owner provided → Symbol Path (CreateLspLocation)
+    //   Used when syntax from symbol.getSyntax() (e.g., TypeReference)
+    // - syntax_owner = nullopt → Expression Path (ConvertExpressionRange)
+    //   ONLY for whitelisted expression handlers (NamedValue, Call, etc.)
+    //   NEVER use nullopt for TypeReference or symbol-derived syntax
     void IndexPackageInScopedName(
         const slang::syntax::SyntaxNode* syntax,
+        std::optional<std::reference_wrapper<const slang::ast::Symbol>>
+            syntax_owner,
         const slang::ast::Symbol& target_symbol);
   };
 };
