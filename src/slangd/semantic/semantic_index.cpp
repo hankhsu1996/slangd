@@ -280,7 +280,6 @@ void SemanticIndex::IndexVisitor::AddDefinition(
   auto entry = SemanticEntry{
       .ref_range = def_loc.range,
       .def_loc = def_loc,
-      .is_cross_file = false,
       .symbol = &unwrapped,
       .lsp_kind = ConvertToLspKind(unwrapped),
       .name = std::string(name),
@@ -297,48 +296,9 @@ void SemanticIndex::IndexVisitor::AddReference(
     const slang::ast::Scope* parent_scope) {
   const auto& unwrapped = UnwrapSymbol(symbol);
 
-  // Check if symbol is from preamble by comparing compilations
-  if (preamble_manager_ != nullptr) {
-    const auto* symbol_scope = symbol.getParentScope();
-    if (symbol_scope != nullptr) {
-      const auto& symbol_compilation = symbol_scope->getCompilation();
-      const auto& preamble_compilation = preamble_manager_->GetCompilation();
-
-      if (&symbol_compilation == &preamble_compilation) {
-        // Preamble symbol - use pre-converted LSP coordinates from symbol_info_
-        auto info = preamble_manager_->GetSymbolInfo(&symbol);
-        if (info.has_value()) {
-          auto entry = SemanticEntry{
-              .ref_range = ref_range,
-              .def_loc = info->def_loc,
-              .is_cross_file = true,
-              .symbol = &unwrapped,
-              .lsp_kind = ConvertToLspKind(unwrapped),
-              .name = std::string(name),
-              .parent = parent_scope,
-              .children_scope = nullptr,
-              .is_definition = false};
-          AddEntry(std::move(entry));
-          return;
-        }
-
-        // Symbol from preamble BUT missing from symbol_info_
-        indexing_errors_.push_back(
-            fmt::format(
-                "Symbol '{}' belongs to preamble compilation but is missing "
-                "from symbol_info_. PreambleSymbolVisitor needs to index this "
-                "symbol type. Skipping reference to avoid crash.",
-                name));
-        return;
-      }
-    }
-  }
-
-  // Overlay symbol - use provided LSP coordinates
   auto entry = SemanticEntry{
       .ref_range = ref_range,
       .def_loc = def_loc,
-      .is_cross_file = false,  // Local symbol
       .symbol = &unwrapped,
       .lsp_kind = ConvertToLspKind(unwrapped),
       .name = std::string(name),
@@ -360,7 +320,6 @@ void SemanticIndex::IndexVisitor::AddReferenceWithLspDefinition(
   auto entry = SemanticEntry{
       .ref_range = ref_range,
       .def_loc = def_loc,
-      .is_cross_file = true,  // Always cross-file (preamble symbols)
       .symbol = &unwrapped,
       .lsp_kind = ConvertToLspKind(unwrapped),
       .name = std::string(name),
@@ -2437,8 +2396,7 @@ void SemanticIndex::ValidateSymbolCoverage(
     // Skip known built-in enum methods (these have no source definition)
     std::string_view token_text = token.valueText();
     if (token_text == "name" || token_text == "num" || token_text == "next" ||
-        token_text == "prev" || token_text == "first" ||
-        token_text == "last") {
+        token_text == "prev" || token_text == "first" || token_text == "last") {
       continue;
     }
 

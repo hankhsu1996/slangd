@@ -32,7 +32,6 @@ struct SemanticEntry {
   // LSP coordinates (reference location always in current_file_uri)
   lsp::Range ref_range;
   lsp::Location def_loc;  // Definition location (range + URI)
-  bool is_cross_file;     // true = from preamble, false = local
 
   // Symbol information
   const slang::ast::Symbol* symbol;

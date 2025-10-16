@@ -16,75 +16,6 @@
 
 namespace slangd::services {
 
-namespace {
-
-// Visitor for collecting all package symbols and their LSP locations
-class PreambleSymbolVisitor
-    : public slang::ast::ASTVisitor<PreambleSymbolVisitor, true, false> {
- public:
-  PreambleSymbolVisitor(
-      std::unordered_map<const slang::ast::Symbol*, PreambleSymbolInfo>&
-          symbol_info,
-      const slang::SourceManager& source_manager,
-      std::shared_ptr<spdlog::logger> logger)
-      : symbol_info_(symbol_info),
-        source_manager_(source_manager),
-        logger_(logger ? logger : spdlog::default_logger()) {
-  }
-
-  void ProcessSymbol(const slang::ast::Symbol& symbol) {
-    // Use safe conversion function (derives SM from symbol's compilation)
-    auto definition_loc = CreateSymbolLspLocation(symbol);
-    if (!definition_loc) {
-      return;  // Skip symbols without valid location or parent scope
-    }
-
-    // Store in map (symbol pointer as key)
-    symbol_info_.get()[&symbol] =
-        PreambleSymbolInfo{.def_loc = *definition_loc};
-  }
-
-  // Helper to traverse type members (struct/union/class/enum fields)
-  void TraverseTypeMembers(const slang::ast::Type& type) {
-    // Slang's getCanonicalType() already unwraps all aliases
-    const auto& canonical = type.getCanonicalType();
-
-    // Check if this is a type with members (struct, union, class, enum)
-    if (canonical.isStruct() || canonical.isUnion() || canonical.isClass() ||
-        canonical.isEnum()) {
-      // These types implement Scope interface - visit all members
-      const auto& scope = canonical.as<slang::ast::Scope>();
-      for (const auto& member : scope.members()) {
-        member.visit(*this);
-      }
-    }
-  }
-
-  template <typename T>
-  void handle(const T& node) {
-    // For symbols, process and store their info
-    if constexpr (std::is_base_of_v<slang::ast::Symbol, T>) {
-      ProcessSymbol(node);
-
-      // For type aliases, also traverse into the type's members
-      if constexpr (std::is_same_v<T, slang::ast::TypeAliasType>) {
-        TraverseTypeMembers(node.targetType.getType());
-      }
-    }
-    // Always recurse to children
-    this->visitDefault(node);
-  }
-
- private:
-  std::reference_wrapper<
-      std::unordered_map<const slang::ast::Symbol*, PreambleSymbolInfo>>
-      symbol_info_;
-  std::reference_wrapper<const slang::SourceManager> source_manager_;
-  std::shared_ptr<spdlog::logger> logger_;
-};
-
-}  // namespace
-
 auto PreambleManager::CreateFromProjectLayout(
     std::shared_ptr<ProjectLayoutService> layout_service,
     std::shared_ptr<spdlog::logger> logger)
@@ -127,12 +58,9 @@ auto PreambleManager::BuildFromLayout(
   slang::Bag options;
   slang::parsing::PreprocessorOptions pp_options;
 
-  // Disable implicit net declarations for stricter diagnostics
   pp_options.initialDefaultNetType = slang::parsing::TokenKind::Unknown;
 
-  // Configure lexer options for compatibility
   slang::parsing::LexerOptions lexer_options;
-  // Enable legacy protection directives for compatibility with older codebases
   lexer_options.enableLegacyProtect = true;
   options.set(lexer_options);
 
@@ -154,11 +82,7 @@ auto PreambleManager::BuildFromLayout(
 
   // Create compilation options for LSP mode
   slang::ast::CompilationOptions comp_options;
-  // NOTE: We do NOT use LintMode here because it marks all scopes as
-  // uninstantiated, which suppresses diagnostics inside generate blocks.
-  // LanguageServerMode provides sufficient support for single-file analysis.
   comp_options.flags |= slang::ast::CompilationFlags::LanguageServerMode;
-  // Set unlimited error limit for LSP - users need to see all diagnostics
   comp_options.errorLimit = 0;
   options.set(comp_options);
 
@@ -188,14 +112,11 @@ auto PreambleManager::BuildFromLayout(
     }
   }
 
-  // Extract package metadata using safe Slang API (NO getRoot() call!)
   auto packages = preamble_compilation_->getPackages();
   logger_->debug("PreambleManager: Extracting {} packages", packages.size());
 
   packages_.clear();
   packages_.reserve(packages.size());
-
-  // Build package_map_ for cross-compilation binding
   package_map_.clear();
 
   for (const auto* package : packages) {
@@ -210,39 +131,22 @@ auto PreambleManager::BuildFromLayout(
     packages_.push_back(
         {.name = std::move(package_name),
          .file_path = std::move(package_file_path)});
-
-    // Store PackageSymbol* for cross-compilation binding
     package_map_[std::string(package->name)] = package;
   }
 
-  // Build symbol_info_ by traversing ALL package symbols
-  logger_->debug("PreambleManager: Building symbol info table");
-  symbol_info_.clear();
-  PreambleSymbolVisitor visitor(symbol_info_, *source_manager_, logger_);
-  for (const auto* pkg : packages) {
-    if (pkg != nullptr) {
-      pkg->visit(visitor);  // Visitor automatically recurses
-    }
-  }
-
-  logger_->debug(
-      "PreambleManager: Indexed {} package symbols", symbol_info_.size());
-
-  // Extract interface metadata using safe Slang API
   auto definitions = preamble_compilation_->getDefinitions();
   logger_->debug(
       "PreambleManager: Extracting interfaces from {} definitions",
       definitions.size());
 
   interfaces_.clear();
-  interfaces_.reserve(definitions.size());  // Upper bound estimate
+  interfaces_.reserve(definitions.size());
 
   for (const auto* symbol : definitions) {
     if (symbol == nullptr) {
       continue;
     }
 
-    // Check if this symbol is a DefinitionSymbol and if it's an interface
     if (symbol->kind == slang::ast::SymbolKind::Definition) {
       const auto& definition = symbol->as<slang::ast::DefinitionSymbol>();
 
@@ -258,18 +162,16 @@ auto PreambleManager::BuildFromLayout(
     }
   }
 
-  // Extract module metadata using safe Slang API
   logger_->debug("PreambleManager: Extracting modules from definitions");
 
   modules_.clear();
-  modules_.reserve(definitions.size());  // Upper bound estimate
+  modules_.reserve(definitions.size());
 
   for (const auto* symbol : definitions) {
     if (symbol == nullptr) {
       continue;
     }
 
-    // Check if this symbol is a DefinitionSymbol and if it's a module
     if (symbol->kind == slang::ast::SymbolKind::Definition) {
       const auto& definition = symbol->as<slang::ast::DefinitionSymbol>();
 
@@ -278,8 +180,6 @@ auto PreambleManager::BuildFromLayout(
         auto file_path_str = source_manager_->getFileName(definition.location);
         CanonicalPath module_file_path(file_path_str);
 
-        // Extract definition range from module declaration syntax and convert
-        // to LSP
         lsp::Range definition_range_lsp{};
         if (const auto* syntax = definition.getSyntax()) {
           if (syntax->kind == slang::syntax::SyntaxKind::ModuleDeclaration) {
@@ -293,7 +193,6 @@ auto PreambleManager::BuildFromLayout(
           }
         }
 
-        // Extract parameters and convert to LSP coordinates
         std::vector<ParameterInfo> parameters;
         parameters.reserve(definition.parameters.size());
         for (const auto& param : definition.parameters) {
@@ -307,8 +206,6 @@ auto PreambleManager::BuildFromLayout(
               {.name = std::string(param.name), .def_range = param_range_lsp});
         }
 
-        // Extract ports (ANSI ports only - non-ANSI ports not yet supported)
-        // and convert to LSP coordinates
         std::vector<PortInfo> ports;
         if (definition.portList != nullptr &&
             definition.portList->kind ==
@@ -347,17 +244,12 @@ auto PreambleManager::BuildFromLayout(
     }
   }
 
-  // Build module lookup map for O(1) access
   module_lookup_.clear();
   for (auto& module : modules_) {
     module_lookup_[module.name] = &module;
-
-    // Build port lookup map for O(1) access
     for (const auto& port : module.ports) {
       module.port_lookup[port.name] = &port;
     }
-
-    // Build parameter lookup map for O(1) access
     for (const auto& param : module.parameters) {
       module.parameter_lookup[param.name] = &param;
     }
@@ -422,15 +314,6 @@ auto PreambleManager::GetPackage(std::string_view name) const
     return it->second;
   }
   return nullptr;
-}
-
-auto PreambleManager::GetSymbolInfo(const slang::ast::Symbol* symbol) const
-    -> std::optional<PreambleSymbolInfo> {
-  auto it = symbol_info_.find(symbol);
-  if (it != symbol_info_.end()) {
-    return it->second;
-  }
-  return std::nullopt;
 }
 
 }  // namespace slangd::services
