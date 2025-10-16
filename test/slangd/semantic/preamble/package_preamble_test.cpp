@@ -190,3 +190,46 @@ TEST_CASE(
     co_return;
   });
 }
+
+TEST_CASE(
+    "Enum member go-to-definition with cross-file preamble",
+    "[package][preamble][enum]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def = R"(
+      package status_pkg;
+        typedef enum logic {
+          STATUS_ERROR = 1'b1,
+          STATUS_OK    = 1'b0
+        } status_t;
+      endpackage
+    )";
+
+    const std::string ref = R"(
+      module processor;
+        import status_pkg::*;
+        status_t result;
+
+        initial begin
+          result = STATUS_OK;
+          if (result == STATUS_ERROR) begin
+            result = STATUS_OK;
+          end
+        end
+      endmodule
+    )";
+
+    fixture.CreateBufferIDOffset();
+    fixture.CreateFile("status_pkg.sv", def);
+    fixture.CreateFile("processor.sv", ref);
+
+    auto session = fixture.BuildSession("processor.sv", executor);
+    REQUIRE(session != nullptr);
+
+    Fixture::AssertCrossFileDef(*session, ref, def, "STATUS_OK", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "STATUS_ERROR", 0, 0);
+
+    co_return;
+  });
+}

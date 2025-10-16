@@ -63,13 +63,14 @@ class PreambleSymbolVisitor
         .file_uri = file_uri, .definition_range = definition_range};
   }
 
-  // Helper to traverse type members (struct/union/class fields)
+  // Helper to traverse type members (struct/union/class/enum fields)
   void TraverseTypeMembers(const slang::ast::Type& type) {
     // Slang's getCanonicalType() already unwraps all aliases
     const auto& canonical = type.getCanonicalType();
 
-    // Check if this is a type with members (struct, union, class)
-    if (canonical.isStruct() || canonical.isUnion() || canonical.isClass()) {
+    // Check if this is a type with members (struct, union, class, enum)
+    if (canonical.isStruct() || canonical.isUnion() || canonical.isClass() ||
+        canonical.isEnum()) {
       // These types implement Scope interface - visit all members
       const auto& scope = canonical.as<slang::ast::Scope>();
       for (const auto& member : scope.members()) {
