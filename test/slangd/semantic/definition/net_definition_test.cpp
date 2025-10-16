@@ -7,7 +7,7 @@
 #include <slang/util/Enum.h>
 #include <spdlog/spdlog.h>
 
-#include "../../common/simple_fixture.hpp"
+#include "../../common/semantic_fixture.hpp"
 
 constexpr auto kLogLevel = spdlog::level::debug;
 
@@ -23,10 +23,9 @@ auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
 }
 
-using slangd::test::SimpleTestFixture;
+using Fixture = slangd::test::SemanticTestFixture;
 
 TEST_CASE("SemanticIndex net self-definition lookup works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module net_test;
       wire [31:0] bus_data;
@@ -37,17 +36,19 @@ TEST_CASE("SemanticIndex net self-definition lookup works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "bus_data", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "tri_signal", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "gnd", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "vdd", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "reset_n", 0, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "bus_data", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "tri_signal", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "gnd", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "vdd", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "reset_n", 0, 0);
 }
 
 TEST_CASE(
     "SemanticIndex net reference go-to-definition works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module net_reference_test;
       wire [31:0] bus_data;
@@ -63,17 +64,20 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "bus_data", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "bus_data", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "tri_signal", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "gnd", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "vdd", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "result", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "bus_data", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "bus_data", 2, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "tri_signal", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "gnd", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "vdd", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "result", 1, 0);
 }
 
 TEST_CASE("SemanticIndex complex net expressions work", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module complex_net_test;
       wire [31:0] data_in;
@@ -93,22 +97,30 @@ TEST_CASE("SemanticIndex complex net expressions work", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "data_in", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "data_out", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "enable", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "data_in", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "addr", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "data_in", 3, 0);
-  fixture.AssertGoToDefinition(*index, code, "enable", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "intermediate", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "data_in", 4, 0);
-  fixture.AssertGoToDefinition(*index, code, "gnd", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "data_out", 2, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "data_in", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "data_out", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "enable", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "data_in", 2, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "addr", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "data_in", 3, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "enable", 2, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "intermediate", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "data_in", 4, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "gnd", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "data_out", 2, 0);
 }
 
 TEST_CASE("SemanticIndex multiple net declarations work", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module multi_net_test;
       // Multiple nets in one declaration
@@ -127,20 +139,20 @@ TEST_CASE("SemanticIndex multiple net declarations work", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
   // Test self-definitions for multiple nets in one declaration
-  fixture.AssertGoToDefinition(*index, code, "a", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "b", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "c", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "x", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "y", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "z", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "a", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "b", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "c", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "x", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "y", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "z", 0, 0);
 
   // Test references to these nets
-  fixture.AssertGoToDefinition(*index, code, "a", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "b", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "x", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "y", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "z", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "a", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "b", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "x", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "y", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "z", 1, 0);
 }

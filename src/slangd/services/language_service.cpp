@@ -7,7 +7,6 @@
 #include "slangd/semantic/diagnostic_converter.hpp"
 #include "slangd/services/preamble_manager.hpp"
 #include "slangd/utils/canonical_path.hpp"
-#include "slangd/utils/conversion.hpp"
 #include "slangd/utils/scoped_timer.hpp"
 
 namespace slangd::services {
@@ -143,42 +142,10 @@ auto LanguageService::GetDefinitionsForPosition(
   // Use callback pattern to access session without shared_ptr escape
   auto result = co_await session_manager_->WithSession(
       uri, [this, uri, position](const OverlaySession& session) {
-        // Get source manager and convert position to location
-        const auto& source_manager = session.GetSourceManager();
-        auto buffers = source_manager.getAllBuffers();
-        if (buffers.empty()) {
-          logger_->warn("No buffers found in source manager for: {}", uri);
-          return std::vector<lsp::Location>{};
-        }
-
-        // Find the buffer that matches the requested URI
-        auto target_path = CanonicalPath::FromUri(uri);
-        slang::BufferID target_buffer;
-        bool found_buffer = false;
-
-        for (const auto& buffer_id : buffers) {
-          auto buffer_path = source_manager.getFullPath(buffer_id);
-          if (buffer_path == target_path.String()) {
-            target_buffer = buffer_id;
-            found_buffer = true;
-            break;
-          }
-        }
-
-        if (!found_buffer) {
-          logger_->warn(
-              "No buffer found matching URI: {} (path: {}), using fallback",
-              uri, target_path.String());
-          // Fallback to first buffer (old behavior)
-          target_buffer = buffers[0];
-        }
-
-        auto location = ConvertLspPositionToSlangLocation(
-            position, target_buffer, source_manager);
-
-        // Look up definition using semantic index
+        // Look up definition using semantic index with LSP coordinates
         auto def_loc_opt =
-            session.GetSemanticIndex().LookupDefinitionAt(location);
+            session.GetSemanticIndex().LookupDefinitionAt(uri, position);
+
         if (!def_loc_opt) {
           logger_->debug(
               "No definition found at position {}:{} in {}", position.line,
@@ -186,21 +153,8 @@ auto LanguageService::GetDefinitionsForPosition(
           return std::vector<lsp::Location>{};
         }
 
-        // Convert to LSP location based on definition type
-        lsp::Location lsp_location;
-        if (def_loc_opt->cross_file_path.has_value()) {
-          // Cross-file definition - use pre-converted path and range
-          lsp_location.uri = def_loc_opt->cross_file_path->ToUri();
-          lsp_location.range = *def_loc_opt->cross_file_range;
-        } else {
-          // Same-file definition - convert using current source manager
-          lsp_location = ConvertSlangLocationToLspLocation(
-              def_loc_opt->same_file_range->start(), source_manager);
-          lsp_location.range = ConvertSlangRangeToLspRange(
-              *def_loc_opt->same_file_range, source_manager);
-        }
-
-        return std::vector<lsp::Location>{lsp_location};
+        // Return the location directly (already lsp::Location)
+        return std::vector<lsp::Location>{*def_loc_opt};
       });
 
   if (!result) {

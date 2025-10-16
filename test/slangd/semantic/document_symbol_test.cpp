@@ -10,7 +10,7 @@
 #include <slang/util/Enum.h>
 #include <spdlog/spdlog.h>
 
-#include "../common/simple_fixture.hpp"
+#include "../common/semantic_fixture.hpp"
 #include "slangd/semantic/semantic_index.hpp"
 
 constexpr auto kLogLevel = spdlog::level::debug;
@@ -27,17 +27,11 @@ auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
 }
 
-using slangd::test::SimpleTestFixture;
-
-// Helper function to get consistent test URI
-inline auto GetTestUri() -> std::string {
-  return "file:///test.sv";
-}
+using Fixture = slangd::test::SemanticTestFixture;
 
 TEST_CASE(
     "SemanticIndex GetDocumentSymbols with enum hierarchy",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module test_module;
       typedef enum logic [1:0] {
@@ -48,11 +42,11 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Find enum in module and verify it contains enum members
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "state_t", lsp::SymbolKind::kEnum);
 
   // Find the enum to verify it has the right number of children
@@ -66,7 +60,6 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex GetDocumentSymbols includes struct fields",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package test_pkg;
       typedef struct {
@@ -77,11 +70,11 @@ TEST_CASE(
     endpackage
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Find struct in package and verify it contains struct fields
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "packet_t", lsp::SymbolKind::kStruct);
 
   // Find the struct to verify it has the right number of children
@@ -95,7 +88,6 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex handles symbols with empty names for VSCode compatibility",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module test_module;
       generate
@@ -106,8 +98,8 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // All document symbols should have non-empty names (VSCode requirement)
   std::function<void(const std::vector<lsp::DocumentSymbol>&)> check_names;
@@ -126,7 +118,6 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex filters out genvar loop variables from document symbols",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module sub_module;
     endmodule
@@ -143,8 +134,8 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Check that genvar 'entry' is not in document symbols anywhere
   std::function<void(const std::vector<lsp::DocumentSymbol>&)> check_no_genvar;
@@ -163,18 +154,17 @@ TEST_CASE(
   check_no_genvar(symbols);
 
   // Verify that other meaningful symbols are still there
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "test_module", lsp::SymbolKind::kClass);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "gen_loop", lsp::SymbolKind::kNamespace);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "local_signal", lsp::SymbolKind::kVariable);
 }
 
 TEST_CASE(
     "SemanticIndex ShouldIndexForDocumentSymbols filters genvar correctly",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module test_module;
       logic signal;
@@ -186,8 +176,8 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Genvar 'i' should be filtered out of document symbols
   std::function<void(const std::vector<lsp::DocumentSymbol>&)> check_no_genvar;
@@ -204,18 +194,17 @@ TEST_CASE(
   check_no_genvar(symbols);
 
   // But meaningful symbols should still be there
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "test_module", lsp::SymbolKind::kClass);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "signal", lsp::SymbolKind::kVariable);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "gen_block", lsp::SymbolKind::kNamespace);
 }
 
 TEST_CASE(
     "SemanticIndex ConvertToLspKind handles complex type aliases",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module test_module;
       typedef enum logic [1:0] {
@@ -229,8 +218,8 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Find enum and struct typedefs and verify correct LSP kinds
   std::function<void(const std::vector<lsp::DocumentSymbol>&)> check_symbols;
@@ -254,7 +243,6 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex handles nested scope definitions in document symbols",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module nested_test;
       logic clk;
@@ -267,15 +255,15 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Test document symbol hierarchy for nested scopes
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "nested_test", lsp::SymbolKind::kClass);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "named_block", lsp::SymbolKind::kNamespace);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "nested_signal", lsp::SymbolKind::kVariable);
 }
 
@@ -283,7 +271,6 @@ TEST_CASE(
     "SemanticIndex handles multiple declarations on single line in document "
     "symbols",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module multi_decl_test;
       logic sig1, sig2, sig3;
@@ -292,15 +279,15 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Test that all symbols from multi-declarations appear in document symbols
   const std::vector<std::string> expected = {
       "sig1", "sig2", "sig3", "byte1", "byte2", "byte3", "w1", "w2", "w3"};
 
   for (const auto& symbol_name : expected) {
-    SimpleTestFixture::AssertDocumentSymbolExists(
+    Fixture::AssertDocumentSymbolExists(
         symbols, symbol_name, lsp::SymbolKind::kVariable);
   }
 }
@@ -308,7 +295,6 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex package definitions in document symbols",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package test_pkg;
       parameter WIDTH = 32;
@@ -316,22 +302,21 @@ TEST_CASE(
     endpackage
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Test package and its contents appear in document symbols
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "test_pkg", lsp::SymbolKind::kPackage);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "WIDTH", lsp::SymbolKind::kConstant);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "data_t", lsp::SymbolKind::kTypeParameter);
 }
 
 TEST_CASE(
     "SemanticIndex struct and union types in document symbols",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module struct_test;
       typedef struct packed {
@@ -349,24 +334,23 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Test struct/union types and instances appear in document symbols
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "packet_t", lsp::SymbolKind::kStruct);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "data_t", lsp::SymbolKind::kStruct);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "pkt", lsp::SymbolKind::kVariable);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "data", lsp::SymbolKind::kVariable);
 }
 
 TEST_CASE(
     "SemanticIndex module with package imports in document symbols",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package test_pkg;
       parameter WIDTH = 32;
@@ -379,22 +363,21 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Test that imported symbols and using module appear in document symbols
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "test_pkg", lsp::SymbolKind::kPackage);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "import_test", lsp::SymbolKind::kClass);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "test_signal", lsp::SymbolKind::kVariable);
 }
 
 TEST_CASE(
     "SemanticIndex handles interface ports in document symbols",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     interface cpu_if;
       logic [31:0] addr;
@@ -409,24 +392,23 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Test that interface and module with interface ports appear in document
   // symbols
   REQUIRE(!symbols.empty());
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "cpu_if", lsp::SymbolKind::kInterface);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "cpu_core", lsp::SymbolKind::kClass);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "internal_var", lsp::SymbolKind::kVariable);
 }
 
 TEST_CASE(
     "SemanticIndex handles enum and struct types in document symbols",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     interface test_if;
       logic clk;
@@ -452,23 +434,22 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Test LSP API: GetDocumentSymbols should return expected types
   REQUIRE(!symbols.empty());
 
   // Check for interface with modport and module
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "test_if", lsp::SymbolKind::kInterface);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "test_module", lsp::SymbolKind::kClass);
 }
 
 TEST_CASE(
     "SemanticIndex collects functions and tasks in document symbols",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module test_module;
       // Function with explicit return type
@@ -483,16 +464,16 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   REQUIRE(!symbols.empty());
   REQUIRE(symbols[0].children.has_value());
 
   // Find functions and tasks in module
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "simple_func", lsp::SymbolKind::kFunction);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "simple_task", lsp::SymbolKind::kFunction);
 
   // Verify function is a leaf node (no children shown in document symbols)
@@ -514,7 +495,6 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex collects symbols inside generate if blocks",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module test_gen;
       generate
@@ -526,22 +506,21 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Test that generate block appears in document symbols with correct children
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "gen_block", lsp::SymbolKind::kNamespace);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "gen_signal", lsp::SymbolKind::kVariable);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "GEN_PARAM", lsp::SymbolKind::kConstant);
 }
 
 TEST_CASE(
     "SemanticIndex collects symbols inside generate for loops",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module test_gen_for;
       generate
@@ -553,23 +532,22 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Test that generate for loop block and its contents appear in document
   // symbols
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "gen_loop", lsp::SymbolKind::kNamespace);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "loop_signal", lsp::SymbolKind::kVariable);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "LOOP_PARAM", lsp::SymbolKind::kConstant);
 }
 
 TEST_CASE(
     "SemanticIndex filters out truly empty generate blocks",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module test_empty_gen;
       parameter int WIDTH = 4;
@@ -581,8 +559,8 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Test that truly empty generate blocks are filtered out of document symbols
   REQUIRE(symbols.size() == 1);
@@ -604,7 +582,6 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex preserves generate blocks with assertions",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module test_assertion_gen;
       parameter int WIDTH = 4;
@@ -620,22 +597,21 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Test that generate blocks with assertions appear in document symbols
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "test_assertion_gen", lsp::SymbolKind::kClass);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "assertion_block", lsp::SymbolKind::kNamespace);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "check_value", lsp::SymbolKind::kVariable);
 }
 
 TEST_CASE(
     "SemanticIndex handles assertion symbols in generate blocks",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module test_assertion_gen;
       parameter int WIDTH = 4;
@@ -651,13 +627,13 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Test that assertion symbols are properly classified in document symbols
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "assertion_block", lsp::SymbolKind::kNamespace);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "check_value", lsp::SymbolKind::kVariable);
 
   // Find the assertion to verify it's not classified as kObject
@@ -689,7 +665,6 @@ TEST_CASE(
     "SemanticIndex function internals not in document symbols but available "
     "for goto-definition",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module test_module;
       function automatic logic my_function();
@@ -701,15 +676,15 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
   // Test 1: Document symbols should NOT show function internals
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
   REQUIRE(!symbols.empty());
   REQUIRE(symbols[0].children.has_value());
 
   // Find the function
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "my_function", lsp::SymbolKind::kFunction);
 
   // Find the function to verify it has no children
@@ -725,15 +700,13 @@ TEST_CASE(
 
   // Test 2: But local variables should still be in semantic index for
   // go-to-definition
-  SimpleTestFixture::AssertContainsSymbols(
-      *index, {"local_var", "local_array"});
+  Fixture::AssertContainsSymbols(*result.index, {"local_var", "local_array"});
 }
 
 TEST_CASE(
     "SemanticIndex non-parameterized class shows in document symbols with "
     "correct kind",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class SimpleClass;
       int data;
@@ -743,24 +716,22 @@ TEST_CASE(
     endclass
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Class should appear with kClass kind
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "SimpleClass", lsp::SymbolKind::kClass);
 
   // Class members should appear
-  SimpleTestFixture::AssertDocumentSymbolExists(
-      symbols, "data", lsp::SymbolKind::kField);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(symbols, "data", lsp::SymbolKind::kField);
+  Fixture::AssertDocumentSymbolExists(
       symbols, "get_data", lsp::SymbolKind::kFunction);
 }
 
 TEST_CASE(
     "SemanticIndex parameterized class shows in document symbols with members",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package test_pkg;
       class Buffer #(parameter int SIZE = 8, parameter int WIDTH = 32);
@@ -776,44 +747,43 @@ TEST_CASE(
     endpackage
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Package should exist
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "test_pkg", lsp::SymbolKind::kPackage);
 
   // Class should appear with kClass kind (not kObject)
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "Buffer", lsp::SymbolKind::kClass);
 
   // Class parameters should appear as constants
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "SIZE", lsp::SymbolKind::kConstant);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "WIDTH", lsp::SymbolKind::kConstant);
 
   // localparam should appear
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "ADDR_WIDTH", lsp::SymbolKind::kConstant);
 
   // typedef should appear
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "data_t", lsp::SymbolKind::kTypeParameter);
 
   // Class property should appear as field
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "memory", lsp::SymbolKind::kField);
 
   // Function should appear
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "read", lsp::SymbolKind::kFunction);
 }
 
 TEST_CASE(
     "SemanticIndex class in package has correct parent-child hierarchy",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package test_pkg;
       class Buffer #(parameter int SIZE = 8);
@@ -822,8 +792,8 @@ TEST_CASE(
     endpackage
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Should have exactly 1 root symbol (the package)
   REQUIRE(symbols.size() == 1);
@@ -858,7 +828,6 @@ TEST_CASE(
 TEST_CASE(
     "SemanticIndex class function internals not in document symbols",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class Counter;
       int value;
@@ -872,15 +841,15 @@ TEST_CASE(
     endclass
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Class and its members should appear
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "Counter", lsp::SymbolKind::kClass);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "value", lsp::SymbolKind::kField);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "increment", lsp::SymbolKind::kFunction);
 
   // Function internals should NOT appear in document symbols
@@ -900,13 +869,12 @@ TEST_CASE(
 
   // But function internals should still be in semantic index for
   // go-to-definition
-  SimpleTestFixture::AssertContainsSymbols(*index, {"temp", "local_array"});
+  Fixture::AssertContainsSymbols(*result.index, {"temp", "local_array"});
 }
 
 TEST_CASE(
     "SemanticIndex virtual class shows correctly in document symbols",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     virtual class BaseClass #(parameter type T = int);
       T data;
@@ -920,26 +888,24 @@ TEST_CASE(
     endclass
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Both classes should appear with kClass kind
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "BaseClass", lsp::SymbolKind::kClass);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "DerivedClass", lsp::SymbolKind::kClass);
 
   // BaseClass members
-  SimpleTestFixture::AssertDocumentSymbolExists(
-      symbols, "data", lsp::SymbolKind::kField);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(symbols, "data", lsp::SymbolKind::kField);
+  Fixture::AssertDocumentSymbolExists(
       symbols, "get_value", lsp::SymbolKind::kFunction);
 }
 
 TEST_CASE(
     "SemanticIndex nested classes appear in document symbols hierarchy",
     "[document_symbols]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class Outer #(parameter int SIZE = 10);
       int outer_data;
@@ -952,22 +918,22 @@ TEST_CASE(
     endclass
   )";
 
-  auto index = fixture.CompileSource(code);
-  auto symbols = index->GetDocumentSymbols(GetTestUri());
+  auto result = Fixture::BuildIndex(code);
+  auto symbols = result.index->GetDocumentSymbols(result.uri);
 
   // Outer class should appear
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "Outer", lsp::SymbolKind::kClass);
 
   // Nested Inner class should appear
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "Inner", lsp::SymbolKind::kClass);
 
   // Both classes should have their members
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "outer_data", lsp::SymbolKind::kField);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "inner_data", lsp::SymbolKind::kField);
-  SimpleTestFixture::AssertDocumentSymbolExists(
+  Fixture::AssertDocumentSymbolExists(
       symbols, "inner_inst", lsp::SymbolKind::kField);
 }

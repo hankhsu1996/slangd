@@ -7,10 +7,9 @@
 #include <catch2/catch_all.hpp>
 #include <slang/ast/Compilation.h>
 #include <slang/ast/Symbol.h>
+#include <slang/ast/symbols/CompilationUnitSymbols.h>
 #include <slang/syntax/SyntaxTree.h>
 #include <spdlog/spdlog.h>
-
-#include "../common/simple_fixture.hpp"
 
 constexpr auto kLogLevel = spdlog::level::debug;
 
@@ -27,7 +26,6 @@ auto main(int argc, char* argv[]) -> int {
 }
 
 using slangd::semantic::ComputeLspRange;
-using slangd::test::SimpleTestFixture;
 
 TEST_CASE(
     "ComputeLspRange handles symbols without locations", "[symbol_utils]") {
@@ -37,7 +35,8 @@ TEST_CASE(
   slang::Bag options;
   auto compilation = std::make_unique<slang::ast::Compilation>(options);
 
-  const auto& root = compilation->getRoot();
+  // Use base class reference - ComputeLspRange expects Symbol&
+  const slang::ast::Symbol& root = compilation->getRoot();
 
   // Test that ComputeLspRange doesn't crash with symbols without location
   auto range = ComputeLspRange(root, *source_manager);

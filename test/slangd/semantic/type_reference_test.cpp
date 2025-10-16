@@ -6,7 +6,7 @@
 #include <slang/util/Enum.h>
 #include <spdlog/spdlog.h>
 
-#include "../common/simple_fixture.hpp"
+#include "../common/semantic_fixture.hpp"
 
 constexpr auto kLogLevel = spdlog::level::debug;
 
@@ -22,7 +22,7 @@ auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
 }
 
-using slangd::test::SimpleTestFixture;
+using Fixture = slangd::test::SemanticTestFixture;
 
 // TypeReferenceSymbol is a wrapper type created in LSP mode to preserve typedef
 // usage locations for go-to-definition. These tests ensure TypeReferenceSymbol
@@ -32,7 +32,6 @@ using slangd::test::SimpleTestFixture;
 TEST_CASE(
     "TypeReferenceSymbol nested typedef in binary expression",
     "[type_reference][regression]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module test;
       typedef struct packed {
@@ -53,7 +52,7 @@ TEST_CASE(
   // Left: input_val (data_t), Right: local_t'(1) (TypeReferenceSymbol ->
   // TypeAlias -> data_t)
 
-  // CompileSource throws if there are any compilation errors
+  // BuildIndex throws if there are any compilation errors
   // This test will fail if BadBinaryExpression error occurs
-  REQUIRE_NOTHROW(fixture.CompileSource(code));
+  REQUIRE_NOTHROW(Fixture::BuildIndex(code));
 }

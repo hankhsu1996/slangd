@@ -69,8 +69,18 @@ auto OverlaySession::Create(
   // Note: FromCompilation calls forceElaborate() which populates
   // compilation.diagMap Diagnostics are extracted on-demand via
   // ComputeDiagnostics()
-  auto semantic_index = semantic::SemanticIndex::FromCompilation(
+  auto result = semantic::SemanticIndex::FromCompilation(
       *compilation, *source_manager, uri, preamble_manager.get(), logger);
+
+  if (!result) {
+    logger->error(
+        "Failed to build semantic index for '{}': {}", uri, result.error());
+    // Return nullptr - semantic index features disabled for this file
+    // LSP server continues for other files
+    return nullptr;
+  }
+
+  auto semantic_index = std::move(*result);
 
   auto elapsed = timer.GetElapsed();
   auto entry_count = semantic_index->GetSemanticEntries().size();

@@ -30,8 +30,7 @@ namespace slangd::services {
 
 // Precomputed LSP location info for preamble symbols
 struct PreambleSymbolInfo {
-  std::string file_uri;         // Buffer-independent file path
-  lsp::Range definition_range;  // Precise name range (start + end)
+  lsp::Location def_loc;  // Definition location (range + URI)
 };
 
 // Package metadata extracted from preamble compilation
@@ -51,20 +50,20 @@ struct InterfaceInfo {
 // Port metadata extracted from module definitions
 struct PortInfo {
   std::string name;
-  slang::SourceRange def_range;
+  lsp::Range def_range;
 };
 
 // Parameter metadata extracted from module definitions
 struct ParameterInfo {
   std::string name;
-  slang::SourceRange def_range;
+  lsp::Range def_range;
 };
 
 // Module metadata extracted from preamble compilation
 struct ModuleInfo {
   std::string name;
   CanonicalPath file_path;
-  slang::SourceRange definition_range;
+  lsp::Range def_range;
   std::vector<PortInfo> ports;
   std::vector<ParameterInfo> parameters;
 
@@ -117,6 +116,9 @@ class PreambleManager {
 
   // SourceManager accessor for resolving cross-file buffer IDs
   [[nodiscard]] auto GetSourceManager() const -> const slang::SourceManager&;
+
+  // Compilation accessor for symbol compilation checking
+  [[nodiscard]] auto GetCompilation() const -> const slang::ast::Compilation&;
 
   // Version tracking for cache invalidation
   [[nodiscard]] auto GetVersion() const -> uint64_t;

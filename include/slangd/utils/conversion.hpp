@@ -1,5 +1,6 @@
 #pragma once
 
+#include <slang/ast/Symbol.h>
 #include <slang/text/SourceLocation.h>
 #include <slang/text/SourceManager.h>
 
@@ -32,6 +33,43 @@ auto ConvertSlangLocationToLspLocation(
 auto ConvertSlangLocationToLspPosition(
     const slang::SourceLocation& location,
     const slang::SourceManager& source_manager) -> lsp::Position;
+
+// Create LSP range for a symbol's name using its location and name length.
+// Returns nullopt if symbol location is invalid.
+inline auto CreateSymbolLspRange(
+    const slang::ast::Symbol& symbol,
+    const slang::SourceManager& source_manager) -> std::optional<lsp::Range> {
+  if (!symbol.location.valid()) {
+    return std::nullopt;
+  }
+
+  // Convert to LSP position and extend by name length
+  lsp::Position start =
+      ConvertSlangLocationToLspPosition(symbol.location, source_manager);
+  lsp::Position end = start;
+  end.character += static_cast<int>(symbol.name.length());
+
+  return lsp::Range{.start = start, .end = end};
+}
+
+// Create LSP location (range + URI) for a symbol's name.
+// Returns nullopt if symbol location is invalid.
+inline auto CreateSymbolLspLocation(
+    const slang::ast::Symbol& symbol,
+    const slang::SourceManager& source_manager)
+    -> std::optional<lsp::Location> {
+  auto range = CreateSymbolLspRange(symbol, source_manager);
+  if (!range) {
+    return std::nullopt;
+  }
+
+  // Get URI from symbol location
+  lsp::Location location =
+      ConvertSlangLocationToLspLocation(symbol.location, source_manager);
+  location.range = *range;
+
+  return location;
+}
 
 // convert const std::optional<nlohmann::json>& json to LSP strong type
 template <typename T>

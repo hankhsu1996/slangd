@@ -78,7 +78,8 @@ class PreambleManagerTestFixture {
     for (const auto& mod : modules) {
       if (mod.name == name) {
         REQUIRE(mod.file_path.Path().filename() == expected_filename);
-        REQUIRE(mod.definition_range.start().valid());
+        REQUIRE(mod.def_range.start.line >= 0);
+        REQUIRE(mod.def_range.start.character >= 0);
         return;
       }
     }
@@ -115,7 +116,8 @@ class PreambleManagerTestFixture {
       const slangd::services::ModuleInfo& module, std::string_view param_name) {
     for (const auto& param : module.parameters) {
       if (param.name == param_name) {
-        REQUIRE(param.def_range.start().valid());
+        REQUIRE(param.def_range.start.line >= 0);
+        REQUIRE(param.def_range.start.character >= 0);
         return;
       }
     }
@@ -128,7 +130,8 @@ class PreambleManagerTestFixture {
       const slangd::services::ModuleInfo& module, std::string_view port_name) {
     for (const auto& port : module.ports) {
       if (port.name == port_name) {
-        REQUIRE(port.def_range.start().valid());
+        REQUIRE(port.def_range.start.line >= 0);
+        REQUIRE(port.def_range.start.character >= 0);
         return;
       }
     }
@@ -387,12 +390,12 @@ TEST_CASE("PreambleManager symbol info table", "[preamble_manager]") {
     auto pkg_info = preamble_manager->GetSymbolInfo(
         static_cast<const slang::ast::Symbol*>(pkg));
     REQUIRE(pkg_info.has_value());
-    REQUIRE(!pkg_info->file_uri.empty());
-    REQUIRE(pkg_info->file_uri.find("types_pkg.sv") != std::string::npos);
+    REQUIRE(!pkg_info->def_loc.uri.empty());
+    REQUIRE(pkg_info->def_loc.uri.find("types_pkg.sv") != std::string::npos);
 
     // Verify definition range is valid
-    REQUIRE(pkg_info->definition_range.start.line >= 0);
-    REQUIRE(pkg_info->definition_range.start.character >= 0);
+    REQUIRE(pkg_info->def_loc.range.start.line >= 0);
+    REQUIRE(pkg_info->def_loc.range.start.character >= 0);
 
     co_return;
   });
@@ -445,14 +448,13 @@ TEST_CASE("PreambleManager GetSymbolInfo lookup", "[preamble_manager]") {
     REQUIRE(info.has_value());
 
     // Verify file URI format
-    REQUIRE(info->file_uri.find("file://") == 0);
-    REQUIRE(info->file_uri.find("protocol_pkg.sv") != std::string::npos);
+    REQUIRE(info->def_loc.uri.find("file://") == 0);
+    REQUIRE(info->def_loc.uri.find("protocol_pkg.sv") != std::string::npos);
 
     // Verify range is valid
-    REQUIRE(info->definition_range.start.line >= 0);
-    REQUIRE(info->definition_range.start.character >= 0);
-    REQUIRE(
-        info->definition_range.end.line >= info->definition_range.start.line);
+    REQUIRE(info->def_loc.range.start.line >= 0);
+    REQUIRE(info->def_loc.range.start.character >= 0);
+    REQUIRE(info->def_loc.range.end.line >= info->def_loc.range.start.line);
 
     // Test with nullptr (should return nullopt)
     auto null_info = preamble_manager->GetSymbolInfo(nullptr);
@@ -503,9 +505,9 @@ TEST_CASE(
     REQUIRE(info_b.has_value());
 
     // Verify they point to different files
-    REQUIRE(info_a->file_uri != info_b->file_uri);
-    REQUIRE(info_a->file_uri.find("pkg_a.sv") != std::string::npos);
-    REQUIRE(info_b->file_uri.find("pkg_b.sv") != std::string::npos);
+    REQUIRE(info_a->def_loc.uri != info_b->def_loc.uri);
+    REQUIRE(info_a->def_loc.uri.find("pkg_a.sv") != std::string::npos);
+    REQUIRE(info_b->def_loc.uri.find("pkg_b.sv") != std::string::npos);
 
     co_return;
   });

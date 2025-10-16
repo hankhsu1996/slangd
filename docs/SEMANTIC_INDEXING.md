@@ -213,7 +213,7 @@ When a module is instantiated but its definition is not in the current compilati
 
 **Cross-File Reference Resolution:**
 
-Module definitions exist in PreambleManager's compilation (different `SourceManager`), not OverlaySession's. Use `AddCrossFileReference()` to store compilation-independent `FilePosition` instead of compilation-specific `SourceLocation`. This enables go-to-definition across compilations by converting target ranges to file paths + line/column positions.
+Module definitions exist in PreambleManager's compilation (different `SourceManager`), not OverlaySession's. Use `AddReferenceWithLspDefinition()` with pre-converted LSP coordinates from PreambleManager. This enables go-to-definition across compilations using compilation-independent coordinates (file URI + line/column).
 
 ## Slang Fork Modifications
 

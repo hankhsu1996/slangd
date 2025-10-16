@@ -7,7 +7,7 @@
 #include <slang/util/Enum.h>
 #include <spdlog/spdlog.h>
 
-#include "../../common/simple_fixture.hpp"
+#include "../../common/semantic_fixture.hpp"
 
 constexpr auto kLogLevel = spdlog::level::debug;
 
@@ -23,23 +23,23 @@ auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
 }
 
-using slangd::test::SimpleTestFixture;
+using Fixture = slangd::test::SemanticTestFixture;
 
 TEST_CASE("SemanticIndex interface end label reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     interface TestIf;
     endinterface : TestIf
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "TestIf", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "TestIf", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "TestIf", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "TestIf", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex interface modport self-definition works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     interface I2C;
       logic sda, scl;
@@ -58,14 +58,14 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "master", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "slave", 0, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "master", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "slave", 0, 0);
 }
 
 TEST_CASE(
     "SemanticIndex interface signal self-definition works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     interface MemBus;
       logic [31:0] addr, data;
@@ -82,17 +82,16 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "addr", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "data", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "valid", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "ready", 0, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "addr", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "data", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "valid", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "ready", 0, 0);
 }
 
 TEST_CASE(
     "SemanticIndex interface port in module declaration works",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     interface MemBus;
       logic [31:0] addr, data;
@@ -106,22 +105,24 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
-  fixture.AssertGoToDefinition(*index, code, "MemBus", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "mem_if", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "MemBus", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "cpu", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "addr", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "data", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "cpu", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "addr", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "MemBus", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "mem_if", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "MemBus", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "cpu", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "addr", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "data", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "cpu", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "addr", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex interface parameter in packed dimension works",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     interface test_if #(
       parameter int WIDTH = 8
@@ -130,14 +131,13 @@ TEST_CASE(
     endinterface
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
-  fixture.AssertGoToDefinition(*index, code, "WIDTH", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "WIDTH", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "WIDTH", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "WIDTH", 1, 0);
 }
 
 TEST_CASE("SemanticIndex interface member access works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     interface bus_if;
       logic [31:0] addr;
@@ -154,25 +154,24 @@ TEST_CASE("SemanticIndex interface member access works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
   // Test interface port parameter
-  fixture.AssertGoToDefinition(*index, code, "bus", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "bus", 0, 0);
 
   // Test LHS: bus.addr reference
-  fixture.AssertGoToDefinition(*index, code, "addr", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "bus", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "addr", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "addr", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "bus", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "addr", 1, 0);
 
   // Test RHS: bus.data reference
-  fixture.AssertGoToDefinition(*index, code, "data", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "bus", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "data", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "data", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "bus", 2, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "data", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex interface instance in module body works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     interface my_if;
       logic data;
@@ -189,26 +188,26 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
   // Test interface type name in body instantiation
-  fixture.AssertGoToDefinition(*index, code, "my_if", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "my_if", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "my_if", 2, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "my_if", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "my_if", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "my_if", 2, 0);
 
   // Test interface instance name self-definition
-  fixture.AssertGoToDefinition(*index, code, "bus", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "other_bus", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "bus", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "other_bus", 0, 0);
 
   // Test member access through body instance
-  fixture.AssertGoToDefinition(*index, code, "bus", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "data", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "bus", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "data", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex unpacked array of interface instances works",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     interface array_if;
       logic [31:0] signal_a;
@@ -227,32 +226,41 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
   // Test interface type name in array instantiation
-  fixture.AssertGoToDefinition(*index, code, "array_if", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "signal_a", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "signal_b", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "array_if", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "signal_a", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "signal_b", 0, 0);
 
   // Test array instance name self-definition
-  fixture.AssertGoToDefinition(*index, code, "if_array", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "if_array", 0, 0);
 
   // Test parameter reference in array dimension
-  fixture.AssertGoToDefinition(*index, code, "ARRAY_SIZE", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "ARRAY_SIZE", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "ARRAY_SIZE", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "ARRAY_SIZE", 1, 0);
 
   // Test array element access and member access
-  fixture.AssertGoToDefinition(*index, code, "if_array", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "signal_a", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "if_array", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "signal_a", 1, 0);
 
-  fixture.AssertGoToDefinition(*index, code, "if_array", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "signal_b", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "if_array", 2, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "signal_b", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex interface parameter override references work",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     interface config_if #(
       parameter int FLAG = 0,
@@ -272,26 +280,25 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
   // Test parameter definitions
-  fixture.AssertGoToDefinition(*index, code, "FLAG", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "WIDTH", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "FLAG", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "WIDTH", 0, 0);
 
   // Test parameter references in single instance override: .FLAG(1)
-  fixture.AssertGoToDefinition(*index, code, "FLAG", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "FLAG", 1, 0);
 
   // Test parameter references in array instance override: .WIDTH(16)
-  fixture.AssertGoToDefinition(*index, code, "WIDTH", 2, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "WIDTH", 2, 0);
 
   // Test array dimension parameter reference
-  fixture.AssertGoToDefinition(*index, code, "SIZE", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "SIZE", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "SIZE", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "SIZE", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex interface port connection references work", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     interface test_if;
       logic data;
@@ -309,20 +316,19 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
   // Test interface instance declaration
-  fixture.AssertGoToDefinition(*index, code, "bus", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "bus", 0, 0);
 
   // Test interface instance reference in port connection (RHS)
   // This should jump to the declaration of 'bus' above
-  fixture.AssertGoToDefinition(*index, code, "bus", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "bus", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex interface array port connection with parameters works",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     interface common_if #(
       parameter int MODE = 0
@@ -347,32 +353,38 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
   // Test interface type name
-  fixture.AssertGoToDefinition(*index, code, "common_if", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "common_if", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "common_if", 2, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "common_if", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "common_if", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "common_if", 2, 0);
 
   // Test parameter definition and reference
-  fixture.AssertGoToDefinition(*index, code, "MODE", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "MODE", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "MODE", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "MODE", 1, 0);
 
   // Test array dimension parameter
-  fixture.AssertGoToDefinition(*index, code, "NUM_UNITS", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "NUM_UNITS", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "NUM_UNITS", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "NUM_UNITS", 1, 0);
 
   // Test interface array instance self-definition
-  fixture.AssertGoToDefinition(*index, code, "unit_if", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "unit_if", 0, 0);
 
   // Test interface array reference in port connection (no index)
   // This should jump to the array declaration above
-  fixture.AssertGoToDefinition(*index, code, "unit_if", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "unit_if", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex interface member array indexing works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     interface mem_if;
       logic [7:0] array_field;
@@ -392,31 +404,39 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
   // Test interface type definition
-  fixture.AssertGoToDefinition(*index, code, "mem_if", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "mem_if", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "mem_if", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "mem_if", 1, 0);
 
   // Test interface instance self-definition
-  fixture.AssertGoToDefinition(*index, code, "mem_inst", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "mem_inst", 0, 0);
 
   // Test interface instance reference in member access (with array indexing)
-  fixture.AssertGoToDefinition(*index, code, "mem_inst", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "mem_inst", 1, 0);
 
   // Test array member field reference (the field being indexed)
-  fixture.AssertGoToDefinition(*index, code, "array_field", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "array_field", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "array_field", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "array_field", 1, 0);
 
   // Test scalar member for comparison
-  fixture.AssertGoToDefinition(*index, code, "mem_inst", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "scalar_field", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "scalar_field", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "mem_inst", 2, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "scalar_field", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "scalar_field", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex interface port passed to submodule works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     interface data_if;
       logic [31:0] data;
@@ -435,15 +455,18 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
   // Test interface type definition
-  fixture.AssertGoToDefinition(*index, code, "data_if", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "data_if", 0, 0);
 
   // Test interface port in parent module declaration
-  fixture.AssertGoToDefinition(*index, code, "external_if", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "external_if", 0, 0);
 
   // Test interface port reference in submodule connection
   // This should resolve to the port declaration (occurrence 0 of "external_if")
-  fixture.AssertGoToDefinition(*index, code, "external_if", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "external_if", 1, 0);
 }

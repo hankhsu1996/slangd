@@ -7,7 +7,7 @@
 #include <slang/util/Enum.h>
 #include <spdlog/spdlog.h>
 
-#include "../../common/simple_fixture.hpp"
+#include "../../common/semantic_fixture.hpp"
 
 constexpr auto kLogLevel = spdlog::level::debug;
 
@@ -23,22 +23,22 @@ auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
 }
 
-using slangd::test::SimpleTestFixture;
+using Fixture = slangd::test::SemanticTestFixture;
 
 TEST_CASE("SemanticIndex class self-definition works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class Counter;
     endclass : Counter
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "Counter", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "Counter", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "Counter", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "Counter", 1, 0);
 }
 
 TEST_CASE("SemanticIndex class reference in variable works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class Packet;
     endclass
@@ -48,50 +48,50 @@ TEST_CASE("SemanticIndex class reference in variable works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "Packet", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "Packet", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "Packet", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "Packet", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex parameterized class self-definition works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class Buffer #(parameter int SIZE = 8);
     endclass
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "Buffer", 0, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "Buffer", 0, 0);
 }
 
 TEST_CASE("SemanticIndex virtual class self-definition works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     virtual class BaseClass;
     endclass
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "BaseClass", 0, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "BaseClass", 0, 0);
 }
 
 TEST_CASE(
     "SemanticIndex class property self-definition works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class Test;
       int data;
     endclass
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "data", 0, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "data", 0, 0);
 }
 
 TEST_CASE(
     "SemanticIndex class property reference in method works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class Counter;
       int value;
@@ -101,14 +101,13 @@ TEST_CASE(
     endclass
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "value", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "value", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "value", 2, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "value", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "value", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "value", 2, 0);
 }
 
 TEST_CASE("SemanticIndex class parameter reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class Buffer #(parameter int SIZE = 8);
       int data[SIZE];
@@ -119,13 +118,12 @@ TEST_CASE("SemanticIndex class parameter reference works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "SIZE", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "SIZE", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "SIZE", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "SIZE", 1, 0);
 }
 
 TEST_CASE("SemanticIndex multiple class properties work", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class Packet;
       int header;
@@ -137,16 +135,19 @@ TEST_CASE("SemanticIndex multiple class properties work", "[definition]") {
     endclass
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "header", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "header", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "payload", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "payload", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "header", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "header", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "payload", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "payload", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex class specialization name reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package pkg;
       class Counter #(parameter int MAX_VAL = 100);
@@ -161,17 +162,20 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "Counter", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "Counter", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "saturate_add", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "saturate_add", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "Counter", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "Counter", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "saturate_add", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "saturate_add", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex class specialization parameter name reference works",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package pkg;
       class Counter #(parameter int MAX_VAL = 100);
@@ -186,17 +190,20 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "MAX_VAL", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "MAX_VAL", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "MAX_VAL", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "MAX_VAL", 3, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "MAX_VAL", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "MAX_VAL", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "MAX_VAL", 2, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "MAX_VAL", 3, 0);
 }
 
 TEST_CASE(
     "SemanticIndex class specialization same parameters cached",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package pkg;
       class Config #(parameter int WIDTH = 16);
@@ -212,16 +219,15 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "WIDTH", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "WIDTH", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "WIDTH", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "WIDTH", 3, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "WIDTH", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "WIDTH", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "WIDTH", 2, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "WIDTH", 3, 0);
 }
 
 TEST_CASE(
     "SemanticIndex class specialization different parameters", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package pkg;
       class Config #(parameter int WIDTH = 16);
@@ -237,29 +243,27 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "WIDTH", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "WIDTH", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "WIDTH", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "WIDTH", 3, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "WIDTH", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "WIDTH", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "WIDTH", 2, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "WIDTH", 3, 0);
 }
 
 TEST_CASE(
     "SemanticIndex class parameter without instantiation", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class Buffer #(parameter int SIZE = 8);
       int data[SIZE];
     endclass
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "SIZE", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "SIZE", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "SIZE", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "SIZE", 1, 0);
 }
 
 TEST_CASE("SemanticIndex class instance member access works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class Packet;
       int data;
@@ -271,13 +275,12 @@ TEST_CASE("SemanticIndex class instance member access works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "data", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "data", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "data", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "data", 1, 0);
 }
 
 TEST_CASE("SemanticIndex class member access via this works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class Counter;
       int value;
@@ -287,15 +290,14 @@ TEST_CASE("SemanticIndex class member access via this works", "[definition]") {
     endclass
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "value", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "value", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "value", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "value", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex class constructor argument navigation works",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class Buffer;
       function new(int size);
@@ -308,15 +310,14 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "sz", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "sz", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "sz", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "sz", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex multiple class instances member access works",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class Point;
       int x;
@@ -333,16 +334,15 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "x", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "x", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "y", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "y", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "x", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "x", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "y", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "y", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex class extends clause navigation works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class Base;
     endclass
@@ -351,14 +351,13 @@ TEST_CASE(
     endclass
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "Base", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "Base", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "Base", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "Base", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex parameterized class extends clause works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class Base #(parameter int WIDTH = 8);
     endclass
@@ -367,13 +366,12 @@ TEST_CASE(
     endclass
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "Base", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "Base", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "Base", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "Base", 1, 0);
 }
 
 TEST_CASE("SemanticIndex class extends with members works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class Base;
       int base_value;
@@ -384,16 +382,17 @@ TEST_CASE("SemanticIndex class extends with members works", "[definition]") {
     endclass
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "Base", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "Base", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "base_value", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "derived_value", 0, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "Base", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "Base", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "base_value", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "derived_value", 0, 0);
 }
 
 TEST_CASE(
     "SemanticIndex parameterized class with extends works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     class Base;
     endclass
@@ -402,15 +401,14 @@ TEST_CASE(
     endclass
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "Base", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "Base", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "Base", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "Base", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex class specialization with symbol parameter works",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package pkg;
       class Config #(parameter int WIDTH = 16);
@@ -426,14 +424,15 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "BUS_WIDTH", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "BUS_WIDTH", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "BUS_WIDTH", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "BUS_WIDTH", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex pure virtual function navigation works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     typedef int reg_t;
     typedef int value_t;
@@ -444,24 +443,32 @@ TEST_CASE(
     endclass
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
   // Function names
-  fixture.AssertGoToDefinition(*index, code, "set_value", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "get_value", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "set_value", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "get_value", 0, 0);
 
   // Return types
-  fixture.AssertGoToDefinition(*index, code, "value_t", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "value_t", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "value_t", 2, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "value_t", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "value_t", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "value_t", 2, 0);
 
   // Argument types
-  fixture.AssertGoToDefinition(*index, code, "reg_t", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "reg_t", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "reg_t", 2, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "reg_t", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "reg_t", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "reg_t", 2, 0);
 
   // Argument variables (each function has its own parameters)
-  fixture.AssertGoToDefinition(*index, code, "addr", 0, 0);  // set_value addr
-  fixture.AssertGoToDefinition(*index, code, "addr", 1, 1);  // get_value addr
-  fixture.AssertGoToDefinition(*index, code, "data", 0, 0);  // set_value data
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "addr", 0, 0);  // set_value addr
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "addr", 1, 1);  // get_value addr
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "data", 0, 0);  // set_value data
 }

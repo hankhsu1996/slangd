@@ -1,5 +1,6 @@
 #pragma once
 
+#include <expected>
 #include <memory>
 #include <optional>
 #include <unordered_set>
@@ -15,8 +16,7 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
-#include "slangd/semantic/definition_extractor.hpp"
-#include "slangd/utils/canonical_path.hpp"
+#include "slangd/utils/conversion.hpp"
 
 namespace slangd::services {
 class PreambleManager;
@@ -24,81 +24,33 @@ class PreambleManager;
 
 namespace slangd::semantic {
 
-// Uniquely identifies a symbol by its declaration location
-struct SymbolKey {
-  uint32_t bufferId;
-  size_t offset;
-
-  auto operator==(const SymbolKey&) const -> bool = default;
-
-  // Factory method to create from SourceLocation
-  static auto FromSourceLocation(const slang::SourceLocation& loc)
-      -> SymbolKey {
-    return SymbolKey{.bufferId = loc.buffer().getId(), .offset = loc.offset()};
-  }
-};
-
 // Unified semantic entry combining both definitions and references
 // Replaces dual SymbolInfo/ReferenceEntry architecture with single model
+// Stores LSP coordinates for compilation-independent processing
+//
+// INVARIANT: All entries in a SemanticIndex have source locations in the same
+// file (the file being indexed). Symbols from included files are filtered out.
 struct SemanticEntry {
-  // Identity & Location
-  slang::SourceRange source_range;  // Where this entry appears
-  slang::SourceLocation location;   // Unique key
+  // LSP coordinates (reference location always in current_file_uri)
+  lsp::Range ref_range;
+  lsp::Location def_loc;  // Definition location (range + URI)
+  bool is_cross_file;     // true = from preamble, false = local
 
-  // Symbol Information
-  const slang::ast::Symbol* symbol;  // The actual symbol
-  lsp::SymbolKind lsp_kind;          // LSP classification
-  std::string name;                  // Display name
+  // Symbol information
+  const slang::ast::Symbol* symbol;
+  lsp::SymbolKind lsp_kind;
+  std::string name;
 
-  // Hierarchy (DocumentSymbol tree)
-  const slang::ast::Scope* parent;          // Parent scope for tree building
-  const slang::ast::Scope* children_scope;  // Where to find children (for
-                                            // non-Scope symbols like
-                                            // GenericClassDef)
+  // Hierarchy for DocumentSymbol tree
+  const slang::ast::Scope* parent;
+  const slang::ast::Scope* children_scope;  // For non-Scope symbols like
+                                            // GenericClassDef
 
-  // Reference Tracking (Go-to-definition)
-  bool is_definition;                   // true = self-ref, false = cross-ref
-  slang::SourceRange definition_range;  // Target definition location
-
-  // Cross-file definitions (from PreambleManager, compilation-independent)
-  std::optional<CanonicalPath> cross_file_path;
-  std::optional<lsp::Range> cross_file_range;
-
-  // Metadata
-  slang::BufferID buffer_id;  // For file filtering
-
-  // Factory method to construct SemanticEntry from symbol
-  static auto Make(
-      const slang::ast::Symbol& symbol, std::string_view name,
-      slang::SourceRange source_range, bool is_definition,
-      slang::SourceRange definition_range,
-      const slang::ast::Scope* parent_scope,
-      const slang::ast::Scope* children_scope = nullptr) -> SemanticEntry;
-};
-
-// Result of definition lookup - can be either same-file or cross-file
-struct DefinitionLocation {
-  // For same-file definitions (buffer exists in current compilation)
-  std::optional<slang::SourceRange> same_file_range;
-
-  // For cross-file definitions (from PreambleManager, compilation-independent)
-  std::optional<CanonicalPath> cross_file_path;
-  std::optional<lsp::Range> cross_file_range;
+  // Reference tracking
+  bool is_definition;
 };
 
 }  // namespace slangd::semantic
-
-namespace std {
-template <>
-struct hash<slangd::semantic::SymbolKey> {
-  auto operator()(const slangd::semantic::SymbolKey& key) const -> size_t {
-    size_t hash = std::hash<uint32_t>()(key.bufferId);
-    hash ^= std::hash<size_t>()(key.offset) + 0x9e3779b9 + (hash << 6) +
-            (hash >> 2);
-    return hash;
-  }
-};
-}  // namespace std
 
 namespace slangd::semantic {
 
@@ -112,10 +64,14 @@ class SemanticIndex {
       const std::string& current_file_uri,
       const services::PreambleManager* preamble_manager = nullptr,
       std::shared_ptr<spdlog::logger> logger = nullptr)
-      -> std::unique_ptr<SemanticIndex>;
+      -> std::expected<std::unique_ptr<SemanticIndex>, std::string>;
 
   // Query methods
 
+  // GetSourceManager() - Still needed for:
+  // 1. DocumentSymbolBuilder enum/struct members (not in SemanticIndex)
+  // 2. ValidateSymbolCoverage (needs to check symbol.location.valid())
+  // 3. Internal indexing (has its own reference via source_manager_)
   [[nodiscard]] auto GetSourceManager() const -> const slang::SourceManager& {
     return source_manager_.get();
   }
@@ -130,48 +86,50 @@ class SemanticIndex {
     return semantic_entries_;
   }
 
-  // Find definition location for the symbol at the given location
-  [[nodiscard]] auto LookupDefinitionAt(slang::SourceLocation loc) const
-      -> std::optional<DefinitionLocation>;
+  // Find definition using LSP coordinates (no SourceManager needed)
+  [[nodiscard]] auto LookupDefinitionAt(
+      const std::string& uri, lsp::Position position) const
+      -> std::optional<lsp::Location>;
 
-  // Validation method to check for overlapping ranges
   void ValidateNoRangeOverlaps() const;
 
-  // Validation method to check symbol coverage
+  // Check for invalid coordinates (line == -1) which indicate conversion
+  // failures Returns error if any invalid coordinates are found (fail-fast
+  // behavior)
+  auto ValidateCoordinates() const -> std::expected<void, std::string>;
+
   // Logs identifiers that don't have definitions in the semantic index
-  // Only checks identifiers from the specified file URI
   void ValidateSymbolCoverage(
       slang::ast::Compilation& compilation,
       const std::string& current_file_uri) const;
 
  private:
   explicit SemanticIndex(
-      const slang::SourceManager& source_manager,
+      const slang::SourceManager& source_manager, std::string current_file_uri,
       std::shared_ptr<spdlog::logger> logger)
       : source_manager_(source_manager),
+        current_file_uri_(std::move(current_file_uri)),
         logger_(logger ? logger : spdlog::default_logger()) {
   }
 
-  // Helper to check if a symbol is defined in the current file
   // Returns false for preamble symbols (separate compilation)
   static auto IsInCurrentFile(
       const slang::ast::Symbol& symbol, const std::string& current_file_uri,
       const slang::SourceManager& source_manager,
       const services::PreambleManager* preamble_manager) -> bool;
 
-  // Helper for syntax tree locations (use IsInCurrentFile for symbols)
   static auto IsInCurrentFile(
       slang::SourceLocation loc, const std::string& current_file_uri,
       const slang::SourceManager& source_manager) -> bool;
 
-  // Core data storage
-  // Unified storage combining definitions and references
+  // Unified storage for definitions and references
   std::vector<SemanticEntry> semantic_entries_;
 
-  // Store source manager reference for symbol processing
   std::reference_wrapper<const slang::SourceManager> source_manager_;
 
-  // Logger for error reporting
+  // All entries must have source locations in this file
+  std::string current_file_uri_;
+
   std::shared_ptr<spdlog::logger> logger_;
 
   // Visitor for symbol collection and reference tracking
@@ -184,8 +142,7 @@ class SemanticIndex {
         : index_(index),
           source_manager_(source_manager),
           current_file_uri_(std::move(current_file_uri)),
-          preamble_manager_(preamble_manager),
-          definition_extractor_(index.logger_) {
+          preamble_manager_(preamble_manager) {
     }
 
     // Expression handlers
@@ -230,14 +187,17 @@ class SemanticIndex {
       this->visitDefault(node);
     }
 
+    // Get accumulated indexing errors (e.g., BufferID mismatches)
+    [[nodiscard]] auto GetIndexingErrors() const
+        -> const std::vector<std::string>& {
+      return indexing_errors_;
+    }
+
    private:
     std::reference_wrapper<SemanticIndex> index_;
     std::reference_wrapper<const slang::SourceManager> source_manager_;
     std::string current_file_uri_;
     const services::PreambleManager* preamble_manager_;
-
-    // Definition extractor for precise symbol range extraction
-    DefinitionExtractor definition_extractor_;
 
     // Track which type syntax nodes we've already traversed
     // Prevents duplicate traversal when multiple symbols share the same type
@@ -251,6 +211,10 @@ class SemanticIndex {
     std::unordered_set<const slang::ast::Expression*>
         visited_generate_conditions_;
 
+    // Track indexing errors (e.g., BufferID mismatches indicating missing
+    // preamble symbols)
+    std::vector<std::string> indexing_errors_;
+
     // Helper methods for adding semantic entries
     void AddEntry(SemanticEntry entry);
 
@@ -261,43 +225,41 @@ class SemanticIndex {
 
     void AddReference(
         const slang::ast::Symbol& symbol, std::string_view name,
-        slang::SourceRange source_range, slang::SourceRange definition_range,
+        lsp::Range ref_range, lsp::Location def_loc,
         const slang::ast::Scope* parent_scope);
 
-    void AddCrossFileReference(
+    // For references where PreambleManager provides pre-converted LSP
+    // definition coordinates
+    void AddReferenceWithLspDefinition(
         const slang::ast::Symbol& symbol, std::string_view name,
-        slang::SourceRange source_range, slang::SourceRange definition_range,
-        const slang::SourceManager& preamble_manager_source_manager,
+        lsp::Range ref_range, lsp::Location def_loc,
         const slang::ast::Scope* parent_scope);
 
-    // Unified type traversal - handles all type structure recursively
+    // Helper to convert Slang reference ranges to LSP coordinates
+    [[nodiscard]] auto ConvertRefRange(slang::SourceRange range) const
+        -> lsp::Range {
+      return ConvertSlangRangeToLspRange(range, source_manager_.get());
+    }
+
     void TraverseType(const slang::ast::Type& type);
 
-    // Helper for indexing class specialization (e.g., Class#(.PARAM(value)))
-    // Traverses call syntax to find ClassNameSyntax nodes and link to
-    // genericClass
     void IndexClassSpecialization(
         const slang::ast::ClassType& class_type,
         const slang::syntax::SyntaxNode* call_syntax);
 
-    // Recursively traverse scoped names to find and index ClassName nodes
     void TraverseClassNames(
         const slang::syntax::SyntaxNode* node,
         const slang::ast::ClassType& class_type,
         slang::SourceRange definition_range);
 
-    // Helper for indexing class parameter names in specialization
     void IndexClassParameters(
         const slang::ast::ClassType& class_type,
         const slang::syntax::ParameterValueAssignmentSyntax& params);
 
-    // Helper for indexing interface/module parameter names in instantiation
     void IndexInstanceParameters(
         const slang::ast::InstanceSymbol& instance,
         const slang::syntax::ParameterValueAssignmentSyntax& params);
 
-    // Helper for indexing package names in scoped references
-    // (e.g., pkg::PARAM, pkg::func())
     void IndexPackageInScopedName(
         const slang::syntax::SyntaxNode* syntax,
         const slang::ast::Symbol& target_symbol);

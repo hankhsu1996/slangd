@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -9,8 +8,6 @@
 #include <lsp/document_features.hpp>
 #include <lsp/error.hpp>
 #include <lsp/workspace.hpp>
-
-#include "slangd/core/document_state.hpp"
 
 namespace slangd {
 

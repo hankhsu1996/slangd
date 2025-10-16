@@ -7,7 +7,7 @@
 #include <slang/util/Enum.h>
 #include <spdlog/spdlog.h>
 
-#include "../../common/simple_fixture.hpp"
+#include "../../common/semantic_fixture.hpp"
 
 constexpr auto kLogLevel = spdlog::level::debug;
 
@@ -23,10 +23,9 @@ auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
 }
 
-using slangd::test::SimpleTestFixture;
+using Fixture = slangd::test::SemanticTestFixture;
 
 TEST_CASE("SemanticIndex task go-to-definition works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module task_test;
       task my_task(input int a, output int b);
@@ -40,15 +39,17 @@ TEST_CASE("SemanticIndex task go-to-definition works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
-  fixture.AssertGoToDefinition(*index, code, "my_task", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "my_task", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "my_task", 2, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "my_task", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "my_task", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "my_task", 2, 0);
 }
 
 TEST_CASE("SemanticIndex task argument reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module task_arg_test;
       task my_task(input int a, output int b, inout int c);
@@ -57,14 +58,13 @@ TEST_CASE("SemanticIndex task argument reference works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "a", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "b", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "c", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "a", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "b", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "c", 1, 0);
 }
 
 TEST_CASE("SemanticIndex function go-to-definition works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module function_test;
       function int my_function(input int x);
@@ -77,15 +77,17 @@ TEST_CASE("SemanticIndex function go-to-definition works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
-  fixture.AssertGoToDefinition(*index, code, "my_function", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "my_function", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "my_function", 2, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "my_function", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "my_function", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "my_function", 2, 0);
 }
 
 TEST_CASE("SemanticIndex function argument reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module function_arg_test;
       function int my_function(input int x, input int y);
@@ -94,14 +96,13 @@ TEST_CASE("SemanticIndex function argument reference works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "x", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "y", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "x", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "y", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex function return type reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module return_type_test;
       typedef logic [7:0] byte_t;
@@ -112,14 +113,15 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "byte_t", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "byte_t", 2, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "byte_t", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "byte_t", 2, 0);
 }
 
 TEST_CASE(
     "SemanticIndex function outer scope reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module outer_scope_test;
       localparam int CONSTANT = 42;
@@ -131,14 +133,15 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "CONSTANT", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "shared_var", 1, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "CONSTANT", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "shared_var", 1, 0);
 }
 
 TEST_CASE(
     "SemanticIndex function implicit return variable works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module implicit_return_test;
       function int my_func(input int x);
@@ -151,15 +154,17 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "my_func", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "my_func", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "my_func", 2, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "my_func", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "my_func", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "my_func", 2, 0);
 }
 
 TEST_CASE(
     "SemanticIndex package function explicit import works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     package math_pkg;
       function int add_one(input int value);
@@ -182,18 +187,23 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "add_one", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "increment_task", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "add_one", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "increment_task", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "add_one", 2, 0);
-  fixture.AssertGoToDefinition(*index, code, "increment_task", 2, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "add_one", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "increment_task", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "add_one", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "increment_task", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "add_one", 2, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "increment_task", 2, 0);
 }
 
 TEST_CASE(
     "SemanticIndex function argument type reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module arg_type_test;
       typedef logic [7:0] byte_t;
@@ -204,17 +214,20 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "byte_t", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "byte_t", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "packet_t", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "packet_t", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "data", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "pkt", 0, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "byte_t", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "byte_t", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "packet_t", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "packet_t", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "data", 0, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "pkt", 0, 0);
 }
 
 TEST_CASE("SemanticIndex task argument type reference works", "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module task_arg_type_test;
       typedef int counter_t;
@@ -225,16 +238,17 @@ TEST_CASE("SemanticIndex task argument type reference works", "[definition]") {
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "counter_t", 0, 0);
-  fixture.AssertGoToDefinition(*index, code, "counter_t", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "cnt", 0, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "counter_t", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "counter_t", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "cnt", 0, 0);
 }
 
 TEST_CASE(
     "SemanticIndex system function parameter argument reference works",
     "[definition]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module system_func_test;
       parameter int SIZE = 8;
@@ -247,8 +261,8 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
-  fixture.AssertGoToDefinition(*index, code, "SIZE", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "WIDTH", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "SIZE", 2, 0);
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "SIZE", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "WIDTH", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "SIZE", 2, 0);
 }

@@ -9,8 +9,6 @@
 
 #include "slangd/semantic/semantic_index.hpp"
 #include "slangd/semantic/symbol_utils.hpp"
-#include "slangd/utils/conversion.hpp"
-#include "slangd/utils/path_utils.hpp"
 
 namespace slangd::semantic {
 
@@ -44,8 +42,9 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
       continue;
     }
 
-    // FILTER: Only include symbols from the requested document
-    if (!IsLocationInDocument(entry.location, source_manager, uri)) {
+    // FILTER: Only include symbols from the requested document using LSP
+    // coordinates
+    if (entry.def_loc.uri != uri) {
       continue;
     }
 
@@ -84,8 +83,8 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
   // Recursively build DocumentSymbol tree from roots
   std::vector<lsp::DocumentSymbol> result;
   for (const auto* root_entry : roots) {
-    auto doc_symbol_opt = DocumentSymbolBuilder::CreateDocumentSymbol(
-        *root_entry, source_manager);
+    auto doc_symbol_opt =
+        DocumentSymbolBuilder::CreateDocumentSymbol(*root_entry);
     if (!doc_symbol_opt.has_value()) {
       continue;  // Skip symbols with empty names
     }
@@ -114,8 +113,7 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
               !parent_scope->asSymbol().name.empty()) {
             // Found children for this Definition symbol
             for (const auto* child_entry : children_list) {
-              auto child_doc_symbol_opt =
-                  CreateDocumentSymbol(*child_entry, source_manager);
+              auto child_doc_symbol_opt = CreateDocumentSymbol(*child_entry);
               if (!child_doc_symbol_opt.has_value()) {
                 continue;  // Skip symbols with empty names
               }
@@ -173,8 +171,7 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
 
 // Implementation of private static member functions
 
-auto DocumentSymbolBuilder::CreateDocumentSymbol(
-    const SemanticEntry& entry, const slang::SourceManager& source_manager)
+auto DocumentSymbolBuilder::CreateDocumentSymbol(const SemanticEntry& entry)
     -> std::optional<lsp::DocumentSymbol> {
   // VSCode requires DocumentSymbol names to be non-empty
   // Filter out symbols with empty names
@@ -185,8 +182,8 @@ auto DocumentSymbolBuilder::CreateDocumentSymbol(
   lsp::DocumentSymbol doc_symbol;
   doc_symbol.name = entry.name;
   doc_symbol.kind = entry.lsp_kind;
-  doc_symbol.range =
-      ConvertSlangRangeToLspRange(entry.source_range, source_manager);
+  // Use stored LSP coordinates directly (no SourceManager conversion needed)
+  doc_symbol.range = entry.def_loc.range;
   doc_symbol.selectionRange = doc_symbol.range;  // Use same range for now
   doc_symbol.children =
       std::vector<lsp::DocumentSymbol>();  // Always initialize empty vector
@@ -263,8 +260,7 @@ auto DocumentSymbolBuilder::AttachChildrenToSymbol(
   }
 
   for (const auto* child_entry : children_it->second) {
-    auto child_doc_symbol_opt =
-        CreateDocumentSymbol(*child_entry, source_manager);
+    auto child_doc_symbol_opt = CreateDocumentSymbol(*child_entry);
     if (!child_doc_symbol_opt.has_value()) {
       continue;  // Skip symbols with empty names
     }

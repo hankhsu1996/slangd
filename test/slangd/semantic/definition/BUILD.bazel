@@ -12,7 +12,7 @@ cc_test(
     ],
     deps = [
         "//:slangd_core",
-        "//test/slangd:simple_fixture",
+        "//test/slangd:semantic_fixture",
         "@catch2",
         "@slang",
     ],
@@ -26,7 +26,7 @@ cc_test(
     ],
     deps = [
         "//:slangd_core",
-        "//test/slangd:simple_fixture",
+        "//test/slangd:semantic_fixture",
         "@catch2",
         "@slang",
     ],
@@ -40,7 +40,7 @@ cc_test(
     ],
     deps = [
         "//:slangd_core",
-        "//test/slangd:simple_fixture",
+        "//test/slangd:semantic_fixture",
         "@catch2",
         "@slang",
     ],
@@ -54,7 +54,7 @@ cc_test(
     ],
     deps = [
         "//:slangd_core",
-        "//test/slangd:simple_fixture",
+        "//test/slangd:semantic_fixture",
         "@catch2",
         "@slang",
     ],
@@ -68,7 +68,7 @@ cc_test(
     ],
     deps = [
         "//:slangd_core",
-        "//test/slangd:simple_fixture",
+        "//test/slangd:semantic_fixture",
         "@catch2",
         "@slang",
     ],
@@ -82,7 +82,7 @@ cc_test(
     ],
     deps = [
         "//:slangd_core",
-        "//test/slangd:simple_fixture",
+        "//test/slangd:semantic_fixture",
         "@catch2",
         "@slang",
     ],
@@ -96,7 +96,7 @@ cc_test(
     ],
     deps = [
         "//:slangd_core",
-        "//test/slangd:simple_fixture",
+        "//test/slangd:semantic_fixture",
         "@catch2",
         "@slang",
     ],
@@ -110,7 +110,7 @@ cc_test(
     ],
     deps = [
         "//:slangd_core",
-        "//test/slangd:simple_fixture",
+        "//test/slangd:semantic_fixture",
         "@catch2",
         "@slang",
     ],

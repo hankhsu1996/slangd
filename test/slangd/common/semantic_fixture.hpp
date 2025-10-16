@@ -7,14 +7,16 @@
 #include <string_view>
 #include <vector>
 
-#include <catch2/catch_all.hpp>
 #include <fmt/format.h>
+#include <lsp/basic.hpp>
+#include <lsp/document_features.hpp>
 #include <slang/ast/Compilation.h>
+#include <slang/parsing/Preprocessor.h>
 #include <slang/syntax/SyntaxTree.h>
-#include <slang/text/SourceLocation.h>
 #include <slang/text/SourceManager.h>
 #include <slang/util/Bag.h>
 
+#include "slangd/semantic/diagnostic_converter.hpp"
 #include "slangd/semantic/semantic_index.hpp"
 
 namespace slangd::test {
@@ -23,153 +25,303 @@ namespace slangd::test {
 class SemanticTestFixture {
  public:
   using SemanticIndex = slangd::semantic::SemanticIndex;
-  using SymbolKey = slangd::semantic::SymbolKey;
-  auto BuildIndexFromSource(const std::string& source)
-      -> std::unique_ptr<SemanticIndex> {
+
+  // Result struct that bundles index with its dependencies and diagnostics
+  // Keeps source_manager and compilation alive (index stores pointers to them)
+  // Always includes diagnostics - tests can ignore them if not needed
+  struct TestIndexResult {
+    std::unique_ptr<SemanticIndex> index;
+    std::vector<lsp::Diagnostic> diagnostics;
+    std::shared_ptr<slang::SourceManager> source_manager;
+    std::unique_ptr<slang::ast::Compilation> compilation;
+    std::string uri;
+  };
+
+  // Build semantic index and extract diagnostics (LSP-first approach)
+  // Always returns diagnostics - tests can ignore them if not needed
+  auto static BuildIndex(const std::string& source) -> TestIndexResult {
     constexpr std::string_view kTestFilename = "test.sv";
 
     // Use consistent URI/path format
     std::string test_uri = "file:///" + std::string(kTestFilename);
     std::string test_path = "/" + std::string(kTestFilename);
 
-    SetSourceManager(std::make_shared<slang::SourceManager>());
-    auto buffer = GetSourceManager()->assignText(test_path, source);
-    SetBufferId(buffer.id);
+    auto options = CreateCompilationOptions();
+
+    auto source_manager = std::make_shared<slang::SourceManager>();
+    auto buffer = source_manager->assignText(test_path, source);
     auto tree =
-        slang::syntax::SyntaxTree::fromBuffer(buffer, *GetSourceManager());
+        slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager, options);
 
-    slang::Bag options;
-    SetCompilation(std::make_unique<slang::ast::Compilation>(options));
-    GetCompilation()->addSyntaxTree(tree);
+    auto compilation = std::make_unique<slang::ast::Compilation>(options);
+    compilation->addSyntaxTree(tree);
 
-    return SemanticIndex::FromCompilation(
-        *GetCompilation(), *GetSourceManager(), test_uri);
-  }
+    // Build semantic index (triggers forceElaborate internally)
+    auto result =
+        SemanticIndex::FromCompilation(*compilation, *source_manager, test_uri);
 
-  auto MakeKey(const std::string& source, const std::string& symbol)
-      -> SymbolKey {
-    size_t offset = source.find(symbol);
-
-    if (offset == std::string::npos) {
-      throw std::runtime_error(
-          fmt::format("MakeKey: Symbol '{}' not found in source", symbol));
-    }
-
-    // Detect ambiguous symbol names early
-    size_t second_occurrence = source.find(symbol, offset + 1);
-    if (second_occurrence != std::string::npos) {
+    if (!result) {
       throw std::runtime_error(
           fmt::format(
-              "MakeKey: Ambiguous symbol '{}' found at multiple locations. "
-              "Use unique descriptive names (e.g., 'test_signal' not 'signal') "
-              "or use MakeKeyAt({}) for specific occurrence.",
-              symbol, offset));
+              "BuildIndex: Failed to build semantic index: {}",
+              result.error()));
     }
 
-    return SymbolKey{.bufferId = buffer_id_.getId(), .offset = offset};
+    auto index = std::move(*result);
+
+    // Extract diagnostics (LSP domain) - buffer_id used locally, not stored
+    auto buffer_id = buffer.id;
+    auto parse_diags = semantic::DiagnosticConverter::ExtractParseDiagnostics(
+        *compilation, *source_manager, buffer_id);
+
+    auto semantic_diags =
+        semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
+            *compilation, *source_manager, buffer_id);
+
+    // Combine diagnostics
+    std::vector<lsp::Diagnostic> diagnostics;
+    diagnostics.reserve(parse_diags.size() + semantic_diags.size());
+    diagnostics.insert(
+        diagnostics.end(), parse_diags.begin(), parse_diags.end());
+    diagnostics.insert(
+        diagnostics.end(), semantic_diags.begin(), semantic_diags.end());
+
+    return TestIndexResult{
+        .index = std::move(index),
+        .diagnostics = std::move(diagnostics),
+        .source_manager = std::move(source_manager),
+        .compilation = std::move(compilation),
+        .uri = std::move(test_uri)};
   }
 
-  // Alternative method for cases where multiple occurrences are expected
-  auto MakeKeyAt(
-      const std::string& source, const std::string& symbol,
-      size_t occurrence = 0) -> SymbolKey {
-    size_t offset = 0;
-    for (size_t i = 0; i <= occurrence; ++i) {
-      offset = source.find(symbol, offset);
-      if (offset == std::string::npos) {
-        throw std::runtime_error(
-            fmt::format(
-                "MakeKeyAt: Symbol '{}' occurrence {} not found in source",
-                symbol, occurrence));
-      }
-      if (i < occurrence) {
-        offset += symbol.length();
+  // Simple helper: convert byte offset to LSP position (ASCII-only for tests)
+  static auto ConvertOffsetToLspPosition(
+      const std::string& source, size_t offset) -> lsp::Position {
+    int line = 0;
+    size_t line_start = 0;
+
+    for (size_t i = 0; i < offset; i++) {
+      if (source[i] == '\n') {
+        line++;
+        line_start = i + 1;
       }
     }
-    return SymbolKey{.bufferId = buffer_id_.getId(), .offset = offset};
+
+    auto character = static_cast<int>(offset - line_start);
+    return lsp::Position{.line = line, .character = character};
   }
 
-  auto MakeRange(
-      const std::string& source, const std::string& search_string,
-      size_t symbol_size) -> slang::SourceRange {
-    size_t offset = source.find(search_string);
-    auto start = slang::SourceLocation{buffer_id_, offset};
-    auto end = slang::SourceLocation{buffer_id_, offset + symbol_size};
-    return slang::SourceRange{start, end};
-  }
-
-  auto FindLocation(const std::string& source, const std::string& text)
-      -> slang::SourceLocation {
+  // Find position of text in source (LSP coordinates)
+  // Simple ASCII-only conversion suitable for test code
+  static auto FindLocation(const std::string& source, const std::string& text)
+      -> lsp::Position {
     size_t offset = source.find(text);
     if (offset == std::string::npos) {
-      return {};
+      throw std::runtime_error(
+          fmt::format("FindLocation: Text '{}' not found in source", text));
     }
-    return slang::SourceLocation{buffer_id_, offset};
+
+    return ConvertOffsetToLspPosition(source, offset);
   }
 
-  static auto FindSymbolOffsetsInText(
-      const std::string& text, std::string_view symbol_name)
-      -> std::vector<size_t> {
-    std::vector<size_t> offsets;
+  // Find all LSP positions of a symbol in source code
+  static auto FindAllOccurrences(
+      const std::string& code, const std::string& symbol_name)
+      -> std::vector<lsp::Position> {
+    std::vector<lsp::Position> positions;
     std::string pattern = R"(\b)" + std::string(symbol_name) + R"(\b)";
     std::regex symbol_regex(pattern);
 
-    auto begin = std::sregex_iterator(text.begin(), text.end(), symbol_regex);
+    auto begin = std::sregex_iterator(code.begin(), code.end(), symbol_regex);
     auto end = std::sregex_iterator();
 
     for (auto it = begin; it != end; ++it) {
-      offsets.push_back(static_cast<size_t>(it->position()));
+      auto offset = static_cast<size_t>(it->position());
+      positions.push_back(ConvertOffsetToLspPosition(code, offset));
     }
 
-    return offsets;
-  }
-
-  auto FindAllOccurrences(
-      const std::string& code, const std::string& symbol_name)
-      -> std::vector<slang::SourceLocation> {
-    auto offsets = FindSymbolOffsetsInText(code, symbol_name);
-
-    if (offsets.empty()) {
+    if (positions.empty()) {
       throw std::runtime_error(
           fmt::format(
               "FindAllOccurrences: No occurrences of '{}' found", symbol_name));
     }
 
-    std::vector<slang::SourceLocation> occurrences;
-    for (size_t offset : offsets) {
-      occurrences.emplace_back(buffer_id_, offset);
+    return positions;
+  }
+
+  // Diagnostic assertion helpers (LSP-first, static methods)
+
+  static void AssertDiagnosticExists(
+      const std::vector<lsp::Diagnostic>& diagnostics,
+      lsp::DiagnosticSeverity severity,
+      const std::string& message_substring = "") {
+    for (const auto& diagnostic : diagnostics) {
+      if (diagnostic.severity == severity) {
+        if (message_substring.empty() ||
+            diagnostic.message.find(message_substring) != std::string::npos) {
+          return;  // Found matching diagnostic
+        }
+      }
     }
 
-    return occurrences;
+    std::string error_msg = fmt::format(
+        "AssertDiagnosticExists: No diagnostic found with severity");
+    if (!message_substring.empty()) {
+      error_msg +=
+          fmt::format(" and message containing '{}'", message_substring);
+    }
+    throw std::runtime_error(error_msg);
   }
 
-  // Public accessors for derived classes and tests
-  [[nodiscard]] auto GetBufferId() const -> uint32_t {
-    return buffer_id_.getId();
-  }
-  [[nodiscard]] auto GetSourceManager() const -> slang::SourceManager* {
-    return source_manager_.get();
-  }
-  [[nodiscard]] auto GetCompilation() const -> slang::ast::Compilation* {
-    return compilation_.get();
+  static void AssertNoErrors(const std::vector<lsp::Diagnostic>& diagnostics) {
+    auto error_diag = std::ranges::find_if(diagnostics, [](const auto& diag) {
+      return diag.severity == lsp::DiagnosticSeverity::kError;
+    });
+
+    if (error_diag != diagnostics.end()) {
+      throw std::runtime_error(
+          fmt::format(
+              "AssertNoErrors: Found unexpected error diagnostic: '{}'",
+              error_diag->message));
+    }
   }
 
- protected:
-  // Protected setters for derived classes to modify state
-  void SetSourceManager(std::shared_ptr<slang::SourceManager> sm) {
-    source_manager_ = std::move(sm);
+  static void AssertError(
+      const std::vector<lsp::Diagnostic>& diagnostics,
+      const std::string& message_substring = "") {
+    AssertDiagnosticExists(
+        diagnostics, lsp::DiagnosticSeverity::kError, message_substring);
   }
-  void SetCompilation(std::unique_ptr<slang::ast::Compilation> comp) {
-    compilation_ = std::move(comp);
+
+  // Go-to-definition assertion helper (LSP-first)
+  static void AssertGoToDefinition(
+      SemanticIndex& index, const std::string& uri, const std::string& code,
+      const std::string& symbol_name, size_t reference_index,
+      size_t definition_index) {
+    auto occurrences = FindAllOccurrences(code, symbol_name);
+
+    if (reference_index >= occurrences.size()) {
+      throw std::runtime_error(
+          fmt::format(
+              "AssertGoToDefinition: reference_index {} out of range for "
+              "symbol '{}' (found {} occurrences)",
+              reference_index, symbol_name, occurrences.size()));
+    }
+
+    if (definition_index >= occurrences.size()) {
+      throw std::runtime_error(
+          fmt::format(
+              "AssertGoToDefinition: definition_index {} out of range for "
+              "symbol '{}' (found {} occurrences)",
+              definition_index, symbol_name, occurrences.size()));
+    }
+
+    const auto& reference_pos = occurrences[reference_index];
+    const auto& expected_def_pos = occurrences[definition_index];
+
+    // Perform go-to-definition lookup with LSP coordinates
+    auto actual_def_range = index.LookupDefinitionAt(uri, reference_pos);
+
+    if (!actual_def_range.has_value()) {
+      throw std::runtime_error(
+          fmt::format(
+              "AssertGoToDefinition: LookupDefinitionAt failed for symbol '{}' "
+              "at reference_index {} (position {}:{})",
+              symbol_name, reference_index, reference_pos.line,
+              reference_pos.character));
+    }
+
+    // Verify exact range: must start at expected location and span exactly
+    // the symbol name length
+    const auto& actual_start = actual_def_range->range.start;
+    const auto& actual_end = actual_def_range->range.end;
+
+    if (actual_start.line != expected_def_pos.line ||
+        actual_start.character != expected_def_pos.character) {
+      throw std::runtime_error(
+          fmt::format(
+              "AssertGoToDefinition: definition start mismatch for symbol "
+              "'{}'. Expected ({}:{}), got ({}:{})",
+              symbol_name, expected_def_pos.line, expected_def_pos.character,
+              actual_start.line, actual_start.character));
+    }
+
+    auto actual_length = actual_end.character - actual_start.character;
+    if (actual_length != static_cast<int>(symbol_name.length())) {
+      throw std::runtime_error(
+          fmt::format(
+              "AssertGoToDefinition: definition length mismatch for symbol "
+              "'{}'. Expected length {}, got {}",
+              symbol_name, symbol_name.length(), actual_length));
+    }
   }
-  void SetBufferId(slang::BufferID id) {
-    buffer_id_ = id;
+
+  // Document symbol helpers
+
+  static void AssertContainsSymbols(
+      SemanticIndex& index, const std::vector<std::string>& expected_symbols) {
+    const auto& semantic_entries = index.GetSemanticEntries();
+    std::vector<std::string> found_symbol_names;
+
+    for (const auto& entry : semantic_entries) {
+      found_symbol_names.push_back(entry.name);
+    }
+
+    for (const auto& expected : expected_symbols) {
+      if (!std::ranges::contains(found_symbol_names, expected)) {
+        throw std::runtime_error(
+            fmt::format(
+                "AssertContainsSymbols: Expected symbol '{}' not found in "
+                "index",
+                expected));
+      }
+    }
+  }
+
+  static void AssertDocumentSymbolExists(
+      const std::vector<lsp::DocumentSymbol>& symbols,
+      const std::string& symbol_name, lsp::SymbolKind expected_kind) {
+    std::function<bool(const std::vector<lsp::DocumentSymbol>&)> search_symbols;
+    search_symbols = [&](const std::vector<lsp::DocumentSymbol>& syms) -> bool {
+      return std::ranges::any_of(syms, [&](const auto& symbol) -> bool {
+        return (symbol.name == symbol_name && symbol.kind == expected_kind) ||
+               (symbol.children.has_value() &&
+                search_symbols(*symbol.children));
+      });
+    };
+
+    if (!search_symbols(symbols)) {
+      throw std::runtime_error(
+          fmt::format(
+              "AssertDocumentSymbolExists: Symbol '{}' with expected kind not "
+              "found",
+              symbol_name));
+    }
   }
 
  private:
-  std::shared_ptr<slang::SourceManager> source_manager_;
-  std::unique_ptr<slang::ast::Compilation> compilation_;
-  slang::BufferID buffer_id_;
+  // Create compilation options matching production LSP server
+  static auto CreateCompilationOptions() -> slang::Bag {
+    slang::Bag options;
+
+    // Disable implicit net declarations for stricter diagnostics
+    slang::parsing::PreprocessorOptions pp_options;
+    pp_options.initialDefaultNetType = slang::parsing::TokenKind::Unknown;
+    options.set(pp_options);
+
+    // Configure lexer options for compatibility
+    slang::parsing::LexerOptions lexer_options;
+    lexer_options.enableLegacyProtect = true;
+    options.set(lexer_options);
+
+    // Compilation options: NO LintMode
+    slang::ast::CompilationOptions comp_options;
+    comp_options.flags |= slang::ast::CompilationFlags::LanguageServerMode;
+    comp_options.errorLimit = 0;  // Unlimited errors for LSP
+    options.set(comp_options);
+
+    return options;
+  }
 };
 
 }  // namespace slangd::test

@@ -7,7 +7,7 @@
 #include <slang/util/Enum.h>
 #include <spdlog/spdlog.h>
 
-#include "../../common/simple_fixture.hpp"
+#include "../../common/semantic_fixture.hpp"
 
 constexpr auto kLogLevel = spdlog::level::debug;
 
@@ -22,11 +22,10 @@ auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
 }
 
-using slangd::test::SimpleTestFixture;
+using Fixture = slangd::test::SemanticTestFixture;
 
 TEST_CASE(
     "Module instance name has self-definition", "[definition][instance]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module counter;
     endmodule
@@ -36,15 +35,15 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
   // Instance name should have self-definition (occurrence 0 is the definition)
-  fixture.AssertGoToDefinition(*index, code, "cnt_inst", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "cnt_inst", 0, 0);
 }
 
 TEST_CASE(
     "Port connection expressions navigate to variable definitions",
     "[definition][instance]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module register (
       input logic clk_port,
@@ -63,20 +62,21 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
   // Connection expressions should navigate to their declarations
   // sys_clk: occurrence 0 = definition, occurrence 1 = reference in port
   // connection
-  fixture.AssertGoToDefinition(*index, code, "sys_clk", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "sys_clk", 1, 0);
   // input_data: occurrence 0 = definition, occurrence 1 = reference in port
   // connection
-  fixture.AssertGoToDefinition(*index, code, "input_data", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "input_data", 1, 0);
 }
 
 TEST_CASE(
     "Parameter assignment expressions navigate to variable definitions",
     "[definition][instance]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module register #(parameter WIDTH = 8) (
       input logic [WIDTH-1:0] data_port
@@ -91,17 +91,17 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
   // BUS_WIDTH in parameter assignment should navigate to its definition
   // occurrence 0 = definition, occurrence 1 = used in data_bus width,
   // occurrence 2 = parameter value
-  fixture.AssertGoToDefinition(*index, code, "BUS_WIDTH", 2, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "BUS_WIDTH", 2, 0);
 }
 
 TEST_CASE(
     "Parameterized instance with multiple ports and parameters",
     "[definition][instance]") {
-  SimpleTestFixture fixture;
   std::string code = R"(
     module alu #(parameter DATA_W = 8, parameter OP_W = 4) (
       input logic [DATA_W-1:0] op_a, op_b,
@@ -125,18 +125,25 @@ TEST_CASE(
     endmodule
   )";
 
-  auto index = fixture.CompileSource(code);
+  auto result = Fixture::BuildIndex(code);
 
   // Instance name self-definition
-  fixture.AssertGoToDefinition(*index, code, "alu_inst", 0, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "alu_inst", 0, 0);
 
   // Parameter expressions
-  fixture.AssertGoToDefinition(*index, code, "WIDTH_PARAM", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "OPCODE_W", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "WIDTH_PARAM", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "OPCODE_W", 1, 0);
 
   // Port connection expressions
-  fixture.AssertGoToDefinition(*index, code, "operand_a", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "operand_b", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "alu_op", 1, 0);
-  fixture.AssertGoToDefinition(*index, code, "alu_result", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "operand_a", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "operand_b", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "alu_op", 1, 0);
+  Fixture::AssertGoToDefinition(
+      *result.index, result.uri, code, "alu_result", 1, 0);
 }
