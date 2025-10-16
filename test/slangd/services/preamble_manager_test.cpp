@@ -390,12 +390,12 @@ TEST_CASE("PreambleManager symbol info table", "[preamble_manager]") {
     auto pkg_info = preamble_manager->GetSymbolInfo(
         static_cast<const slang::ast::Symbol*>(pkg));
     REQUIRE(pkg_info.has_value());
-    REQUIRE(!pkg_info->file_uri.empty());
-    REQUIRE(pkg_info->file_uri.find("types_pkg.sv") != std::string::npos);
+    REQUIRE(!pkg_info->def_loc.uri.empty());
+    REQUIRE(pkg_info->def_loc.uri.find("types_pkg.sv") != std::string::npos);
 
     // Verify definition range is valid
-    REQUIRE(pkg_info->def_range.start.line >= 0);
-    REQUIRE(pkg_info->def_range.start.character >= 0);
+    REQUIRE(pkg_info->def_loc.range.start.line >= 0);
+    REQUIRE(pkg_info->def_loc.range.start.character >= 0);
 
     co_return;
   });
@@ -448,13 +448,13 @@ TEST_CASE("PreambleManager GetSymbolInfo lookup", "[preamble_manager]") {
     REQUIRE(info.has_value());
 
     // Verify file URI format
-    REQUIRE(info->file_uri.find("file://") == 0);
-    REQUIRE(info->file_uri.find("protocol_pkg.sv") != std::string::npos);
+    REQUIRE(info->def_loc.uri.find("file://") == 0);
+    REQUIRE(info->def_loc.uri.find("protocol_pkg.sv") != std::string::npos);
 
     // Verify range is valid
-    REQUIRE(info->def_range.start.line >= 0);
-    REQUIRE(info->def_range.start.character >= 0);
-    REQUIRE(info->def_range.end.line >= info->def_range.start.line);
+    REQUIRE(info->def_loc.range.start.line >= 0);
+    REQUIRE(info->def_loc.range.start.character >= 0);
+    REQUIRE(info->def_loc.range.end.line >= info->def_loc.range.start.line);
 
     // Test with nullptr (should return nullopt)
     auto null_info = preamble_manager->GetSymbolInfo(nullptr);
@@ -505,9 +505,9 @@ TEST_CASE(
     REQUIRE(info_b.has_value());
 
     // Verify they point to different files
-    REQUIRE(info_a->file_uri != info_b->file_uri);
-    REQUIRE(info_a->file_uri.find("pkg_a.sv") != std::string::npos);
-    REQUIRE(info_b->file_uri.find("pkg_b.sv") != std::string::npos);
+    REQUIRE(info_a->def_loc.uri != info_b->def_loc.uri);
+    REQUIRE(info_a->def_loc.uri.find("pkg_a.sv") != std::string::npos);
+    REQUIRE(info_b->def_loc.uri.find("pkg_b.sv") != std::string::npos);
 
     co_return;
   });

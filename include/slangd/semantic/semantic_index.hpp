@@ -31,9 +31,8 @@ namespace slangd::semantic {
 struct SemanticEntry {
   // LSP coordinates (reference location always in current_file_uri)
   lsp::Range ref_range;
-  lsp::Range def_range;
-  std::string def_uri;
-  bool is_cross_file;  // true = from preamble, false = local
+  lsp::Location def_loc;  // Definition location (range + URI)
+  bool is_cross_file;     // true = from preamble, false = local
 
   // Symbol information
   const slang::ast::Symbol* symbol;
@@ -224,14 +223,14 @@ class SemanticIndex {
 
     void AddReference(
         const slang::ast::Symbol& symbol, std::string_view name,
-        slang::SourceRange ref_range, lsp::Range def_range, std::string def_uri,
+        slang::SourceRange ref_range, lsp::Location def_loc,
         const slang::ast::Scope* parent_scope);
 
     // For references where PreambleManager provides pre-converted LSP
     // definition coordinates
     void AddReferenceWithLspDefinition(
         const slang::ast::Symbol& symbol, std::string_view name,
-        slang::SourceRange ref_range, lsp::Range def_range, std::string def_uri,
+        slang::SourceRange ref_range, lsp::Location def_loc,
         const slang::ast::Scope* parent_scope);
 
     void TraverseType(const slang::ast::Type& type);

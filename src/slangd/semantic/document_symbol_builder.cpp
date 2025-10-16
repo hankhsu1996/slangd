@@ -44,7 +44,7 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
 
     // FILTER: Only include symbols from the requested document using LSP
     // coordinates
-    if (entry.def_uri != uri) {
+    if (entry.def_loc.uri != uri) {
       continue;
     }
 
@@ -183,7 +183,7 @@ auto DocumentSymbolBuilder::CreateDocumentSymbol(const SemanticEntry& entry)
   doc_symbol.name = entry.name;
   doc_symbol.kind = entry.lsp_kind;
   // Use stored LSP coordinates directly (no SourceManager conversion needed)
-  doc_symbol.range = entry.def_range;
+  doc_symbol.range = entry.def_loc.range;
   doc_symbol.selectionRange = doc_symbol.range;  // Use same range for now
   doc_symbol.children =
       std::vector<lsp::DocumentSymbol>();  // Always initialize empty vector

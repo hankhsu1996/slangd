@@ -46,7 +46,7 @@ class PreambleSymbolVisitor
 
     // Store in map (symbol pointer as key)
     symbol_info_.get()[&symbol] = PreambleSymbolInfo{
-        .file_uri = file_uri, .def_range = *definition_range};
+        .def_loc = {.uri = file_uri, .range = *definition_range}};
   }
 
   // Helper to traverse type members (struct/union/class/enum fields)
