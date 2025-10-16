@@ -1212,6 +1212,14 @@ void SemanticIndex::IndexVisitor::handle(
     return;
   }
 
+  // Skip compiler-generated variables (e.g., implicit function return
+  // variables)
+  if (symbol.flags.has(slang::ast::VariableFlags::CompilerGenerated)) {
+    TraverseType(symbol.getType());
+    this->visitDefault(symbol);
+    return;
+  }
+
   auto def_loc = CreateSymbolLspLocation(symbol);
   if (def_loc) {
     AddDefinition(symbol, symbol.name, *def_loc, symbol.getParentScope());
@@ -2348,8 +2356,8 @@ void SemanticIndex::ValidateNoRangeOverlaps() const {
     if (overlap) {
       // Log warning but don't crash - LSP server should continue working
       // Extract filename from URI for more readable output
-      auto filename = current_file_uri_.substr(
-          current_file_uri_.find_last_of('/') + 1);
+      auto filename =
+          current_file_uri_.substr(current_file_uri_.find_last_of('/') + 1);
       logger_->warn(
           "Range overlap for symbol '{}' at line {} (char {}-{}) in '{}'",
           curr.name, curr.ref_range.start.line + 1,
