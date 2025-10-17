@@ -420,7 +420,7 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
                 type_ref.getSyntax()->as<slang::syntax::ScopedNameSyntax>();
             usage_range = scoped.right->sourceRange();
           }
-          auto ref_loc = ConvertExpressionRange(usage_range);
+          auto ref_loc = CreateLspLocation(type_ref, usage_range);
           if (ref_loc) {
             AddReference(
                 *typedef_target, typedef_target->name, ref_loc->range,
@@ -446,7 +446,7 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
                 type_ref.getSyntax()->as<slang::syntax::ScopedNameSyntax>();
             usage_range = scoped.right->sourceRange();
           }
-          auto ref_loc = ConvertExpressionRange(usage_range);
+          auto ref_loc = CreateLspLocation(type_ref, usage_range);
           if (ref_loc) {
             AddReference(
                 *class_target, class_target->name, ref_loc->range,
