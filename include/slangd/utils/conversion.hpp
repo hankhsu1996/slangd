@@ -1,11 +1,15 @@
 #pragma once
 
+#include <memory>
+
 #include <slang/ast/Compilation.h>
 #include <slang/ast/Expression.h>
 #include <slang/ast/Scope.h>
 #include <slang/ast/Symbol.h>
 #include <slang/text/SourceLocation.h>
 #include <slang/text/SourceManager.h>
+#include <slang/util/Enum.h>
+#include <spdlog/spdlog.h>
 
 #include "lsp/basic.hpp"
 
@@ -42,8 +46,14 @@ auto ToLspPosition(
 // preamble's SM and overlay symbols use overlay's SM.
 // Returns nullopt if symbol has no parent scope, no source manager, or invalid
 // location.
-inline auto CreateSymbolLspLocation(const slang::ast::Symbol& symbol)
+inline auto CreateSymbolLspLocation(
+    const slang::ast::Symbol& symbol, std::shared_ptr<spdlog::logger> logger)
     -> std::optional<lsp::Location> {
+  // Trace before dangerous operations (crash investigation)
+  logger->trace(
+      "CreateSymbolLspLocation: name='{}' kind={}", symbol.name,
+      toString(symbol.kind));
+
   // Derive SourceManager from symbol's own compilation
   const auto* scope = symbol.getParentScope();
   if (scope == nullptr) {
@@ -92,8 +102,13 @@ inline auto CreateSymbolLspLocation(const slang::ast::Symbol& symbol)
 // - Compilation has no SourceManager
 // - Range is invalid
 inline auto CreateLspLocation(
-    const slang::ast::Symbol& symbol, slang::SourceRange range)
-    -> std::optional<lsp::Location> {
+    const slang::ast::Symbol& symbol, slang::SourceRange range,
+    std::shared_ptr<spdlog::logger> logger) -> std::optional<lsp::Location> {
+  // Trace before dangerous operations (crash investigation)
+  logger->trace(
+      "CreateLspLocation(symbol): name='{}' kind={}", symbol.name,
+      toString(symbol.kind));
+
   // Derive SourceManager from symbol's compilation (safe!)
   const auto* scope = symbol.getParentScope();
   if (scope == nullptr) {
@@ -124,8 +139,11 @@ inline auto CreateLspLocation(
 // - Compilation has no SourceManager
 // - Range is invalid
 inline auto CreateLspLocation(
-    const slang::ast::Expression& expr, slang::SourceRange range)
-    -> std::optional<lsp::Location> {
+    const slang::ast::Expression& expr, slang::SourceRange range,
+    std::shared_ptr<spdlog::logger> logger) -> std::optional<lsp::Location> {
+  // Trace before dangerous operations (crash investigation)
+  logger->trace("CreateLspLocation(expr): kind={}", toString(expr.kind));
+
   // Get the compilation from expression directly
   if (expr.compilation == nullptr) {
     return std::nullopt;

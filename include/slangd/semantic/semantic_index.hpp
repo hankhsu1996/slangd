@@ -137,7 +137,8 @@ class SemanticIndex {
         const services::PreambleManager* preamble_manager)
         : index_(index),
           current_file_uri_(std::move(current_file_uri)),
-          preamble_manager_(preamble_manager) {
+          preamble_manager_(preamble_manager),
+          logger_(index.logger_) {
     }
 
     // Expression handlers
@@ -192,6 +193,7 @@ class SemanticIndex {
     std::reference_wrapper<SemanticIndex> index_;
     std::string current_file_uri_;
     const services::PreambleManager* preamble_manager_;
+    std::shared_ptr<spdlog::logger> logger_;
 
     // Track which type syntax nodes we've already traversed
     // Prevents duplicate traversal when multiple symbols share the same type

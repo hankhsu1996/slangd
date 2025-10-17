@@ -274,11 +274,6 @@ void SemanticIndex::IndexVisitor::AddDefinition(
     const slang::ast::Symbol& symbol, std::string_view name,
     lsp::Location def_loc, const slang::ast::Scope* parent_scope,
     const slang::ast::Scope* children_scope) {
-  // Trace logging for crash investigation
-  index_.get().logger_->trace(
-      "AddDefinition: '{}' -> {}:{}:{}", name, def_loc.uri,
-      def_loc.range.start.line, def_loc.range.start.character);
-
   const auto& unwrapped = UnwrapSymbol(symbol);
 
   auto entry = SemanticEntry{
@@ -298,11 +293,6 @@ void SemanticIndex::IndexVisitor::AddReference(
     const slang::ast::Symbol& symbol, std::string_view name,
     lsp::Range ref_range, lsp::Location def_loc,
     const slang::ast::Scope* parent_scope) {
-  // Trace logging for crash investigation
-  index_.get().logger_->trace(
-      "AddReference: '{}' -> {}:{}:{}", name, def_loc.uri,
-      def_loc.range.start.line, def_loc.range.start.character);
-
   const auto& unwrapped = UnwrapSymbol(symbol);
 
   auto entry = SemanticEntry{
@@ -322,11 +312,6 @@ void SemanticIndex::IndexVisitor::AddReferenceWithLspDefinition(
     const slang::ast::Symbol& symbol, std::string_view name,
     lsp::Range ref_range, lsp::Location def_loc,
     const slang::ast::Scope* parent_scope) {
-  // Trace logging for crash investigation
-  index_.get().logger_->trace(
-      "AddReferenceWithLspDefinition: '{}' -> {}:{}:{}", name, def_loc.uri,
-      def_loc.range.start.line, def_loc.range.start.character);
-
   // For module/port/parameter references where PreambleManager provides
   // pre-converted LSP definition coordinates
   const auto& unwrapped = UnwrapSymbol(symbol);
@@ -403,7 +388,7 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
 
       if (const auto* typedef_target =
               resolved_type.as_if<slang::ast::TypeAliasType>()) {
-        auto definition_loc = CreateSymbolLspLocation(*typedef_target);
+        auto definition_loc = CreateSymbolLspLocation(*typedef_target, logger_);
         if (definition_loc) {
           // Index package name if this is a scoped type reference
           if (type_ref.getSyntax() != nullptr) {
@@ -420,7 +405,7 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
             usage_range = scoped.right->sourceRange();
           }
 
-          auto ref_loc = CreateLspLocation(type_ref, usage_range);
+          auto ref_loc = CreateLspLocation(type_ref, usage_range, logger_);
           if (ref_loc) {
             AddReference(
                 *typedef_target, typedef_target->name, ref_loc->range,
@@ -430,7 +415,7 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
       } else if (
           const auto* class_target =
               resolved_type.as_if<slang::ast::ClassType>()) {
-        auto definition_loc = CreateSymbolLspLocation(*class_target);
+        auto definition_loc = CreateSymbolLspLocation(*class_target, logger_);
         if (definition_loc) {
           // Index package name if this is a scoped type reference
           if (type_ref.getSyntax() != nullptr) {
@@ -447,7 +432,7 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
             usage_range = scoped.right->sourceRange();
           }
 
-          auto ref_loc = CreateLspLocation(type_ref, usage_range);
+          auto ref_loc = CreateLspLocation(type_ref, usage_range, logger_);
           if (ref_loc) {
             AddReference(
                 *class_target, class_target->name, ref_loc->range,
@@ -547,8 +532,9 @@ void SemanticIndex::IndexVisitor::TraverseClassNames(
     const auto& class_name = node->as<slang::syntax::ClassNameSyntax>();
 
     // Use class_type (current symbol) to convert ranges safely
-    auto def_loc = CreateLspLocation(class_type, definition_range);
-    auto ref_loc = CreateLspLocation(class_type, class_name.identifier.range());
+    auto def_loc = CreateLspLocation(class_type, definition_range, logger_);
+    auto ref_loc =
+        CreateLspLocation(class_type, class_name.identifier.range(), logger_);
 
     if (def_loc && ref_loc) {
       AddReference(
@@ -603,8 +589,9 @@ void SemanticIndex::IndexVisitor::IndexClassParameters(
         }
 
         // Create LSP location for parameter
-        auto param_def_loc = CreateSymbolLspLocation(param_symbol);
-        auto ref_loc = CreateLspLocation(class_type, named_param.name.range());
+        auto param_def_loc = CreateSymbolLspLocation(param_symbol, logger_);
+        auto ref_loc =
+            CreateLspLocation(class_type, named_param.name.range(), logger_);
         if (param_def_loc && ref_loc) {
           AddReference(
               param_symbol, param_symbol.name, ref_loc->range, *param_def_loc,
@@ -658,8 +645,9 @@ void SemanticIndex::IndexVisitor::IndexInstanceParameters(
         }
 
         // Create LSP location for parameter
-        auto param_def_loc = CreateSymbolLspLocation(param_symbol);
-        auto ref_loc = CreateLspLocation(instance, named_param.name.range());
+        auto param_def_loc = CreateSymbolLspLocation(param_symbol, logger_);
+        auto ref_loc =
+            CreateLspLocation(instance, named_param.name.range(), logger_);
         if (param_def_loc && ref_loc) {
           AddReference(
               param_symbol, param_symbol.name, ref_loc->range, *param_def_loc,
@@ -701,10 +689,11 @@ void SemanticIndex::IndexVisitor::IndexPackageInScopedName(
     const auto& scope_symbol = scope->asSymbol();
     if (scope_symbol.kind == slang::ast::SymbolKind::Package) {
       const auto& pkg = scope_symbol.as<slang::ast::PackageSymbol>();
-      auto pkg_def_loc = CreateSymbolLspLocation(pkg);
+      auto pkg_def_loc = CreateSymbolLspLocation(pkg, logger_);
 
       // Derive SM from syntax_owner's compilation
-      auto ref_loc = CreateLspLocation(syntax_owner, ident.identifier.range());
+      auto ref_loc =
+          CreateLspLocation(syntax_owner, ident.identifier.range(), logger_);
 
       if (pkg_def_loc && ref_loc) {
         AddReference(
@@ -746,10 +735,11 @@ void SemanticIndex::IndexVisitor::IndexPackageInScopedName(
     const auto& scope_symbol = scope->asSymbol();
     if (scope_symbol.kind == slang::ast::SymbolKind::Package) {
       const auto& pkg = scope_symbol.as<slang::ast::PackageSymbol>();
-      auto pkg_def_loc = CreateSymbolLspLocation(pkg);
+      auto pkg_def_loc = CreateSymbolLspLocation(pkg, logger_);
 
       // Derive SM from expression's compilation
-      auto ref_loc = CreateLspLocation(expr_context, ident.identifier.range());
+      auto ref_loc =
+          CreateLspLocation(expr_context, ident.identifier.range(), logger_);
 
       if (pkg_def_loc && ref_loc) {
         AddReference(
@@ -887,8 +877,8 @@ void SemanticIndex::IndexVisitor::handle(
   }
 
   // Step 5: Convert ranges and add reference
-  auto ref_loc = CreateLspLocation(expr, *ref_range);
-  auto def_loc = CreateLspLocation(*target_symbol, *def_range);
+  auto ref_loc = CreateLspLocation(expr, *ref_range, logger_);
+  auto def_loc = CreateLspLocation(*target_symbol, *def_range, logger_);
 
   if (ref_loc && def_loc) {
     AddReference(
@@ -1006,8 +996,9 @@ void SemanticIndex::IndexVisitor::handle(
   }
 
   // Convert to LSP coordinates using safe conversion
-  auto def_loc = CreateLspLocation(**subroutine_symbol, *definition_range);
-  auto ref_loc = CreateLspLocation(expr, *call_range);
+  auto def_loc =
+      CreateLspLocation(**subroutine_symbol, *definition_range, logger_);
+  auto ref_loc = CreateLspLocation(expr, *call_range, logger_);
 
   if (def_loc && ref_loc) {
     AddReference(
@@ -1045,8 +1036,8 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::MemberAccessExpression& expr) {
-  auto definition_loc = CreateSymbolLspLocation(expr.member);
-  auto ref_loc = CreateLspLocation(expr, expr.memberNameRange());
+  auto definition_loc = CreateSymbolLspLocation(expr.member, logger_);
+  auto ref_loc = CreateLspLocation(expr, expr.memberNameRange(), logger_);
 
   if (definition_loc && ref_loc) {
     AddReference(
@@ -1068,8 +1059,8 @@ void SemanticIndex::IndexVisitor::handle(
     const slang::ast::Symbol& member_symbol = *setter.member;
 
     // Create reference from field name in pattern to field definition
-    auto definition_loc = CreateSymbolLspLocation(member_symbol);
-    auto ref_loc = CreateLspLocation(expr, setter.keyRange);
+    auto definition_loc = CreateSymbolLspLocation(member_symbol, logger_);
+    auto ref_loc = CreateLspLocation(expr, setter.keyRange, logger_);
     if (definition_loc && ref_loc) {
       AddReference(
           member_symbol, member_symbol.name, ref_loc->range, *definition_loc,
@@ -1107,8 +1098,8 @@ void SemanticIndex::IndexVisitor::handle(
         symbol->kind == slang::ast::SymbolKind::Instance &&
         symbol->name.empty();
     if (!is_array_element && elem.sourceRange.start().valid()) {
-      auto definition_loc = CreateSymbolLspLocation(*symbol);
-      auto ref_loc = CreateLspLocation(expr, elem.sourceRange);
+      auto definition_loc = CreateSymbolLspLocation(*symbol, logger_);
+      auto ref_loc = CreateLspLocation(expr, elem.sourceRange, logger_);
       if (definition_loc && ref_loc) {
         AddReference(
             *symbol, symbol->name, ref_loc->range, *definition_loc,
@@ -1156,7 +1147,7 @@ void SemanticIndex::IndexVisitor::handle(
   // Formal arguments need their own handler because they're dispatched
   // separately from VariableSymbol in the visitor.
 
-  auto def_loc = CreateSymbolLspLocation(formal_arg);
+  auto def_loc = CreateSymbolLspLocation(formal_arg, logger_);
   if (def_loc) {
     AddDefinition(
         formal_arg, formal_arg.name, *def_loc, formal_arg.getParentScope());
@@ -1183,7 +1174,7 @@ void SemanticIndex::IndexVisitor::handle(
     return;
   }
 
-  auto def_loc = CreateSymbolLspLocation(symbol);
+  auto def_loc = CreateSymbolLspLocation(symbol, logger_);
   if (def_loc) {
     AddDefinition(symbol, symbol.name, *def_loc, symbol.getParentScope());
   }
@@ -1215,8 +1206,9 @@ void SemanticIndex::IndexVisitor::handle(
     return;
   }
 
-  auto definition_loc = CreateSymbolLspLocation(*package);
-  auto ref_loc = CreateLspLocation(import_symbol, import_item.package.range());
+  auto definition_loc = CreateSymbolLspLocation(*package, logger_);
+  auto ref_loc =
+      CreateLspLocation(import_symbol, import_item.package.range(), logger_);
   if (definition_loc && ref_loc) {
     AddReference(
         *package, package->name, ref_loc->range, *definition_loc,
@@ -1243,8 +1235,9 @@ void SemanticIndex::IndexVisitor::handle(
   const auto& import_item =
       import_syntax->as<slang::syntax::PackageImportItemSyntax>();
 
-  auto definition_loc = CreateSymbolLspLocation(*package);
-  auto ref_loc = CreateLspLocation(import_symbol, import_item.package.range());
+  auto definition_loc = CreateSymbolLspLocation(*package, logger_);
+  auto ref_loc =
+      CreateLspLocation(import_symbol, import_item.package.range(), logger_);
   if (definition_loc && ref_loc) {
     AddReference(
         *package, package->name, ref_loc->range, *definition_loc,
@@ -1254,8 +1247,10 @@ void SemanticIndex::IndexVisitor::handle(
   // Create entry for the imported symbol name
   const auto* imported_symbol = import_symbol.importedSymbol();
   if (imported_symbol != nullptr) {
-    auto imported_definition_loc = CreateSymbolLspLocation(*imported_symbol);
-    auto ref_loc = CreateLspLocation(import_symbol, import_item.item.range());
+    auto imported_definition_loc =
+        CreateSymbolLspLocation(*imported_symbol, logger_);
+    auto ref_loc =
+        CreateLspLocation(import_symbol, import_item.item.range(), logger_);
     if (imported_definition_loc && ref_loc) {
       AddReference(
           *imported_symbol, imported_symbol->name, ref_loc->range,
@@ -1271,7 +1266,7 @@ void SemanticIndex::IndexVisitor::handle(
   // Skip implicit genvar localparams (they're automatically created by Slang
   // for each generate block iteration). The GenvarSymbol is already indexed.
   if (!param.isFromGenvar()) {
-    auto def_loc = CreateSymbolLspLocation(param);
+    auto def_loc = CreateSymbolLspLocation(param, logger_);
     if (def_loc) {
       AddDefinition(param, param.name, *def_loc, param.getParentScope());
     }
@@ -1283,7 +1278,7 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::SubroutineSymbol& subroutine) {
-  auto def_loc = CreateSymbolLspLocation(subroutine);
+  auto def_loc = CreateSymbolLspLocation(subroutine, logger_);
   if (def_loc) {
     AddDefinition(
         subroutine, subroutine.name, *def_loc, subroutine.getParentScope());
@@ -1296,7 +1291,7 @@ void SemanticIndex::IndexVisitor::handle(
             syntax->as<slang::syntax::FunctionDeclarationSyntax>();
         if (func_syntax.endBlockName != nullptr) {
           auto ref_loc = CreateLspLocation(
-              subroutine, func_syntax.endBlockName->name.range());
+              subroutine, func_syntax.endBlockName->name.range(), logger_);
           if (ref_loc) {
             AddReference(
                 subroutine, subroutine.name, ref_loc->range, *def_loc,
@@ -1311,7 +1306,7 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::MethodPrototypeSymbol& method_prototype) {
-  auto def_loc = CreateSymbolLspLocation(method_prototype);
+  auto def_loc = CreateSymbolLspLocation(method_prototype, logger_);
   if (def_loc) {
     AddDefinition(
         method_prototype, method_prototype.name, *def_loc,
@@ -1338,7 +1333,7 @@ void SemanticIndex::IndexVisitor::handle(
             syntax->as<slang::syntax::ModuleDeclarationSyntax>();
 
         if (auto def_loc = CreateLspLocation(
-                definition, decl_syntax.header->name.range())) {
+                definition, decl_syntax.header->name.range(), logger_)) {
           AddDefinition(
               definition, definition.name, *def_loc,
               definition.getParentScope());
@@ -1346,7 +1341,7 @@ void SemanticIndex::IndexVisitor::handle(
           // Add reference for end label (e.g., "endmodule : Test")
           if (decl_syntax.blockName != nullptr) {
             auto ref_loc = CreateLspLocation(
-                definition, decl_syntax.blockName->name.range());
+                definition, decl_syntax.blockName->name.range(), logger_);
             if (ref_loc) {
               AddReference(
                   definition, definition.name, ref_loc->range, *def_loc,
@@ -1368,7 +1363,7 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::TypeAliasType& type_alias) {
-  auto def_loc = CreateSymbolLspLocation(type_alias);
+  auto def_loc = CreateSymbolLspLocation(type_alias, logger_);
   if (def_loc) {
     AddDefinition(
         type_alias, type_alias.name, *def_loc, type_alias.getParentScope());
@@ -1382,7 +1377,7 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::EnumValueSymbol& enum_value) {
-  auto def_loc = CreateSymbolLspLocation(enum_value);
+  auto def_loc = CreateSymbolLspLocation(enum_value, logger_);
   if (def_loc) {
     AddDefinition(
         enum_value, enum_value.name, *def_loc, enum_value.getParentScope());
@@ -1391,7 +1386,7 @@ void SemanticIndex::IndexVisitor::handle(
 }
 
 void SemanticIndex::IndexVisitor::handle(const slang::ast::FieldSymbol& field) {
-  auto def_loc = CreateSymbolLspLocation(field);
+  auto def_loc = CreateSymbolLspLocation(field, logger_);
   if (def_loc) {
     AddDefinition(field, field.name, *def_loc, field.getParentScope());
   }
@@ -1401,7 +1396,7 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::FieldSymbol& field) {
 }
 
 void SemanticIndex::IndexVisitor::handle(const slang::ast::NetSymbol& net) {
-  auto def_loc = CreateSymbolLspLocation(net);
+  auto def_loc = CreateSymbolLspLocation(net, logger_);
   if (def_loc) {
     AddDefinition(net, net.name, *def_loc, net.getParentScope());
   }
@@ -1412,7 +1407,7 @@ void SemanticIndex::IndexVisitor::handle(const slang::ast::NetSymbol& net) {
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::ClassPropertySymbol& class_property) {
-  auto def_loc = CreateSymbolLspLocation(class_property);
+  auto def_loc = CreateSymbolLspLocation(class_property, logger_);
   if (def_loc) {
     AddDefinition(
         class_property, class_property.name, *def_loc,
@@ -1450,7 +1445,7 @@ void SemanticIndex::IndexVisitor::handle(
     }
 
     // Add GenericClassDef definition with ClassType scope as children_scope
-    auto def_loc = CreateSymbolLspLocation(class_def);
+    auto def_loc = CreateSymbolLspLocation(class_def, logger_);
     if (def_loc) {
       AddDefinition(
           class_def, class_def.name, *def_loc, class_def.getParentScope(),
@@ -1463,7 +1458,7 @@ void SemanticIndex::IndexVisitor::handle(
               syntax->as<slang::syntax::ClassDeclarationSyntax>();
           if (class_syntax.endBlockName != nullptr) {
             auto ref_loc = CreateLspLocation(
-                class_def, class_syntax.endBlockName->name.range());
+                class_def, class_syntax.endBlockName->name.range(), logger_);
             if (ref_loc) {
               AddReference(
                   class_def, class_def.name, ref_loc->range, *def_loc,
@@ -1503,10 +1498,10 @@ void SemanticIndex::IndexVisitor::handle(
                     auto base_def_range =
                         base_syntax->as<slang::syntax::ClassDeclarationSyntax>()
                             .name.range();
-                    auto base_def_loc =
-                        CreateLspLocation(*base_symbol, base_def_range);
+                    auto base_def_loc = CreateLspLocation(
+                        *base_symbol, base_def_range, logger_);
                     auto ref_loc =
-                        CreateLspLocation(class_type, base_ref_range);
+                        CreateLspLocation(class_type, base_ref_range, logger_);
                     if (base_def_loc && ref_loc) {
                       AddReference(
                           *base_symbol, base_symbol->name, ref_loc->range,
@@ -1551,7 +1546,7 @@ void SemanticIndex::IndexVisitor::handle(
   // GenericClassDefSymbol This pattern respects Slang's compilation-optimized
   // design while maintaining LSP correctness
   if (class_type.genericClass == nullptr) {
-    auto def_loc = CreateSymbolLspLocation(class_type);
+    auto def_loc = CreateSymbolLspLocation(class_type, logger_);
     if (def_loc) {
       AddDefinition(
           class_type, class_type.name, *def_loc, class_type.getParentScope());
@@ -1563,7 +1558,7 @@ void SemanticIndex::IndexVisitor::handle(
               syntax->as<slang::syntax::ClassDeclarationSyntax>();
           if (class_syntax.endBlockName != nullptr) {
             auto ref_loc = CreateLspLocation(
-                class_type, class_syntax.endBlockName->name.range());
+                class_type, class_syntax.endBlockName->name.range(), logger_);
             if (ref_loc) {
               AddReference(
                   class_type, class_type.name, ref_loc->range, *def_loc,
@@ -1590,8 +1585,10 @@ void SemanticIndex::IndexVisitor::handle(
                           base_class.genericClass)
                     : static_cast<const slang::ast::Symbol*>(&base_class);
 
-            auto base_definition_loc = CreateSymbolLspLocation(*base_symbol);
-            auto ref_loc = CreateLspLocation(class_type, base_ref_range);
+            auto base_definition_loc =
+                CreateSymbolLspLocation(*base_symbol, logger_);
+            auto ref_loc =
+                CreateLspLocation(class_type, base_ref_range, logger_);
             if (base_definition_loc && ref_loc) {
               AddReference(
                   *base_symbol, base_symbol->name, ref_loc->range,
@@ -1621,7 +1618,7 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::InterfacePortSymbol& interface_port) {
-  auto def_loc = CreateSymbolLspLocation(interface_port);
+  auto def_loc = CreateSymbolLspLocation(interface_port, logger_);
   if (def_loc) {
     AddDefinition(
         interface_port, interface_port.name, *def_loc,
@@ -1633,8 +1630,9 @@ void SemanticIndex::IndexVisitor::handle(
       auto interface_name_range = interface_port.interfaceNameRange();
       if (interface_name_range.start().valid()) {
         auto interface_definition_loc =
-            CreateSymbolLspLocation(*interface_port.interfaceDef);
-        auto ref_loc = CreateLspLocation(interface_port, interface_name_range);
+            CreateSymbolLspLocation(*interface_port.interfaceDef, logger_);
+        auto ref_loc =
+            CreateLspLocation(interface_port, interface_name_range, logger_);
         if (interface_definition_loc && ref_loc) {
           AddReference(
               *interface_port.interfaceDef, interface_port.interfaceDef->name,
@@ -1650,8 +1648,9 @@ void SemanticIndex::IndexVisitor::handle(
       auto modport_name_range = interface_port.modportNameRange();
       if (modport_name_range.start().valid()) {
         auto modport_definition_loc =
-            CreateSymbolLspLocation(*interface_port.modportSymbol);
-        auto ref_loc = CreateLspLocation(interface_port, modport_name_range);
+            CreateSymbolLspLocation(*interface_port.modportSymbol, logger_);
+        auto ref_loc =
+            CreateLspLocation(interface_port, modport_name_range, logger_);
         if (modport_definition_loc && ref_loc) {
           AddReference(
               *interface_port.modportSymbol, interface_port.modportSymbol->name,
@@ -1667,7 +1666,7 @@ void SemanticIndex::IndexVisitor::handle(
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::ModportSymbol& modport) {
   if (modport.location.valid()) {
-    auto def_loc = CreateSymbolLspLocation(modport);
+    auto def_loc = CreateSymbolLspLocation(modport, logger_);
     if (def_loc) {
       AddDefinition(modport, modport.name, *def_loc, modport.getParentScope());
     }
@@ -1688,8 +1687,8 @@ void SemanticIndex::IndexVisitor::handle(
         if (modport_port.internalSymbol != nullptr &&
             modport_port.internalSymbol->location.valid()) {
           auto target_loc =
-              CreateSymbolLspLocation(*modport_port.internalSymbol);
-          auto ref_loc = CreateLspLocation(modport_port, source_range);
+              CreateSymbolLspLocation(*modport_port.internalSymbol, logger_);
+          auto ref_loc = CreateLspLocation(modport_port, source_range, logger_);
           if (target_loc && ref_loc) {
             AddReference(
                 *modport_port.internalSymbol, modport_port.name, ref_loc->range,
@@ -1734,7 +1733,7 @@ void SemanticIndex::IndexVisitor::handle(
 
     if (is_interface_array) {
       // 1. Create self-definition for array name
-      auto def_loc = CreateSymbolLspLocation(instance_array);
+      auto def_loc = CreateSymbolLspLocation(instance_array, logger_);
       if (def_loc) {
         AddDefinition(
             instance_array, instance_array.name, *def_loc,
@@ -1758,9 +1757,9 @@ void SemanticIndex::IndexVisitor::handle(
                 first_elem->as<slang::ast::InstanceSymbol>();
             const auto& interface_def = first_instance.getDefinition();
             auto interface_definition_loc =
-                CreateSymbolLspLocation(interface_def);
-            auto ref_loc =
-                CreateLspLocation(first_instance, inst_syntax.type.range());
+                CreateSymbolLspLocation(interface_def, logger_);
+            auto ref_loc = CreateLspLocation(
+                first_instance, inst_syntax.type.range(), logger_);
             if (interface_definition_loc && ref_loc) {
               AddReference(
                   interface_def, interface_def.name, ref_loc->range,
@@ -1802,7 +1801,7 @@ void SemanticIndex::IndexVisitor::handle(
   if (instance.isInterface() && syntax != nullptr &&
       syntax->kind == slang::syntax::SyntaxKind::HierarchicalInstance) {
     // 1. Create self-definition for instance name
-    auto def_loc = CreateSymbolLspLocation(instance);
+    auto def_loc = CreateSymbolLspLocation(instance, logger_);
     if (def_loc) {
       AddDefinition(
           instance, instance.name, *def_loc, instance.getParentScope());
@@ -1818,8 +1817,10 @@ void SemanticIndex::IndexVisitor::handle(
 
       // Get interface definition from instance
       const auto& interface_def = instance.getDefinition();
-      auto interface_definition_loc = CreateSymbolLspLocation(interface_def);
-      auto ref_loc = CreateLspLocation(instance, inst_syntax.type.range());
+      auto interface_definition_loc =
+          CreateSymbolLspLocation(interface_def, logger_);
+      auto ref_loc =
+          CreateLspLocation(instance, inst_syntax.type.range(), logger_);
       if (interface_definition_loc && ref_loc) {
         AddReference(
             interface_def, interface_def.name, ref_loc->range,
@@ -1855,7 +1856,8 @@ void SemanticIndex::IndexVisitor::handle(
 
         if (expr != nullptr && expr->sourceRange.start().valid()) {
           // Extract definition range from the connected instance
-          auto definition_loc = CreateSymbolLspLocation(*connected_instance);
+          auto definition_loc =
+              CreateSymbolLspLocation(*connected_instance, logger_);
           if (definition_loc) {
             // Calculate precise reference range from the connected instance
             // name (similar to NamedValueExpression handling)
@@ -1864,7 +1866,8 @@ void SemanticIndex::IndexVisitor::handle(
                 ref_start, ref_start + static_cast<uint32_t>(
                                            connected_instance->name.length()));
 
-            auto ref_loc = CreateLspLocation(instance, reference_range);
+            auto ref_loc =
+                CreateLspLocation(instance, reference_range, logger_);
             if (ref_loc) {
               AddReference(
                   *connected_instance, connected_instance->name, ref_loc->range,
@@ -1906,9 +1909,10 @@ void SemanticIndex::IndexVisitor::handle(
   // for LHS identifier
   if (generate_array.externalGenvarRefRange.has_value() &&
       generate_array.genvar != nullptr) {
-    auto definition_loc = CreateSymbolLspLocation(*generate_array.genvar);
+    auto definition_loc =
+        CreateSymbolLspLocation(*generate_array.genvar, logger_);
     auto ref_range = *generate_array.externalGenvarRefRange;
-    auto ref_loc = CreateLspLocation(generate_array, ref_range);
+    auto ref_loc = CreateLspLocation(generate_array, ref_range, logger_);
     if (definition_loc && ref_loc) {
       AddReference(
           *generate_array.genvar, generate_array.genvar->name, ref_loc->range,
@@ -1952,7 +1956,7 @@ void SemanticIndex::IndexVisitor::handle(
           std::string_view block_name = gen_block.beginName->name.valueText();
 
           if (auto def_loc = CreateLspLocation(
-                  generate_block, gen_block.beginName->name.range())) {
+                  generate_block, gen_block.beginName->name.range(), logger_)) {
             // Skip GenerateBlockArray parent since it's not indexed in document
             // symbols
             const slang::ast::Scope* parent_scope =
@@ -1970,7 +1974,7 @@ void SemanticIndex::IndexVisitor::handle(
             // Add reference for end label (e.g., "end : gen_loop")
             if (gen_block.endName != nullptr) {
               auto ref_loc = CreateLspLocation(
-                  generate_block, gen_block.endName->name.range());
+                  generate_block, gen_block.endName->name.range(), logger_);
               if (ref_loc) {
                 AddReference(
                     generate_block, block_name, ref_loc->range, *def_loc,
@@ -2011,7 +2015,7 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::GenvarSymbol& genvar) {
-  auto def_loc = CreateSymbolLspLocation(genvar);
+  auto def_loc = CreateSymbolLspLocation(genvar, logger_);
   if (def_loc) {
     AddDefinition(genvar, genvar.name, *def_loc, genvar.getParentScope());
   }
@@ -2019,7 +2023,7 @@ void SemanticIndex::IndexVisitor::handle(
 
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::PackageSymbol& package) {
-  auto def_loc = CreateSymbolLspLocation(package);
+  auto def_loc = CreateSymbolLspLocation(package, logger_);
   if (def_loc) {
     AddDefinition(package, package.name, *def_loc, package.getParentScope());
 
@@ -2029,8 +2033,8 @@ void SemanticIndex::IndexVisitor::handle(
         const auto& decl_syntax =
             syntax->as<slang::syntax::ModuleDeclarationSyntax>();
         if (decl_syntax.blockName != nullptr) {
-          auto ref_loc =
-              CreateLspLocation(package, decl_syntax.blockName->name.range());
+          auto ref_loc = CreateLspLocation(
+              package, decl_syntax.blockName->name.range(), logger_);
           if (ref_loc) {
             AddReference(
                 package, package.name, ref_loc->range, *def_loc,
@@ -2048,7 +2052,7 @@ void SemanticIndex::IndexVisitor::handle(
   // StatementBlockSymbol represents named statement blocks (e.g., assertion
   // labels) Only index if it has a valid name (not empty or auto-generated)
   if (!statement_block.name.empty()) {
-    auto def_loc = CreateSymbolLspLocation(statement_block);
+    auto def_loc = CreateSymbolLspLocation(statement_block, logger_);
     if (def_loc) {
       AddDefinition(
           statement_block, statement_block.name, *def_loc,
@@ -2067,7 +2071,7 @@ void SemanticIndex::IndexVisitor::handle(
 
   // Always create self-definition for instance name (same-file and cross-file)
   if (syntax->kind == slang::syntax::SyntaxKind::HierarchicalInstance) {
-    auto def_loc = CreateSymbolLspLocation(symbol);
+    auto def_loc = CreateSymbolLspLocation(symbol, logger_);
     if (def_loc) {
       AddDefinition(symbol, symbol.name, *def_loc, symbol.getParentScope());
     }
@@ -2109,8 +2113,10 @@ void SemanticIndex::IndexVisitor::handle(
             const auto& instance_symbol =
                 ref_symbol.as<slang::ast::InstanceSymbol>();
             if (instance_symbol.isInterface()) {
-              auto definition_loc = CreateSymbolLspLocation(instance_symbol);
-              auto ref_loc = CreateLspLocation(symbol, expr.sourceRange);
+              auto definition_loc =
+                  CreateSymbolLspLocation(instance_symbol, logger_);
+              auto ref_loc =
+                  CreateLspLocation(symbol, expr.sourceRange, logger_);
               if (definition_loc && ref_loc) {
                 // Create reference using the expression's source range
                 AddReference(
@@ -2129,8 +2135,10 @@ void SemanticIndex::IndexVisitor::handle(
               const auto& first_instance =
                   instance_array.elements[0]->as<slang::ast::InstanceSymbol>();
               if (first_instance.isInterface()) {
-                auto definition_loc = CreateSymbolLspLocation(instance_array);
-                auto ref_loc = CreateLspLocation(symbol, expr.sourceRange);
+                auto definition_loc =
+                    CreateSymbolLspLocation(instance_array, logger_);
+                auto ref_loc =
+                    CreateLspLocation(symbol, expr.sourceRange, logger_);
                 if (definition_loc && ref_loc) {
                   // Create reference using the expression's source range
                   AddReference(
@@ -2142,8 +2150,8 @@ void SemanticIndex::IndexVisitor::handle(
           } else if (ref_symbol.kind == slang::ast::SymbolKind::InterfacePort) {
             const auto& iface_port =
                 ref_symbol.as<slang::ast::InterfacePortSymbol>();
-            auto definition_loc = CreateSymbolLspLocation(iface_port);
-            auto ref_loc = CreateLspLocation(symbol, expr.sourceRange);
+            auto definition_loc = CreateSymbolLspLocation(iface_port, logger_);
+            auto ref_loc = CreateLspLocation(symbol, expr.sourceRange, logger_);
             if (definition_loc && ref_loc) {
               // Create reference using the expression's source range
               AddReference(
@@ -2179,7 +2187,7 @@ void SemanticIndex::IndexVisitor::handle(
       auto type_range = inst_syntax.type.range();
 
       // Module definitions are in PreambleManager (already in LSP coordinates)
-      auto ref_loc = CreateLspLocation(symbol, type_range);
+      auto ref_loc = CreateLspLocation(symbol, type_range, logger_);
       if (ref_loc) {
         AddReferenceWithLspDefinition(
             symbol, symbol.definitionName, ref_loc->range,
@@ -2202,7 +2210,7 @@ void SemanticIndex::IndexVisitor::handle(
           auto it = module_info->port_lookup.find(std::string(port_name));
           if (it != module_info->port_lookup.end()) {
             const auto* port_info = it->second;
-            auto ref_loc = CreateLspLocation(symbol, npc.name.range());
+            auto ref_loc = CreateLspLocation(symbol, npc.name.range(), logger_);
             if (ref_loc) {
               AddReferenceWithLspDefinition(
                   symbol, port_name, ref_loc->range,
@@ -2229,7 +2237,8 @@ void SemanticIndex::IndexVisitor::handle(
                 module_info->parameter_lookup.find(std::string(param_name));
             if (it != module_info->parameter_lookup.end()) {
               const auto* param_info = it->second;
-              auto ref_loc = CreateLspLocation(symbol, npa.name.range());
+              auto ref_loc =
+                  CreateLspLocation(symbol, npa.name.range(), logger_);
               if (ref_loc) {
                 AddReferenceWithLspDefinition(
                     symbol, param_name, ref_loc->range,
