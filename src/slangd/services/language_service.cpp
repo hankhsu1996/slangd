@@ -139,10 +139,8 @@ auto LanguageService::GetDefinitionsForPosition(
         lsp::error::LspErrorCode::kInternalError, "Workspace not initialized");
   }
 
-  // Use callback pattern to access session without shared_ptr escape
   auto result = co_await session_manager_->WithSession(
       uri, [this, uri, position](const OverlaySession& session) {
-        // Look up definition using semantic index with LSP coordinates
         auto def_loc_opt =
             session.GetSemanticIndex().LookupDefinitionAt(uri, position);
 
@@ -153,17 +151,14 @@ auto LanguageService::GetDefinitionsForPosition(
           return std::vector<lsp::Location>{};
         }
 
-        // Return the location directly (already lsp::Location)
         return std::vector<lsp::Location>{*def_loc_opt};
       });
 
   if (!result) {
+    // Return empty instead of error - prevents VSCode spinning
     logger_->debug(
-        "GetDefinitionsForPosition: Session not found for {} ({}), returning "
-        "error",
-        uri, result.error());
-    co_return LspError::UnexpectedFromCode(
-        lsp::error::LspErrorCode::kInternalError, result.error());
+        "GetDefinitionsForPosition failed for {}: {}", uri, result.error());
+    co_return std::vector<lsp::Location>{};
   }
 
   co_return *result;
@@ -179,18 +174,15 @@ auto LanguageService::GetDocumentSymbols(std::string uri) -> asio::awaitable<
         lsp::error::LspErrorCode::kInternalError, "Workspace not initialized");
   }
 
-  // Use callback pattern to access session without shared_ptr escape
   auto result = co_await session_manager_->WithSession(
       uri, [uri](const OverlaySession& session) {
         return session.GetSemanticIndex().GetDocumentSymbols(uri);
       });
 
   if (!result) {
-    logger_->debug(
-        "GetDocumentSymbols: Session not found for {} ({}), returning error",
-        uri, result.error());
-    co_return LspError::UnexpectedFromCode(
-        lsp::error::LspErrorCode::kInternalError, result.error());
+    // Return empty instead of error - prevents VSCode spinning
+    logger_->debug("GetDocumentSymbols failed for {}: {}", uri, result.error());
+    co_return std::vector<lsp::DocumentSymbol>{};
   }
 
   co_return *result;
