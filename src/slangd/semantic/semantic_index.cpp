@@ -494,7 +494,8 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
 
 void SemanticIndex::IndexVisitor::IndexClassSpecialization(
     const slang::ast::ClassType& class_type,
-    const slang::syntax::SyntaxNode* call_syntax) {
+    const slang::syntax::SyntaxNode* call_syntax,
+    const slang::ast::Expression& overlay_context) {
   if (class_type.genericClass == nullptr ||
       !class_type.genericClass->location.valid()) {
     return;
@@ -516,14 +517,16 @@ void SemanticIndex::IndexVisitor::IndexClassSpecialization(
       call_syntax->kind == slang::syntax::SyntaxKind::InvocationExpression) {
     const auto& invocation =
         call_syntax->as<slang::syntax::InvocationExpressionSyntax>();
-    TraverseClassNames(invocation.left, class_type, definition_range);
+    TraverseClassNames(
+        invocation.left, class_type, definition_range, overlay_context);
   }
 }
 
 void SemanticIndex::IndexVisitor::TraverseClassNames(
     const slang::syntax::SyntaxNode* node,
     const slang::ast::ClassType& class_type,
-    slang::SourceRange definition_range) {
+    slang::SourceRange definition_range,
+    const slang::ast::Expression& overlay_context) {
   if (node == nullptr) {
     return;
   }
@@ -531,10 +534,11 @@ void SemanticIndex::IndexVisitor::TraverseClassNames(
   if (node->kind == slang::syntax::SyntaxKind::ClassName) {
     const auto& class_name = node->as<slang::syntax::ClassNameSyntax>();
 
-    // Use class_type (current symbol) to convert ranges safely
+    // Use overlay_context to convert overlay syntax ranges safely
+    // (class_type might be from preamble)
     auto def_loc = CreateLspLocation(class_type, definition_range, logger_);
-    auto ref_loc =
-        CreateLspLocation(class_type, class_name.identifier.range(), logger_);
+    auto ref_loc = CreateLspLocation(
+        overlay_context, class_name.identifier.range(), logger_);
 
     if (def_loc && ref_loc) {
       AddReference(
@@ -544,18 +548,21 @@ void SemanticIndex::IndexVisitor::TraverseClassNames(
 
     // Index parameter names in specialization
     if (class_name.parameters != nullptr) {
-      IndexClassParameters(class_type, *class_name.parameters);
+      IndexClassParameters(class_type, *class_name.parameters, overlay_context);
     }
   } else if (node->kind == slang::syntax::SyntaxKind::ScopedName) {
     const auto& scoped = node->as<slang::syntax::ScopedNameSyntax>();
-    TraverseClassNames(scoped.left, class_type, definition_range);
-    TraverseClassNames(scoped.right, class_type, definition_range);
+    TraverseClassNames(
+        scoped.left, class_type, definition_range, overlay_context);
+    TraverseClassNames(
+        scoped.right, class_type, definition_range, overlay_context);
   }
 }
 
 void SemanticIndex::IndexVisitor::IndexClassParameters(
     const slang::ast::ClassType& class_type,
-    const slang::syntax::ParameterValueAssignmentSyntax& params) {
+    const slang::syntax::ParameterValueAssignmentSyntax& params,
+    const slang::ast::Expression& overlay_context) {
   // Parameter value assignments can be ordered or named
   // For named assignments: .MAX_VAL(50) - we index the parameter name
   // For ordered assignments: #(50, 100) - no names to index, only values
@@ -578,27 +585,54 @@ void SemanticIndex::IndexVisitor::IndexClassParameters(
         param_base->as<slang::syntax::NamedParamAssignmentSyntax>();
     std::string_view param_name = named_param.name.valueText();
 
-    // Find corresponding parameter symbol in genericParameters
-    for (const auto* generic_param : class_type.genericParameters) {
-      if (generic_param->name == param_name &&
-          generic_param->kind == slang::ast::SymbolKind::Parameter) {
-        const auto& param_symbol =
-            generic_param->as<slang::ast::ParameterSymbol>();
-        if (!param_symbol.location.valid()) {
-          continue;
-        }
+    // Find corresponding parameter symbol in specialized class's
+    // genericParameters. CRITICAL: These parameters belong to overlay
+    // compilation but have locations from preamble files. We must use the
+    // preamble's SourceManager (from genericClass) to convert their locations
+    // correctly.
+    if (class_type.genericClass == nullptr) {
+      continue;
+    }
 
-        // Create LSP location for parameter
-        auto param_def_loc = CreateSymbolLspLocation(param_symbol, logger_);
-        auto ref_loc =
-            CreateLspLocation(class_type, named_param.name.range(), logger_);
-        if (param_def_loc && ref_loc) {
-          AddReference(
-              param_symbol, param_symbol.name, ref_loc->range, *param_def_loc,
-              param_symbol.getParentScope());
-        }
-        break;
+    // Get preamble SourceManager from the generic class definition
+    const auto* preamble_scope = class_type.genericClass->getParentScope();
+    if (preamble_scope == nullptr) {
+      continue;
+    }
+    const auto& preamble_compilation = preamble_scope->getCompilation();
+    const auto* preamble_sm = preamble_compilation.getSourceManager();
+    if (preamble_sm == nullptr) {
+      continue;
+    }
+
+    for (const auto* generic_param : class_type.genericParameters) {
+      if (generic_param->name != param_name ||
+          generic_param->kind != slang::ast::SymbolKind::Parameter) {
+        continue;
       }
+
+      const auto& param_symbol =
+          generic_param->as<slang::ast::ParameterSymbol>();
+      if (!param_symbol.location.valid()) {
+        logger_->debug(
+            "IndexClassParameters: param '{}' has invalid location",
+            param_symbol.name);
+        continue;
+      }
+
+      // Convert parameter location using PREAMBLE SourceManager
+      auto param_def_loc =
+          CreateSymbolLspLocationWithSM(param_symbol, *preamble_sm);
+      // Convert reference location using OVERLAY context
+      auto ref_loc =
+          CreateLspLocation(overlay_context, named_param.name.range(), logger_);
+
+      if (param_def_loc && ref_loc) {
+        AddReference(
+            param_symbol, param_symbol.name, ref_loc->range, *param_def_loc,
+            param_symbol.getParentScope());
+      }
+      break;
     }
   }
 }
@@ -903,25 +937,6 @@ void SemanticIndex::IndexVisitor::handle(
     return;
   }
 
-  // Modern approach: use std::optional and lambdas for clean range extraction
-  auto extract_definition_range = [&]() -> std::optional<slang::SourceRange> {
-    const auto* syntax = (*subroutine_symbol)->getSyntax();
-    if (syntax == nullptr) {
-      return std::nullopt;
-    }
-
-    if (syntax->kind == slang::syntax::SyntaxKind::TaskDeclaration ||
-        syntax->kind == slang::syntax::SyntaxKind::FunctionDeclaration) {
-      const auto& func_syntax =
-          syntax->as<slang::syntax::FunctionDeclarationSyntax>();
-      if (func_syntax.prototype != nullptr &&
-          func_syntax.prototype->name != nullptr) {
-        return func_syntax.prototype->name->sourceRange();
-      }
-    }
-    return std::nullopt;
-  };
-
   // Check if calling a class static method with specialization
   if (const auto* parent_scope = (*subroutine_symbol)->getParentScope()) {
     if (parent_scope->asSymbol().kind == slang::ast::SymbolKind::ClassType) {
@@ -930,7 +945,7 @@ void SemanticIndex::IndexVisitor::handle(
 
       // Only index specialized classes (has genericClass pointer)
       if (class_type.genericClass != nullptr) {
-        IndexClassSpecialization(class_type, expr.syntax);
+        IndexClassSpecialization(class_type, expr.syntax, expr);
       }
     }
   }
@@ -979,10 +994,9 @@ void SemanticIndex::IndexVisitor::handle(
     return std::nullopt;
   };
 
-  auto definition_range = extract_definition_range();
   auto call_range = extract_call_range();
 
-  if (!definition_range || !call_range) {
+  if (!call_range) {
     this->visitDefault(expr);
     return;
   }
@@ -995,9 +1009,38 @@ void SemanticIndex::IndexVisitor::handle(
     IndexPackageInScopedName(invocation.left, expr, **subroutine_symbol);
   }
 
-  // Convert to LSP coordinates using safe conversion
-  auto def_loc =
-      CreateLspLocation(**subroutine_symbol, *definition_range, logger_);
+  // Handle subroutine definition location conversion.
+  // CRITICAL: If the subroutine is in a specialized ClassType from preamble,
+  // the symbol belongs to overlay compilation but has location from preamble
+  // file. We must use the preamble's SourceManager in this case.
+  std::optional<lsp::Location> def_loc;
+
+  const auto* parent_scope = (*subroutine_symbol)->getParentScope();
+  if (parent_scope != nullptr &&
+      parent_scope->asSymbol().kind == slang::ast::SymbolKind::ClassType) {
+    const auto& parent_class =
+        parent_scope->asSymbol().as<slang::ast::ClassType>();
+
+    if (parent_class.genericClass != nullptr) {
+      // Specialized class - use preamble SM
+      const auto* preamble_scope = parent_class.genericClass->getParentScope();
+      if (preamble_scope != nullptr) {
+        const auto& preamble_comp = preamble_scope->getCompilation();
+        const auto* preamble_sm = preamble_comp.getSourceManager();
+        if (preamble_sm != nullptr) {
+          def_loc =
+              CreateSymbolLspLocationWithSM(**subroutine_symbol, *preamble_sm);
+        }
+      }
+    }
+  }
+
+  // Fall back to normal CreateSymbolLspLocation if not a specialized class
+  // member
+  if (!def_loc) {
+    def_loc = CreateSymbolLspLocation(**subroutine_symbol, logger_);
+  }
+
   auto ref_loc = CreateLspLocation(expr, *call_range, logger_);
 
   if (def_loc && ref_loc) {
@@ -2347,10 +2390,14 @@ auto SemanticIndex::ValidateCoordinates() const
   // failures FATAL: Invalid coordinates will cause crashes on go-to-definition
   // Common causes: missing preamble symbols, cross-SourceManager conversion
   size_t invalid_count = 0;
+  std::string first_invalid_symbol;
   for (const auto& entry : semantic_entries_) {
     if (entry.ref_range.start.line == -1 || entry.ref_range.end.line == -1 ||
         entry.def_loc.range.start.line == -1 ||
         entry.def_loc.range.end.line == -1) {
+      if (invalid_count == 0) {
+        first_invalid_symbol = std::string(entry.name);
+      }
       invalid_count++;
     }
   }
@@ -2359,8 +2406,9 @@ auto SemanticIndex::ValidateCoordinates() const
     return std::unexpected(
         fmt::format(
             "Found {} entries with invalid coordinates in '{}'. "
+            "First invalid symbol: '{}'. "
             "This will cause crashes. Please report this bug.",
-            invalid_count, current_file_uri_));
+            invalid_count, current_file_uri_, first_invalid_symbol));
   }
 
   return {};  // Success

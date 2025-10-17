@@ -235,16 +235,19 @@ class SemanticIndex {
 
     void IndexClassSpecialization(
         const slang::ast::ClassType& class_type,
-        const slang::syntax::SyntaxNode* call_syntax);
+        const slang::syntax::SyntaxNode* call_syntax,
+        const slang::ast::Expression& overlay_context);
 
     void TraverseClassNames(
         const slang::syntax::SyntaxNode* node,
         const slang::ast::ClassType& class_type,
-        slang::SourceRange definition_range);
+        slang::SourceRange definition_range,
+        const slang::ast::Expression& overlay_context);
 
     void IndexClassParameters(
         const slang::ast::ClassType& class_type,
-        const slang::syntax::ParameterValueAssignmentSyntax& params);
+        const slang::syntax::ParameterValueAssignmentSyntax& params,
+        const slang::ast::Expression& overlay_context);
 
     void IndexInstanceParameters(
         const slang::ast::InstanceSymbol& instance,

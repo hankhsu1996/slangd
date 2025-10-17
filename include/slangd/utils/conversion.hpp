@@ -40,6 +40,38 @@ auto ToLspPosition(
     const slang::SourceLocation& location,
     const slang::SourceManager& source_manager) -> lsp::Position;
 
+// Create LSP location for a symbol using an explicit SourceManager.
+// This is the low-level function that performs the actual conversion.
+// Use this when you need to specify which SourceManager to use (e.g., for
+// specialized class members that need preamble SM).
+inline auto CreateSymbolLspLocationWithSM(
+    const slang::ast::Symbol& symbol,
+    const slang::SourceManager& source_manager)
+    -> std::optional<lsp::Location> {
+  // Check valid location
+  if (!symbol.location.valid()) {
+    return std::nullopt;
+  }
+
+  // Compute range: symbol name location + length
+  lsp::Position start = ToLspPosition(symbol.location, source_manager);
+
+  // Filter out built-in symbols with invalid coordinates (line == -1)
+  // These are added automatically by Slang (e.g., class randomize() methods)
+  if (start.line < 0) {
+    return std::nullopt;
+  }
+
+  lsp::Position end = start;
+  end.character += static_cast<int>(symbol.name.length());
+
+  // Get base location (for URI extraction) and set our computed range
+  lsp::Location location = ToLspLocation(symbol.location, source_manager);
+  location.range = {.start = start, .end = end};
+
+  return location;
+}
+
 // Create LSP location (URI + range) for a symbol's name.
 // Automatically uses the correct SourceManager from the symbol's compilation.
 // This prevents BufferID mismatch crashes by ensuring preamble symbols use
@@ -66,28 +98,7 @@ inline auto CreateSymbolLspLocation(
     return std::nullopt;
   }
 
-  // Check valid location
-  if (!symbol.location.valid()) {
-    return std::nullopt;
-  }
-
-  // Compute range: symbol name location + length
-  lsp::Position start = ToLspPosition(symbol.location, *source_manager);
-
-  // Filter out built-in symbols with invalid coordinates (line == -1)
-  // These are added automatically by Slang (e.g., class randomize() methods)
-  if (start.line < 0) {
-    return std::nullopt;
-  }
-
-  lsp::Position end = start;
-  end.character += static_cast<int>(symbol.name.length());
-
-  // Get base location (for URI extraction) and set our computed range
-  lsp::Location location = ToLspLocation(symbol.location, *source_manager);
-  location.range = {.start = start, .end = end};
-
-  return location;
+  return CreateSymbolLspLocationWithSM(symbol, *source_manager);
 }
 
 // Create LSP location from Slang range, using symbol's SourceManager.
