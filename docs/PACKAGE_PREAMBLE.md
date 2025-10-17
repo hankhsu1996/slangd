@@ -69,6 +69,7 @@ These functions derive SourceManager from the symbol's compilation via `symbol.g
 Reference ranges require different handling based on syntax origin:
 
 **Path 1: Symbol Path** - Range from symbol's own syntax:
+
 ```cpp
 // Example: end block name from function's own syntax
 const auto* syntax = subroutine.getSyntax();
@@ -79,6 +80,7 @@ auto ref_loc = CreateLspLocation(subroutine, func_syntax.endBlockName->name.rang
 Use `CreateLspLocation(symbol, range)` because the range comes from the symbol's own syntax tree (same compilation as symbol).
 
 **Path 2: Expression Path** - Range from current file expression:
+
 ```cpp
 // Example: identifier in expression referencing preamble symbol
 auto reference_range = expr.sourceRange;  // From overlay syntax
@@ -91,7 +93,13 @@ Use `ConvertExpressionRange(range)` because the range comes from current file ex
 
 ### Common Reference Scenarios (Expression Path)
 
-All these use **overlay syntax** and require `ConvertExpressionRange`:
+**WARNING:** Assumption "expression syntax comes from current file" is INCORRECT.
+
+**Counter-example:** Default argument expressions bind to preamble syntax. When calling `pkg::func(x)` where `func(x, y = CONST)`, the `CONST` expression has preamble BufferID → `ConvertExpressionRange` crash.
+
+**Required check:** Verify target symbol not from preamble before calling `ConvertExpressionRange`.
+
+Common cases (typically safe but verify target symbol):
 
 ```cpp
 // Import statements (syntax from current file)
@@ -104,75 +112,21 @@ auto ref_loc = ConvertExpressionRange(named_param.name.range());
 // Package scoped identifiers (syntax from current file)
 auto ref_loc = ConvertExpressionRange(ident.identifier.range());
 
-// Value expressions (syntax from current file)
+// Value expressions (syntax from current file - BUT check for default args!)
 auto ref_loc = ConvertExpressionRange(expr.sourceRange);
 ```
 
-### Why This Approach Works
+### Why This Approach (Mostly) Works
 
-- **Safe:** BufferID and SourceManager always match (no mismatch crashes)
-- **Correct:** Line numbers computed using correct file's SourceManager
-- **Explicit:** Function name clearly indicates which SM path to use
+- **Usually Safe:** BufferID and SourceManager typically match for expressions
+- **Known Exception:** Default argument expressions from preamble functions violate this
+- **Correct for Symbols:** Line numbers computed using symbol's own SourceManager via `CreateLspLocation`
+- **Explicit:** Function name indicates which SM path to use
 - **Testable:** Returns `nullopt` on error instead of crashing
-- **Simple:** No manual `IsPreambleSymbol()` checks needed
 
-**Implementation Note:** `ConvertExpressionRange` internally uses `compilation_.get().getSourceManager()` (overlay's SM). This is the "pragmatic exception" documented in SEMANTIC_INDEXING.md - expressions don't provide a way to derive SM from syntax, so we use the IndexVisitor's compilation.
+**Implementation Note:** `ConvertExpressionRange` internally uses `compilation_.get().getSourceManager()` (overlay's SM). Originally thought safe because "expressions come from current file" - **this assumption is false** (see default arguments).
 
-**Legacy approach:** `IsPreambleSymbol()` checks and `symbol_info_` hash map lookups remain for backward compatibility but are no longer the primary safety mechanism.
-
-## CRITICAL: Missing Symbols Cause Crashes
-
-**FUNDAMENTAL CONSTRAINT**: Preamble and overlay use separate SourceManagers with independent BufferID spaces. Attempting to convert a preamble BufferID using overlay's SourceManager causes immediate crashes.
-
-**Why crashes occur:**
-
-1. Preamble visitor misses a symbol (e.g., struct field members not indexed)
-2. Overlay references that symbol → `IsPreambleSymbol()` returns FALSE (not in map)
-3. System assumes symbol is from overlay, tries to convert preamble BufferID with overlay SourceManager
-4. **Result**: Invalid coordinates (line == -1) or SEGFAULT if BufferID maps to different file
-
-**Proven case**: Struct field members (`s1.field_a`) are NOT in `symbol_info_` because visitor doesn't recurse into type definitions. Production crash confirmed.
-
-**High-risk symbol types**: struct/union fields, enum members, class properties, nested types, interface modports.
-
-**Required action when adding new symbol support**: Test with 100+ dummy packages to force high preamble BufferIDs, verify no crashes/invalid coordinates. See `test/slangd/semantic/preamble/package_preamble_test.cpp` for pattern.
-
-### Crash Prevention Strategy
-
-**Critical Discovery**: Cannot safely call SourceManager methods (getFileName, getLineNumber, etc.) with BufferIDs from a different SourceManager - they crash immediately. Validation must happen BEFORE attempting conversion.
-
-**Solution**: Check symbol's compilation via pointer comparison:
-
-```cpp
-// In AddReference() - BEFORE calling ConvertSlangRangeToLspRange
-const auto& symbol_compilation = symbol.getParentScope()->getCompilation();
-const auto& preamble_compilation = preamble_manager->GetCompilation();
-
-if (&symbol_compilation == &preamble_compilation) {
-  // Symbol is from preamble BUT missing from symbol_info_
-  // Skip reference - cannot safely convert (would crash)
-  indexing_errors_.push_back(...);
-  return;
-}
-```
-
-**Why this works:**
-
-- No SourceManager calls needed - pure pointer comparison
-- Symbols know their compilation via `getParentScope()->getCompilation()`
-- Cannot crash - no BufferID access, no array lookups
-- 100% reliable - compilation identity is definitive
-
-**Behavior:**
-
-- Production: Gracefully skips invalid references, reports error via std::unexpected
-- Tests: Fail immediately with diagnostic: "Symbol 'X' belongs to preamble compilation but is missing from symbol*info*"
-- Developers: Clear action item - add symbol type to PreambleSymbolVisitor
-
-**Additional mitigations:**
-
-1. **Type member traversal**: PreambleSymbolVisitor recursively traverses struct/union/class members
-2. **Test-driven coverage**: Comprehensive testing of each symbol type with BufferID offset patterns
+**Partial Guarantee:** Symbol-based conversions (`CreateSymbolLspLocation`, `CreateLspLocation(symbol, range)`) are safe - they derive SM from symbol's compilation. Expression-based conversions require runtime validation that target symbol is not from preamble.
 
 ## Key Components
 
@@ -196,99 +150,16 @@ class PreambleAwareCompilation extends Compilation:
 
 This requires a one-line Slang modification: `packageMap` visibility changed from `private` to `protected` in `Compilation.h`.
 
-### PreambleSymbolInfo Side Table
-
-Overlay and preamble use separate SourceManagers with overlapping BufferIDs. Cannot use BufferID to distinguish symbol origins. Solution: symbol pointer identity plus precomputed locations.
-
-Data structure:
-
-```
-struct PreambleSymbolInfo:
-  file_uri: string              // Buffer-independent file path
-  definition_range: LSP.Range   // Precise name range
-
-symbol_info_: map<Symbol*, PreambleSymbolInfo>
-```
-
-When overlay resolves `import pkg::PARAM`, Slang returns the exact same pointer as preamble's PARAM symbol. Pointer identity enables O(1) lookup.
-
-Location conversion:
-
-```
-function AddReference(symbol):
-  if preamble_manager.IsPreambleSymbol(symbol):
-    info = preamble_manager.GetSymbolInfo(symbol)
-    AddCrossFileReference(..., info.definition_range, info.file_uri, ...)
-  else:
-    AddReference(...)  // Normal overlay symbol
-```
-
 ### Package Storage
 
-PreambleManager stores three key structures:
+PreambleManager stores two key structures:
 
 - `package_map_`: Maps package name to PackageSymbol\* for cross-compilation binding
-- `symbol_info_`: Maps Symbol\* to PreambleSymbolInfo for LSP location lookup
 - `preamble_compilation_`: Keeps preamble alive (Symbol\* pointers remain valid)
 
-Visitor-based extraction:
-
-```
-class PreambleSymbolVisitor extends ASTVisitor:
-  function handle(symbol):
-    if not symbol.location.valid() or not symbol.getSyntax():
-      return
-
-    // Extract definition range using preamble's SourceManager
-    file_uri = ConvertToUri(symbol.location, preamble_source_manager)
-    range = definition_extractor.ExtractDefinitionRange(symbol, syntax)
-
-    symbol_info_[&symbol] = {file_uri, ConvertToLspRange(range)}
-    visitDefault(symbol)  // Recurse into nested symbols
-```
+No symbol side table needed. Location conversion uses `CreateSymbolLspLocation()` and `CreateLspLocation()` which automatically derive the correct SourceManager from each symbol's compilation.
 
 ## Design Rationale
-
-### Eager Precomputation vs Lazy Extraction
-
-**Approach chosen**: Build `symbol_info_` during `BuildFromLayout()` using ASTVisitor pattern.
-
-**Alternative considered**: Lazy extraction - extract locations on first reference during overlay session.
-
-Drawbacks of lazy approach:
-
-- Requires mutex for thread-safe map updates (adds complexity)
-- Still needs full traversal to know what exists (no fundamental performance benefit)
-- Unpredictable latency - first reference to a symbol pays extraction cost
-- Harder to test and reason about (race conditions possible)
-
-Why eager extraction works better:
-
-- Simple implementation - no threading complexity, read-only after build
-- Predictable performance - consistent one-time cost during initialization
-- Completeness guarantee - all symbols indexed before any session created
-- Safe for concurrency - read-only access from all LSP operations
-- Small cost - typical extraction takes 10-20ms for thousands of symbols
-
-### Store All Package Symbols vs Filtering
-
-**Approach chosen**: Visitor traverses ALL symbols recursively, stores all entries in `symbol_info_`.
-
-**Alternative considered**: Filter by symbol kind - only store parameters, typedefs, functions, etc.
-
-Drawbacks of filtering approach:
-
-- Risk of missing symbols user might reference (variables, types, nested definitions)
-- Maintenance burden - must update filter list when adding new symbol support
-- No meaningful memory savings - side table overhead is negligible compared to package memory
-- Potential correctness issues - hard to predict all symbol kinds users will reference
-
-Why storing all symbols works better:
-
-- Simple - one data structure, single source of truth
-- Correct - if symbol in map it's from preamble, else it's from overlay (clean distinction)
-- Future-proof - automatically supports new symbol kinds without code changes
-- Small overhead - approximately 100 bytes per symbol (negligible vs package compilation memory)
 
 ### Direct packageMap Injection vs Method Override
 
@@ -357,7 +228,7 @@ Why complete PackageSymbol works better:
 
 **AST traversal**: Overlay only traverses its own file's AST. Preamble symbols appear as leaf nodes (lookup results), never traversed, eliminating recursive package tree walks.
 
-**LSP features**: Single-point integration in `AddReference()` checks `IsPreambleSymbol()` before conversion. All LSP features (go-to-definition, hover, diagnostics) automatically support cross-compilation through this single check.
+**LSP features**: All LSP features (go-to-definition, hover, diagnostics) automatically support cross-compilation. Location conversion functions derive the correct SourceManager from each symbol, handling preamble and overlay symbols uniformly without special checks.
 
 ## Integration with Existing Architecture
 
@@ -365,14 +236,13 @@ See `SESSION_MANAGEMENT.md` for session lifecycle details. Package preamble inte
 
 - SessionManager: Passes `shared_ptr<PreambleManager>` to OverlaySession constructor
 - OverlaySession: Stores preamble reference, uses PreambleAwareCompilation
-- SemanticIndex: Queries `IsPreambleSymbol()` during reference creation
+- SemanticIndex: Uses safe conversion functions that automatically handle preamble and overlay symbols
 
 ### Memory Impact
 
 PreambleManager memory is shared across all sessions:
 
 - Package compilations: O(package count × package size)
-- Symbol side table: O(symbol count × per-symbol overhead)
 
 OverlaySession memory becomes file-scoped:
 

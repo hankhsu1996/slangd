@@ -273,6 +273,21 @@ class SemanticIndex {
         std::optional<std::reference_wrapper<const slang::ast::Symbol>>
             syntax_owner,
         const slang::ast::Symbol& target_symbol);
+
+    // Helper methods for NamedValueExpression refactoring
+    // Resolve target symbol (unwrap imports, compiler-generated)
+    static auto ResolveTargetSymbol(
+        const slang::ast::NamedValueExpression& expr)
+        -> const slang::ast::Symbol*;
+
+    // Extract definition range based on symbol kind
+    static auto ExtractDefinitionRange(const slang::ast::Symbol& symbol)
+        -> std::optional<slang::SourceRange>;
+
+    // Compute reference range from expression
+    static auto ComputeReferenceRange(
+        const slang::ast::NamedValueExpression& expr,
+        const slang::ast::Symbol& symbol) -> std::optional<slang::SourceRange>;
   };
 };
 

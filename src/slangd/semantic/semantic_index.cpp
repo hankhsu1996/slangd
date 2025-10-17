@@ -751,164 +751,141 @@ void SemanticIndex::IndexVisitor::IndexPackageInScopedName(
   }
 }
 
-void SemanticIndex::IndexVisitor::handle(
-    const slang::ast::NamedValueExpression& expr) {
-  const slang::ast::Symbol* target_symbol = &expr.symbol;
+// Helper: Resolve target symbol (unwrap imports, compiler-generated)
+auto SemanticIndex::IndexVisitor::ResolveTargetSymbol(
+    const slang::ast::NamedValueExpression& expr) -> const slang::ast::Symbol* {
+  const slang::ast::Symbol* target = &expr.symbol;
 
+  // Unwrap explicit imports
   if (expr.symbol.kind == slang::ast::SymbolKind::ExplicitImport) {
-    const auto& import_symbol =
-        expr.symbol.as<slang::ast::ExplicitImportSymbol>();
-    const auto* imported_symbol = import_symbol.importedSymbol();
-    if (imported_symbol != nullptr) {
-      target_symbol = imported_symbol;
+    const auto& import = expr.symbol.as<slang::ast::ExplicitImportSymbol>();
+    if (const auto* imported = import.importedSymbol()) {
+      target = imported;
     }
   }
 
-  // Handle compiler-generated variables
+  // Redirect compiler-generated variables
   if (expr.symbol.kind == slang::ast::SymbolKind::Variable) {
-    const auto& variable = expr.symbol.as<slang::ast::VariableSymbol>();
-    if (variable.flags.has(slang::ast::VariableFlags::CompilerGenerated)) {
-      // Slang provides declaredSymbol pointer for compiler-generated variables
-      // (e.g., genvar loop iteration variables point to the actual genvar)
-      if (const auto* declared = variable.getDeclaredSymbol()) {
-        target_symbol = declared;
-      }
-      // Fallback: function return variables redirect to parent subroutine
-      else {
-        const auto* parent_scope = variable.getParentScope();
-        if (parent_scope != nullptr) {
-          const auto& parent_symbol = parent_scope->asSymbol();
-          if (parent_symbol.kind == slang::ast::SymbolKind::Subroutine) {
-            target_symbol = &parent_symbol;
-          }
+    const auto& var = expr.symbol.as<slang::ast::VariableSymbol>();
+    if (var.flags.has(slang::ast::VariableFlags::CompilerGenerated)) {
+      if (const auto* declared = var.getDeclaredSymbol()) {
+        target = declared;
+      } else if (const auto* parent_scope = var.getParentScope()) {
+        const auto& parent = parent_scope->asSymbol();
+        if (parent.kind == slang::ast::SymbolKind::Subroutine) {
+          target = &parent;
         }
       }
     }
   }
 
-  // Index package name in scoped references (e.g., pkg::PARAM)
+  return target;
+}
+
+// Helper: Extract definition range based on symbol kind
+auto SemanticIndex::IndexVisitor::ExtractDefinitionRange(
+    const slang::ast::Symbol& symbol) -> std::optional<slang::SourceRange> {
+  if (!symbol.location.valid()) {
+    return std::nullopt;
+  }
+
+  const auto* syntax = symbol.getSyntax();
+  if (syntax == nullptr) {
+    return std::nullopt;
+  }
+
+  using SK = slang::ast::SymbolKind;
+  using SyntaxKind = slang::syntax::SyntaxKind;
+
+  // Try precise extraction by kind
+  switch (symbol.kind) {
+    case SK::Parameter:
+    case SK::EnumValue:
+      if (syntax->kind == SyntaxKind::Declarator) {
+        return syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
+      }
+      break;
+
+    case SK::Subroutine:
+      if (syntax->kind == SyntaxKind::TaskDeclaration ||
+          syntax->kind == SyntaxKind::FunctionDeclaration) {
+        const auto& func =
+            syntax->as<slang::syntax::FunctionDeclarationSyntax>();
+        if (func.prototype != nullptr && func.prototype->name != nullptr) {
+          return func.prototype->name->sourceRange();
+        }
+      }
+      break;
+
+    case SK::StatementBlock:
+      if (syntax->kind == SyntaxKind::SequentialBlockStatement ||
+          syntax->kind == SyntaxKind::ParallelBlockStatement) {
+        const auto& block = syntax->as<slang::syntax::BlockStatementSyntax>();
+        if (block.blockName != nullptr) {
+          return block.blockName->name.range();
+        }
+      }
+      break;
+
+    default:
+      break;
+  }
+
+  // Fallback: symbol location + name length
+  return slang::SourceRange(
+      symbol.location, symbol.location + symbol.name.length());
+}
+
+// Helper: Compute reference range from expression
+auto SemanticIndex::IndexVisitor::ComputeReferenceRange(
+    const slang::ast::NamedValueExpression& expr,
+    const slang::ast::Symbol& symbol) -> std::optional<slang::SourceRange> {
+  // For scoped names (pkg::item), use rightmost part
+  slang::SourceLocation start = expr.sourceRange.start();
+  if (expr.syntax != nullptr &&
+      expr.syntax->kind == slang::syntax::SyntaxKind::ScopedName) {
+    const auto& scoped = expr.syntax->as<slang::syntax::ScopedNameSyntax>();
+    start = scoped.right->sourceRange().start();
+  }
+
+  return slang::SourceRange(
+      start, start + static_cast<uint32_t>(symbol.name.length()));
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::NamedValueExpression& expr) {
+  // Step 1: Resolve target symbol (unwrap imports, compiler-generated)
+  const auto* target_symbol = ResolveTargetSymbol(expr);
+
+  // Step 2: Index package name in scoped references (e.g., pkg::PARAM)
   if (expr.syntax != nullptr) {
     IndexPackageInScopedName(expr.syntax, std::nullopt, *target_symbol);
   }
 
-  if (target_symbol->location.valid()) {
-    if (const auto* syntax = target_symbol->getSyntax()) {
-      using SK = slang::ast::SymbolKind;
-      using SyntaxKind = slang::syntax::SyntaxKind;
-
-      // Extract precise definition range based on symbol and syntax type
-      slang::SourceRange definition_range;
-      bool range_extracted = false;
-
-      switch (target_symbol->kind) {
-        case SK::Parameter:
-          // Parameter/localparam declarators
-          if (syntax->kind == SyntaxKind::Declarator) {
-            definition_range =
-                syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
-            range_extracted = true;
-          }
-          break;
-
-        case SK::EnumValue:
-          // Enum member declarators
-          if (syntax->kind == SyntaxKind::Declarator) {
-            definition_range =
-                syntax->as<slang::syntax::DeclaratorSyntax>().name.range();
-            range_extracted = true;
-          }
-          break;
-
-        case SK::Subroutine:
-          // Function/task declarations
-          if (syntax->kind == SyntaxKind::TaskDeclaration ||
-              syntax->kind == SyntaxKind::FunctionDeclaration) {
-            const auto& func_syntax =
-                syntax->as<slang::syntax::FunctionDeclarationSyntax>();
-            if ((func_syntax.prototype != nullptr) &&
-                (func_syntax.prototype->name != nullptr)) {
-              definition_range = func_syntax.prototype->name->sourceRange();
-              range_extracted = true;
-            }
-          }
-          break;
-
-        case SK::StatementBlock:
-          // Named statement blocks (begin/end)
-          if (syntax->kind == SyntaxKind::SequentialBlockStatement ||
-              syntax->kind == SyntaxKind::ParallelBlockStatement) {
-            const auto& block_syntax =
-                syntax->as<slang::syntax::BlockStatementSyntax>();
-            if (block_syntax.blockName != nullptr) {
-              definition_range = block_syntax.blockName->name.range();
-              range_extracted = true;
-            }
-          }
-          break;
-
-        default:
-          // For other symbol kinds, use fallback
-          break;
-      }
-
-      // Fallback: use symbol location + name length
-      if (!range_extracted) {
-        if (target_symbol->location.valid()) {
-          definition_range = slang::SourceRange(
-              target_symbol->location,
-              target_symbol->location + target_symbol->name.length());
-        } else {
-          // Should never reach here - symbol with syntax but no valid location
-          index_.get().logger_->error(
-              "NamedValueExpression: Symbol '{}' (kind '{}') has syntax but "
-              "invalid location",
-              target_symbol->name, slang::ast::toString(target_symbol->kind));
-          definition_range = syntax->sourceRange();
-        }
-      }
-
-      // Slang ARCHITECTURAL LIMITATION WORKAROUND:
-      // For expressions like `data[i]`, Slang creates NamedValueExpression with
-      // the entire expression range (data[i]) instead of just the symbol range
-      // (data).
-      //
-      // Root cause: Even though we have the symbol and can access its syntax,
-      // Slang provides no way to break down composite expressions into
-      // components. The ElementSelectExpression syntax gives us the full range,
-      // not the name part.
-      //
-      // Solution: Always trim to symbol name length for universal, predictable
-      // behavior. Traced to: slang/source/parsing/Parser_expressions.cpp
-      // parsePostfixExpression()
-
-      // Universal path: always use symbol name length for precise reference
-      // ranges
-      // For scoped names (pkg::item), use the rightmost part for reference
-      // range
-      slang::SourceLocation ref_start = expr.sourceRange.start();
-      if (expr.syntax != nullptr &&
-          expr.syntax->kind == slang::syntax::SyntaxKind::ScopedName) {
-        const auto& scoped = expr.syntax->as<slang::syntax::ScopedNameSyntax>();
-        ref_start = scoped.right->sourceRange().start();
-      }
-
-      auto reference_range = slang::SourceRange(
-          ref_start,
-          ref_start + static_cast<uint32_t>(target_symbol->name.length()));
-
-      // Convert ranges using correct SourceManager:
-      // reference_range: from current file expression (use overlay SM)
-      // definition_range: from target_symbol's syntax (use symbol SM)
-      auto ref_loc = ConvertExpressionRange(reference_range);
-      auto definition_loc = CreateLspLocation(*target_symbol, definition_range);
-
-      if (ref_loc && definition_loc) {
-        AddReference(
-            *target_symbol, target_symbol->name, ref_loc->range,
-            *definition_loc, target_symbol->getParentScope());
-      }
-    }
+  // Step 3: Extract definition range
+  auto def_range = ExtractDefinitionRange(*target_symbol);
+  if (!def_range) {
+    this->visitDefault(expr);
+    return;
   }
+
+  // Step 4: Compute reference range
+  auto ref_range = ComputeReferenceRange(expr, *target_symbol);
+  if (!ref_range) {
+    this->visitDefault(expr);
+    return;
+  }
+
+  // Step 5: Convert ranges and add reference
+  auto ref_loc = ConvertExpressionRange(*ref_range);
+  auto def_loc = CreateLspLocation(*target_symbol, *def_range);
+
+  if (ref_loc && def_loc) {
+    AddReference(
+        *target_symbol, target_symbol->name, ref_loc->range, *def_loc,
+        target_symbol->getParentScope());
+  }
+
   this->visitDefault(expr);
 }
 
@@ -1022,11 +999,13 @@ void SemanticIndex::IndexVisitor::handle(
   // Convert to LSP coordinates using safe conversion
   auto def_loc = CreateLspLocation(**subroutine_symbol, *definition_range);
   auto ref_loc = ConvertExpressionRange(*call_range);
+
   if (def_loc && ref_loc) {
     AddReference(
         **subroutine_symbol, (*subroutine_symbol)->name, ref_loc->range,
         *def_loc, (*subroutine_symbol)->getParentScope());
   }
+
   this->visitDefault(expr);
 }
 
@@ -1059,11 +1038,13 @@ void SemanticIndex::IndexVisitor::handle(
     const slang::ast::MemberAccessExpression& expr) {
   auto definition_loc = CreateSymbolLspLocation(expr.member);
   auto ref_loc = ConvertExpressionRange(expr.memberNameRange());
+
   if (definition_loc && ref_loc) {
     AddReference(
         expr.member, expr.member.name, ref_loc->range, *definition_loc,
         expr.member.getParentScope());
   }
+
   this->visitDefault(expr);
 }
 

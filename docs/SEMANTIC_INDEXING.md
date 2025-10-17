@@ -263,7 +263,7 @@ auto ref_loc = ConvertExpressionRange(expr.sourceRange);
 
 ### Implementation Notes
 
-**ConvertExpressionRange:** "Pragmatic exception" - expressions don't provide SM derivation, so IndexVisitor uses its compilation's SM (overlay). This is safe because all expression syntax comes from the current file being indexed.
+**ConvertExpressionRange:** "Pragmatic exception" - expressions don't provide SM derivation, so IndexVisitor uses its compilation's SM (overlay).
 
 **CreateLspLocation(symbol, range):** Derives SM via `symbol.getParentScope()->getCompilation()`. Use only when range comes from symbol's own syntax tree.
 
@@ -271,15 +271,21 @@ auto ref_loc = ConvertExpressionRange(expr.sourceRange);
 
 ### Expression Whitelist (Critical Safety Constraint)
 
-**CRITICAL:** `ConvertExpressionRange` is **ONLY** safe for **whitelisted expression handlers**.
+**CRITICAL LIMITATION:** Even "whitelisted" expression handlers are NOT guaranteed safe.
 
-After several segfaults from BufferID/SourceManager mismatches, we adopted a safety-first whitelist approach:
+**The Problem:** Original assumption was "all expression syntax comes from current file" - **THIS IS FALSE**.
 
-**Whitelisted:** Expression handlers (`handle(NamedValueExpression&)`, `handle(CallExpression&)`), import statements, instantiation parameters.
+**Known violation:** Default argument expressions in preamble functions.
+
+- Calling `pkg::func(arg1)` where `func` has signature `func(arg1, arg2 = PREAMBLE_CONST)`
+- Slang binds default: `NamedValueExpression` for `PREAMBLE_CONST` with range from **preamble syntax**
+- `ConvertExpressionRange()` uses overlay SM → **BufferID mismatch → CRASH**
+
+**Mitigation:** Check if target symbol is from preamble compilation before calling `ConvertExpressionRange`. If so, skip reference (cannot safely convert expression range from preamble syntax).
+
+**Whitelisted (with caveat):** Expression handlers (`handle(NamedValueExpression&)`, `handle(CallExpression&)`), import statements, instantiation parameters.
 
 **NOT whitelisted:** TypeReference handlers, symbol-derived syntax (`symbol.getSyntax()`), end block names.
-
-**Pattern:** Functions accepting syntax from multiple contexts use `std::optional<Symbol&> syntax_owner` to explicitly select conversion path. `has_value()` → Symbol Path, `nullopt` → Expression Path (whitelisted only).
 
 See `PACKAGE_PREAMBLE.md` for detailed safety architecture.
 
