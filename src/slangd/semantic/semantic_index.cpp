@@ -89,8 +89,7 @@ auto SemanticIndex::FromCompilation(
       new SemanticIndex(source_manager, current_file_uri, logger));
 
   // Create visitor for comprehensive symbol collection and reference tracking
-  auto visitor =
-      IndexVisitor(*index, compilation, current_file_uri, preamble_manager);
+  auto visitor = IndexVisitor(*index, current_file_uri, preamble_manager);
 
   // THREE-PATH TRAVERSAL APPROACH
   // Slang's API provides disjoint symbol collections:
@@ -345,21 +344,6 @@ void SemanticIndex::IndexVisitor::AddReferenceWithLspDefinition(
   AddEntry(std::move(entry));
 }
 
-auto SemanticIndex::IndexVisitor::ConvertExpressionRange(
-    slang::SourceRange range) -> std::optional<lsp::Location> {
-  // PRAGMATIC EXCEPTION: Use IndexVisitor's compilation (overlay)
-  // This is a controlled exception - see docs/SEMANTIC_INDEXING.md
-  const auto* sm = compilation_.get().getSourceManager();
-  if (sm == nullptr || !range.start().valid()) {
-    return std::nullopt;
-  }
-
-  // Get location (with URI) and update its range
-  lsp::Location location = ToLspLocation(range.start(), *sm);
-  location.range = ToLspRange(range, *sm);
-  return location;
-}
-
 // IndexVisitor implementation
 void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
   // Skip if already traversed - multiple symbols can share the same type syntax
@@ -424,7 +408,7 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
           // Index package name if this is a scoped type reference
           if (type_ref.getSyntax() != nullptr) {
             IndexPackageInScopedName(
-                type_ref.getSyntax(), std::cref(type_ref), *typedef_target);
+                type_ref.getSyntax(), type_ref, *typedef_target);
           }
           // For scoped names, extract just the typedef name part
           auto usage_range = type_ref.getUsageLocation();
@@ -451,7 +435,7 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
           // Index package name if this is a scoped type reference
           if (type_ref.getSyntax() != nullptr) {
             IndexPackageInScopedName(
-                type_ref.getSyntax(), std::cref(type_ref), *class_target);
+                type_ref.getSyntax(), type_ref, *class_target);
           }
           // For scoped names, extract just the class name part
           auto usage_range = type_ref.getUsageLocation();
@@ -687,10 +671,10 @@ void SemanticIndex::IndexVisitor::IndexInstanceParameters(
   }
 }
 
+// Symbol version: Used for TypeReference and other symbol contexts
 void SemanticIndex::IndexVisitor::IndexPackageInScopedName(
     const slang::syntax::SyntaxNode* syntax,
-    std::optional<std::reference_wrapper<const slang::ast::Symbol>>
-        syntax_owner,
+    const slang::ast::Symbol& syntax_owner,
     const slang::ast::Symbol& target_symbol) {
   // Check if this is a scoped name (pkg::item)
   if (syntax == nullptr ||
@@ -719,27 +703,53 @@ void SemanticIndex::IndexVisitor::IndexPackageInScopedName(
       const auto& pkg = scope_symbol.as<slang::ast::PackageSymbol>();
       auto pkg_def_loc = CreateSymbolLspLocation(pkg);
 
-      // EXPLICIT PATH SELECTION (safety-first whitelist approach):
-      //
-      // Symbol Path (syntax_owner.has_value() == true):
-      //   - Syntax from symbol.getSyntax() (e.g., TypeReference handlers)
-      //   - Derives SM from symbol's compilation via CreateLspLocation
-      //   - Used for non-expression contexts
-      //
-      // Expression Path (syntax_owner.has_value() == false):
-      //   - Syntax from expression handlers (WHITELISTED ONLY)
-      //   - Uses IndexVisitor's SM via ConvertExpressionRange
-      //   - ONLY safe for expression handlers (NamedValue, Call, etc.)
-      //   - Never use for TypeReference or other symbol-derived syntax
-      std::optional<lsp::Location> ref_loc;
-      if (syntax_owner.has_value()) {
-        // Symbol Path: derive SM from syntax_owner's compilation
-        ref_loc =
-            CreateLspLocation(syntax_owner->get(), ident.identifier.range());
-      } else {
-        // Expression Path: use IndexVisitor's SM (whitelisted expression only)
-        ref_loc = ConvertExpressionRange(ident.identifier.range());
+      // Derive SM from syntax_owner's compilation
+      auto ref_loc = CreateLspLocation(syntax_owner, ident.identifier.range());
+
+      if (pkg_def_loc && ref_loc) {
+        AddReference(
+            pkg, pkg.name, ref_loc->range, *pkg_def_loc, pkg.getParentScope());
       }
+      break;  // Found package, stop searching
+    }
+    scope = scope->asSymbol().getParentScope();
+  }
+}
+
+// Expression version: Used for NamedValue, Call, and other expression contexts
+void SemanticIndex::IndexVisitor::IndexPackageInScopedName(
+    const slang::syntax::SyntaxNode* syntax,
+    const slang::ast::Expression& expr_context,
+    const slang::ast::Symbol& target_symbol) {
+  // Check if this is a scoped name (pkg::item)
+  if (syntax == nullptr ||
+      syntax->kind != slang::syntax::SyntaxKind::ScopedName) {
+    return;
+  }
+
+  const auto& scoped = syntax->as<slang::syntax::ScopedNameSyntax>();
+  // Only handle :: separator (package scope), not . (hierarchical)
+  if (scoped.separator.kind != slang::parsing::TokenKind::DoubleColon) {
+    return;
+  }
+
+  // Check if left part is a simple identifier
+  if (scoped.left->kind != slang::syntax::SyntaxKind::IdentifierName) {
+    return;
+  }
+
+  const auto& ident = scoped.left->as<slang::syntax::IdentifierNameSyntax>();
+
+  // Walk up the scope chain to find the package
+  const auto* scope = target_symbol.getParentScope();
+  while (scope != nullptr) {
+    const auto& scope_symbol = scope->asSymbol();
+    if (scope_symbol.kind == slang::ast::SymbolKind::Package) {
+      const auto& pkg = scope_symbol.as<slang::ast::PackageSymbol>();
+      auto pkg_def_loc = CreateSymbolLspLocation(pkg);
+
+      // Derive SM from expression's compilation
+      auto ref_loc = CreateLspLocation(expr_context, ident.identifier.range());
 
       if (pkg_def_loc && ref_loc) {
         AddReference(
@@ -859,7 +869,7 @@ void SemanticIndex::IndexVisitor::handle(
 
   // Step 2: Index package name in scoped references (e.g., pkg::PARAM)
   if (expr.syntax != nullptr) {
-    IndexPackageInScopedName(expr.syntax, std::nullopt, *target_symbol);
+    IndexPackageInScopedName(expr.syntax, expr, *target_symbol);
   }
 
   // Step 3: Extract definition range
@@ -877,7 +887,7 @@ void SemanticIndex::IndexVisitor::handle(
   }
 
   // Step 5: Convert ranges and add reference
-  auto ref_loc = ConvertExpressionRange(*ref_range);
+  auto ref_loc = CreateLspLocation(expr, *ref_range);
   auto def_loc = CreateLspLocation(*target_symbol, *def_range);
 
   if (ref_loc && def_loc) {
@@ -992,13 +1002,12 @@ void SemanticIndex::IndexVisitor::handle(
       expr.syntax->kind == slang::syntax::SyntaxKind::InvocationExpression) {
     const auto& invocation =
         expr.syntax->as<slang::syntax::InvocationExpressionSyntax>();
-    IndexPackageInScopedName(
-        invocation.left, std::nullopt, **subroutine_symbol);
+    IndexPackageInScopedName(invocation.left, expr, **subroutine_symbol);
   }
 
   // Convert to LSP coordinates using safe conversion
   auto def_loc = CreateLspLocation(**subroutine_symbol, *definition_range);
-  auto ref_loc = ConvertExpressionRange(*call_range);
+  auto ref_loc = CreateLspLocation(expr, *call_range);
 
   if (def_loc && ref_loc) {
     AddReference(
@@ -1037,7 +1046,7 @@ void SemanticIndex::IndexVisitor::handle(
 void SemanticIndex::IndexVisitor::handle(
     const slang::ast::MemberAccessExpression& expr) {
   auto definition_loc = CreateSymbolLspLocation(expr.member);
-  auto ref_loc = ConvertExpressionRange(expr.memberNameRange());
+  auto ref_loc = CreateLspLocation(expr, expr.memberNameRange());
 
   if (definition_loc && ref_loc) {
     AddReference(
@@ -1060,7 +1069,7 @@ void SemanticIndex::IndexVisitor::handle(
 
     // Create reference from field name in pattern to field definition
     auto definition_loc = CreateSymbolLspLocation(member_symbol);
-    auto ref_loc = ConvertExpressionRange(setter.keyRange);
+    auto ref_loc = CreateLspLocation(expr, setter.keyRange);
     if (definition_loc && ref_loc) {
       AddReference(
           member_symbol, member_symbol.name, ref_loc->range, *definition_loc,
@@ -1099,7 +1108,7 @@ void SemanticIndex::IndexVisitor::handle(
         symbol->name.empty();
     if (!is_array_element && elem.sourceRange.start().valid()) {
       auto definition_loc = CreateSymbolLspLocation(*symbol);
-      auto ref_loc = ConvertExpressionRange(elem.sourceRange);
+      auto ref_loc = CreateLspLocation(expr, elem.sourceRange);
       if (definition_loc && ref_loc) {
         AddReference(
             *symbol, symbol->name, ref_loc->range, *definition_loc,

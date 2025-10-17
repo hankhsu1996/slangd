@@ -1,6 +1,7 @@
 #pragma once
 
 #include <slang/ast/Compilation.h>
+#include <slang/ast/Expression.h>
 #include <slang/ast/Scope.h>
 #include <slang/ast/Symbol.h>
 #include <slang/text/SourceLocation.h>
@@ -101,6 +102,36 @@ inline auto CreateLspLocation(
 
   const auto& compilation = scope->getCompilation();
   const auto* sm = compilation.getSourceManager();
+  if (sm == nullptr || !range.start().valid()) {
+    return std::nullopt;
+  }
+
+  // Get location (with URI) and update its range
+  lsp::Location location = ToLspLocation(range.start(), *sm);
+  location.range = ToLspRange(range, *sm);
+  return location;
+}
+
+// Create LSP location from arbitrary range, using Expression's SourceManager.
+// SAFE CONVERSION: Automatically derives SourceManager from expression's
+// compilation, preventing BufferID mismatch crashes.
+//
+// This is useful for expression-related ranges (e.g., member access ranges,
+// call ranges) that need conversion using the overlay compilation's SM.
+//
+// Returns nullopt if:
+// - Expression has no compilation context
+// - Compilation has no SourceManager
+// - Range is invalid
+inline auto CreateLspLocation(
+    const slang::ast::Expression& expr, slang::SourceRange range)
+    -> std::optional<lsp::Location> {
+  // Get the compilation from expression directly
+  if (expr.compilation == nullptr) {
+    return std::nullopt;
+  }
+
+  const auto* sm = expr.compilation->getSourceManager();
   if (sm == nullptr || !range.start().valid()) {
     return std::nullopt;
   }

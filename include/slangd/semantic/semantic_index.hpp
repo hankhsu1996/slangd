@@ -133,11 +133,9 @@ class SemanticIndex {
   class IndexVisitor : public slang::ast::ASTVisitor<IndexVisitor, true, true> {
    public:
     explicit IndexVisitor(
-        SemanticIndex& index, slang::ast::Compilation& compilation,
-        std::string current_file_uri,
+        SemanticIndex& index, std::string current_file_uri,
         const services::PreambleManager* preamble_manager)
         : index_(index),
-          compilation_(compilation),
           current_file_uri_(std::move(current_file_uri)),
           preamble_manager_(preamble_manager) {
     }
@@ -192,7 +190,6 @@ class SemanticIndex {
 
    private:
     std::reference_wrapper<SemanticIndex> index_;
-    std::reference_wrapper<slang::ast::Compilation> compilation_;
     std::string current_file_uri_;
     const services::PreambleManager* preamble_manager_;
 
@@ -232,15 +229,6 @@ class SemanticIndex {
         lsp::Range ref_range, lsp::Location def_loc,
         const slang::ast::Scope* parent_scope);
 
-    // PRAGMATIC EXCEPTION: Convert expression ranges using IndexVisitor's
-    // compilation
-    // SAFETY NOTE: This uses IndexVisitor's compilation_ which is scoped to
-    // the current indexing operation. Expression ranges are assumed to be from
-    // current file. This is a controlled exception to the "always derive SM
-    // from symbol" rule. See docs/SEMANTIC_INDEXING.md for safety model.
-    auto ConvertExpressionRange(slang::SourceRange range)
-        -> std::optional<lsp::Location>;
-
     void TraverseType(const slang::ast::Type& type);
 
     void IndexClassSpecialization(
@@ -261,17 +249,18 @@ class SemanticIndex {
         const slang::syntax::ParameterValueAssignmentSyntax& params);
 
     // Index package name in scoped references (pkg::item)
-    //
-    // SAFETY-FIRST WHITELIST APPROACH:
-    // - syntax_owner provided → Symbol Path (CreateLspLocation)
-    //   Used when syntax from symbol.getSyntax() (e.g., TypeReference)
-    // - syntax_owner = nullopt → Expression Path (ConvertExpressionRange)
-    //   ONLY for whitelisted expression handlers (NamedValue, Call, etc.)
-    //   NEVER use nullopt for TypeReference or symbol-derived syntax
+    // Symbol version: Used when syntax comes from symbol.getSyntax() (e.g.,
+    // TypeReference)
     void IndexPackageInScopedName(
         const slang::syntax::SyntaxNode* syntax,
-        std::optional<std::reference_wrapper<const slang::ast::Symbol>>
-            syntax_owner,
+        const slang::ast::Symbol& syntax_owner,
+        const slang::ast::Symbol& target_symbol);
+
+    // Index package name in scoped references (pkg::item)
+    // Expression version: Used when syntax comes from expression handlers
+    void IndexPackageInScopedName(
+        const slang::syntax::SyntaxNode* syntax,
+        const slang::ast::Expression& expr_context,
         const slang::ast::Symbol& target_symbol);
 
     // Helper methods for NamedValueExpression refactoring

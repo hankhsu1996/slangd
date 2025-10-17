@@ -180,114 +180,34 @@ Test parameters: `reference_index` (which occurrence to click), `definition_inde
 
 ## Safe Range Conversion (Critical for Cross-Compilation)
 
-**SAFETY-FIRST PRINCIPLE: Always match SourceManager to BufferID ownership**
+**SAFETY-FIRST PRINCIPLE: Always derive SourceManager from the AST node that owns the range**
 
 With cross-compilation (PreambleManager + OverlaySession), using the wrong SourceManager causes crashes or incorrect line numbers. BufferIDs in source ranges belong to the SourceManager that parsed the syntax.
 
-### Decision Tree for Range Conversion
+### Slang Fork Enhancement: Expression.compilation Pointer
 
-**Question 1: Is this a definition or reference?**
+**Solution:** Modified Slang library to add `Compilation* compilation` to `Expression` base class. Each expression stores the compilation that created it.
 
-**If DEFINITION:**
+**Impact:** Eliminates cross-compilation safety concerns. Expressions automatically use correct SourceManager (preamble expressions → preamble SM, overlay expressions → overlay SM).
 
-```cpp
-// Use symbol.location (points to definition name)
-auto def_loc = CreateSymbolLspLocation(symbol);
-```
+### Universal Conversion Pattern
 
-**If REFERENCE, ask Question 2:**
-
-**Question 2: Where does the syntax come from?**
-
-**Path A - Symbol's Own Syntax** (from `symbol.getSyntax()`):
+**Rule:** Always use `CreateLspLocation(node, range)` to derive SourceManager from the AST node.
 
 ```cpp
-// Example: End block name reference
-const auto* syntax = subroutine.getSyntax();
-const auto& func_syntax = syntax->as<FunctionDeclarationSyntax>();
-auto ref_loc = CreateLspLocation(subroutine, func_syntax.endBlockName->name.range());
+// Symbols - derives SM from symbol's compilation
+CreateLspLocation(symbol, range)
+
+// Expressions - derives SM from expr.compilation
+CreateLspLocation(expr, range)
 ```
 
-Use `CreateLspLocation(symbol, range)` - derives SM from symbol's compilation.
+**Key Benefit:** Handles default argument expressions correctly. When calling `pkg::func()` with preamble default arguments, the default arg expression stores preamble's compilation → automatic correct SM selection.
 
-**When:** Range extracted from `symbol.getSyntax()` syntax tree.
-
-**Path B - Current File Expression** (from expression/syntax visitor):
-
-```cpp
-// Example: Expression referencing preamble symbol
-auto reference_range = expr.sourceRange;  // From overlay
-auto ref_loc = ConvertExpressionRange(reference_range);
-```
-
-Use `ConvertExpressionRange(range)` - uses overlay's SM (IndexVisitor's compilation).
-
-**When:** Range from current file expressions, import statements, parameter syntax, etc.
-
-### Why This Matters
-
-**Critical scenario:** Referencing preamble symbol from overlay syntax.
-
-```cpp
-// Current file (overlay): uses pkg::BUS_WIDTH
-// BUS_WIDTH symbol: from preamble compilation
-// identifier "BUS_WIDTH": parsed by overlay's SourceManager
-
-// WRONG - causes line number mismatch:
-auto ref_loc = CreateLspLocation(pkg_symbol, expr.identifier.range());
-// Uses preamble's SM with overlay's BufferID → wrong file mapping
-
-// CORRECT - uses matching SM:
-auto ref_loc = ConvertExpressionRange(expr.identifier.range());
-// Uses overlay's SM with overlay's BufferID → correct mapping
-```
-
-### Common Expression Path Scenarios
-
-All these use syntax from **current file** and require `ConvertExpressionRange`:
-
-```cpp
-// Import statements
-auto ref_loc = ConvertExpressionRange(import_item.package.range());
-auto ref_loc = ConvertExpressionRange(import_item.item.range());
-
-// Named parameters (instance syntax)
-auto ref_loc = ConvertExpressionRange(named_param.name.range());
-
-// Package scoped identifiers (pkg::item)
-auto ref_loc = ConvertExpressionRange(ident.identifier.range());
-
-// Value expressions
-auto ref_loc = ConvertExpressionRange(expr.sourceRange);
-```
-
-### Implementation Notes
-
-**ConvertExpressionRange:** "Pragmatic exception" - expressions don't provide SM derivation, so IndexVisitor uses its compilation's SM (overlay).
-
-**CreateLspLocation(symbol, range):** Derives SM via `symbol.getParentScope()->getCompilation()`. Use only when range comes from symbol's own syntax tree.
-
-**Rule of thumb:** If you're in an expression handler (`handle(SomeExpression&)`) or processing syntax from import/parameter/instantiation statements, use `ConvertExpressionRange`. If you're processing a symbol's own syntax node retrieved via `symbol.getSyntax()`, use `CreateLspLocation(symbol, range)`.
-
-### Expression Whitelist (Critical Safety Constraint)
-
-**CRITICAL LIMITATION:** Even "whitelisted" expression handlers are NOT guaranteed safe.
-
-**The Problem:** Original assumption was "all expression syntax comes from current file" - **THIS IS FALSE**.
-
-**Known violation:** Default argument expressions in preamble functions.
-
-- Calling `pkg::func(arg1)` where `func` has signature `func(arg1, arg2 = PREAMBLE_CONST)`
-- Slang binds default: `NamedValueExpression` for `PREAMBLE_CONST` with range from **preamble syntax**
-- `ConvertExpressionRange()` uses overlay SM → **BufferID mismatch → CRASH**
-
-**Mitigation:** Check if target symbol is from preamble compilation before calling `ConvertExpressionRange`. If so, skip reference (cannot safely convert expression range from preamble syntax).
-
-**Whitelisted (with caveat):** Expression handlers (`handle(NamedValueExpression&)`, `handle(CallExpression&)`), import statements, instantiation parameters.
-
-**NOT whitelisted:** TypeReference handlers, symbol-derived syntax (`symbol.getSyntax()`), end block names.
-
-See `PACKAGE_PREAMBLE.md` for detailed safety architecture.
+**Obsolete Concerns:**
+- ~~Expression whitelist~~ - All expressions safe now
+- ~~Preamble symbol checks~~ - Handled automatically
+- ~~IndexVisitor compilation tracking~~ - Not needed
 
 ## Cross-File Module Instantiation
 
