@@ -11,6 +11,7 @@
 
 #include "lsp/basic.hpp"
 #include "slangd/core/project_layout_service.hpp"
+#include "slangd/utils/compilation_options.hpp"
 #include "slangd/utils/conversion.hpp"
 #include "slangd/utils/scoped_timer.hpp"
 
@@ -54,37 +55,22 @@ auto PreambleManager::BuildFromLayout(
   // Create fresh source manager for preamble compilation
   source_manager_ = std::make_shared<slang::SourceManager>();
 
-  // Prepare preprocessor options from layout service
-  slang::Bag options;
-  slang::parsing::PreprocessorOptions pp_options;
-
-  pp_options.initialDefaultNetType = slang::parsing::TokenKind::Unknown;
-
-  slang::parsing::LexerOptions lexer_options;
-  lexer_options.enableLegacyProtect = true;
-  options.set(lexer_options);
+  // Start with standard LSP compilation options
+  auto options = utils::CreateLspCompilationOptions();
 
   // Get include directories and defines from layout service
   include_directories_ = layout_service->GetIncludeDirectories();
   defines_ = layout_service->GetDefines();
 
-  // Apply include directories to preprocessor options
+  // Add project-specific preprocessor options
+  auto pp_options = options.getOrDefault<slang::parsing::PreprocessorOptions>();
   for (const auto& include_dir : include_directories_) {
     pp_options.additionalIncludePaths.emplace_back(include_dir.Path());
   }
-
-  // Apply defines to preprocessor options
   for (const auto& define : defines_) {
     pp_options.predefines.push_back(define);
   }
-
   options.set(pp_options);
-
-  // Create compilation options for LSP mode
-  slang::ast::CompilationOptions comp_options;
-  comp_options.flags |= slang::ast::CompilationFlags::LanguageServerMode;
-  comp_options.errorLimit = 0;
-  options.set(comp_options);
 
   // Create preamble compilation with options
   preamble_compilation_ = std::make_shared<slang::ast::Compilation>(options);
