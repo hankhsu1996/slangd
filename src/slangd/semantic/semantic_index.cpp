@@ -275,6 +275,11 @@ void SemanticIndex::IndexVisitor::AddDefinition(
     const slang::ast::Symbol& symbol, std::string_view name,
     lsp::Location def_loc, const slang::ast::Scope* parent_scope,
     const slang::ast::Scope* children_scope) {
+  // Trace logging for crash investigation
+  index_.get().logger_->trace(
+      "AddDefinition: '{}' -> {}:{}:{}", name, def_loc.uri,
+      def_loc.range.start.line, def_loc.range.start.character);
+
   const auto& unwrapped = UnwrapSymbol(symbol);
 
   auto entry = SemanticEntry{
@@ -294,6 +299,11 @@ void SemanticIndex::IndexVisitor::AddReference(
     const slang::ast::Symbol& symbol, std::string_view name,
     lsp::Range ref_range, lsp::Location def_loc,
     const slang::ast::Scope* parent_scope) {
+  // Trace logging for crash investigation
+  index_.get().logger_->trace(
+      "AddReference: '{}' -> {}:{}:{}", name, def_loc.uri,
+      def_loc.range.start.line, def_loc.range.start.character);
+
   const auto& unwrapped = UnwrapSymbol(symbol);
 
   auto entry = SemanticEntry{
@@ -313,6 +323,11 @@ void SemanticIndex::IndexVisitor::AddReferenceWithLspDefinition(
     const slang::ast::Symbol& symbol, std::string_view name,
     lsp::Range ref_range, lsp::Location def_loc,
     const slang::ast::Scope* parent_scope) {
+  // Trace logging for crash investigation
+  index_.get().logger_->trace(
+      "AddReferenceWithLspDefinition: '{}' -> {}:{}:{}", name, def_loc.uri,
+      def_loc.range.start.line, def_loc.range.start.character);
+
   // For module/port/parameter references where PreambleManager provides
   // pre-converted LSP definition coordinates
   const auto& unwrapped = UnwrapSymbol(symbol);
@@ -421,34 +436,11 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
             usage_range = scoped.right->sourceRange();
           }
 
-          // Debug logging for crash investigation
-          const auto* type_ref_scope = type_ref.getParentScope();
-          const auto& type_ref_compilation =
-              type_ref_scope != nullptr ? type_ref_scope->getCompilation()
-                                        : compilation_.get();
-          bool is_preamble = false;
-          if (preamble_manager_ != nullptr) {
-            is_preamble =
-                (&type_ref_compilation == &preamble_manager_->GetCompilation());
-          }
-          index_.get().logger_->debug(
-              "TypeRef: Converting typedef reference '{}' -> '{}' at offset "
-              "{}..{} ({})",
-              type_ref.name, typedef_target->name, usage_range.start().offset(),
-              usage_range.end().offset(), is_preamble ? "preamble" : "overlay");
-
           auto ref_loc = CreateLspLocation(type_ref, usage_range);
           if (ref_loc) {
-            index_.get().logger_->debug(
-                "TypeRef: Successfully converted typedef reference '{}'",
-                type_ref.name);
             AddReference(
                 *typedef_target, typedef_target->name, ref_loc->range,
                 *definition_loc, typedef_target->getParentScope());
-          } else {
-            index_.get().logger_->warn(
-                "TypeRef: Failed to convert typedef reference '{}'",
-                type_ref.name);
           }
         }
       } else if (
@@ -471,34 +463,11 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
             usage_range = scoped.right->sourceRange();
           }
 
-          // Debug logging for crash investigation
-          const auto* type_ref_scope = type_ref.getParentScope();
-          const auto& type_ref_compilation =
-              type_ref_scope != nullptr ? type_ref_scope->getCompilation()
-                                        : compilation_.get();
-          bool is_preamble = false;
-          if (preamble_manager_ != nullptr) {
-            is_preamble =
-                (&type_ref_compilation == &preamble_manager_->GetCompilation());
-          }
-          index_.get().logger_->debug(
-              "TypeRef: Converting class reference '{}' -> '{}' at offset "
-              "{}..{} ({})",
-              type_ref.name, class_target->name, usage_range.start().offset(),
-              usage_range.end().offset(), is_preamble ? "preamble" : "overlay");
-
           auto ref_loc = CreateLspLocation(type_ref, usage_range);
           if (ref_loc) {
-            index_.get().logger_->debug(
-                "TypeRef: Successfully converted class reference '{}'",
-                type_ref.name);
             AddReference(
                 *class_target, class_target->name, ref_loc->range,
                 *definition_loc, class_target->getParentScope());
-          } else {
-            index_.get().logger_->warn(
-                "TypeRef: Failed to convert class reference '{}'",
-                type_ref.name);
           }
         }
       }

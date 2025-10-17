@@ -55,15 +55,25 @@ export function activate(context: vscode.ExtensionContext) {
 
   outputChannel.appendLine(`Using slangd server at: ${serverPath}`);
 
+  // Get log level from settings
+  const logLevel = config.get<string>("server.logLevel", "debug");
+  outputChannel.appendLine(`Log level: ${logLevel}`);
+
   // Server options - using pipe transport for VSCode
   const serverOptions: ServerOptions = {
     run: {
       command: serverPath,
       transport: TransportKind.pipe,
+      options: {
+        env: { ...process.env, SPDLOG_LEVEL: logLevel },
+      },
     },
     debug: {
       command: serverPath,
       transport: TransportKind.pipe,
+      options: {
+        env: { ...process.env, SPDLOG_LEVEL: logLevel },
+      },
     },
   };
 
