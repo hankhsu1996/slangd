@@ -8,6 +8,7 @@
 
 #include "slangd/semantic/semantic_index.hpp"
 #include "slangd/utils/canonical_path.hpp"
+#include "slangd/utils/compilation_options.hpp"
 #include "slangd/utils/scoped_timer.hpp"
 
 namespace slangd::services {
@@ -137,45 +138,26 @@ auto OverlaySession::BuildCompilation(
   // Create fresh source manager
   auto source_manager = std::make_shared<slang::SourceManager>();
 
-  // Prepare preprocessor options
-  slang::Bag options;
-  slang::parsing::PreprocessorOptions pp_options;
+  // Start with standard LSP compilation options
+  auto options = utils::CreateLspCompilationOptions();
 
-  // Disable implicit net declarations for stricter diagnostics
-  pp_options.initialDefaultNetType = slang::parsing::TokenKind::Unknown;
-
-  // Configure lexer options for compatibility
-  slang::parsing::LexerOptions lexer_options;
-  // Enable legacy protection directives for compatibility with older codebases
-  lexer_options.enableLegacyProtect = true;
-  options.set(lexer_options);
-
-  // Apply include directories and defines from layout service
+  // Add project-specific preprocessor options
   if (layout_service) {
+    auto pp_options =
+        options.getOrDefault<slang::parsing::PreprocessorOptions>();
     for (const auto& include_dir : layout_service->GetIncludeDirectories()) {
       pp_options.additionalIncludePaths.emplace_back(include_dir.Path());
     }
-
     for (const auto& define : layout_service->GetDefines()) {
       pp_options.predefines.push_back(define);
     }
+    options.set(pp_options);
 
     logger->debug(
         "Applied {} include dirs, {} defines",
         layout_service->GetIncludeDirectories().size(),
         layout_service->GetDefines().size());
   }
-  options.set(pp_options);
-
-  // Create compilation options for LSP mode
-  slang::ast::CompilationOptions comp_options;
-  // NOTE: We do NOT use LintMode here because it marks all scopes as
-  // uninstantiated, which suppresses diagnostics inside generate blocks.
-  // LanguageServerMode provides sufficient support for single-file analysis.
-  comp_options.flags |= slang::ast::CompilationFlags::LanguageServerMode;
-  // Set unlimited error limit for LSP - users need to see all diagnostics
-  comp_options.errorLimit = 0;
-  options.set(comp_options);
 
   // Get file path for deduplication (needed before creating compilation)
   auto file_path = CanonicalPath::FromUri(uri);

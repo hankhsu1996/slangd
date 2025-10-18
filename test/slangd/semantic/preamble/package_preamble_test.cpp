@@ -233,3 +233,50 @@ TEST_CASE(
     co_return;
   });
 }
+
+TEST_CASE(
+    "Parameterized class static method call with cross-file preamble",
+    "[package][preamble][class]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def = R"(
+      package util_pkg;
+        parameter TABLE_SIZE = 16;
+        parameter OUTPUT_WIDTH = 8;
+
+        virtual class HelperClass#(parameter int INDEX, WIDTH);
+          static function automatic logic [WIDTH-1:0] compute(logic [WIDTH-1:0] input_val);
+            return input_val;
+          endfunction
+        endclass
+      endpackage
+    )";
+
+    const std::string ref = R"(
+      module processor;
+        import util_pkg::*;
+        logic [7:0] result;
+
+        initial begin
+          result = HelperClass#(.INDEX(5), .WIDTH(OUTPUT_WIDTH))::compute(8'h42);
+        end
+      endmodule
+    )";
+
+    fixture.CreateBufferIDOffset();
+    fixture.CreateFile("util_pkg.sv", def);
+    fixture.CreateFile("processor.sv", ref);
+
+    auto session = fixture.BuildSession("processor.sv", executor);
+    REQUIRE(session != nullptr);
+
+    Fixture::AssertCrossFileDef(*session, ref, def, "HelperClass", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "INDEX", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "WIDTH", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "OUTPUT_WIDTH", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "compute", 0, 0);
+
+    co_return;
+  });
+}

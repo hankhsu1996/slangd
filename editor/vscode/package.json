@@ -47,6 +47,19 @@
           "type": "string",
           "default": "",
           "description": "Path to the slangd executable. Leave empty to use the bundled executable."
+        },
+        "systemverilog.server.logLevel": {
+          "type": "string",
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error",
+            "off"
+          ],
+          "default": "debug",
+          "description": "Log level for slangd server. Trace shows symbol-level details, debug shows feature logic, info shows important events only."
         }
       }
     },

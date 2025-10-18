@@ -28,11 +28,6 @@ class DefinitionExtractor;
 
 namespace slangd::services {
 
-// Precomputed LSP location info for preamble symbols
-struct PreambleSymbolInfo {
-  lsp::Location def_loc;  // Definition location (range + URI)
-};
-
 // Package metadata extracted from preamble compilation
 struct PackageInfo {
   std::string name;
@@ -104,10 +99,6 @@ class PreambleManager {
   // Package symbol access for cross-compilation binding
   [[nodiscard]] auto GetPackage(std::string_view name) const
       -> const slang::ast::PackageSymbol*;
-  [[nodiscard]] auto IsPreambleSymbol(const slang::ast::Symbol* symbol) const
-      -> bool;
-  [[nodiscard]] auto GetSymbolInfo(const slang::ast::Symbol* symbol) const
-      -> std::optional<PreambleSymbolInfo>;
 
   // Include directories and defines from ProjectLayoutService
   [[nodiscard]] auto GetIncludeDirectories() const
@@ -141,8 +132,6 @@ class PreambleManager {
   // Package symbol storage for cross-compilation binding
   std::unordered_map<std::string, const slang::ast::PackageSymbol*>
       package_map_;
-  std::unordered_map<const slang::ast::Symbol*, PreambleSymbolInfo>
-      symbol_info_;
 
   // Preamble compilation objects
   std::shared_ptr<slang::ast::Compilation> preamble_compilation_;

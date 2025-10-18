@@ -263,12 +263,14 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
   }
 
   // Helper to check if cross-file references exist
-  static auto HasCrossFileReferences(const SemanticIndex& index) -> bool {
+  static auto HasCrossFileReferences(
+      const SemanticIndex& index, const std::string& current_file_uri) -> bool {
     const auto& entries = index.GetSemanticEntries();
     return std::ranges::any_of(
-        entries, [](const slangd::semantic::SemanticEntry& entry) {
-          // Check if source and definition are in different files (pure LSP)
-          return !entry.is_definition && entry.is_cross_file;
+        entries,
+        [&current_file_uri](const slangd::semantic::SemanticEntry& entry) {
+          // Cross-file if definition URI differs from current file URI
+          return !entry.is_definition && entry.def_loc.uri != current_file_uri;
         });
   }
 

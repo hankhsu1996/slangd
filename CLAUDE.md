@@ -119,6 +119,7 @@ SystemVerilog LSP server with modular design:
 - Use `slang::syntax::toString(syntax.kind) -> std::string_view` for SyntaxKind printing
 - Print source ranges: `range.start().offset()..range.end().offset()` for offsets, or use `source_manager.getLineNumber(range.start())` for line numbers
 - Naming: prefer full words over abbreviations; remove redundant context from names
+- Comments: describe technical behavior, not project state (no alpha/beta/v1/staging/milestone)
 
 **Forward Declaration vs Include:**
 

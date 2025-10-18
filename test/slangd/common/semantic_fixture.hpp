@@ -18,6 +18,7 @@
 
 #include "slangd/semantic/diagnostic_converter.hpp"
 #include "slangd/semantic/semantic_index.hpp"
+#include "slangd/utils/compilation_options.hpp"
 
 namespace slangd::test {
 
@@ -46,7 +47,7 @@ class SemanticTestFixture {
     std::string test_uri = "file:///" + std::string(kTestFilename);
     std::string test_path = "/" + std::string(kTestFilename);
 
-    auto options = CreateCompilationOptions();
+    auto options = utils::CreateLspCompilationOptions();
 
     auto source_manager = std::make_shared<slang::SourceManager>();
     auto buffer = source_manager->assignText(test_path, source);
@@ -297,30 +298,6 @@ class SemanticTestFixture {
               "found",
               symbol_name));
     }
-  }
-
- private:
-  // Create compilation options matching production LSP server
-  static auto CreateCompilationOptions() -> slang::Bag {
-    slang::Bag options;
-
-    // Disable implicit net declarations for stricter diagnostics
-    slang::parsing::PreprocessorOptions pp_options;
-    pp_options.initialDefaultNetType = slang::parsing::TokenKind::Unknown;
-    options.set(pp_options);
-
-    // Configure lexer options for compatibility
-    slang::parsing::LexerOptions lexer_options;
-    lexer_options.enableLegacyProtect = true;
-    options.set(lexer_options);
-
-    // Compilation options: NO LintMode
-    slang::ast::CompilationOptions comp_options;
-    comp_options.flags |= slang::ast::CompilationFlags::LanguageServerMode;
-    comp_options.errorLimit = 0;  // Unlimited errors for LSP
-    options.set(comp_options);
-
-    return options;
   }
 };
 

@@ -32,7 +32,6 @@ struct SemanticEntry {
   // LSP coordinates (reference location always in current_file_uri)
   lsp::Range ref_range;
   lsp::Location def_loc;  // Definition location (range + URI)
-  bool is_cross_file;     // true = from preamble, false = local
 
   // Symbol information
   const slang::ast::Symbol* symbol;
@@ -134,13 +133,12 @@ class SemanticIndex {
   class IndexVisitor : public slang::ast::ASTVisitor<IndexVisitor, true, true> {
    public:
     explicit IndexVisitor(
-        SemanticIndex& index, slang::ast::Compilation& compilation,
-        std::string current_file_uri,
+        SemanticIndex& index, std::string current_file_uri,
         const services::PreambleManager* preamble_manager)
         : index_(index),
-          compilation_(compilation),
           current_file_uri_(std::move(current_file_uri)),
-          preamble_manager_(preamble_manager) {
+          preamble_manager_(preamble_manager),
+          logger_(index.logger_) {
     }
 
     // Expression handlers
@@ -193,9 +191,9 @@ class SemanticIndex {
 
    private:
     std::reference_wrapper<SemanticIndex> index_;
-    std::reference_wrapper<slang::ast::Compilation> compilation_;
     std::string current_file_uri_;
     const services::PreambleManager* preamble_manager_;
+    std::shared_ptr<spdlog::logger> logger_;
 
     // Track which type syntax nodes we've already traversed
     // Prevents duplicate traversal when multiple symbols share the same type
@@ -233,47 +231,57 @@ class SemanticIndex {
         lsp::Range ref_range, lsp::Location def_loc,
         const slang::ast::Scope* parent_scope);
 
-    // PRAGMATIC EXCEPTION: Convert expression ranges using IndexVisitor's
-    // compilation
-    // SAFETY NOTE: This uses IndexVisitor's compilation_ which is scoped to
-    // the current indexing operation. Expression ranges are assumed to be from
-    // current file. This is a controlled exception to the "always derive SM
-    // from symbol" rule. See docs/SEMANTIC_INDEXING.md for safety model.
-    auto ConvertExpressionRange(slang::SourceRange range)
-        -> std::optional<lsp::Location>;
-
     void TraverseType(const slang::ast::Type& type);
 
     void IndexClassSpecialization(
         const slang::ast::ClassType& class_type,
-        const slang::syntax::SyntaxNode* call_syntax);
+        const slang::syntax::SyntaxNode* call_syntax,
+        const slang::ast::Expression& overlay_context);
 
     void TraverseClassNames(
         const slang::syntax::SyntaxNode* node,
         const slang::ast::ClassType& class_type,
-        slang::SourceRange definition_range);
+        slang::SourceRange definition_range,
+        const slang::ast::Expression& overlay_context);
 
     void IndexClassParameters(
         const slang::ast::ClassType& class_type,
-        const slang::syntax::ParameterValueAssignmentSyntax& params);
+        const slang::syntax::ParameterValueAssignmentSyntax& params,
+        const slang::ast::Expression& overlay_context);
 
     void IndexInstanceParameters(
         const slang::ast::InstanceSymbol& instance,
         const slang::syntax::ParameterValueAssignmentSyntax& params);
 
     // Index package name in scoped references (pkg::item)
-    //
-    // SAFETY-FIRST WHITELIST APPROACH:
-    // - syntax_owner provided → Symbol Path (CreateLspLocation)
-    //   Used when syntax from symbol.getSyntax() (e.g., TypeReference)
-    // - syntax_owner = nullopt → Expression Path (ConvertExpressionRange)
-    //   ONLY for whitelisted expression handlers (NamedValue, Call, etc.)
-    //   NEVER use nullopt for TypeReference or symbol-derived syntax
+    // Symbol version: Used when syntax comes from symbol.getSyntax() (e.g.,
+    // TypeReference)
     void IndexPackageInScopedName(
         const slang::syntax::SyntaxNode* syntax,
-        std::optional<std::reference_wrapper<const slang::ast::Symbol>>
-            syntax_owner,
+        const slang::ast::Symbol& syntax_owner,
         const slang::ast::Symbol& target_symbol);
+
+    // Index package name in scoped references (pkg::item)
+    // Expression version: Used when syntax comes from expression handlers
+    void IndexPackageInScopedName(
+        const slang::syntax::SyntaxNode* syntax,
+        const slang::ast::Expression& expr_context,
+        const slang::ast::Symbol& target_symbol);
+
+    // Helper methods for NamedValueExpression refactoring
+    // Resolve target symbol (unwrap imports, compiler-generated)
+    static auto ResolveTargetSymbol(
+        const slang::ast::NamedValueExpression& expr)
+        -> const slang::ast::Symbol*;
+
+    // Extract definition range based on symbol kind
+    static auto ExtractDefinitionRange(const slang::ast::Symbol& symbol)
+        -> std::optional<slang::SourceRange>;
+
+    // Compute reference range from expression
+    static auto ComputeReferenceRange(
+        const slang::ast::NamedValueExpression& expr,
+        const slang::ast::Symbol& symbol) -> std::optional<slang::SourceRange>;
   };
 };
 
