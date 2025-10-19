@@ -28,17 +28,14 @@ class PreambleAwareCompilation : public slang::ast::Compilation {
       : Compilation(options), preamble_manager_(std::move(preamble_manager)) {
     // Populate packageMap with preamble packages (direct injection)
     // Enables cross-compilation: overlay can reference preamble symbols
-    for (const auto& package_info : preamble_manager_->GetPackages()) {
+    for (const auto& [name, entry] : preamble_manager_->GetPackages()) {
       // Skip if this package is defined in current file (deduplication)
       // Let overlay's version be used instead of preamble's
-      if (package_info.file_path.Path() == current_file_path.Path()) {
+      if (entry.file_path.Path() == current_file_path.Path()) {
         continue;
       }
 
-      const auto* pkg = preamble_manager_->GetPackage(package_info.name);
-      if (pkg != nullptr) {
-        packageMap[pkg->name] = pkg;
-      }
+      packageMap[entry.symbol->name] = entry.symbol;
     }
   }
 
@@ -197,17 +194,17 @@ auto OverlaySession::BuildCompilation(
     // This eliminates duplicate package loading per session.
 
     // Add interfaces from preamble manager
-    for (const auto& interface_info : preamble_manager->GetInterfaces()) {
+    for (const auto& [name, entry] : preamble_manager->GetInterfaces()) {
       // Skip if this is the same file as our buffer (deduplication)
-      if (interface_info.file_path.Path() == file_path.Path()) {
+      if (entry.file_path.Path() == file_path.Path()) {
         logger->debug(
             "Skipping buffer file from preamble manager: {}",
-            interface_info.file_path.Path().string());
+            entry.file_path.Path().string());
         continue;
       }
 
       auto interface_tree_result = slang::syntax::SyntaxTree::fromFile(
-          interface_info.file_path.Path().string(), *source_manager, options);
+          entry.file_path.Path().string(), *source_manager, options);
       if (interface_tree_result) {
         compilation->addSyntaxTree(interface_tree_result.value());
       }

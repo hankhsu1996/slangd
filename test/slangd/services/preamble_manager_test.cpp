@@ -90,11 +90,10 @@ class PreambleManagerTestFixture {
       const slangd::services::PreambleManager& preamble_manager,
       std::string_view name, std::string_view expected_filename) {
     const auto& packages = preamble_manager.GetPackages();
-    for (const auto& pkg : packages) {
-      if (pkg.name == name) {
-        REQUIRE(pkg.file_path.Path().filename() == expected_filename);
-        return;
-      }
+    auto it = packages.find(std::string(name));
+    if (it != packages.end()) {
+      REQUIRE(it->second.file_path.Path().filename() == expected_filename);
+      return;
     }
     FAIL("Package '" << name << "' not found");
   }
@@ -103,11 +102,10 @@ class PreambleManagerTestFixture {
       const slangd::services::PreambleManager& preamble_manager,
       std::string_view name, std::string_view expected_filename) {
     const auto& interfaces = preamble_manager.GetInterfaces();
-    for (const auto& iface : interfaces) {
-      if (iface.name == name) {
-        REQUIRE(iface.file_path.Path().filename() == expected_filename);
-        return;
-      }
+    auto it = interfaces.find(std::string(name));
+    if (it != interfaces.end()) {
+      REQUIRE(it->second.file_path.Path().filename() == expected_filename);
+      return;
     }
     FAIL("Interface '" << name << "' not found");
   }
