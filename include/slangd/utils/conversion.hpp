@@ -76,8 +76,7 @@ inline auto CreateSymbolLspLocationWithSM(
 // Automatically uses the correct SourceManager from the symbol's compilation.
 // This prevents BufferID mismatch crashes by ensuring preamble symbols use
 // preamble's SM and overlay symbols use overlay's SM.
-// Returns nullopt if symbol has no parent scope, no source manager, or invalid
-// location.
+// Returns nullopt if symbol has no source manager or invalid location.
 inline auto CreateSymbolLspLocation(
     const slang::ast::Symbol& symbol, std::shared_ptr<spdlog::logger> logger)
     -> std::optional<lsp::Location> {
@@ -86,13 +85,11 @@ inline auto CreateSymbolLspLocation(
       "CreateSymbolLspLocation: name='{}' kind={}", symbol.name,
       toString(symbol.kind));
 
-  // Derive SourceManager from symbol's own compilation
-  const auto* scope = symbol.getParentScope();
-  if (scope == nullptr) {
-    return std::nullopt;
-  }
-
-  const auto& compilation = scope->getCompilation();
+  // Use symbol's compilation to get the correct SourceManager
+  // This handles both cross-compilation cases:
+  // 1. Interface fields: symbol has preamble compilation (via Slang fix)
+  // 2. Specialized classes: symbol has overlay compilation where instantiated
+  const auto& compilation = symbol.getCompilation();
   const auto* source_manager = compilation.getSourceManager();
   if (source_manager == nullptr) {
     return std::nullopt;
@@ -108,10 +105,7 @@ inline auto CreateSymbolLspLocation(
 // Use this for ANY range conversion where the range might belong to a different
 // compilation than the current session (e.g., preamble symbols).
 //
-// Returns nullopt if:
-// - Symbol has no parent scope
-// - Compilation has no SourceManager
-// - Range is invalid
+// Returns nullopt if compilation has no SourceManager or range is invalid.
 inline auto CreateLspLocation(
     const slang::ast::Symbol& symbol, slang::SourceRange range,
     std::shared_ptr<spdlog::logger> logger) -> std::optional<lsp::Location> {
@@ -120,13 +114,9 @@ inline auto CreateLspLocation(
       "CreateLspLocation(symbol): name='{}' kind={}", symbol.name,
       toString(symbol.kind));
 
-  // Derive SourceManager from symbol's compilation (safe!)
-  const auto* scope = symbol.getParentScope();
-  if (scope == nullptr) {
-    return std::nullopt;
-  }
-
-  const auto& compilation = scope->getCompilation();
+  // Use symbol's compilation to get the correct SourceManager
+  // This handles both cross-compilation cases correctly
+  const auto& compilation = symbol.getCompilation();
   const auto* sm = compilation.getSourceManager();
   if (sm == nullptr || !range.start().valid()) {
     return std::nullopt;

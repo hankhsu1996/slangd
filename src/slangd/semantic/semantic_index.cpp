@@ -552,9 +552,11 @@ void SemanticIndex::IndexVisitor::TraverseClassNames(
   if (node->kind == slang::syntax::SyntaxKind::ClassName) {
     const auto& class_name = node->as<slang::syntax::ClassNameSyntax>();
 
-    // Use overlay_context to convert overlay syntax ranges safely
-    // (class_type might be from preamble)
-    auto def_loc = CreateLspLocation(class_type, definition_range, logger_);
+    // Use genericClass to convert preamble syntax ranges safely
+    // CRITICAL: definition_range is from preamble genericClass syntax,
+    // so we must use genericClass compilation to decode it correctly
+    auto def_loc =
+        CreateLspLocation(*class_type.genericClass, definition_range, logger_);
     auto ref_loc = CreateLspLocation(
         overlay_context, class_name.identifier.range(), logger_);
 
