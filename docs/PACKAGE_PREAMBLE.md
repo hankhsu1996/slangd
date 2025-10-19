@@ -50,11 +50,18 @@ Slang symbols are location-independent pointers. A compilation can reference sym
 
 BufferIDs in source ranges belong to the SourceManager that parsed them. Using wrong SourceManager causes crashes.
 
-### Slang Fork Enhancement
+**Important**: BufferIDs are per-compilation indices, not global identifiers. Preamble BufferID 15 and overlay BufferID 15 are completely different buffers. You cannot use `buffer.getId() < bufferCount` to detect cross-compilation - the IDs overlap.
 
-**Solution:** Added `Compilation* compilation` to `Expression` base class. Each expression stores its compilation.
+### Slang Fork Enhancements
 
-**Impact:** Eliminates cross-compilation safety issues. Expressions automatically use correct SourceManager.
+**Solutions:**
+
+1. Added `Compilation* compilation` to `Expression` base class (commit 42ed17f3)
+2. Added `Compilation* compilation` to `Symbol` base class (current work)
+
+Each expression and symbol stores its compilation, enabling automatic SourceManager derivation.
+
+**Impact:** Eliminates cross-compilation safety issues. All AST nodes automatically use correct SourceManager.
 
 ### Conversion Pattern
 
@@ -69,6 +76,7 @@ CreateLspLocation(expr, range)
 **Default Argument Safety:** Calling `pkg::func()` with preamble default arguments now works correctly because the default expression stores preamble's compilation → uses preamble's SM.
 
 **Obsolete:**
+
 - ~~Preamble symbol checks~~ - Automatic now
 - ~~Expression whitelist~~ - All safe
 - ~~ConvertExpressionRange~~ - Removed

@@ -192,15 +192,18 @@ With cross-compilation (PreambleManager + OverlaySession), using the wrong Sourc
 
 ### Universal Conversion Pattern
 
-**Rule:** Always use `CreateLspLocation(node, range)` to derive SourceManager from the AST node.
+**Rule:** Always use `CreateLspLocation(node, range)` or `CreateSymbolLspLocation(symbol, range)` to derive SourceManager from the AST node. Never use SourceManager directly.
 
 ```cpp
 // Symbols - derives SM from symbol's compilation
+CreateSymbolLspLocation(symbol, range)
 CreateLspLocation(symbol, range)
 
 // Expressions - derives SM from expr.compilation
 CreateLspLocation(expr, range)
 ```
+
+**Important:** `CreateSymbolLspLocationWithSM` is a low-level helper function used internally by `CreateLspLocation` and `CreateSymbolLspLocation`. It should only be called directly in very rare cases where you already have the correct SourceManager. In almost all cases, use the higher-level functions that automatically derive the SourceManager from the AST node.
 
 **Key Benefit:** Handles default argument expressions correctly. When calling `pkg::func()` with preamble default arguments, the default arg expression stores preamble's compilation → automatic correct SM selection.
 

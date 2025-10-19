@@ -13,6 +13,7 @@
 #include <spdlog/spdlog.h>
 
 #include "slangd/core/project_layout_service.hpp"
+#include "slangd/semantic/diagnostic_converter.hpp"
 #include "slangd/services/overlay_session.hpp"
 #include "slangd/services/preamble_manager.hpp"
 #include "slangd/utils/canonical_path.hpp"
@@ -476,6 +477,65 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
 
     // Just check it doesn't crash - ignore return value
     (void)index.LookupDefinitionAt(uri, position);
+  }
+
+  // Diagnostic assertion helpers
+  // These verify that compilation succeeded without errors/warnings
+
+  // Assert that compilation has no parse or semantic diagnostics
+  // This triggers full elaboration to catch all errors and warnings
+  static void AssertNoDiagnostics(
+      const slangd::services::OverlaySession& session) {
+    auto all_diags = GetDiagnostics(session);
+
+    if (!all_diags.empty()) {
+      std::string error_msg = fmt::format(
+          "Expected no diagnostics, but found {}:\n", all_diags.size());
+      for (const auto& diag : all_diags) {
+        error_msg += fmt::format(
+            "  [{}] Line {}: {}\n", diag.code.value_or("unknown"),
+            diag.range.start.line, diag.message);
+      }
+      FAIL(error_msg);
+    }
+  }
+
+  // Assert that compilation has no errors (warnings are allowed)
+  // This triggers full elaboration to catch all errors
+  static void AssertNoErrors(const slangd::services::OverlaySession& session) {
+    auto all_diags = GetDiagnostics(session);
+
+    std::vector<lsp::Diagnostic> errors;
+    for (const auto& diag : all_diags) {
+      if (diag.severity == lsp::DiagnosticSeverity::kError) {
+        errors.push_back(diag);
+      }
+    }
+
+    if (!errors.empty()) {
+      std::string error_msg =
+          fmt::format("Expected no errors, but found {}:\n", errors.size());
+      for (const auto& diag : errors) {
+        error_msg += fmt::format(
+            "  [{}] Line {}: {}\n", diag.code.value_or("unknown"),
+            diag.range.start.line, diag.message);
+      }
+      FAIL(error_msg);
+    }
+  }
+
+  // Get all diagnostics for manual inspection
+  // This triggers full elaboration
+  static auto GetDiagnostics(const slangd::services::OverlaySession& session)
+      -> std::vector<lsp::Diagnostic> {
+    auto& compilation = session.GetCompilation();
+    const auto& source_manager = session.GetSourceManager();
+    auto main_buffer_id = session.GetMainBufferID();
+
+    // Get ALL diagnostics (triggers full elaboration)
+    const auto& all_slang_diags = compilation.getAllDiagnostics();
+    return slangd::semantic::DiagnosticConverter::ExtractDiagnostics(
+        all_slang_diags, source_manager, main_buffer_id);
   }
 };
 
