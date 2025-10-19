@@ -160,8 +160,6 @@ auto OverlaySession::BuildCompilation(
     logger = spdlog::default_logger();
   }
 
-  utils::ScopedTimer timer(fmt::format("BuildCompilation [{}]", uri), logger);
-
   // Create fresh source manager
   auto source_manager = std::make_shared<slang::SourceManager>();
 
@@ -195,9 +193,6 @@ auto OverlaySession::BuildCompilation(
   if (preamble_manager) {
     compilation = std::make_unique<PreambleAwareCompilation>(
         options, preamble_manager, file_path);
-    logger->debug(
-        "Created PreambleAwareCompilation with {} packages",
-        preamble_manager->GetPackages().size());
   } else {
     compilation = std::make_unique<slang::ast::Compilation>(options);
   }
@@ -216,33 +211,9 @@ auto OverlaySession::BuildCompilation(
         file_path.Path().string());
   }
 
-  // Add files from preamble manager if available
-  if (preamble_manager) {
-    // NOTE: Packages are NOT loaded as syntax trees!
-    // PreambleAwareCompilation injects preamble PackageSymbol* pointers
-    // directly into packageMap for cross-compilation binding.
-    // This eliminates duplicate package loading per session.
-
-    // Add interfaces from preamble manager
-    for (const auto& [name, entry] : preamble_manager->GetInterfaces()) {
-      // Skip if this is the same file as our buffer (deduplication)
-      if (entry.file_path.Path() == file_path.Path()) {
-        logger->debug(
-            "Skipping buffer file from preamble manager: {}",
-            entry.file_path.Path().string());
-        continue;
-      }
-
-      auto interface_tree_result = slang::syntax::SyntaxTree::fromFile(
-          entry.file_path.Path().string(), *source_manager, options);
-      if (interface_tree_result) {
-        compilation->addSyntaxTree(interface_tree_result.value());
-      }
-    }
-
-  } else {
-    logger->debug("No preamble manager provided - single-file mode");
-  }
+  // Preamble symbols injected via PreambleAwareCompilation constructor
+  // Packages added to packageMap, interfaces/modules added to definitionMap
+  // No syntax tree loading needed - cross-compilation uses symbol pointers
 
   return std::make_tuple(
       std::move(source_manager), std::move(compilation), main_buffer_id);

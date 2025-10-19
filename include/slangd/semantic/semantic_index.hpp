@@ -249,6 +249,11 @@ class SemanticIndex {
         const slang::syntax::ParameterValueAssignmentSyntax& params,
         const slang::ast::Expression& overlay_context);
 
+    void IndexClassParameters(
+        const slang::ast::ClassType& class_type,
+        const slang::syntax::ParameterValueAssignmentSyntax& params,
+        const slang::ast::Symbol& overlay_context);
+
     void IndexInstanceParameters(
         const slang::ast::InstanceSymbol& instance,
         const slang::syntax::ParameterValueAssignmentSyntax& params);

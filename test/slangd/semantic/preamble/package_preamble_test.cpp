@@ -280,3 +280,67 @@ TEST_CASE(
     co_return;
   });
 }
+
+TEST_CASE(
+    "Duplicate parameterized class specialization in package and module",
+    "[package][preamble][class][specialization][cache]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def = R"(
+      package cache_pkg;
+        parameter CACHE_LINE_SIZE = 64;
+
+        virtual class Cache#(parameter int SIZE, WIDTH);
+          static function automatic logic [WIDTH-1:0] read(logic [WIDTH-1:0] addr);
+            return addr;
+          endfunction
+        endclass
+
+        // Specialization created in PREAMBLE (package)
+        typedef Cache#(.SIZE(128), .WIDTH(CACHE_LINE_SIZE)) L1Cache;
+      endpackage
+    )";
+
+    const std::string ref = R"(
+      module cpu;
+        import cache_pkg::*;
+        logic [63:0] data;
+
+        // DUPLICATE specialization - same parameters as package typedef
+        // Tests that Slang's cache key correctly reuses the same specialized class
+        typedef Cache#(.SIZE(128), .WIDTH(CACHE_LINE_SIZE)) L1CacheLocal;
+
+        initial begin
+          // Method call on preamble specialization
+          data = L1Cache::read(64'h1000);
+          // Method call on local (duplicate) specialization
+          data = L1CacheLocal::read(64'h2000);
+        end
+      endmodule
+    )";
+
+    fixture.CreateBufferIDOffset();
+    fixture.CreateFile("cache_pkg.sv", def);
+    fixture.CreateFile("cpu.sv", ref);
+
+    auto session = fixture.BuildSession("cpu.sv", executor);
+    REQUIRE(session != nullptr);
+
+    // TODO: L1Cache should resolve to typedef (line 10) not generic class (line
+    // 4) Currently resolves to generic class Cache definition More intuitive
+    // behavior: resolve to the typedef name the user wrote
+    // Fixture::AssertCrossFileDef(*session, ref, def, "L1Cache", 0, 0);
+
+    // CRITICAL: Both "read" calls should resolve to the SAME generic class
+    // method First "read" call (on L1Cache from package)
+    Fixture::AssertCrossFileDef(*session, ref, def, "read", 0, 0);
+    // Second "read" call (on L1CacheLocal from module)
+    Fixture::AssertCrossFileDef(*session, ref, def, "read", 1, 0);
+
+    // Parameter reference should resolve correctly
+    Fixture::AssertCrossFileDef(*session, ref, def, "CACHE_LINE_SIZE", 0, 0);
+
+    co_return;
+  });
+}

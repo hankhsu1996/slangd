@@ -422,14 +422,32 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
             IndexPackageInScopedName(
                 type_ref.getSyntax(), type_ref, *class_target);
           }
-          // For scoped names, extract just the class name part
+          // Extract the class name identifier range (not the entire
+          // specialization)
           auto usage_range = type_ref.getUsageLocation();
-          if (type_ref.getSyntax() != nullptr &&
-              type_ref.getSyntax()->kind ==
-                  slang::syntax::SyntaxKind::ScopedName) {
-            const auto& scoped =
-                type_ref.getSyntax()->as<slang::syntax::ScopedNameSyntax>();
-            usage_range = scoped.right->sourceRange();
+          if (type_ref.getSyntax() != nullptr) {
+            // For ClassName (e.g., Cache#(...)), extract just the identifier
+            if (type_ref.getSyntax()->kind ==
+                slang::syntax::SyntaxKind::ClassName) {
+              const auto& class_name =
+                  type_ref.getSyntax()->as<slang::syntax::ClassNameSyntax>();
+              usage_range = class_name.identifier.range();
+
+              // Index parameter values (e.g., CACHE_LINE_SIZE in
+              // .WIDTH(CACHE_LINE_SIZE))
+              if (class_name.parameters != nullptr) {
+                IndexClassParameters(
+                    *class_target, *class_name.parameters, type_ref);
+              }
+            }
+            // For scoped names (e.g., pkg::Cache), extract just the right part
+            else if (
+                type_ref.getSyntax()->kind ==
+                slang::syntax::SyntaxKind::ScopedName) {
+              const auto& scoped =
+                  type_ref.getSyntax()->as<slang::syntax::ScopedNameSyntax>();
+              usage_range = scoped.right->sourceRange();
+            }
           }
 
           auto ref_loc = CreateLspLocation(type_ref, usage_range, logger_);
@@ -559,24 +577,20 @@ void SemanticIndex::IndexVisitor::TraverseClassNames(
   }
 }
 
+// Expression overload - for use in CallExpression handler
 void SemanticIndex::IndexVisitor::IndexClassParameters(
     const slang::ast::ClassType& class_type,
     const slang::syntax::ParameterValueAssignmentSyntax& params,
     const slang::ast::Expression& overlay_context) {
-  // Parameter value assignments can be ordered or named
-  // For named assignments: .MAX_VAL(50) - we index the parameter name
-  // For ordered assignments: #(50, 100) - no names to index, only values
-
-  // Visit parameter value expressions to index symbol references (e.g.,
-  // BUS_WIDTH)
+  // Visit parameter value expressions to index symbol references
   for (const auto* expr : class_type.parameterAssignmentExpressions) {
     if (expr != nullptr) {
       expr->visit(*this);
     }
   }
 
+  // Index parameter names (e.g., .WIDTH in Cache#(.WIDTH(...)))
   for (const auto* param_base : params.parameters) {
-    // Only process named parameter assignments
     if (param_base->kind != slang::syntax::SyntaxKind::NamedParamAssignment) {
       continue;
     }
@@ -585,16 +599,10 @@ void SemanticIndex::IndexVisitor::IndexClassParameters(
         param_base->as<slang::syntax::NamedParamAssignmentSyntax>();
     std::string_view param_name = named_param.name.valueText();
 
-    // Find corresponding parameter symbol in specialized class's
-    // genericParameters. CRITICAL: These parameters belong to overlay
-    // compilation but have locations from preamble files. We must use the
-    // preamble's SourceManager (from genericClass) to convert their locations
-    // correctly.
     if (class_type.genericClass == nullptr) {
       continue;
     }
 
-    // Get preamble SourceManager from the generic class definition
     const auto* preamble_scope = class_type.genericClass->getParentScope();
     if (preamble_scope == nullptr) {
       continue;
@@ -614,16 +622,74 @@ void SemanticIndex::IndexVisitor::IndexClassParameters(
       const auto& param_symbol =
           generic_param->as<slang::ast::ParameterSymbol>();
       if (!param_symbol.location.valid()) {
-        logger_->debug(
-            "IndexClassParameters: param '{}' has invalid location",
-            param_symbol.name);
         continue;
       }
 
-      // Convert parameter location using PREAMBLE SourceManager
       auto param_def_loc =
           CreateSymbolLspLocationWithSM(param_symbol, *preamble_sm);
-      // Convert reference location using OVERLAY context
+      auto ref_loc =
+          CreateLspLocation(overlay_context, named_param.name.range(), logger_);
+
+      if (param_def_loc && ref_loc) {
+        AddReference(
+            param_symbol, param_symbol.name, ref_loc->range, *param_def_loc,
+            param_symbol.getParentScope());
+      }
+      break;
+    }
+  }
+}
+
+// Symbol overload - for use in TypeReference traversal (typedefs)
+void SemanticIndex::IndexVisitor::IndexClassParameters(
+    const slang::ast::ClassType& class_type,
+    const slang::syntax::ParameterValueAssignmentSyntax& params,
+    const slang::ast::Symbol& overlay_context) {
+  // Visit parameter value expressions to index symbol references
+  for (const auto* expr : class_type.parameterAssignmentExpressions) {
+    if (expr != nullptr) {
+      expr->visit(*this);
+    }
+  }
+
+  // Index parameter names (e.g., .WIDTH in typedef Cache#(.WIDTH(...)))
+  for (const auto* param_base : params.parameters) {
+    if (param_base->kind != slang::syntax::SyntaxKind::NamedParamAssignment) {
+      continue;
+    }
+
+    const auto& named_param =
+        param_base->as<slang::syntax::NamedParamAssignmentSyntax>();
+    std::string_view param_name = named_param.name.valueText();
+
+    if (class_type.genericClass == nullptr) {
+      continue;
+    }
+
+    const auto* preamble_scope = class_type.genericClass->getParentScope();
+    if (preamble_scope == nullptr) {
+      continue;
+    }
+    const auto& preamble_compilation = preamble_scope->getCompilation();
+    const auto* preamble_sm = preamble_compilation.getSourceManager();
+    if (preamble_sm == nullptr) {
+      continue;
+    }
+
+    for (const auto* generic_param : class_type.genericParameters) {
+      if (generic_param->name != param_name ||
+          generic_param->kind != slang::ast::SymbolKind::Parameter) {
+        continue;
+      }
+
+      const auto& param_symbol =
+          generic_param->as<slang::ast::ParameterSymbol>();
+      if (!param_symbol.location.valid()) {
+        continue;
+      }
+
+      auto param_def_loc =
+          CreateSymbolLspLocationWithSM(param_symbol, *preamble_sm);
       auto ref_loc =
           CreateLspLocation(overlay_context, named_param.name.range(), logger_);
 
@@ -1001,12 +1067,72 @@ void SemanticIndex::IndexVisitor::handle(
     return;
   }
 
+  // Determine if this is a class method or package-scoped function
+  const auto* parent_scope = (*subroutine_symbol)->getParentScope();
+  const bool is_class_method =
+      parent_scope != nullptr &&
+      parent_scope->asSymbol().kind == slang::ast::SymbolKind::ClassType;
+
   // Index package names in scoped references (e.g., pkg::func())
+  // But NOT for class methods (e.g., ClassName::method()) - those are handled
+  // below
   if (expr.syntax != nullptr &&
-      expr.syntax->kind == slang::syntax::SyntaxKind::InvocationExpression) {
+      expr.syntax->kind == slang::syntax::SyntaxKind::InvocationExpression &&
+      !is_class_method) {
     const auto& invocation =
         expr.syntax->as<slang::syntax::InvocationExpressionSyntax>();
     IndexPackageInScopedName(invocation.left, expr, **subroutine_symbol);
+  }
+
+  // Index class names in scoped static method calls (e.g., ClassName::method())
+  if (expr.syntax != nullptr &&
+      expr.syntax->kind == slang::syntax::SyntaxKind::InvocationExpression &&
+      is_class_method) {
+    const auto& invocation =
+        expr.syntax->as<slang::syntax::InvocationExpressionSyntax>();
+
+    // Index class name in scoped static method calls (e.g.,
+    // ClassName::method())
+    if (invocation.left != nullptr &&
+        invocation.left->kind == slang::syntax::SyntaxKind::ScopedName) {
+      const auto& scoped =
+          invocation.left->as<slang::syntax::ScopedNameSyntax>();
+      if (scoped.separator.kind == slang::parsing::TokenKind::DoubleColon &&
+          scoped.left->kind == slang::syntax::SyntaxKind::IdentifierName) {
+        // This is ClassName::method() - index the class name
+        const auto& class_ident =
+            scoped.left->as<slang::syntax::IdentifierNameSyntax>();
+
+        const auto* parent_scope = (*subroutine_symbol)->getParentScope();
+        if (parent_scope != nullptr && parent_scope->asSymbol().kind ==
+                                           slang::ast::SymbolKind::ClassType) {
+          const auto& parent_class =
+              parent_scope->asSymbol().as<slang::ast::ClassType>();
+
+          // Verify the identifier matches the class name (or its typedef)
+          // Note: parent_class.name might be the specialized name like "Cache"
+          // but we also need to handle typedef names like "L1Cache"
+          // For now, create a reference to the class using the identifier text
+          auto ref_loc =
+              CreateLspLocation(expr, class_ident.identifier.range(), logger_);
+
+          // Determine the definition location
+          // For specialized classes, use the generic class definition
+          const slang::ast::Symbol* def_symbol = &parent_class;
+          if (parent_class.genericClass != nullptr) {
+            def_symbol = parent_class.genericClass;
+          }
+
+          auto def_loc = CreateSymbolLspLocation(*def_symbol, logger_);
+
+          if (ref_loc && def_loc) {
+            AddReference(
+                *def_symbol, class_ident.identifier.valueText(), ref_loc->range,
+                *def_loc, def_symbol->getParentScope());
+          }
+        }
+      }
+    }
   }
 
   // Handle subroutine definition location conversion.
@@ -1015,9 +1141,8 @@ void SemanticIndex::IndexVisitor::handle(
   // file. We must use the preamble's SourceManager in this case.
   std::optional<lsp::Location> def_loc;
 
-  const auto* parent_scope = (*subroutine_symbol)->getParentScope();
-  if (parent_scope != nullptr &&
-      parent_scope->asSymbol().kind == slang::ast::SymbolKind::ClassType) {
+  // parent_scope already defined above for is_class_method check
+  if (is_class_method) {
     const auto& parent_class =
         parent_scope->asSymbol().as<slang::ast::ClassType>();
 
@@ -1686,14 +1811,30 @@ void SemanticIndex::IndexVisitor::handle(
     }
 
     // Create cross-reference from modport name to modport definition
-    // modportSymbol was cached by connectDefaultIfacePorts()
-    if (interface_port.modportSymbol != nullptr) {
+    // modportSymbol was cached by getModport() during instance elaboration
+    if (interface_port.modportSymbol != nullptr &&
+        interface_port.interfaceDef != nullptr) {
       auto modport_name_range = interface_port.modportNameRange();
       if (modport_name_range.start().valid()) {
-        auto modport_definition_loc =
-            CreateSymbolLspLocation(*interface_port.modportSymbol, logger_);
+        // CROSS-COMPILATION: modportSymbol is looked up from instance.body,
+        // which is created from interfaceDef (may be in preamble).
+        // The modportSymbol pointer is cached in overlay's InterfacePortSymbol,
+        // but the actual ModportSymbol object lives in the preamble
+        // compilation. Therefore, modportSymbol->location has a preamble
+        // BufferID.
+        //
+        // Use interfaceDef (preamble) to derive the SourceManager for decoding
+        // modport_location_range, following the principle:
+        // "derive SourceManager from the AST node that owns the range"
+        slang::SourceRange modport_location_range(
+            interface_port.modportSymbol->location,
+            interface_port.modportSymbol->location +
+                interface_port.modportSymbol->name.length());
+        auto modport_definition_loc = CreateLspLocation(
+            *interface_port.interfaceDef, modport_location_range, logger_);
         auto ref_loc =
             CreateLspLocation(interface_port, modport_name_range, logger_);
+
         if (modport_definition_loc && ref_loc) {
           AddReference(
               *interface_port.modportSymbol, interface_port.modportSymbol->name,
