@@ -273,3 +273,161 @@ TEST_CASE(
     co_return;
   });
 }
+
+TEST_CASE(
+    "Local interface instance with field access and cross-file preamble",
+    "[interface][preamble][field]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def = R"(
+      interface simple_if;
+        logic [7:0] data;
+        logic valid;
+      endinterface
+    )";
+
+    const std::string ref = R"(
+      module dut;
+        simple_if bus();
+        logic [7:0] temp;
+
+        always_comb begin
+          temp = bus.data;
+          temp = bus.valid ? temp : 8'h00;
+        end
+      endmodule
+    )";
+
+    fixture.CreateBufferIDOffset();
+    fixture.CreateFile("simple_if.sv", def);
+    fixture.CreateFile("dut.sv", ref);
+
+    auto session = fixture.BuildSession("dut.sv", executor);
+    Fixture::AssertNoErrors(*session);
+    Fixture::AssertCrossFileDef(*session, ref, def, "data", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "valid", 0, 0);
+
+    co_return;
+  });
+}
+
+TEST_CASE(
+    "Interface array with indexed field access and cross-file preamble",
+    "[interface][preamble][field][array]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def = R"(
+      interface channel_if;
+        logic [7:0] data;
+        logic valid;
+      endinterface
+    )";
+
+    const std::string ref = R"(
+      module router;
+        parameter NUM_PORTS = 4;
+        channel_if ports[NUM_PORTS]();
+        logic [7:0] temp;
+
+        always_comb begin
+          temp = ports[0].data;
+          temp = ports[1].valid ? temp : 8'h00;
+        end
+      endmodule
+    )";
+
+    fixture.CreateBufferIDOffset();
+    fixture.CreateFile("channel_if.sv", def);
+    fixture.CreateFile("router.sv", ref);
+
+    auto session = fixture.BuildSession("router.sv", executor);
+    Fixture::AssertNoErrors(*session);
+    Fixture::AssertCrossFileDef(*session, ref, def, "data", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "valid", 0, 0);
+
+    co_return;
+  });
+}
+
+TEST_CASE(
+    "Interface port with field access and cross-file preamble",
+    "[interface][preamble][field][port]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def = R"(
+      interface axi_if;
+        logic [31:0] awaddr;
+        logic awvalid;
+      endinterface
+    )";
+
+    const std::string ref = R"(
+      module master (
+        axi_if m_axi
+      );
+        logic [31:0] addr;
+
+        always_comb begin
+          addr = m_axi.awaddr;
+          addr = m_axi.awvalid ? addr : 32'h0;
+        end
+      endmodule
+    )";
+
+    fixture.CreateBufferIDOffset();
+    fixture.CreateFile("axi_if.sv", def);
+    fixture.CreateFile("master.sv", ref);
+
+    auto session = fixture.BuildSession("master.sv", executor);
+    Fixture::AssertNoErrors(*session);
+    Fixture::AssertCrossFileDef(*session, ref, def, "awaddr", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "awvalid", 0, 0);
+
+    co_return;
+  });
+}
+
+TEST_CASE(
+    "Interface array port with indexed field access and cross-file preamble",
+    "[interface][preamble][field][port][array]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def = R"(
+      interface stream_if;
+        logic valid;
+        logic [63:0] data;
+      endinterface
+    )";
+
+    const std::string ref = R"(
+      module arbiter (
+        stream_if inputs[4],
+        stream_if out
+      );
+        logic [63:0] temp;
+
+        always_comb begin
+          temp = inputs[0].data;
+          temp = inputs[1].valid ? temp : 64'h0;
+          temp = out.data;
+        end
+      endmodule
+    )";
+
+    fixture.CreateBufferIDOffset();
+    fixture.CreateFile("stream_if.sv", def);
+    fixture.CreateFile("arbiter.sv", ref);
+
+    auto session = fixture.BuildSession("arbiter.sv", executor);
+    Fixture::AssertNoErrors(*session);
+    Fixture::AssertCrossFileDef(*session, ref, def, "data", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "valid", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "data", 1, 0);
+
+    co_return;
+  });
+}
