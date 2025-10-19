@@ -51,9 +51,7 @@ TEST_CASE(
     fixture.CreateFile("dut.sv", ref);
 
     auto session = fixture.BuildSession("dut.sv", executor);
-    REQUIRE(session != nullptr);
     Fixture::AssertNoErrors(*session);
-
     Fixture::AssertCrossFileDef(*session, ref, def, "simple_if", 0, 0);
 
     co_return;
@@ -86,9 +84,7 @@ TEST_CASE(
     fixture.CreateFile("processor.sv", ref);
 
     auto session = fixture.BuildSession("processor.sv", executor);
-    REQUIRE(session != nullptr);
     Fixture::AssertNoErrors(*session);
-
     Fixture::AssertCrossFileDef(*session, ref, def, "bus_if", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "bus_if", 1, 0);
 
@@ -122,88 +118,80 @@ TEST_CASE(
     fixture.CreateFile("router.sv", ref);
 
     auto session = fixture.BuildSession("router.sv", executor);
-    REQUIRE(session != nullptr);
     Fixture::AssertNoErrors(*session);
-
     Fixture::AssertCrossFileDef(*session, ref, def, "channel_if", 0, 0);
 
     co_return;
   });
 }
 
-// TODO: Enable when interface port semantic indexing is implemented
-// TEST_CASE(
-//     "Interface as module port with cross-file preamble",
-//     "[interface][preamble][port]") {
-//   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
-//     Fixture fixture;
-//
-//     const std::string def = R"(
-//       interface axi_if;
-//         logic awvalid;
-//         logic awready;
-//         logic [31:0] awaddr;
-//       endinterface
-//     )";
-//
-//     const std::string ref = R"(
-//       module master (
-//         axi_if m_axi
-//       );
-//       endmodule
-//     )";
-//
-//     fixture.CreateBufferIDOffset();
-//     fixture.CreateFile("axi_if.sv", def);
-//     fixture.CreateFile("master.sv", ref);
-//
-//     auto session = fixture.BuildSession("master.sv", executor);
-//     REQUIRE(session != nullptr);
-//     Fixture::AssertNoErrors(*session);
-//
-//     Fixture::AssertCrossFileDef(*session, ref, def, "axi_if", 0, 0);
-//
-//     co_return;
-//   });
-// }
+TEST_CASE(
+    "Interface as module port with cross-file preamble",
+    "[interface][preamble][port]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
 
-// TODO: Enable when interface port semantic indexing is implemented
-// TEST_CASE(
-//     "Interface array as module port with cross-file preamble",
-//     "[interface][preamble][port][array]") {
-//   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
-//     Fixture fixture;
-//
-//     const std::string def = R"(
-//       interface stream_if;
-//         logic valid;
-//         logic ready;
-//         logic [63:0] data;
-//       endinterface
-//     )";
-//
-//     const std::string ref = R"(
-//       module arbiter (
-//         stream_if inputs[4],
-//         stream_if out
-//       );
-//       endmodule
-//     )";
-//
-//     fixture.CreateBufferIDOffset();
-//     fixture.CreateFile("stream_if.sv", def);
-//     fixture.CreateFile("arbiter.sv", ref);
-//
-//     auto session = fixture.BuildSession("arbiter.sv", executor);
-//     REQUIRE(session != nullptr);
-//     Fixture::AssertNoErrors(*session);
-//
-//     Fixture::AssertCrossFileDef(*session, ref, def, "stream_if", 0, 0);
-//     Fixture::AssertCrossFileDef(*session, ref, def, "stream_if", 1, 0);
-//
-//     co_return;
-//   });
-// }
+    const std::string def = R"(
+      interface axi_if;
+        logic awvalid;
+        logic awready;
+        logic [31:0] awaddr;
+      endinterface
+    )";
+
+    const std::string ref = R"(
+      module master (
+        axi_if m_axi
+      );
+      endmodule
+    )";
+
+    fixture.CreateBufferIDOffset();
+    fixture.CreateFile("axi_if.sv", def);
+    fixture.CreateFile("master.sv", ref);
+
+    auto session = fixture.BuildSession("master.sv", executor);
+    Fixture::AssertNoErrors(*session);
+    Fixture::AssertCrossFileDef(*session, ref, def, "axi_if", 0, 0);
+
+    co_return;
+  });
+}
+
+TEST_CASE(
+    "Interface array as module port with cross-file preamble",
+    "[interface][preamble][port][array]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def = R"(
+      interface stream_if;
+        logic valid;
+        logic ready;
+        logic [63:0] data;
+      endinterface
+    )";
+
+    const std::string ref = R"(
+      module arbiter (
+        stream_if inputs[4],
+        stream_if out
+      );
+      endmodule
+    )";
+
+    fixture.CreateBufferIDOffset();
+    fixture.CreateFile("stream_if.sv", def);
+    fixture.CreateFile("arbiter.sv", ref);
+
+    auto session = fixture.BuildSession("arbiter.sv", executor);
+    Fixture::AssertNoErrors(*session);
+    Fixture::AssertCrossFileDef(*session, ref, def, "stream_if", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "stream_if", 1, 0);
+
+    co_return;
+  });
+}
 
 TEST_CASE(
     "Interface with modport and cross-file preamble",
@@ -234,9 +222,7 @@ TEST_CASE(
     fixture.CreateFile("requester.sv", ref);
 
     auto session = fixture.BuildSession("requester.sv", executor);
-    REQUIRE(session != nullptr);
     Fixture::AssertNoErrors(*session);
-
     Fixture::AssertCrossFileDef(*session, ref, def, "handshake_if", 0, 0);
 
     co_return;
@@ -279,9 +265,7 @@ TEST_CASE(
     fixture.CreateFile("controller.sv", ref);
 
     auto session = fixture.BuildSession("controller.sv", executor);
-    REQUIRE(session != nullptr);
     Fixture::AssertNoErrors(*session);
-
     Fixture::AssertCrossFileDef(*session, ref, def1, "fifo_if", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def1, "fifo_if", 1, 0);
     Fixture::AssertCrossFileDef(*session, ref, def2, "memory_if", 0, 0);
