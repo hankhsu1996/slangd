@@ -26,6 +26,10 @@ class PreambleAwareCompilation : public slang::ast::Compilation {
       std::shared_ptr<const PreambleManager> preamble_manager,
       const CanonicalPath& current_file_path)
       : Compilation(options), preamble_manager_(std::move(preamble_manager)) {
+    // Get root scope pointer WITHOUT triggering elaboration
+    // getRootNoFinalize() returns RootSymbol& without finalization
+    const auto& overlay_root = getRootNoFinalize();
+
     // Populate packageMap with preamble packages (direct injection)
     // Enables cross-compilation: overlay can reference preamble symbols
     for (const auto& [name, entry] : preamble_manager_->GetPackages()) {
@@ -36,6 +40,32 @@ class PreambleAwareCompilation : public slang::ast::Compilation {
       }
 
       packageMap[entry.symbol->name] = entry.symbol;
+    }
+
+    // Inject interface definitions into definitionMap
+    // Enables cross-compilation: overlay can instantiate preamble interfaces
+    // without loading their syntax trees (memory reduction)
+    for (const auto& [name, entry] : preamble_manager_->GetInterfaces()) {
+      if (entry.file_path.Path() == current_file_path.Path()) {
+        continue;
+      }
+
+      // Key: {name, scope_ptr}, Value: {vector<const Symbol*>, has_nested_defs}
+      // Scope pointer must be overlay's root, not preamble's root
+      definitionMap[{entry.definition->name, &overlay_root}] = {
+          {entry.definition}, false};
+    }
+
+    // Inject module definitions into definitionMap
+    // Enables cross-compilation: overlay can instantiate preamble modules
+    // without loading their syntax trees (memory reduction)
+    for (const auto& module_info : preamble_manager_->GetModules()) {
+      if (module_info.file_path.Path() == current_file_path.Path()) {
+        continue;
+      }
+
+      definitionMap[{module_info.definition->name, &overlay_root}] = {
+          {module_info.definition}, false};
     }
   }
 

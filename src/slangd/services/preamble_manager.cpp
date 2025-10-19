@@ -304,7 +304,7 @@ auto PreambleManager::GetPackage(std::string_view name) const
 }
 
 auto PreambleManager::GetInterfaceDefinition(std::string_view name) const
-    -> const slang::ast::DefinitionSymbol* {
+    -> const slang::ast::Symbol* {
   auto it = interfaces_.find(std::string(name));
   if (it != interfaces_.end()) {
     return it->second.definition;
@@ -313,7 +313,7 @@ auto PreambleManager::GetInterfaceDefinition(std::string_view name) const
 }
 
 auto PreambleManager::GetModuleDefinition(std::string_view name) const
-    -> const slang::ast::DefinitionSymbol* {
+    -> const slang::ast::Symbol* {
   auto it = module_lookup_.find(std::string(name));
   if (it != module_lookup_.end()) {
     return it->second->definition;

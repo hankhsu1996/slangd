@@ -38,7 +38,7 @@ struct PackageEntry {
 
 // Interface entry: combines definition symbol with cached metadata
 struct InterfaceEntry {
-  const slang::ast::DefinitionSymbol* definition = nullptr;
+  const slang::ast::Symbol* definition = nullptr;
   CanonicalPath file_path;
 };
 
@@ -61,7 +61,7 @@ struct ModuleInfo {
   lsp::Range def_range;
   std::vector<PortInfo> ports;
   std::vector<ParameterInfo> parameters;
-  const slang::ast::DefinitionSymbol* definition =
+  const slang::ast::Symbol* definition =
       nullptr;  // Symbol pointer for cross-compilation
 
   // O(1) lookups (built during extraction in BuildFromLayout)
@@ -104,9 +104,9 @@ class PreambleManager {
   [[nodiscard]] auto GetPackage(std::string_view name) const
       -> const slang::ast::PackageSymbol*;
   [[nodiscard]] auto GetInterfaceDefinition(std::string_view name) const
-      -> const slang::ast::DefinitionSymbol*;
+      -> const slang::ast::Symbol*;
   [[nodiscard]] auto GetModuleDefinition(std::string_view name) const
-      -> const slang::ast::DefinitionSymbol*;
+      -> const slang::ast::Symbol*;
 
   // Include directories and defines from ProjectLayoutService
   [[nodiscard]] auto GetIncludeDirectories() const
