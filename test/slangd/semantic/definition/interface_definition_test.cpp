@@ -470,3 +470,71 @@ TEST_CASE(
   Fixture::AssertGoToDefinition(
       *result.index, result.uri, code, "external_if", 1, 0);
 }
+
+TEST_CASE(
+    "SemanticIndex interface member access in generate if/else blocks works",
+    "[definition]") {
+  std::string code = R"(
+    interface bus_if;
+      logic [31:0] addr;
+      logic [31:0] data;
+    endinterface
+
+    module TestModule(bus_if bus);
+      parameter Cond = 0;
+
+      if (Cond) begin
+        assign bus.addr = 32'h1234;
+      end else begin
+        assign bus.data = 32'h5678;
+      end
+    endmodule
+  )";
+
+  auto result = Fixture::BuildIndex(code);
+
+  // Test interface member access in uninstantiated if branch (Cond=0)
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "bus", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "addr", 1, 0);
+
+  // Test interface member access in instantiated else branch
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "bus", 2, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "data", 1, 0);
+}
+
+TEST_CASE(
+    "SemanticIndex interface array element member access in generate blocks "
+    "works",
+    "[definition]") {
+  std::string code = R"(
+    interface bus_if;
+      logic [31:0] addr;
+      logic [31:0] data;
+    endinterface
+
+    module TestModule;
+      bus_if buses[4]();
+      parameter Cond = 0;
+
+      if (Cond) begin
+        assign buses[0].addr = 32'h1234;
+      end else begin
+        assign buses[1].data = 32'h5678;
+      end
+    endmodule
+  )";
+
+  auto result = Fixture::BuildIndex(code);
+
+  // Test interface array instance self-definition
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "buses", 0, 0);
+
+  // Test interface array element member access in uninstantiated if branch
+  // (Cond=0)
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "buses", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "addr", 1, 0);
+
+  // Test interface array element member access in instantiated else branch
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "buses", 2, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "data", 1, 0);
+}

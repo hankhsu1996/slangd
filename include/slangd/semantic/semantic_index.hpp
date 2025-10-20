@@ -130,7 +130,8 @@ class SemanticIndex {
   std::shared_ptr<spdlog::logger> logger_;
 
   // Visitor for symbol collection and reference tracking
-  class IndexVisitor : public slang::ast::ASTVisitor<IndexVisitor, true, true> {
+  class IndexVisitor
+      : public slang::ast::ASTVisitor<IndexVisitor, true, true, true> {
    public:
     explicit IndexVisitor(
         SemanticIndex& index, std::string current_file_uri,
