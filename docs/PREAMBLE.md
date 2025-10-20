@@ -1,46 +1,56 @@
-# Package Preamble Architecture
+# Preamble Architecture
 
 ## Overview
 
-Package preamble enables memory-efficient session caching by eliminating duplicate package compilation across OverlaySession instances. Instead of each session loading package files independently, all sessions share symbol references from a single preamble compilation.
+Preamble enables memory-efficient session caching by eliminating duplicate compilation of shared definitions (packages, interfaces, modules) across OverlaySession instances. Instead of each session loading these files independently, all sessions share symbol references from a single preamble compilation.
 
-Core mechanism: Cross-compilation symbol binding. Overlay sessions bind to PackageSymbol\* pointers from the preamble compilation, eliminating duplicate syntax tree loading and elaboration.
+Core mechanism: Cross-compilation symbol binding. Overlay sessions bind to Symbol\* pointers from the preamble compilation, eliminating duplicate syntax tree loading and elaboration.
 
 ## Problem
 
-SystemVerilog projects organize shared declarations (types, parameters, functions) into packages that are imported across many files. Without package sharing, each OverlaySession must:
+SystemVerilog projects organize shared declarations into three types of constructs:
 
-1. Load all package files as SyntaxTrees
-2. Parse and elaborate package contents
-3. Store complete package ASTs in memory
+1. **Packages**: Shared types, parameters, functions imported via `import pkg::*`
+2. **Interfaces**: Port bundles instantiated across module hierarchies
+3. **Modules**: Reusable logic blocks instantiated in design hierarchies
 
-Package memory consumption scales linearly with number of cached sessions, limiting cache capacity and forcing frequent recompilation.
+Without preamble sharing, each OverlaySession must:
+
+1. Load all shared definition files as SyntaxTrees
+2. Parse and elaborate their contents
+3. Store complete ASTs in memory
+
+Memory consumption scales linearly with number of cached sessions, limiting cache capacity and forcing frequent recompilation.
 
 ## Solution: Cross-Compilation Symbol Binding
 
-Slang symbols are location-independent pointers. A compilation can reference symbols from a separate compilation as long as the source compilation remains alive. This enables package sharing through pointer injection.
+Slang symbols are location-independent pointers. A compilation can reference symbols from a separate compilation as long as the source compilation remains alive. This enables sharing through pointer injection.
 
 ### Architecture
 
 ```
 ┌────────────────────────────────────────────┐
 │ PreambleManager (Shared Compilation)       │
-│  - Compiles all packages once              │
-│  - Stores PackageSymbol* pointers          │
-│  - Precomputes LSP locations (side table)  │
+│  - Compiles all shared files once          │
+│  - Stores Symbol* pointers                 │
+│    * PackageSymbol (for packages)          │
+│    * DefinitionSymbol (for modules/ifaces) │
+│  - NO preprocessing or metadata extraction │
 └────────────────────────────────────────────┘
                   ↓
 ┌────────────────────────────────────────────┐
 │ OverlaySession (Per-File Compilation)      │
 │  - Loads current file only                 │
-│  - Injects preamble PackageSymbol*         │
+│  - Injects preamble Symbol* pointers       │
+│    * packageMap (packages)                 │
+│    * definitionMap (modules/interfaces)    │
 │  - AST references cross-compilation        │
 └────────────────────────────────────────────┘
                   ↓
 ┌────────────────────────────────────────────┐
 │ LSP Features                               │
-│  - Check preamble side table first         │
-│  - Fall back to overlay SourceManager      │
+│  - CreateLspLocation() auto-derives SM     │
+│  - No manual preamble checks needed        │
 └────────────────────────────────────────────┘
 ```
 
@@ -85,32 +95,46 @@ CreateLspLocation(expr, range)
 
 ### PreambleAwareCompilation
 
-Custom Compilation subclass that injects preamble packages before overlay syntax tree processing. The key constraint is that `getPackage()` is not virtual in Slang, preventing override. Solution: directly populate the protected `packageMap` member that `getPackage()` uses for lookups.
+Custom Compilation subclass that injects preamble symbols before overlay syntax tree processing. Implementation is straightforward: populate protected maps that Slang uses for lookups.
 
-Implementation pattern:
+**Injection points:**
 
-```
+1. **Packages**: Direct `packageMap` population (requires `packageMap` visibility: `private` → `protected` in Slang)
+2. **Modules/Interfaces**: Direct `definitionMap` population (already protected in Slang)
+
+**Deduplication pattern:**
+
+```cpp
 class PreambleAwareCompilation extends Compilation:
   constructor(options, preamble_manager, current_file_path):
-    for each package_info in preamble_manager.GetPackages():
-      // Skip if package defined in current file (deduplication)
-      if package_info.file_path == current_file_path:
-        continue
+    // Inject packages
+    for each package in preamble_manager.GetPackages():
+      if package.file_path != current_file_path:  // Skip if defined in current file
+        packageMap[package.name] = package.symbol
 
-      pkg = preamble_manager.GetPackage(package_info.name)
-      packageMap[pkg.name] = pkg  // Direct injection
+    // Inject definitions (modules/interfaces)
+    for each definition in preamble_manager.GetDefinitions():
+      if definition.file_path != current_file_path:  // Skip if defined in current file
+        definitionMap[definition.name] = definition.symbol
 ```
 
-This requires a one-line Slang modification: `packageMap` visibility changed from `private` to `protected` in `Compilation.h`.
+This prevents redefinition errors when editing files that contain package/module/interface definitions.
 
-### Package Storage
+### PreambleManager Storage
 
-PreambleManager stores two key structures:
+PreambleManager is remarkably simple - just symbol pointer storage:
 
-- `package_map_`: Maps package name to PackageSymbol\* for cross-compilation binding
-- `preamble_compilation_`: Keeps preamble alive (Symbol\* pointers remain valid)
+```cpp
+class PreambleManager {
+  std::unordered_map<std::string, const PackageSymbol*> packages_;
+  std::unordered_map<std::string, DefinitionEntry> definitions_;  // modules + interfaces
+  std::unique_ptr<Compilation> preamble_compilation_;  // Keeps symbols alive
+};
+```
 
-No symbol side table needed. Location conversion uses `CreateSymbolLspLocation()` and `CreateLspLocation()` which automatically derive the correct SourceManager from each symbol's compilation.
+**No preprocessing, no metadata extraction, no side tables.** Symbol injection is sufficient - Slang handles all lookup logic.
+
+Location conversion uses `CreateSymbolLspLocation()` and `CreateLspLocation()` which automatically derive the correct SourceManager from each symbol's compilation.
 
 ## Design Rationale
 
@@ -157,35 +181,42 @@ Why full rebuild works better:
 - Config changes are rare, so performance impact is acceptable
 - Matches user expectations - configuration change affects entire project
 
-### Return Complete PackageSymbol vs Individual Symbols
+### Return Complete Symbol Pointers vs Individual Members
 
-**Approach chosen**: `GetPackage(name)` returns complete `PackageSymbol*` pointer.
+**Approach chosen**: Return complete symbol pointers (`PackageSymbol*`, `DefinitionSymbol*`).
 
-**Alternative considered**: Pre-extract individual symbols and return them on demand.
+**Alternative considered**: Pre-extract individual members and return them on demand.
 
-Why complete PackageSymbol works better:
+Why complete symbols work better:
 
-- PackageSymbol already provides `Scope::nameMap` for O(1) lookups
-- Includes `WildcardImportData` for `import pkg::*` caching
-- Provides all Slang's existing lookup infrastructure
+- Symbols already provide `Scope::nameMap` for O(1) lookups (packages)
+- `DefinitionSymbol` already provides `parameters` and `portList` (modules/interfaces)
+- Includes all Slang's existing lookup infrastructure
 - No custom lookup implementation needed - Slang handles everything after pointer injection
 - Matches Slang's architecture - minimal abstraction
 
 ## How It Works
 
-**Package lookup**: Overlay calls `getPackage("my_pkg")` → finds preamble PackageSymbol\* in `packageMap` → Slang uses its nameMap → resolution works transparently.
+**Package imports**: Overlay calls `getPackage("my_pkg")` → finds preamble PackageSymbol\* in `packageMap` → Slang uses its nameMap → resolution works transparently. Wildcard imports (`import pkg::*`) work automatically via Slang's `WildcardImportData`.
 
-**Wildcard imports**: `import pkg::*` requires no special handling. Slang's `WildcardImportData` caches resolutions using the injected PackageSymbol\* pointer.
+**Module/interface instantiation**: Overlay calls `getDefinition("my_module")` → finds preamble DefinitionSymbol\* in `definitionMap` → Slang creates instance using definition metadata → instantiation works transparently.
 
-**Type checking**: Types are symbols. When overlay references `pkg::my_type_t`, it gets the preamble TypeAliasSymbol\* with complete type information. Type checking operates normally on dereferenced pointers.
+**Cross-file navigation**: When user clicks on a port/parameter name in an instantiation:
+1. SemanticIndex finds the `UninstantiatedDefSymbol` for that instance
+2. Calls `symbol.getDefinition()` to get the preamble DefinitionSymbol\*
+3. Accesses `definition->portList` or `definition->parameters` to find the declaration
+4. Uses `CreateLspLocation()` which auto-derives the preamble SourceManager
+5. Returns LSP location pointing to definition file
 
-**AST traversal**: Overlay only traverses its own file's AST. Preamble symbols appear as leaf nodes (lookup results), never traversed, eliminating recursive package tree walks.
+**Type checking**: Types are symbols. When overlay references `pkg::my_type_t` or instantiates `my_module`, it gets preamble symbol pointers with complete type/definition information. Type checking operates normally on dereferenced pointers.
 
-**LSP features**: All LSP features (go-to-definition, hover, diagnostics) automatically support cross-compilation. Location conversion functions derive the correct SourceManager from each symbol, handling preamble and overlay symbols uniformly without special checks.
+**AST traversal**: Overlay only traverses its own file's AST. Preamble symbols appear as leaf nodes (lookup results), never traversed, eliminating recursive tree walks.
+
+**LSP features**: All LSP features automatically support cross-compilation. Location conversion functions derive the correct SourceManager from each symbol's compilation, handling preamble and overlay symbols uniformly without special checks.
 
 ## Integration with Existing Architecture
 
-See `SESSION_MANAGEMENT.md` for session lifecycle details. Package preamble integrates at:
+See `SESSION_MANAGEMENT.md` for session lifecycle details. Preamble integrates at:
 
 - SessionManager: Passes `shared_ptr<PreambleManager>` to OverlaySession constructor
 - OverlaySession: Stores preamble reference, uses PreambleAwareCompilation
@@ -195,13 +226,14 @@ See `SESSION_MANAGEMENT.md` for session lifecycle details. Package preamble inte
 
 PreambleManager memory is shared across all sessions:
 
-- Package compilations: O(package count × package size)
+- Preamble compilation: O(packages + interfaces + modules)
+- Single compilation regardless of session count
 
 OverlaySession memory becomes file-scoped:
 
 - Current file compilation only
-- Interface files (if needed for port resolution)
-- No package memory duplication
+- No duplication of packages, interfaces, or modules
+- Dramatically reduced per-session footprint
 
 Lower per-session memory enables higher cache limit, fewer evictions, better responsiveness.
 
@@ -211,9 +243,9 @@ PreambleManager tracks version number, incremented on rebuild. SessionManager us
 
 ### Deduplication Pattern
 
-When opening a file containing package definitions, prevent duplicate package entries. The PreambleAwareCompilation constructor checks if a package's file path matches the current file being compiled. If so, it skips injecting that package, letting the overlay's package definition take precedence.
+When opening a file containing definitions (packages, interfaces, modules), prevent duplicate entries. The PreambleAwareCompilation constructor checks if a definition's file path matches the current file being compiled. If so, it skips injecting that symbol, letting the overlay's definition take precedence.
 
-This enables editing package files without redefinition errors. Similar pattern used for interface deduplication in `overlay_session.cpp`.
+This enables editing definition files without redefinition errors. Applied uniformly to packages, interfaces, and modules in `overlay_session.cpp`.
 
 ## Testing Considerations
 
@@ -226,16 +258,36 @@ Design enables testing through:
 
 Key test scenarios:
 
-- Basic package import (`import pkg::PARAM`)
+**Packages:**
+- Basic import (`import pkg::PARAM`)
 - Wildcard import (`import pkg::*`)
 - Scoped references (`pkg::my_var`)
 - Type resolution (`pkg::my_type_t`)
-- Package file deduplication (opening package file itself)
-- Scale testing (many packages, many symbols)
+
+**Interfaces:**
+- Interface instantiation (`my_iface bus()`)
+- Signal access through interface (`bus.data`)
+
+**Modules:**
+- Module instantiation with ports (`my_module inst(.a(x))`)
+- Module instantiation with parameters (`my_module #(.WIDTH(8)) inst`)
+- Cross-file port/parameter navigation
+
+**Deduplication:**
+- Opening files that contain definitions (no redefinition errors)
+
+**Scale:**
+- Many packages/interfaces/modules
+- Many symbols per construct
 
 ## Future Directions
 
-Potential optimizations include incremental preamble updates (rebuild changed package only, invalidate sessions that import it), cross-file find references (index all package symbol references during preamble build), and persistent package index (serialize to disk, reload on restart).
+Potential optimizations include:
+
+- Incremental preamble updates (rebuild changed files only, invalidate dependent sessions)
+- Cross-file find references (index all symbol references during preamble build)
+- Persistent index (serialize to disk, reload on restart)
+- Additional constructs (programs, checkers) following same pattern
 
 ## Related Documentation
 

@@ -59,13 +59,13 @@ class PreambleAwareCompilation : public slang::ast::Compilation {
     // Inject module definitions into definitionMap
     // Enables cross-compilation: overlay can instantiate preamble modules
     // without loading their syntax trees (memory reduction)
-    for (const auto& module_info : preamble_manager_->GetModules()) {
-      if (module_info.file_path.Path() == current_file_path.Path()) {
+    for (const auto& [name, entry] : preamble_manager_->GetModules()) {
+      if (entry.file_path.Path() == current_file_path.Path()) {
         continue;
       }
 
-      definitionMap[{module_info.definition->name, &overlay_root}] = {
-          {module_info.definition}, false};
+      definitionMap[{entry.definition->name, &overlay_root}] = {
+          {entry.definition}, false};
     }
   }
 

@@ -75,13 +75,10 @@ class PreambleManagerTestFixture {
       const slangd::services::PreambleManager& preamble_manager,
       std::string_view name, std::string_view expected_filename) {
     const auto& modules = preamble_manager.GetModules();
-    for (const auto& mod : modules) {
-      if (mod.name == name) {
-        REQUIRE(mod.file_path.Path().filename() == expected_filename);
-        REQUIRE(mod.def_range.start.line >= 0);
-        REQUIRE(mod.def_range.start.character >= 0);
-        return;
-      }
+    auto it = modules.find(std::string(name));
+    if (it != modules.end()) {
+      REQUIRE(it->second.file_path.Path().filename() == expected_filename);
+      return;
     }
     FAIL("Module '" << name << "' not found");
   }
@@ -108,34 +105,6 @@ class PreambleManagerTestFixture {
       return;
     }
     FAIL("Interface '" << name << "' not found");
-  }
-
-  static void AssertParameterExists(
-      const slangd::services::ModuleInfo& module, std::string_view param_name) {
-    for (const auto& param : module.parameters) {
-      if (param.name == param_name) {
-        REQUIRE(param.def_range.start.line >= 0);
-        REQUIRE(param.def_range.start.character >= 0);
-        return;
-      }
-    }
-    FAIL(
-        "Parameter '" << param_name << "' not found in module '" << module.name
-                      << "'");
-  }
-
-  static void AssertPortExists(
-      const slangd::services::ModuleInfo& module, std::string_view port_name) {
-    for (const auto& port : module.ports) {
-      if (port.name == port_name) {
-        REQUIRE(port.def_range.start.line >= 0);
-        REQUIRE(port.def_range.start.character >= 0);
-        return;
-      }
-    }
-    FAIL(
-        "Port '" << port_name << "' not found in module '" << module.name
-                 << "'");
   }
 
  private:
@@ -241,96 +210,6 @@ TEST_CASE("PreambleManager module discovery", "[preamble_manager]") {
     REQUIRE(preamble_manager != nullptr);
     PreambleManagerTestFixture::AssertModuleExists(
         *preamble_manager, "ALU", "alu_module.sv");
-
-    co_return;
-  });
-}
-
-TEST_CASE("PreambleManager module parameter extraction", "[preamble_manager]") {
-  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
-    PreambleManagerTestFixture fixture;
-    fixture.CreateFile("fifo_module.sv", R"(
-      module FIFO #(
-        parameter DEPTH = 16,
-        parameter WIDTH = 32
-      ) (
-        input logic clk,
-        input logic [WIDTH-1:0] data_in,
-        output logic [WIDTH-1:0] data_out
-      );
-      endmodule
-    )");
-
-    auto preamble_manager = fixture.BuildPreambleManager(executor);
-    const auto* fifo_module = preamble_manager->GetModule("FIFO");
-    REQUIRE(fifo_module != nullptr);
-    REQUIRE(fifo_module->parameters.size() == 2);
-
-    PreambleManagerTestFixture::AssertParameterExists(*fifo_module, "DEPTH");
-    PreambleManagerTestFixture::AssertParameterExists(*fifo_module, "WIDTH");
-
-    co_return;
-  });
-}
-
-TEST_CASE("PreambleManager module port extraction", "[preamble_manager]") {
-  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
-    PreambleManagerTestFixture fixture;
-    fixture.CreateFile("register_module.sv", R"(
-      module Register (
-        input logic clk,
-        input logic reset,
-        input logic [7:0] data_in,
-        output logic [7:0] data_out
-      );
-      endmodule
-    )");
-
-    auto preamble_manager = fixture.BuildPreambleManager(executor);
-    const auto* register_module = preamble_manager->GetModule("Register");
-    REQUIRE(register_module != nullptr);
-    REQUIRE(register_module->ports.size() == 4);
-
-    PreambleManagerTestFixture::AssertPortExists(*register_module, "clk");
-    PreambleManagerTestFixture::AssertPortExists(*register_module, "reset");
-    PreambleManagerTestFixture::AssertPortExists(*register_module, "data_in");
-    PreambleManagerTestFixture::AssertPortExists(*register_module, "data_out");
-
-    co_return;
-  });
-}
-
-TEST_CASE("PreambleManager GetModule lookup", "[preamble_manager]") {
-  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
-    PreambleManagerTestFixture fixture;
-    fixture.CreateFile("counter.sv", R"(
-      module Counter (
-        input logic clk,
-        output logic [7:0] count
-      );
-      endmodule
-    )");
-
-    fixture.CreateFile("timer.sv", R"(
-      module Timer (
-        input logic clk,
-        input logic reset
-      );
-      endmodule
-    )");
-
-    auto preamble_manager = fixture.BuildPreambleManager(executor);
-
-    const auto* counter = preamble_manager->GetModule("Counter");
-    REQUIRE(counter != nullptr);
-    REQUIRE(counter->name == "Counter");
-
-    const auto* timer = preamble_manager->GetModule("Timer");
-    REQUIRE(timer != nullptr);
-    REQUIRE(timer->name == "Timer");
-
-    const auto* nonexistent = preamble_manager->GetModule("NonExistent");
-    REQUIRE(nonexistent == nullptr);
 
     co_return;
   });

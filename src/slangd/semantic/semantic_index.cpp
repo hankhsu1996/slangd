@@ -2350,20 +2350,12 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
 
-  // Cross-file handling requires preamble_manager
-  if (preamble_manager_ == nullptr) {
-    return;  // No cross-file indexing without preamble_manager
-  }
-
-  const auto* module_info = preamble_manager_->GetModule(symbol.definitionName);
-  if (module_info == nullptr) {
-    return;  // Module not found in preamble_manager
-  }
-
-  // The syntax is HierarchicalInstanceSyntax, whose parent is
-  // HierarchyInstantiationSyntax We need to get the parent to access the type
-  // name range
-  if (syntax->kind == slang::syntax::SyntaxKind::HierarchicalInstance) {
+  // Index the module/interface definition reference
+  // With preamble injection, UninstantiatedDefSymbol now has getDefinition()
+  // method
+  const auto* definition = symbol.getDefinition();
+  if (definition != nullptr &&
+      syntax->kind == slang::syntax::SyntaxKind::HierarchicalInstance) {
     const auto* parent_syntax = syntax->parent;
     if (parent_syntax != nullptr &&
         parent_syntax->kind ==
@@ -2372,66 +2364,111 @@ void SemanticIndex::IndexVisitor::handle(
           parent_syntax->as<slang::syntax::HierarchyInstantiationSyntax>();
       auto type_range = inst_syntax.type.range();
 
-      // Module definitions are in PreambleManager (already in LSP coordinates)
+      // Create reference from module/interface type name to definition
+      auto def_loc = CreateSymbolLspLocation(*definition, logger_);
       auto ref_loc = CreateLspLocation(symbol, type_range, logger_);
-      if (ref_loc) {
-        AddReferenceWithLspDefinition(
-            symbol, symbol.definitionName, ref_loc->range,
-            lsp::Location{
-                .uri = module_info->file_path.ToUri(),
-                .range = module_info->def_range},
+      if (def_loc && ref_loc) {
+        AddReference(
+            *definition, symbol.definitionName, ref_loc->range, *def_loc,
             symbol.getParentScope());
       }
 
-      // Handle port connections (named ports only, skip positional)
-      const auto& hier_inst_syntax =
-          syntax->as<slang::syntax::HierarchicalInstanceSyntax>();
-      for (const auto* port_conn : hier_inst_syntax.connections) {
-        if (port_conn->kind == slang::syntax::SyntaxKind::NamedPortConnection) {
-          const auto& npc =
-              port_conn->as<slang::syntax::NamedPortConnectionSyntax>();
-          std::string_view port_name = npc.name.valueText();
+      // Index parameter assignments (e.g., #(.WIDTH(32), .DEPTH(64)))
+      // For UninstantiatedDefSymbol, we can access parameter metadata from
+      // DefinitionSymbol.parameters (ParameterDecl structs with name and
+      // location)
+      if (inst_syntax.parameters != nullptr) {
+        for (const auto* param_base : inst_syntax.parameters->parameters) {
+          // Only process named parameter assignments
+          if (param_base->kind !=
+              slang::syntax::SyntaxKind::NamedParamAssignment) {
+            continue;
+          }
 
-          // O(1) lookup in port hash map
-          auto it = module_info->port_lookup.find(std::string(port_name));
-          if (it != module_info->port_lookup.end()) {
-            const auto* port_info = it->second;
-            auto ref_loc = CreateLspLocation(symbol, npc.name.range(), logger_);
-            if (ref_loc) {
-              AddReferenceWithLspDefinition(
-                  symbol, port_name, ref_loc->range,
-                  lsp::Location{
-                      .uri = module_info->file_path.ToUri(),
-                      .range = port_info->def_range},
-                  symbol.getParentScope());
+          const auto& named_param =
+              param_base->as<slang::syntax::NamedParamAssignmentSyntax>();
+          std::string_view param_name = named_param.name.valueText();
+
+          // Find corresponding parameter in definition's parameter list
+          const auto& def_sym = definition->as<slang::ast::DefinitionSymbol>();
+          for (const auto& param_decl : def_sym.parameters) {
+            if (param_decl.name == param_name && param_decl.location.valid()) {
+              // Create SourceRange for parameter name (location + name length)
+              auto end_offset =
+                  param_decl.location.offset() + param_decl.name.length();
+              auto end_loc = slang::SourceLocation(
+                  param_decl.location.buffer(), end_offset);
+              slang::SourceRange param_range(param_decl.location, end_loc);
+
+              // Use CreateLspLocation to safely convert SourceRange to LSP
+              // location This handles cross-compilation correctly
+              auto param_def_loc =
+                  CreateLspLocation(*definition, param_range, logger_);
+              auto ref_loc =
+                  CreateLspLocation(symbol, named_param.name.range(), logger_);
+
+              if (param_def_loc && ref_loc) {
+                const auto* parent_scope = definition->getParentScope();
+                AddReference(
+                    *definition, param_decl.name, ref_loc->range,
+                    *param_def_loc, parent_scope);
+              }
+              break;
             }
           }
         }
       }
 
-      // Handle parameter assignments (named parameters only)
-      if (inst_syntax.parameters != nullptr) {
-        const auto& param_assign = *inst_syntax.parameters;
-        for (const auto* param : param_assign.parameters) {
-          if (param->kind == slang::syntax::SyntaxKind::NamedParamAssignment) {
-            const auto& npa =
-                param->as<slang::syntax::NamedParamAssignmentSyntax>();
-            std::string_view param_name = npa.name.valueText();
+      // Index port connections (e.g., .a_port(x), .sum_port(result))
+      // Parse PortListSyntax from definition to extract port names and
+      // locations
+      const auto& hierarchical_inst_syntax =
+          syntax->as<slang::syntax::HierarchicalInstanceSyntax>();
+      const auto& def_sym = definition->as<slang::ast::DefinitionSymbol>();
+      if (def_sym.portList != nullptr &&
+          def_sym.portList->kind == slang::syntax::SyntaxKind::AnsiPortList) {
+        const auto& ansi_port_list =
+            def_sym.portList->as<slang::syntax::AnsiPortListSyntax>();
 
-            // O(1) lookup in parameter hash map
-            auto it =
-                module_info->parameter_lookup.find(std::string(param_name));
-            if (it != module_info->parameter_lookup.end()) {
-              const auto* param_info = it->second;
-              auto ref_loc =
-                  CreateLspLocation(symbol, npa.name.range(), logger_);
-              if (ref_loc) {
-                AddReferenceWithLspDefinition(
-                    symbol, param_name, ref_loc->range,
-                    lsp::Location{
-                        .uri = module_info->file_path.ToUri(),
-                        .range = param_info->def_range},
-                    symbol.getParentScope());
+        // Iterate through port connections in instantiation
+        for (const auto* port_conn_base :
+             hierarchical_inst_syntax.connections) {
+          // Only process named port connections
+          if (port_conn_base == nullptr ||
+              port_conn_base->kind !=
+                  slang::syntax::SyntaxKind::NamedPortConnection) {
+            continue;
+          }
+
+          const auto& named_port =
+              port_conn_base->as<slang::syntax::NamedPortConnectionSyntax>();
+          std::string_view port_name = named_port.name.valueText();
+
+          // Find matching port in definition's ANSI port list
+          for (const auto* port_syntax : ansi_port_list.ports) {
+            if (port_syntax != nullptr &&
+                port_syntax->kind ==
+                    slang::syntax::SyntaxKind::ImplicitAnsiPort) {
+              const auto& implicit_port =
+                  port_syntax->as<slang::syntax::ImplicitAnsiPortSyntax>();
+              if (implicit_port.declarator != nullptr &&
+                  implicit_port.declarator->name.valueText() == port_name) {
+                // Found matching port - create reference using safe helper
+                slang::SourceRange port_range =
+                    implicit_port.declarator->name.range();
+
+                auto port_def_loc =
+                    CreateLspLocation(*definition, port_range, logger_);
+                auto ref_loc =
+                    CreateLspLocation(symbol, named_port.name.range(), logger_);
+
+                if (port_def_loc && ref_loc) {
+                  const auto* parent_scope = definition->getParentScope();
+                  AddReference(
+                      *definition, port_name, ref_loc->range, *port_def_loc,
+                      parent_scope);
+                }
+                break;
               }
             }
           }
@@ -2439,7 +2476,6 @@ void SemanticIndex::IndexVisitor::handle(
       }
     }
   }
-  // UninstantiatedDefSymbol has no children to visit - done
 }
 
 // Go-to-definition using LSP coordinates

@@ -80,7 +80,7 @@ auto DiagnosticConverter::FilterDiagnostics(
 
         // If PreambleManager has this module, it's a false positive
         // (module exists in project, just not in OverlaySession)
-        if (preamble_manager->GetModule(module_name) != nullptr) {
+        if (preamble_manager->GetModuleDefinition(module_name) != nullptr) {
           continue;  // Skip this diagnostic
         }
       }

@@ -9,10 +9,8 @@
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/util/Bag.h>
 
-#include "lsp/basic.hpp"
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/utils/compilation_options.hpp"
-#include "slangd/utils/conversion.hpp"
 #include "slangd/utils/scoped_timer.hpp"
 
 namespace slangd::services {
@@ -149,7 +147,6 @@ auto PreambleManager::BuildFromLayout(
   logger_->debug("PreambleManager: Extracting modules from definitions");
 
   modules_.clear();
-  modules_.reserve(definitions.size());
 
   for (const auto* symbol : definitions) {
     if (symbol == nullptr) {
@@ -160,84 +157,13 @@ auto PreambleManager::BuildFromLayout(
       const auto& definition = symbol->as<slang::ast::DefinitionSymbol>();
 
       if (definition.definitionKind == slang::ast::DefinitionKind::Module) {
-        std::string module_name = std::string(definition.name);
         auto file_path_str = source_manager_->getFileName(definition.location);
         CanonicalPath module_file_path(file_path_str);
 
-        lsp::Range definition_range_lsp{};
-        if (const auto* syntax = definition.getSyntax()) {
-          if (syntax->kind == slang::syntax::SyntaxKind::ModuleDeclaration) {
-            const auto& module_syntax =
-                syntax->as<slang::syntax::ModuleDeclarationSyntax>();
-            if (module_syntax.header != nullptr) {
-              slang::SourceRange slang_range =
-                  module_syntax.header->name.range();
-              definition_range_lsp = ToLspRange(slang_range, *source_manager_);
-            }
-          }
-        }
-
-        std::vector<ParameterInfo> parameters;
-        parameters.reserve(definition.parameters.size());
-        for (const auto& param : definition.parameters) {
-          auto end_offset = param.location.offset() + param.name.length();
-          auto end_loc =
-              slang::SourceLocation(param.location.buffer(), end_offset);
-          slang::SourceRange slang_range(param.location, end_loc);
-          lsp::Range param_range_lsp =
-              ToLspRange(slang_range, *source_manager_);
-          parameters.push_back(
-              {.name = std::string(param.name), .def_range = param_range_lsp});
-        }
-
-        std::vector<PortInfo> ports;
-        if (definition.portList != nullptr &&
-            definition.portList->kind ==
-                slang::syntax::SyntaxKind::AnsiPortList) {
-          const auto& ansi_port_list =
-              definition.portList->as<slang::syntax::AnsiPortListSyntax>();
-          for (const auto* port : ansi_port_list.ports) {
-            if (port != nullptr &&
-                port->kind == slang::syntax::SyntaxKind::ImplicitAnsiPort) {
-              const auto& implicit_port =
-                  port->as<slang::syntax::ImplicitAnsiPortSyntax>();
-              if (implicit_port.declarator != nullptr &&
-                  implicit_port.declarator->name.valueText().length() > 0) {
-                slang::SourceRange slang_range =
-                    implicit_port.declarator->name.range();
-                lsp::Range port_range_lsp =
-                    ToLspRange(slang_range, *source_manager_);
-                ports.push_back(
-                    {.name = std::string(
-                         implicit_port.declarator->name.valueText()),
-                     .def_range = port_range_lsp});
-              }
-            }
-          }
-        }
-
-        modules_.push_back(
-            ModuleInfo{
-                .name = std::move(module_name),
-                .file_path = std::move(module_file_path),
-                .def_range = definition_range_lsp,
-                .ports = std::move(ports),
-                .parameters = std::move(parameters),
-                .definition = &definition,
-                .port_lookup = {},
-                .parameter_lookup = {}});
+        modules_[std::string(definition.name)] = ModuleEntry{
+            .definition = &definition,
+            .file_path = std::move(module_file_path)};
       }
-    }
-  }
-
-  module_lookup_.clear();
-  for (auto& module : modules_) {
-    module_lookup_[module.name] = &module;
-    for (const auto& port : module.ports) {
-      module.port_lookup[port.name] = &port;
-    }
-    for (const auto& param : module.parameters) {
-      module.parameter_lookup[param.name] = &param;
     }
   }
 
@@ -260,17 +186,9 @@ auto PreambleManager::GetInterfaces() const
   return interfaces_;
 }
 
-auto PreambleManager::GetModules() const -> const std::vector<ModuleInfo>& {
+auto PreambleManager::GetModules() const
+    -> const std::unordered_map<std::string, ModuleEntry>& {
   return modules_;
-}
-
-auto PreambleManager::GetModule(std::string_view name) const
-    -> const ModuleInfo* {
-  auto it = module_lookup_.find(std::string(name));
-  if (it != module_lookup_.end()) {
-    return it->second;
-  }
-  return nullptr;
 }
 
 auto PreambleManager::GetIncludeDirectories() const
@@ -314,9 +232,9 @@ auto PreambleManager::GetInterfaceDefinition(std::string_view name) const
 
 auto PreambleManager::GetModuleDefinition(std::string_view name) const
     -> const slang::ast::Symbol* {
-  auto it = module_lookup_.find(std::string(name));
-  if (it != module_lookup_.end()) {
-    return it->second->definition;
+  auto it = modules_.find(std::string(name));
+  if (it != modules_.end()) {
+    return it->second.definition;
   }
   return nullptr;
 }

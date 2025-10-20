@@ -8,7 +8,6 @@
 #include <slang/text/SourceLocation.h>
 #include <spdlog/spdlog.h>
 
-#include "lsp/basic.hpp"
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/utils/canonical_path.hpp"
 
@@ -42,31 +41,10 @@ struct InterfaceEntry {
   CanonicalPath file_path;
 };
 
-// Port metadata extracted from module definitions
-struct PortInfo {
-  std::string name;
-  lsp::Range def_range;
-};
-
-// Parameter metadata extracted from module definitions
-struct ParameterInfo {
-  std::string name;
-  lsp::Range def_range;
-};
-
-// Module metadata extracted from preamble compilation
-struct ModuleInfo {
-  std::string name;
+// Module entry: combines definition symbol with cached metadata
+struct ModuleEntry {
+  const slang::ast::Symbol* definition = nullptr;
   CanonicalPath file_path;
-  lsp::Range def_range;
-  std::vector<PortInfo> ports;
-  std::vector<ParameterInfo> parameters;
-  const slang::ast::Symbol* definition =
-      nullptr;  // Symbol pointer for cross-compilation
-
-  // O(1) lookups (built during extraction in BuildFromLayout)
-  std::unordered_map<std::string, const PortInfo*> port_lookup;
-  std::unordered_map<std::string, const ParameterInfo*> parameter_lookup;
 };
 
 // PreambleManager: Immutable snapshot of package/interface metadata from
@@ -96,9 +74,8 @@ class PreambleManager {
       -> const std::unordered_map<std::string, PackageEntry>&;
   [[nodiscard]] auto GetInterfaces() const
       -> const std::unordered_map<std::string, InterfaceEntry>&;
-  [[nodiscard]] auto GetModules() const -> const std::vector<ModuleInfo>&;
-  [[nodiscard]] auto GetModule(std::string_view name) const
-      -> const ModuleInfo*;
+  [[nodiscard]] auto GetModules() const
+      -> const std::unordered_map<std::string, ModuleEntry>&;
 
   // Symbol access for cross-compilation binding (convenience methods)
   [[nodiscard]] auto GetPackage(std::string_view name) const
@@ -131,10 +108,7 @@ class PreambleManager {
   // Unified storage: symbol pointer + cached metadata for filtering
   std::unordered_map<std::string, PackageEntry> packages_;
   std::unordered_map<std::string, InterfaceEntry> interfaces_;
-
-  // Module storage keeps ModuleInfo for port/parameter metadata (LSP needs it)
-  std::vector<ModuleInfo> modules_;
-  std::unordered_map<std::string, const ModuleInfo*> module_lookup_;
+  std::unordered_map<std::string, ModuleEntry> modules_;
 
   std::vector<CanonicalPath> include_directories_;
   std::vector<std::string> defines_;
