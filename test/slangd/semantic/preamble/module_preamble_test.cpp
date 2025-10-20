@@ -295,3 +295,50 @@ TEST_CASE(
     co_return;
   });
 }
+
+TEST_CASE(
+    "Module instantiation in generate if/else branches - cross-file preamble",
+    "[module][preamble][generate]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def_a = R"(
+      module ModuleA (
+        input logic clk,
+        output logic out_a
+      );
+      endmodule
+    )";
+
+    const std::string def_b = R"(
+      module ModuleB (
+        input logic clk,
+        output logic out_b
+      );
+      endmodule
+    )";
+
+    const std::string ref = R"(
+      module Top;
+        parameter Cond = 1;
+        logic clk, result;
+
+        if (Cond)
+          ModuleA module_a (.clk(clk), .out_a(result));
+        else
+          ModuleB module_b (.clk(clk), .out_b(result));
+      endmodule
+    )";
+
+    fixture.CreateFile("module_a.sv", def_a);
+    fixture.CreateFile("module_b.sv", def_b);
+    fixture.CreateFile("top.sv", ref);
+
+    auto session = fixture.BuildSession("top.sv", executor);
+    Fixture::AssertNoErrors(*session);
+    Fixture::AssertCrossFileDef(*session, ref, def_a, "ModuleA", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def_b, "ModuleB", 0, 0);
+
+    co_return;
+  });
+}
