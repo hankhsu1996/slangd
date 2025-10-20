@@ -72,15 +72,32 @@ Slang organizes symbols into separate collections with no overlap:
 
 This means no deduplication needed when traversing all collections.
 
-### LSP Mode Elaboration
+### Dangerous APIs That Trigger Elaboration
+
+**CRITICAL:** The following Compilation APIs trigger full elaboration via `forceElaborate()`:
+
+- `compilation.getRoot()` - Auto-instantiates all top-level modules/programs
+- `compilation.getAllDiagnostics()` - Calls getRoot() internally to collect all diagnostics
+- `compilation.getSemanticDiagnostics()` - Calls getRoot() internally
+
+**Why This Matters:**
+
+`forceElaborate()` iterates `definitionMap` and creates Instances from definitions. With preamble injection, definitionMap contains multiple definitions per name (different library priorities). Without proper handling, this creates duplicate Instances and redefinition errors.
+
+**Safe Alternatives:**
+
+- Use `compilation.getCollectedDiagnostics()` - Reads diagMap without triggering elaboration
+- SemanticIndex manually calls `forceElaborate(instance.body)` for controlled elaboration
+- Production code should NEVER call getRoot(), getAllDiagnostics(), or getSemanticDiagnostics()
+
+**LSP Mode Elaboration (When Triggered):**
 
 Calling `getRoot()` in `LanguageServerMode`:
 
 - Treats each file as standalone (no top-module requirement)
 - Auto-instantiates modules/programs as root members
 - Auto-instantiates interfaces during port resolution (nested in modules)
-
-This is how definition bodies become accessible for indexing.
+- Our Slang fork: only processes highest-priority definition per name (prevents preamble duplicates)
 
 ### Critical: Proper Instance Creation for Body Traversal
 
@@ -192,19 +209,23 @@ With cross-compilation (PreambleManager + OverlaySession), using the wrong Sourc
 
 ### Universal Conversion Pattern
 
-**Rule:** Always use `CreateLspLocation(node, range)` to derive SourceManager from the AST node.
+**Rule:** Always use `CreateLspLocation(node, range)` or `CreateSymbolLspLocation(symbol, range)` to derive SourceManager from the AST node. Never use SourceManager directly.
 
 ```cpp
 // Symbols - derives SM from symbol's compilation
+CreateSymbolLspLocation(symbol, range)
 CreateLspLocation(symbol, range)
 
 // Expressions - derives SM from expr.compilation
 CreateLspLocation(expr, range)
 ```
 
+**Important:** `CreateSymbolLspLocationWithSM` is a low-level helper function used internally by `CreateLspLocation` and `CreateSymbolLspLocation`. It should only be called directly in very rare cases where you already have the correct SourceManager. In almost all cases, use the higher-level functions that automatically derive the SourceManager from the AST node.
+
 **Key Benefit:** Handles default argument expressions correctly. When calling `pkg::func()` with preamble default arguments, the default arg expression stores preamble's compilation → automatic correct SM selection.
 
 **Obsolete Concerns:**
+
 - ~~Expression whitelist~~ - All expressions safe now
 - ~~Preamble symbol checks~~ - Handled automatically
 - ~~IndexVisitor compilation tracking~~ - Not needed
@@ -289,6 +310,17 @@ if (variable.flags.has(VariableFlags::CompilerGenerated)) {
 **Wrong:** Add disambiguation logic to `LookupDefinitionAt()`
 **Correct:** Use precise name token ranges, not full syntax ranges
 
+**Common cause:** Using convenience methods like `getUsageLocation()` or `sourceRange()` that return full expression ranges instead of extracting the identifier token range from the syntax node.
+
+**Pattern:** For compound syntax (parameterized types, scoped names, qualified identifiers):
+
+```
+full_syntax = syntax_node         // e.g., "Foo#(A, B)" or "pkg::Bar"
+identifier  = syntax_node.identifier.range()  // Just "Foo" or "Bar"
+```
+
+**Detection:** If go-to-definition returns unexpected symbols, check if semantic entry ranges are too large. Binary search assumes non-overlapping ranges - violations cause wrong entries to be returned.
+
 ### Handler Patterns
 
 - **Symbol handlers:** Process definitions, create self-references
@@ -301,15 +333,73 @@ if (variable.flags.has(VariableFlags::CompilerGenerated)) {
 - Handle optional syntax elements gracefully
 - Fallback to `syntax.sourceRange()` when precise extraction impossible
 
+### Complete Traversal for Compound Syntax
+
+**Rule:** When indexing compound syntax nodes (parameterized types, array dimensions, port connections), ensure you index ALL child components, not just the primary identifier.
+
+**Pattern:**
+
+```
+compound_syntax:
+  1. Index primary identifier (the type/symbol name)
+  2. Index parameters/arguments (visit all parameter value expressions)
+  3. Index nested qualifiers (scoped names, array selectors)
+```
+
+**Common mistake:** Only indexing compound syntax from one context (e.g., only from expression handlers but not from type traversal handlers), causing incomplete indexing in certain declaration contexts.
+
+**Detection:** If symbols in certain contexts (e.g., typedef declarations vs variable declarations) have different navigation behavior, check if all handlers traverse the same components.
+
 ## Debugging
 
-**AST Investigation:**
+### Systematic Debugging Workflow
+
+**1. Check Basic Invariants First:**
+
+Before investigating complex issues (cross-compilation, SourceManager, BufferID):
+
+Add targeted logging to show: entry name, reference range, definition location
+
+```
+Log format: Found '{name}' at {pos}, def at {def_pos}, range [{start}..{end}]
+```
+
+Check:
+
+- What semantic entries exist at the problem location?
+- What are their ranges? (Too large? Overlapping?)
+- Does the entry name match what you're looking for?
+
+**2. Trust the Data:**
+
+If logging shows unexpected entry at a position, the entry range is likely wrong - don't assume position calculation is at fault.
+
+**3. Compare with Existing Patterns:**
+
+For similar syntax, check how existing code extracts identifier ranges:
+
+```
+grep "identifier.range()" semantic_index.cpp
+grep "SyntaxKind::YourSyntax" semantic_index.cpp
+```
+
+**4. Verify Before Implementing:**
+
+Check what methods return before using them:
+
+```
+symbol.getUsageLocation()     // Might return full expression
+syntax_node.identifier.range() // Returns just identifier token
+```
+
+### AST Investigation
 
 ```bash
 mkdir -p debug
 echo 'test code' > debug/test.sv
 slang debug/test.sv --ast-json debug/ast.json
 slang debug/test.sv --cst-json debug/cst.json
+jq '.. | objects | select(.kind == "ClassName")' debug/cst.json
 ```
 
 **Temporary Logging:**
@@ -323,14 +413,16 @@ Indexing logic can span multiple handlers via `visitDefault()` calls. To locate 
 - Search for the expression class name in `semantic_index.cpp`
 - Add `spdlog::debug()` at handler entry to trace execution
 
-**Common Issues:**
+### Common Issues and Root Causes
 
-- "LookupDefinitionAt failed": Missing expression handler or unhandled syntax kind
-- "No symbol found": Missing definition extraction
-- "Wrong definition target": Check reference creation logic
-- Overlapping ranges: Fix reference creation, don't add disambiguation
+| Symptom                                | Common Cause            | Solution                                              |
+| -------------------------------------- | ----------------------- | ----------------------------------------------------- |
+| Wrong symbol returned                  | Overlapping ranges      | Extract identifier token range, not full syntax range |
+| Symbols not navigable in some contexts | Incomplete traversal    | Index compound syntax components in all handlers      |
+| Cross-file lookup fails                | Wrong SourceManager     | Use CreateLspLocation(symbol/expr, range)             |
+| Spurious references                    | Wrong context filtering | Check structural properties (parent scope, flags)     |
 
-**Test Development:** Start with failing tests, add logging, implement minimal fix, clean up.
+**Test Development:** Failing test → targeted logging → minimal fix → cleanup.
 
 ## Type Reference Handling
 

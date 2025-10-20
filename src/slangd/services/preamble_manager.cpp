@@ -9,10 +9,8 @@
 #include <slang/syntax/SyntaxTree.h>
 #include <slang/util/Bag.h>
 
-#include "lsp/basic.hpp"
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/utils/compilation_options.hpp"
-#include "slangd/utils/conversion.hpp"
 #include "slangd/utils/scoped_timer.hpp"
 
 namespace slangd::services {
@@ -28,19 +26,13 @@ auto PreambleManager::CreateFromProjectLayout(
     return nullptr;
   }
 
-  if (!logger) {
-    logger = spdlog::default_logger();
-  }
-
   logger->debug("PreambleManager: Creating from ProjectLayoutService");
 
   // Create preamble_manager instance and initialize it
   auto preamble_manager = std::make_shared<PreambleManager>();
   preamble_manager->BuildFromLayout(layout_service, logger);
 
-  logger->debug(
-      "PreambleManager: Created with {} packages, version {}",
-      preamble_manager->packages_.size(), preamble_manager->version_);
+  logger->debug("PreambleManager: Created");
 
   return preamble_manager;
 }
@@ -98,178 +90,21 @@ auto PreambleManager::BuildFromLayout(
     }
   }
 
-  auto packages = preamble_compilation_->getPackages();
-  logger_->debug("PreambleManager: Extracting {} packages", packages.size());
-
-  packages_.clear();
-  packages_.reserve(packages.size());
-  package_map_.clear();
-
-  for (const auto* package : packages) {
-    if (package == nullptr) {
-      continue;
-    }
-
-    std::string package_name = std::string(package->name);
-    auto file_path_str = source_manager_->getFileName(package->location);
-    CanonicalPath package_file_path(file_path_str);
-
-    packages_.push_back(
-        {.name = std::move(package_name),
-         .file_path = std::move(package_file_path)});
-    package_map_[std::string(package->name)] = package;
-  }
-
-  auto definitions = preamble_compilation_->getDefinitions();
-  logger_->debug(
-      "PreambleManager: Extracting interfaces from {} definitions",
-      definitions.size());
-
-  interfaces_.clear();
-  interfaces_.reserve(definitions.size());
-
-  for (const auto* symbol : definitions) {
-    if (symbol == nullptr) {
-      continue;
-    }
-
-    if (symbol->kind == slang::ast::SymbolKind::Definition) {
-      const auto& definition = symbol->as<slang::ast::DefinitionSymbol>();
-
-      if (definition.definitionKind == slang::ast::DefinitionKind::Interface) {
-        std::string interface_name = std::string(definition.name);
-        auto file_path_str = source_manager_->getFileName(definition.location);
-        CanonicalPath interface_file_path(file_path_str);
-
-        interfaces_.push_back(
-            {.name = std::move(interface_name),
-             .file_path = std::move(interface_file_path)});
-      }
-    }
-  }
-
-  logger_->debug("PreambleManager: Extracting modules from definitions");
-
-  modules_.clear();
-  modules_.reserve(definitions.size());
-
-  for (const auto* symbol : definitions) {
-    if (symbol == nullptr) {
-      continue;
-    }
-
-    if (symbol->kind == slang::ast::SymbolKind::Definition) {
-      const auto& definition = symbol->as<slang::ast::DefinitionSymbol>();
-
-      if (definition.definitionKind == slang::ast::DefinitionKind::Module) {
-        std::string module_name = std::string(definition.name);
-        auto file_path_str = source_manager_->getFileName(definition.location);
-        CanonicalPath module_file_path(file_path_str);
-
-        lsp::Range definition_range_lsp{};
-        if (const auto* syntax = definition.getSyntax()) {
-          if (syntax->kind == slang::syntax::SyntaxKind::ModuleDeclaration) {
-            const auto& module_syntax =
-                syntax->as<slang::syntax::ModuleDeclarationSyntax>();
-            if (module_syntax.header != nullptr) {
-              slang::SourceRange slang_range =
-                  module_syntax.header->name.range();
-              definition_range_lsp = ToLspRange(slang_range, *source_manager_);
-            }
-          }
-        }
-
-        std::vector<ParameterInfo> parameters;
-        parameters.reserve(definition.parameters.size());
-        for (const auto& param : definition.parameters) {
-          auto end_offset = param.location.offset() + param.name.length();
-          auto end_loc =
-              slang::SourceLocation(param.location.buffer(), end_offset);
-          slang::SourceRange slang_range(param.location, end_loc);
-          lsp::Range param_range_lsp =
-              ToLspRange(slang_range, *source_manager_);
-          parameters.push_back(
-              {.name = std::string(param.name), .def_range = param_range_lsp});
-        }
-
-        std::vector<PortInfo> ports;
-        if (definition.portList != nullptr &&
-            definition.portList->kind ==
-                slang::syntax::SyntaxKind::AnsiPortList) {
-          const auto& ansi_port_list =
-              definition.portList->as<slang::syntax::AnsiPortListSyntax>();
-          for (const auto* port : ansi_port_list.ports) {
-            if (port != nullptr &&
-                port->kind == slang::syntax::SyntaxKind::ImplicitAnsiPort) {
-              const auto& implicit_port =
-                  port->as<slang::syntax::ImplicitAnsiPortSyntax>();
-              if (implicit_port.declarator != nullptr &&
-                  implicit_port.declarator->name.valueText().length() > 0) {
-                slang::SourceRange slang_range =
-                    implicit_port.declarator->name.range();
-                lsp::Range port_range_lsp =
-                    ToLspRange(slang_range, *source_manager_);
-                ports.push_back(
-                    {.name = std::string(
-                         implicit_port.declarator->name.valueText()),
-                     .def_range = port_range_lsp});
-              }
-            }
-          }
-        }
-
-        modules_.push_back(
-            {.name = std::move(module_name),
-             .file_path = std::move(module_file_path),
-             .def_range = definition_range_lsp,
-             .ports = std::move(ports),
-             .parameters = std::move(parameters),
-             .port_lookup = {},
-             .parameter_lookup = {}});
-      }
-    }
-  }
-
-  module_lookup_.clear();
-  for (auto& module : modules_) {
-    module_lookup_[module.name] = &module;
-    for (const auto& port : module.ports) {
-      module.port_lookup[port.name] = &port;
-    }
-    for (const auto& param : module.parameters) {
-      module.parameter_lookup[param.name] = &param;
-    }
-  }
-
   auto elapsed = timer.GetElapsed();
   logger_->info(
-      "PreambleManager: Build complete - {} packages, {} interfaces, {} "
-      "modules "
-      "({})",
-      packages_.size(), interfaces_.size(), modules_.size(),
+      "PreambleManager: Build complete ({})",
       utils::ScopedTimer::FormatDuration(elapsed));
 }
 
-auto PreambleManager::GetPackages() const -> const std::vector<PackageInfo>& {
-  return packages_;
+auto PreambleManager::GetPackageMap() const -> const
+    slang::flat_hash_map<std::string_view, const slang::ast::PackageSymbol*>& {
+  return preamble_compilation_->getPackageMap();
 }
 
-auto PreambleManager::GetInterfaces() const
-    -> const std::vector<InterfaceInfo>& {
-  return interfaces_;
-}
-
-auto PreambleManager::GetModules() const -> const std::vector<ModuleInfo>& {
-  return modules_;
-}
-
-auto PreambleManager::GetModule(std::string_view name) const
-    -> const ModuleInfo* {
-  auto it = module_lookup_.find(std::string(name));
-  if (it != module_lookup_.end()) {
-    return it->second;
-  }
-  return nullptr;
+auto PreambleManager::GetDefinitionMap() const -> const slang::flat_hash_map<
+    std::tuple<std::string_view, const slang::ast::Scope*>,
+    std::pair<std::vector<const slang::ast::Symbol*>, bool>>& {
+  return preamble_compilation_->getDefinitionMap();
 }
 
 auto PreambleManager::GetIncludeDirectories() const
@@ -287,19 +122,6 @@ auto PreambleManager::GetSourceManager() const -> const slang::SourceManager& {
 
 auto PreambleManager::GetCompilation() const -> const slang::ast::Compilation& {
   return *preamble_compilation_;
-}
-
-auto PreambleManager::GetVersion() const -> uint64_t {
-  return version_;
-}
-
-auto PreambleManager::GetPackage(std::string_view name) const
-    -> const slang::ast::PackageSymbol* {
-  auto it = package_map_.find(std::string(name));
-  if (it != package_map_.end()) {
-    return it->second;
-  }
-  return nullptr;
 }
 
 }  // namespace slangd::services

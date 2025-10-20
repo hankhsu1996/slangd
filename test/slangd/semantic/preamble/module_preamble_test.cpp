@@ -50,8 +50,7 @@ TEST_CASE(
     fixture.CreateFile("top.sv", ref);
 
     auto session = fixture.BuildSession("top.sv", executor);
-    REQUIRE(session != nullptr);
-
+    Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "ALU", 0, 0);
 
     co_return;
@@ -84,8 +83,6 @@ TEST_CASE(
     fixture.CreateFile("top.sv", ref);
 
     auto session = fixture.BuildSession("top.sv", executor);
-    REQUIRE(session != nullptr);
-
     Fixture::AssertCrossFileDef(*session, ref, def, "a_port", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "c_port", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "sum_port", 0, 0);
@@ -125,8 +122,6 @@ TEST_CASE(
     fixture.CreateFile("top.sv", ref);
 
     auto session = fixture.BuildSession("top.sv", executor);
-    REQUIRE(session != nullptr);
-
     Fixture::AssertCrossFileDef(*session, ref, def, "PARAM_A", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "PARAM_C", 0, 0);
 
@@ -169,17 +164,180 @@ TEST_CASE(
     fixture.CreateFile("top.sv", ref);
 
     auto session = fixture.BuildSession("top.sv", executor);
-    REQUIRE(session != nullptr);
-
+    Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "ALU", 0, 0);
-
     Fixture::AssertCrossFileDef(*session, ref, def, "DATA_WIDTH", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "OP_WIDTH", 0, 0);
-
     Fixture::AssertCrossFileDef(*session, ref, def, "operand_a", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "operand_b", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "operation", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "result", 0, 0);
+
+    co_return;
+  });
+}
+
+TEST_CASE(
+    "Module instance array with cross-file preamble",
+    "[module][preamble][array]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def = R"(
+      module counter (
+        input logic clk,
+        input logic rst,
+        output logic [7:0] count
+      );
+      endmodule
+    )";
+
+    const std::string ref = R"(
+      module top;
+        parameter NUM_COUNTERS = 4;
+        logic clk, rst;
+        logic [7:0] counts[NUM_COUNTERS];
+        counter instances[NUM_COUNTERS] (.clk(clk), .rst(rst), .count(counts));
+      endmodule
+    )";
+
+    fixture.CreateFile("counter.sv", def);
+    fixture.CreateFile("top.sv", ref);
+
+    auto session = fixture.BuildSession("top.sv", executor);
+    Fixture::AssertNoErrors(*session);
+    Fixture::AssertCrossFileDef(*session, ref, def, "counter", 0, 0);
+
+    co_return;
+  });
+}
+
+TEST_CASE(
+    "Multiple module definitions with cross-file preamble",
+    "[module][preamble][multiple]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def1 = R"(
+      module adder #(parameter WIDTH = 8) (
+        input logic [WIDTH-1:0] a, b,
+        output logic [WIDTH-1:0] sum
+      );
+      endmodule
+    )";
+
+    const std::string def2 = R"(
+      module multiplier #(parameter WIDTH = 8) (
+        input logic [WIDTH-1:0] x, y,
+        output logic [WIDTH*2-1:0] product
+      );
+      endmodule
+    )";
+
+    const std::string ref = R"(
+      module calculator;
+        logic [15:0] a, b, sum;
+        logic [31:0] prod;
+        adder #(.WIDTH(16)) add_inst (.a(a), .b(b), .sum(sum));
+        multiplier #(.WIDTH(16)) mul_inst (.x(a), .y(b), .product(prod));
+      endmodule
+    )";
+
+    fixture.CreateFile("adder.sv", def1);
+    fixture.CreateFile("multiplier.sv", def2);
+    fixture.CreateFile("calculator.sv", ref);
+
+    auto session = fixture.BuildSession("calculator.sv", executor);
+    Fixture::AssertNoErrors(*session);
+    Fixture::AssertCrossFileDef(*session, ref, def1, "adder", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def2, "multiplier", 0, 0);
+
+    co_return;
+  });
+}
+
+TEST_CASE(
+    "Parameter with complex expressions - cross-file preamble",
+    "[module][preamble][parameter]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def = R"(
+      module configurable #(
+        parameter MODE = 1,
+        parameter SIZE = MODE ? 16 : 32,
+        parameter DEPTH = SIZE * 2
+      ) (
+        input logic clk,
+        output logic [SIZE-1:0] data
+      );
+      endmodule
+    )";
+
+    const std::string ref = R"(
+      module top;
+        logic clk;
+        logic [31:0] out1;
+        logic [15:0] out2;
+        configurable #(.MODE(0)) inst1 (.clk(clk), .data(out1));
+        configurable #(.MODE(1)) inst2 (.clk(clk), .data(out2));
+      endmodule
+    )";
+
+    fixture.CreateFile("configurable.sv", def);
+    fixture.CreateFile("top.sv", ref);
+
+    auto session = fixture.BuildSession("top.sv", executor);
+    Fixture::AssertNoErrors(*session);
+    Fixture::AssertCrossFileDef(*session, ref, def, "MODE", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "MODE", 1, 0);
+
+    co_return;
+  });
+}
+
+TEST_CASE(
+    "Module instantiation in generate if/else branches - cross-file preamble",
+    "[module][preamble][generate]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def_a = R"(
+      module ModuleA (
+        input logic clk,
+        output logic out_a
+      );
+      endmodule
+    )";
+
+    const std::string def_b = R"(
+      module ModuleB (
+        input logic clk,
+        output logic out_b
+      );
+      endmodule
+    )";
+
+    const std::string ref = R"(
+      module Top;
+        parameter Cond = 1;
+        logic clk, result;
+
+        if (Cond)
+          ModuleA module_a (.clk(clk), .out_a(result));
+        else
+          ModuleB module_b (.clk(clk), .out_b(result));
+      endmodule
+    )";
+
+    fixture.CreateFile("module_a.sv", def_a);
+    fixture.CreateFile("module_b.sv", def_b);
+    fixture.CreateFile("top.sv", ref);
+
+    auto session = fixture.BuildSession("top.sv", executor);
+    Fixture::AssertNoErrors(*session);
+    Fixture::AssertCrossFileDef(*session, ref, def_a, "ModuleA", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def_b, "ModuleB", 0, 0);
 
     co_return;
   });

@@ -23,22 +23,16 @@ class PreambleAwareCompilation : public slang::ast::Compilation {
  public:
   PreambleAwareCompilation(
       const slang::Bag& options,
-      std::shared_ptr<const PreambleManager> preamble_manager,
-      const CanonicalPath& current_file_path)
+      std::shared_ptr<const PreambleManager> preamble_manager)
       : Compilation(options), preamble_manager_(std::move(preamble_manager)) {
-    // Populate packageMap with preamble packages (direct injection)
-    // Enables cross-compilation: overlay can reference preamble symbols
-    for (const auto& package_info : preamble_manager_->GetPackages()) {
-      // Skip if this package is defined in current file (deduplication)
-      // Let overlay's version be used instead of preamble's
-      if (package_info.file_path.Path() == current_file_path.Path()) {
-        continue;
-      }
+    const auto& overlay_root = getRootNoFinalize();
 
-      const auto* pkg = preamble_manager_->GetPackage(package_info.name);
-      if (pkg != nullptr) {
-        packageMap[pkg->name] = pkg;
-      }
+    // Bulk copy preamble maps for cross-compilation
+    packageMap = preamble_manager_->GetPackageMap();
+
+    // Re-key definitionMap with overlay's root scope
+    for (const auto& [key, val] : preamble_manager_->GetDefinitionMap()) {
+      definitionMap[{std::get<0>(key), &overlay_root}] = val;
     }
   }
 
@@ -54,10 +48,6 @@ auto OverlaySession::Create(
     std::shared_ptr<ProjectLayoutService> layout_service,
     std::shared_ptr<const PreambleManager> preamble_manager,
     std::shared_ptr<spdlog::logger> logger) -> std::shared_ptr<OverlaySession> {
-  if (!logger) {
-    logger = spdlog::default_logger();
-  }
-
   utils::ScopedTimer timer("OverlaySession creation", logger);
   logger->debug("Creating overlay session for: {}", uri);
 
@@ -129,11 +119,7 @@ auto OverlaySession::BuildCompilation(
     -> std::tuple<
         std::shared_ptr<slang::SourceManager>,
         std::unique_ptr<slang::ast::Compilation>, slang::BufferID> {
-  if (!logger) {
-    logger = spdlog::default_logger();
-  }
-
-  utils::ScopedTimer timer(fmt::format("BuildCompilation [{}]", uri), logger);
+  utils::ScopedTimer timer("Compilation", logger);
 
   // Create fresh source manager
   auto source_manager = std::make_shared<slang::SourceManager>();
@@ -152,11 +138,6 @@ auto OverlaySession::BuildCompilation(
       pp_options.predefines.push_back(define);
     }
     options.set(pp_options);
-
-    logger->debug(
-        "Applied {} include dirs, {} defines",
-        layout_service->GetIncludeDirectories().size(),
-        layout_service->GetDefines().size());
   }
 
   // Get file path for deduplication (needed before creating compilation)
@@ -166,11 +147,8 @@ auto OverlaySession::BuildCompilation(
   // Use PreambleAwareCompilation when preamble available for cross-compilation
   std::unique_ptr<slang::ast::Compilation> compilation;
   if (preamble_manager) {
-    compilation = std::make_unique<PreambleAwareCompilation>(
-        options, preamble_manager, file_path);
-    logger->debug(
-        "Created PreambleAwareCompilation with {} packages",
-        preamble_manager->GetPackages().size());
+    compilation =
+        std::make_unique<PreambleAwareCompilation>(options, preamble_manager);
   } else {
     compilation = std::make_unique<slang::ast::Compilation>(options);
   }
@@ -189,33 +167,9 @@ auto OverlaySession::BuildCompilation(
         file_path.Path().string());
   }
 
-  // Add files from preamble manager if available
-  if (preamble_manager) {
-    // NOTE: Packages are NOT loaded as syntax trees!
-    // PreambleAwareCompilation injects preamble PackageSymbol* pointers
-    // directly into packageMap for cross-compilation binding.
-    // This eliminates duplicate package loading per session.
-
-    // Add interfaces from preamble manager
-    for (const auto& interface_info : preamble_manager->GetInterfaces()) {
-      // Skip if this is the same file as our buffer (deduplication)
-      if (interface_info.file_path.Path() == file_path.Path()) {
-        logger->debug(
-            "Skipping buffer file from preamble manager: {}",
-            interface_info.file_path.Path().string());
-        continue;
-      }
-
-      auto interface_tree_result = slang::syntax::SyntaxTree::fromFile(
-          interface_info.file_path.Path().string(), *source_manager, options);
-      if (interface_tree_result) {
-        compilation->addSyntaxTree(interface_tree_result.value());
-      }
-    }
-
-  } else {
-    logger->debug("No preamble manager provided - single-file mode");
-  }
+  // Preamble symbols injected via PreambleAwareCompilation constructor
+  // Packages added to packageMap, interfaces/modules added to definitionMap
+  // No syntax tree loading needed - cross-compilation uses symbol pointers
 
   return std::make_tuple(
       std::move(source_manager), std::move(compilation), main_buffer_id);

@@ -92,11 +92,13 @@ Before changing or working around existing behavior, understand the reason for t
 **Core insight**: At the point where the compiler computes and discards something, it has all the information needed. Storing it costs almost nothing but saves LSP from fragile reconstruction logic.
 
 **When this applies**:
+
 - Compiler evaluates expressions to constants and discards the AST
 - Compiler creates temporary symbols but doesn't link them to original declarations
 - Compiler resolves lookups but doesn't cache the resolution path
 
 **Why not reconstruct in LSP**:
+
 - Compiler already did the work (binding, resolution, type checking)
 - Reconstruction requires duplicating compiler logic (fragile, error-prone)
 - Original information is available at compilation time with zero extra work
@@ -144,6 +146,14 @@ If your solution feels like a workaround or band-aid, keep searching for the ele
 - "What existing pattern handles similar cases?"
 - "Can we save this information during construction?"
 
+### No Fallback Logic
+
+**CRITICAL RULE**: If you have conditional logic that handles a specific case, DO NOT add a fallback "just in case".
+
+**Why**: Fallbacks hide bugs by masking when your logic doesn't work. They create "works by accident" code instead of "works by design".
+
+**When fallback seems necessary**: It means you don't fully understand the conditions under which each path should execute. Debug and clarify the logic instead of adding a fallback.
+
 ### Use Constraints as Design Guidance
 
 When someone says "no manual searching" or "no state tracking", these aren't arbitrary restrictions - they're guideposts toward better design.
@@ -154,6 +164,32 @@ When someone says "no manual searching" or "no state tracking", these aren't arb
 - Storing relationships directly in data structures
 - Stateless, declarative code
 - Simple, composable solutions
+
+### Trust Semantic Analysis Over Syntactic Analysis
+
+**Principle**: When the compiler has already performed semantic analysis (binding, type resolution, scope analysis), use those results. Don't re-analyze syntax to infer semantics.
+
+**Why this matters**:
+
+- Semantic analysis is complex and error-prone to replicate
+- The compiler already did the work correctly
+- Syntactic workarounds are fragile and incomplete
+
+**Examples of trusting semantic analysis**:
+
+- Symbol relationships: Use `symbol.getParentScope()` not "search up the syntax tree"
+- Type resolution: Use `type.getCanonicalType()` not "parse type syntax to resolve typedefs"
+- Name lookup: Use bound symbols not "search scopes by name"
+- Context determination: Use scope/symbol kind not "check identifier text patterns"
+
+**Red flags** (indicate re-doing semantic analysis):
+
+- Traversing syntax trees to find related symbols
+- Comparing identifier text to classify symbol roles
+- Manual scope chain traversal to resolve references
+- Parsing syntax to determine type relationships
+
+**When you need information that seems unavailable**: First check if Slang computed it during compilation. If yes, modify Slang to preserve it. If no, understand why - the design likely has good reasons.
 
 ### Prefer Positive Conditions
 
@@ -231,6 +267,7 @@ See "Working with the Slang Library" section above for detailed case study.
 See "Preserve Compiler Information for LSP" principle above.
 
 **Examples**:
+
 - **Array dimensions**: Compiler folds dimension expressions to constants → store expressions alongside results
 - **Hierarchical selectors**: Compiler evaluates array selectors to indices → store expressions alongside indices
 - **Genvar loops**: Compiler creates temporary iteration variables → link them back to genvar declarations

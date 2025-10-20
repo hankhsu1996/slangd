@@ -24,7 +24,6 @@ namespace slangd::services {
 
 // Intermediate state after Phase 1 (elaboration) - used for fast diagnostics
 struct CompilationState {
-  std::shared_ptr<slang::SourceManager> source_manager;
   std::shared_ptr<slang::ast::Compilation> compilation;
   slang::BufferID main_buffer_id;
 };
@@ -181,8 +180,7 @@ auto SessionManager::WithSession(std::string uri, Fn callback)
 
   // Slow path: Wait for Phase 2 completion
   if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
-    logger_->debug(
-        "SessionManager::WithSession waiting for session_ready: {}", uri);
+    logger_->debug("Session wait (indexing): {}", uri);
 
     auto pending = it->second;
     // Release strand during wait
@@ -207,7 +205,7 @@ auto SessionManager::WithSession(std::string uri, Fn callback)
         "Session not found after notification (evicted or cancelled)");
   }
 
-  logger_->info("SessionManager::WithSession no session found: {}", uri);
+  logger_->info("Session not found: {}", uri);
   co_return std::unexpected("Session not found");
 }
 
@@ -227,7 +225,6 @@ auto SessionManager::WithCompilationState(std::string uri, Fn callback)
       // Shared_ptrs keep session components alive during callback
       // but don't escape to caller
       CompilationState state{
-          .source_manager = it->second.session->GetSourceManagerPtr(),
           .compilation = it->second.session->GetCompilationPtr(),
           .main_buffer_id = it->second.session->GetMainBufferID()};
 
@@ -240,10 +237,7 @@ auto SessionManager::WithCompilationState(std::string uri, Fn callback)
 
   // Slow path: Wait for Phase 1 completion
   if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
-    logger_->debug(
-        "SessionManager::WithCompilationState waiting for compilation_ready: "
-        "{}",
-        uri);
+    logger_->debug("Session wait (compilation): {}", uri);
 
     auto pending = it->second;
     // Release strand during wait
@@ -258,7 +252,6 @@ auto SessionManager::WithCompilationState(std::string uri, Fn callback)
       UpdateAccessOrder(uri);
 
       CompilationState state{
-          .source_manager = cache_it->second.session->GetSourceManagerPtr(),
           .compilation = cache_it->second.session->GetCompilationPtr(),
           .main_buffer_id = cache_it->second.session->GetMainBufferID()};
 
@@ -274,8 +267,7 @@ auto SessionManager::WithCompilationState(std::string uri, Fn callback)
         "Session not found after notification (evicted or cancelled)");
   }
 
-  logger_->info(
-      "SessionManager::WithCompilationState no session found: {}", uri);
+  logger_->info("Session not found: {}", uri);
   co_return std::unexpected("Session not found");
 }
 

@@ -43,7 +43,7 @@ When adding support for new SystemVerilog constructs:
 3. **Check existing Slang infrastructure** - look for `get*()`, `find()`, or resolution methods before building custom solutions
 4. Add definition extraction + handlers as needed
 5. Verify with both self-definition and reference tests
-6. **CRITICAL: Preamble symbol coverage** - If symbols can be referenced from packages, ensure `PreambleSymbolVisitor` indexes them. Missing symbols from `symbol_info_` map cause segfaults or invalid coordinates. See `docs/PACKAGE_PREAMBLE.md` for details.
+6. **CRITICAL: Preamble symbol coverage** - If symbols can be referenced from packages, ensure `PreambleSymbolVisitor` indexes them. Missing symbols from `symbol_info_` map cause segfaults or invalid coordinates. See `docs/PREAMBLE.md` for details.
 
 **Design Principle:**
 Leverage existing Slang library infrastructure rather than overengineering. The best LSP solutions are simple and reuse Slang's existing resolution logic.
@@ -89,7 +89,7 @@ SystemVerilog LSP server with modular design:
 - **`docs/DESIGN_PRINCIPLES.md`**: Core philosophy and case studies for working with Slang library infrastructure
 - **`docs/SERVER_ARCHITECTURE.md`**: Server layers, session lifecycle, two-phase diagnostics, and threading model
 - **`docs/SESSION_MANAGEMENT.md`**: Session lifecycle management, memory-bounded caching, eviction policy, and VSCode interaction patterns
-- **`docs/PACKAGE_PREAMBLE.md`**: Package preamble architecture, cross-compilation symbol binding, and critical constraints around missing symbols
+- **`docs/PREAMBLE.md`**: Preamble architecture for packages and interfaces, cross-compilation symbol binding, and critical constraints around missing symbols
 - **`docs/CONFIGURATION.md`**: .slangd config file format, file discovery modes, and path filtering
 - **`docs/SEMANTIC_INDEXING.md`**: SemanticIndex implementation patterns and guide to adding new symbol support
 - **`docs/COMPILATION_OPTIONS.md`**: Slang compilation flags and preprocessor options used for LSP operation

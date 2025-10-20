@@ -33,3 +33,18 @@ cc_test(
         "@slang",
     ],
 )
+
+cc_test(
+    name = "interface_preamble_test",
+    timeout = "short",
+    srcs = [
+        "interface_preamble_test.cpp",
+    ],
+    deps = [
+        "//:slangd_core",
+        "//test/slangd:multifile_semantic_fixture",
+        "@catch2",
+        "@fmt",
+        "@slang",
+    ],
+)

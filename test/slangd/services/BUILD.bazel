@@ -17,17 +17,3 @@ cc_test(
         "@slang",
     ],
 )
-
-cc_test(
-    name = "preamble_manager_test",
-    timeout = "short",
-    srcs = [
-        "preamble_manager_test.cpp",
-    ],
-    deps = [
-        "//:slangd_core",
-        "//test/slangd:async_fixture",
-        "@catch2",
-        "@slang",
-    ],
-)

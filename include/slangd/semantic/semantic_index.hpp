@@ -60,7 +60,7 @@ class SemanticIndex {
       const slang::SourceManager& source_manager,
       const std::string& current_file_uri,
       const services::PreambleManager* preamble_manager = nullptr,
-      std::shared_ptr<spdlog::logger> logger = nullptr)
+      std::shared_ptr<spdlog::logger> logger = spdlog::default_logger())
       -> std::expected<std::unique_ptr<SemanticIndex>, std::string>;
 
   // Query methods
@@ -130,7 +130,8 @@ class SemanticIndex {
   std::shared_ptr<spdlog::logger> logger_;
 
   // Visitor for symbol collection and reference tracking
-  class IndexVisitor : public slang::ast::ASTVisitor<IndexVisitor, true, true> {
+  class IndexVisitor
+      : public slang::ast::ASTVisitor<IndexVisitor, true, true, true> {
    public:
     explicit IndexVisitor(
         SemanticIndex& index, std::string current_file_uri,
@@ -249,9 +250,15 @@ class SemanticIndex {
         const slang::syntax::ParameterValueAssignmentSyntax& params,
         const slang::ast::Expression& overlay_context);
 
+    void IndexClassParameters(
+        const slang::ast::ClassType& class_type,
+        const slang::syntax::ParameterValueAssignmentSyntax& params,
+        const slang::ast::Symbol& overlay_context);
+
     void IndexInstanceParameters(
         const slang::ast::InstanceSymbol& instance,
-        const slang::syntax::ParameterValueAssignmentSyntax& params);
+        const slang::syntax::ParameterValueAssignmentSyntax& params,
+        const slang::ast::Symbol& syntax_owner);
 
     // Index package name in scoped references (pkg::item)
     // Symbol version: Used when syntax comes from symbol.getSyntax() (e.g.,

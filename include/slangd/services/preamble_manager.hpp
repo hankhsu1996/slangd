@@ -2,13 +2,14 @@
 
 #include <memory>
 #include <string>
-#include <unordered_map>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include <slang/text/SourceLocation.h>
+#include <slang/util/Hash.h>
 #include <spdlog/spdlog.h>
 
-#include "lsp/basic.hpp"
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/utils/canonical_path.hpp"
 
@@ -16,7 +17,9 @@
 namespace slang {
 namespace ast {
 class Compilation;
+class DefinitionSymbol;
 class PackageSymbol;
+class Scope;
 class Symbol;
 }  // namespace ast
 class SourceManager;
@@ -28,48 +31,9 @@ class DefinitionExtractor;
 
 namespace slangd::services {
 
-// Package metadata extracted from preamble compilation
-struct PackageInfo {
-  std::string name;
-  CanonicalPath file_path;
-  // Future: additional metadata like exported symbols
-};
-
-// Interface metadata for future implementation
-struct InterfaceInfo {
-  std::string name;
-  CanonicalPath file_path;
-  // Future: additional metadata like modports
-};
-
-// Port metadata extracted from module definitions
-struct PortInfo {
-  std::string name;
-  lsp::Range def_range;
-};
-
-// Parameter metadata extracted from module definitions
-struct ParameterInfo {
-  std::string name;
-  lsp::Range def_range;
-};
-
-// Module metadata extracted from preamble compilation
-struct ModuleInfo {
-  std::string name;
-  CanonicalPath file_path;
-  lsp::Range def_range;
-  std::vector<PortInfo> ports;
-  std::vector<ParameterInfo> parameters;
-
-  // O(1) lookups (built during extraction in BuildFromLayout)
-  std::unordered_map<std::string, const PortInfo*> port_lookup;
-  std::unordered_map<std::string, const ParameterInfo*> parameter_lookup;
-};
-
-// PreambleManager: Immutable snapshot of package/interface metadata from
-// preamble compilation. Use CreateFromProjectLayout() factory method for
-// convenience.
+// PreambleManager: Immutable snapshot of preamble compilation.
+// Provides direct access to Slang Compilation's symbol collections.
+// Use CreateFromProjectLayout() factory method for convenience.
 class PreambleManager {
  public:
   // Default constructor
@@ -79,7 +43,7 @@ class PreambleManager {
   // Creates a preamble compilation from all project files and extracts metadata
   [[nodiscard]] static auto CreateFromProjectLayout(
       std::shared_ptr<ProjectLayoutService> layout_service,
-      std::shared_ptr<spdlog::logger> logger = nullptr)
+      std::shared_ptr<spdlog::logger> logger = spdlog::default_logger())
       -> std::shared_ptr<PreambleManager>;
 
   // Non-copyable, non-movable
@@ -89,16 +53,12 @@ class PreambleManager {
   auto operator=(PreambleManager&&) -> PreambleManager& = delete;
   ~PreambleManager() = default;
 
-  // Accessors for preamble_manager data
-  [[nodiscard]] auto GetPackages() const -> const std::vector<PackageInfo>&;
-  [[nodiscard]] auto GetInterfaces() const -> const std::vector<InterfaceInfo>&;
-  [[nodiscard]] auto GetModules() const -> const std::vector<ModuleInfo>&;
-  [[nodiscard]] auto GetModule(std::string_view name) const
-      -> const ModuleInfo*;
-
-  // Package symbol access for cross-compilation binding
-  [[nodiscard]] auto GetPackage(std::string_view name) const
-      -> const slang::ast::PackageSymbol*;
+  // Direct access to Compilation's internal maps
+  [[nodiscard]] auto GetPackageMap() const -> const
+      slang::flat_hash_map<std::string_view, const slang::ast::PackageSymbol*>&;
+  [[nodiscard]] auto GetDefinitionMap() const -> const slang::flat_hash_map<
+      std::tuple<std::string_view, const slang::ast::Scope*>,
+      std::pair<std::vector<const slang::ast::Symbol*>, bool>>&;
 
   // Include directories and defines from ProjectLayoutService
   [[nodiscard]] auto GetIncludeDirectories() const
@@ -111,27 +71,14 @@ class PreambleManager {
   // Compilation accessor for symbol compilation checking
   [[nodiscard]] auto GetCompilation() const -> const slang::ast::Compilation&;
 
-  // Version tracking for cache invalidation
-  [[nodiscard]] auto GetVersion() const -> uint64_t;
-
   // Build preamble_manager from ProjectLayoutService - public method
   auto BuildFromLayout(
       std::shared_ptr<ProjectLayoutService> layout_service,
       std::shared_ptr<spdlog::logger> logger) -> void;
 
  private:
-  // PreambleManager data
-  std::vector<PackageInfo> packages_;
-  std::vector<InterfaceInfo> interfaces_;  // Empty for MVP
-  std::vector<ModuleInfo> modules_;
-  std::unordered_map<std::string, const ModuleInfo*> module_lookup_;
   std::vector<CanonicalPath> include_directories_;
   std::vector<std::string> defines_;
-  uint64_t version_ = 1;
-
-  // Package symbol storage for cross-compilation binding
-  std::unordered_map<std::string, const slang::ast::PackageSymbol*>
-      package_map_;
 
   // Preamble compilation objects
   std::shared_ptr<slang::ast::Compilation> preamble_compilation_;
