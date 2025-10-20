@@ -226,6 +226,53 @@ TEST_CASE(
 }
 
 TEST_CASE(
+    "Interface array with parameter size and cross-file preamble",
+    "[interface][preamble][port][array][parameter]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string param_def = R"(
+      package config_pkg;
+        parameter int NUM_INPUTS = 4;
+      endpackage
+    )";
+
+    const std::string if_def = R"(
+      interface stream_if;
+        logic valid;
+        logic ready;
+        logic [63:0] data;
+      endinterface
+    )";
+
+    const std::string ref = R"(
+      module arbiter
+        import config_pkg::*;
+      (
+        stream_if inputs[NUM_INPUTS],
+        stream_if out
+      );
+      endmodule
+    )";
+
+    fixture.CreateBufferIDOffset();
+    fixture.CreateFile("config_pkg.sv", param_def);
+    fixture.CreateFile("stream_if.sv", if_def);
+    fixture.CreateFile("arbiter.sv", ref);
+
+    auto session = fixture.BuildSession("arbiter.sv", executor);
+    Fixture::AssertNoErrors(*session);
+    // Verify interface type can be resolved
+    Fixture::AssertCrossFileDef(*session, ref, if_def, "stream_if", 0, 0);
+    Fixture::AssertCrossFileDef(*session, ref, if_def, "stream_if", 1, 0);
+    // Verify parameter reference in array dimension can be resolved
+    Fixture::AssertCrossFileDef(*session, ref, param_def, "NUM_INPUTS", 0, 0);
+
+    co_return;
+  });
+}
+
+TEST_CASE(
     "Interface with modport and cross-file preamble",
     "[interface][preamble][modport]") {
   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {

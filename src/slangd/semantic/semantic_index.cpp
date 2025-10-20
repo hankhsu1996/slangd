@@ -1788,6 +1788,17 @@ void SemanticIndex::IndexVisitor::handle(
         interface_port, interface_port.name, *def_loc,
         interface_port.getParentScope());
 
+    // Index references in dimension expressions (e.g., inputs[NUM_INPUTS])
+    auto dimensions = interface_port.getDimensions();
+    if (dimensions && !dimensions->empty()) {
+      for (const auto& dim : *dimensions) {
+        dim.visitExpressions(
+            [this](const slang::ast::Expression& expr) -> void {
+              expr.visit(*this);
+            });
+      }
+    }
+
     // Create cross-reference from interface name to interface definition
     if (interface_port.interfaceDef != nullptr &&
         interface_port.interfaceDef->location.valid()) {
