@@ -23,8 +23,7 @@ class PreambleAwareCompilation : public slang::ast::Compilation {
  public:
   PreambleAwareCompilation(
       const slang::Bag& options,
-      std::shared_ptr<const PreambleManager> preamble_manager,
-      const CanonicalPath& current_file_path)
+      std::shared_ptr<const PreambleManager> preamble_manager)
       : Compilation(options), preamble_manager_(std::move(preamble_manager)) {
     // Get root scope pointer WITHOUT triggering elaboration
     // getRootNoFinalize() returns RootSymbol& without finalization
@@ -32,24 +31,18 @@ class PreambleAwareCompilation : public slang::ast::Compilation {
 
     // Populate packageMap with preamble packages (direct injection)
     // Enables cross-compilation: overlay can reference preamble symbols
+    // LanguageServerMode in Slang allows later definitions to replace earlier
+    // ones
     for (const auto& [name, entry] : preamble_manager_->GetPackages()) {
-      // Skip if this package is defined in current file (deduplication)
-      // Let overlay's version be used instead of preamble's
-      if (entry.file_path.Path() == current_file_path.Path()) {
-        continue;
-      }
-
       packageMap[entry.symbol->name] = entry.symbol;
     }
 
     // Inject interface definitions into definitionMap
     // Enables cross-compilation: overlay can instantiate preamble interfaces
     // without loading their syntax trees (memory reduction)
+    // LanguageServerMode in Slang allows later definitions to replace earlier
+    // ones
     for (const auto& [name, entry] : preamble_manager_->GetInterfaces()) {
-      if (entry.file_path.Path() == current_file_path.Path()) {
-        continue;
-      }
-
       // Key: {name, scope_ptr}, Value: {vector<const Symbol*>, has_nested_defs}
       // Scope pointer must be overlay's root, not preamble's root
       definitionMap[{entry.definition->name, &overlay_root}] = {
@@ -60,10 +53,6 @@ class PreambleAwareCompilation : public slang::ast::Compilation {
     // Enables cross-compilation: overlay can instantiate preamble modules
     // without loading their syntax trees (memory reduction)
     for (const auto& [name, entry] : preamble_manager_->GetModules()) {
-      if (entry.file_path.Path() == current_file_path.Path()) {
-        continue;
-      }
-
       definitionMap[{entry.definition->name, &overlay_root}] = {
           {entry.definition}, false};
     }
@@ -191,8 +180,8 @@ auto OverlaySession::BuildCompilation(
   // Use PreambleAwareCompilation when preamble available for cross-compilation
   std::unique_ptr<slang::ast::Compilation> compilation;
   if (preamble_manager) {
-    compilation = std::make_unique<PreambleAwareCompilation>(
-        options, preamble_manager, file_path);
+    compilation =
+        std::make_unique<PreambleAwareCompilation>(options, preamble_manager);
   } else {
     compilation = std::make_unique<slang::ast::Compilation>(options);
   }

@@ -72,15 +72,32 @@ Slang organizes symbols into separate collections with no overlap:
 
 This means no deduplication needed when traversing all collections.
 
-### LSP Mode Elaboration
+### Dangerous APIs That Trigger Elaboration
+
+**CRITICAL:** The following Compilation APIs trigger full elaboration via `forceElaborate()`:
+
+- `compilation.getRoot()` - Auto-instantiates all top-level modules/programs
+- `compilation.getAllDiagnostics()` - Calls getRoot() internally to collect all diagnostics
+- `compilation.getSemanticDiagnostics()` - Calls getRoot() internally
+
+**Why This Matters:**
+
+`forceElaborate()` iterates `definitionMap` and creates Instances from definitions. With preamble injection, definitionMap contains multiple definitions per name (different library priorities). Without proper handling, this creates duplicate Instances and redefinition errors.
+
+**Safe Alternatives:**
+
+- Use `compilation.getCollectedDiagnostics()` - Reads diagMap without triggering elaboration
+- SemanticIndex manually calls `forceElaborate(instance.body)` for controlled elaboration
+- Production code should NEVER call getRoot(), getAllDiagnostics(), or getSemanticDiagnostics()
+
+**LSP Mode Elaboration (When Triggered):**
 
 Calling `getRoot()` in `LanguageServerMode`:
 
 - Treats each file as standalone (no top-module requirement)
 - Auto-instantiates modules/programs as root members
 - Auto-instantiates interfaces during port resolution (nested in modules)
-
-This is how definition bodies become accessible for indexing.
+- Our Slang fork: only processes highest-priority definition per name (prevents preamble duplicates)
 
 ### Critical: Proper Instance Creation for Body Traversal
 

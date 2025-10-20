@@ -524,18 +524,20 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
     }
   }
 
-  // Get all diagnostics for manual inspection
-  // This triggers full elaboration
+  // Get diagnostics collected during semantic indexing
+  // Uses safe API that doesn't trigger full elaboration
   static auto GetDiagnostics(const slangd::services::OverlaySession& session)
       -> std::vector<lsp::Diagnostic> {
     auto& compilation = session.GetCompilation();
     const auto& source_manager = session.GetSourceManager();
     auto main_buffer_id = session.GetMainBufferID();
 
-    // Get ALL diagnostics (triggers full elaboration)
-    const auto& all_slang_diags = compilation.getAllDiagnostics();
+    // SAFE API: getCollectedDiagnostics() reads diagMap without triggering
+    // elaboration diagMap was already populated during
+    // SemanticIndex::FromCompilation()
+    const auto& slang_diags = compilation.getCollectedDiagnostics();
     return slangd::semantic::DiagnosticConverter::ExtractDiagnostics(
-        all_slang_diags, source_manager, main_buffer_id);
+        slang_diags, source_manager, main_buffer_id);
   }
 };
 
