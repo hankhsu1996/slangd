@@ -256,7 +256,8 @@ class SemanticIndex {
 
     void IndexInstanceParameters(
         const slang::ast::InstanceSymbol& instance,
-        const slang::syntax::ParameterValueAssignmentSyntax& params);
+        const slang::syntax::ParameterValueAssignmentSyntax& params,
+        const slang::ast::Symbol& syntax_owner);
 
     // Index package name in scoped references (pkg::item)
     // Symbol version: Used when syntax comes from symbol.getSyntax() (e.g.,

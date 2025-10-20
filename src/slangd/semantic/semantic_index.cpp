@@ -707,21 +707,16 @@ void SemanticIndex::IndexVisitor::IndexClassParameters(
 
 void SemanticIndex::IndexVisitor::IndexInstanceParameters(
     const slang::ast::InstanceSymbol& instance,
-    const slang::syntax::ParameterValueAssignmentSyntax& params) {
+    const slang::syntax::ParameterValueAssignmentSyntax& params,
+    const slang::ast::Symbol& syntax_owner) {
   // Parameter value assignments can be ordered or named
   // For named assignments: .FLAG(50) - we index the parameter name
   // For ordered assignments: #(50, 100) - no names to index, only values
 
-  // Visit parameter value expressions to index symbol references (e.g.,
-  // SIZE in #(.WIDTH(SIZE)))
-  for (const auto& member : instance.body.members()) {
-    if (member.kind == slang::ast::SymbolKind::Parameter) {
-      const auto& param = member.as<slang::ast::ParameterSymbol>();
-      if (param.getInitializer() != nullptr) {
-        param.getInitializer()->visit(*this);
-      }
-    }
-  }
+  // NOTE: We intentionally do NOT visit parameter initializers from
+  // instance.body.members() here, as those are the DEFAULT values from the
+  // definition (which may be in a different compilation/preamble). We only
+  // index the parameter NAMES referenced in the instantiation syntax.
 
   for (const auto* param_base : params.parameters) {
     // Only process named parameter assignments
@@ -747,9 +742,13 @@ void SemanticIndex::IndexVisitor::IndexInstanceParameters(
         }
 
         // Create LSP location for parameter
+        // param_symbol.getCompilation() now returns the correct compilation
+        // (definition's compilation) thanks to Slang fix
         auto param_def_loc = CreateSymbolLspLocation(param_symbol, logger_);
+        // Use syntax_owner for correct cross-compilation context
         auto ref_loc =
-            CreateLspLocation(instance, named_param.name.range(), logger_);
+            CreateLspLocation(syntax_owner, named_param.name.range(), logger_);
+
         if (param_def_loc && ref_loc) {
           AddReference(
               param_symbol, param_symbol.name, ref_loc->range, *param_def_loc,
@@ -1954,7 +1953,8 @@ void SemanticIndex::IndexVisitor::handle(
 
             // 3. Index parameter overrides (e.g., #(.FLAG(1)))
             if (inst_syntax.parameters != nullptr) {
-              IndexInstanceParameters(first_instance, *inst_syntax.parameters);
+              IndexInstanceParameters(
+                  first_instance, *inst_syntax.parameters, instance_array);
             }
           }
         }
@@ -2015,7 +2015,7 @@ void SemanticIndex::IndexVisitor::handle(
 
       // 3. Index parameter overrides (e.g., #(.FLAG(1)))
       if (inst_syntax.parameters != nullptr) {
-        IndexInstanceParameters(instance, *inst_syntax.parameters);
+        IndexInstanceParameters(instance, *inst_syntax.parameters, instance);
       }
     }
   }

@@ -126,6 +126,38 @@ TEST_CASE(
 }
 
 TEST_CASE(
+    "Parameterized interface instance array with cross-file preamble",
+    "[interface][preamble][parameter][array]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def = R"(
+      interface data_if #(parameter int MODE = 1, parameter int CONFIG = MODE ? 10 : 20);
+        logic clk;
+        logic [7:0] value;
+      endinterface
+    )";
+
+    const std::string ref = R"(
+      module top;
+        parameter NUM_ITEMS = 4;
+        data_if #(.MODE(0)) items[NUM_ITEMS]();
+      endmodule
+    )";
+
+    fixture.CreateBufferIDOffset();
+    fixture.CreateFile("data_if.sv", def);
+    fixture.CreateFile("top.sv", ref);
+
+    auto session = fixture.BuildSession("top.sv", executor);
+    Fixture::AssertNoErrors(*session);
+    Fixture::AssertCrossFileDef(*session, ref, def, "data_if", 0, 0);
+
+    co_return;
+  });
+}
+
+TEST_CASE(
     "Interface as module port with cross-file preamble",
     "[interface][preamble][port]") {
   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
