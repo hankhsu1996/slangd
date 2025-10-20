@@ -25,36 +25,14 @@ class PreambleAwareCompilation : public slang::ast::Compilation {
       const slang::Bag& options,
       std::shared_ptr<const PreambleManager> preamble_manager)
       : Compilation(options), preamble_manager_(std::move(preamble_manager)) {
-    // Get root scope pointer WITHOUT triggering elaboration
-    // getRootNoFinalize() returns RootSymbol& without finalization
     const auto& overlay_root = getRootNoFinalize();
 
-    // Populate packageMap with preamble packages (direct injection)
-    // Enables cross-compilation: overlay can reference preamble symbols
-    // LanguageServerMode in Slang allows later definitions to replace earlier
-    // ones
-    for (const auto& [name, entry] : preamble_manager_->GetPackages()) {
-      packageMap[entry.symbol->name] = entry.symbol;
-    }
+    // Bulk copy preamble maps for cross-compilation
+    packageMap = preamble_manager_->GetPackageMap();
 
-    // Inject interface definitions into definitionMap
-    // Enables cross-compilation: overlay can instantiate preamble interfaces
-    // without loading their syntax trees (memory reduction)
-    // LanguageServerMode in Slang allows later definitions to replace earlier
-    // ones
-    for (const auto& [name, entry] : preamble_manager_->GetInterfaces()) {
-      // Key: {name, scope_ptr}, Value: {vector<const Symbol*>, has_nested_defs}
-      // Scope pointer must be overlay's root, not preamble's root
-      definitionMap[{entry.definition->name, &overlay_root}] = {
-          {entry.definition}, false};
-    }
-
-    // Inject module definitions into definitionMap
-    // Enables cross-compilation: overlay can instantiate preamble modules
-    // without loading their syntax trees (memory reduction)
-    for (const auto& [name, entry] : preamble_manager_->GetModules()) {
-      definitionMap[{entry.definition->name, &overlay_root}] = {
-          {entry.definition}, false};
+    // Re-key definitionMap with overlay's root scope
+    for (const auto& [key, val] : preamble_manager_->GetDefinitionMap()) {
+      definitionMap[{std::get<0>(key), &overlay_root}] = val;
     }
   }
 

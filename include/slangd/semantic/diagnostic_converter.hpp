@@ -11,10 +11,6 @@
 #include <slang/text/SourceManager.h>
 #include <spdlog/spdlog.h>
 
-namespace slangd::services {
-class PreambleManager;
-}
-
 namespace slangd::semantic {
 
 // Stateless utility for converting Slang diagnostics to LSP format
@@ -37,9 +33,7 @@ class DiagnosticConverter {
   static auto ExtractCollectedDiagnostics(
       slang::ast::Compilation& compilation,
       const slang::SourceManager& source_manager,
-      slang::BufferID main_buffer_id,
-      const services::PreambleManager* preamble_manager = nullptr)
-      -> std::vector<lsp::Diagnostic>;
+      slang::BufferID main_buffer_id) -> std::vector<lsp::Diagnostic>;
 
   // Extract diagnostics from pre-computed slang::Diagnostics
   // (used for two-phase diagnostic publishing)
@@ -49,11 +43,7 @@ class DiagnosticConverter {
       slang::BufferID main_buffer_id) -> std::vector<lsp::Diagnostic>;
 
   // Apply LSP-specific filtering
-  // preamble_manager: Optional PreambleManager for filtering false-positive
-  // UnknownModule errors
-  static auto FilterDiagnostics(
-      std::vector<lsp::Diagnostic> diagnostics,
-      const services::PreambleManager* preamble_manager = nullptr)
+  static auto FilterDiagnostics(std::vector<lsp::Diagnostic> diagnostics)
       -> std::vector<lsp::Diagnostic>;
 
  private:

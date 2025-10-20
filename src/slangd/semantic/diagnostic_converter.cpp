@@ -1,11 +1,8 @@
 #include "slangd/semantic/diagnostic_converter.hpp"
 
-#include <string_view>
-
 #include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/diagnostics/Diagnostics.h>
 
-#include "slangd/services/preamble_manager.hpp"
 #include "slangd/utils/conversion.hpp"
 
 namespace slangd::semantic {
@@ -26,14 +23,13 @@ auto DiagnosticConverter::ExtractParseDiagnostics(
 
 auto DiagnosticConverter::ExtractCollectedDiagnostics(
     slang::ast::Compilation& compilation,
-    const slang::SourceManager& source_manager, slang::BufferID main_buffer_id,
-    const services::PreambleManager* preamble_manager)
+    const slang::SourceManager& source_manager, slang::BufferID main_buffer_id)
     -> std::vector<lsp::Diagnostic> {
   // Get diagnostics from diagMap without triggering elaboration
   auto slang_diagnostics = compilation.getCollectedDiagnostics();
   auto diagnostics =
       ExtractDiagnostics(slang_diagnostics, source_manager, main_buffer_id);
-  return FilterDiagnostics(diagnostics, preamble_manager);
+  return FilterDiagnostics(diagnostics);
 }
 
 auto DiagnosticConverter::ExtractDiagnostics(
@@ -52,38 +48,13 @@ auto DiagnosticConverter::ExtractDiagnostics(
 }
 
 auto DiagnosticConverter::FilterDiagnostics(
-    std::vector<lsp::Diagnostic> diagnostics,
-    const services::PreambleManager* preamble_manager)
-    -> std::vector<lsp::Diagnostic> {
+    std::vector<lsp::Diagnostic> diagnostics) -> std::vector<lsp::Diagnostic> {
   std::vector<lsp::Diagnostic> result;
 
   for (const auto& diag : diagnostics) {
     // Filter out InfoTask diagnostics (not relevant for LSP clients)
     if (diag.code == "InfoTask") {
       continue;
-    }
-
-    // Filter UnknownModule if PreambleManager has the definition
-    // This handles OverlaySession limitation: it excludes submodules by design,
-    // but PreambleManager provides them for semantic indexing
-    if (diag.code == "UnknownModule" && preamble_manager != nullptr) {
-      // Message format: "unknown module 'foo_module'"
-      // Extract module name between single quotes
-      std::string_view message = diag.message;
-      auto start_pos = message.find('\'');
-      auto end_pos = message.rfind('\'');
-
-      if (start_pos != std::string_view::npos &&
-          end_pos != std::string_view::npos && end_pos > start_pos) {
-        auto module_name =
-            message.substr(start_pos + 1, end_pos - start_pos - 1);
-
-        // If PreambleManager has this module, it's a false positive
-        // (module exists in project, just not in OverlaySession)
-        if (preamble_manager->GetModuleDefinition(module_name) != nullptr) {
-          continue;  // Skip this diagnostic
-        }
-      }
     }
 
     result.push_back(diag);

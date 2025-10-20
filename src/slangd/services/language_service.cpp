@@ -36,8 +36,7 @@ auto LanguageService::CreateDiagnosticHook(std::string uri, int version)
 
     auto semantic_diagnostics =
         semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
-            *state.compilation, *state.source_manager, state.main_buffer_id,
-            preamble_manager_.get());
+            *state.compilation, *state.source_manager, state.main_buffer_id);
 
     // Combine diagnostics
     parse_diagnostics.insert(
@@ -70,9 +69,8 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
 
   if (preamble_manager_) {
     logger_->debug(
-        "LanguageService created PreambleManager with {} packages, version {}",
-        preamble_manager_->GetPackages().size(),
-        preamble_manager_->GetVersion());
+        "LanguageService created PreambleManager with {} packages",
+        preamble_manager_->GetPackageMap().size());
   } else {
     logger_->error("LanguageService failed to create PreambleManager");
   }
@@ -201,9 +199,8 @@ auto LanguageService::HandleConfigChange() -> asio::awaitable<void> {
 
   if (preamble_manager_) {
     logger_->debug(
-        "LanguageService rebuilt PreambleManager with {} packages, version {}",
-        preamble_manager_->GetPackages().size(),
-        preamble_manager_->GetVersion());
+        "LanguageService rebuilt PreambleManager with {} packages",
+        preamble_manager_->GetPackageMap().size());
   } else {
     logger_->error("LanguageService failed to rebuild PreambleManager");
   }

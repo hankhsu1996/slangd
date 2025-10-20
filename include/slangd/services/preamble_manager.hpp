@@ -2,10 +2,12 @@
 
 #include <memory>
 #include <string>
-#include <unordered_map>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include <slang/text/SourceLocation.h>
+#include <slang/util/Hash.h>
 #include <spdlog/spdlog.h>
 
 #include "slangd/core/project_layout_service.hpp"
@@ -17,6 +19,7 @@ namespace ast {
 class Compilation;
 class DefinitionSymbol;
 class PackageSymbol;
+class Scope;
 class Symbol;
 }  // namespace ast
 class SourceManager;
@@ -28,28 +31,9 @@ class DefinitionExtractor;
 
 namespace slangd::services {
 
-// Package entry: combines symbol pointer with cached metadata for fast
-// filtering
-struct PackageEntry {
-  const slang::ast::PackageSymbol* symbol = nullptr;
-  CanonicalPath file_path;
-};
-
-// Interface entry: combines definition symbol with cached metadata
-struct InterfaceEntry {
-  const slang::ast::Symbol* definition = nullptr;
-  CanonicalPath file_path;
-};
-
-// Module entry: combines definition symbol with cached metadata
-struct ModuleEntry {
-  const slang::ast::Symbol* definition = nullptr;
-  CanonicalPath file_path;
-};
-
-// PreambleManager: Immutable snapshot of package/interface metadata from
-// preamble compilation. Use CreateFromProjectLayout() factory method for
-// convenience.
+// PreambleManager: Immutable snapshot of preamble compilation.
+// Provides direct access to Slang Compilation's symbol collections.
+// Use CreateFromProjectLayout() factory method for convenience.
 class PreambleManager {
  public:
   // Default constructor
@@ -69,21 +53,12 @@ class PreambleManager {
   auto operator=(PreambleManager&&) -> PreambleManager& = delete;
   ~PreambleManager() = default;
 
-  // Accessors for preamble_manager data
-  [[nodiscard]] auto GetPackages() const
-      -> const std::unordered_map<std::string, PackageEntry>&;
-  [[nodiscard]] auto GetInterfaces() const
-      -> const std::unordered_map<std::string, InterfaceEntry>&;
-  [[nodiscard]] auto GetModules() const
-      -> const std::unordered_map<std::string, ModuleEntry>&;
-
-  // Symbol access for cross-compilation binding (convenience methods)
-  [[nodiscard]] auto GetPackage(std::string_view name) const
-      -> const slang::ast::PackageSymbol*;
-  [[nodiscard]] auto GetInterfaceDefinition(std::string_view name) const
-      -> const slang::ast::Symbol*;
-  [[nodiscard]] auto GetModuleDefinition(std::string_view name) const
-      -> const slang::ast::Symbol*;
+  // Direct access to Compilation's internal maps
+  [[nodiscard]] auto GetPackageMap() const -> const
+      slang::flat_hash_map<std::string_view, const slang::ast::PackageSymbol*>&;
+  [[nodiscard]] auto GetDefinitionMap() const -> const slang::flat_hash_map<
+      std::tuple<std::string_view, const slang::ast::Scope*>,
+      std::pair<std::vector<const slang::ast::Symbol*>, bool>>&;
 
   // Include directories and defines from ProjectLayoutService
   [[nodiscard]] auto GetIncludeDirectories() const
@@ -96,23 +71,14 @@ class PreambleManager {
   // Compilation accessor for symbol compilation checking
   [[nodiscard]] auto GetCompilation() const -> const slang::ast::Compilation&;
 
-  // Version tracking for cache invalidation
-  [[nodiscard]] auto GetVersion() const -> uint64_t;
-
   // Build preamble_manager from ProjectLayoutService - public method
   auto BuildFromLayout(
       std::shared_ptr<ProjectLayoutService> layout_service,
       std::shared_ptr<spdlog::logger> logger) -> void;
 
  private:
-  // Unified storage: symbol pointer + cached metadata for filtering
-  std::unordered_map<std::string, PackageEntry> packages_;
-  std::unordered_map<std::string, InterfaceEntry> interfaces_;
-  std::unordered_map<std::string, ModuleEntry> modules_;
-
   std::vector<CanonicalPath> include_directories_;
   std::vector<std::string> defines_;
-  uint64_t version_ = 1;
 
   // Preamble compilation objects
   std::shared_ptr<slang::ast::Compilation> preamble_compilation_;

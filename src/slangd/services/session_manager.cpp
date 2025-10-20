@@ -154,10 +154,7 @@ auto SessionManager::UpdatePreambleManager(
 
         logger_->debug(
             "SessionManager::UpdatePreambleManager: Updating preamble manager "
-            "pointer (old "
-            "version: {}, new version: {})",
-            preamble_manager_ ? preamble_manager_->GetVersion() : 0,
-            preamble_manager ? preamble_manager->GetVersion() : 0);
+            "pointer");
 
         preamble_manager_ = preamble_manager;
 

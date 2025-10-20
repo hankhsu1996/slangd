@@ -36,9 +36,7 @@ auto PreambleManager::CreateFromProjectLayout(
   auto preamble_manager = std::make_shared<PreambleManager>();
   preamble_manager->BuildFromLayout(layout_service, logger);
 
-  logger->debug(
-      "PreambleManager: Created with {} packages, version {}",
-      preamble_manager->packages_.size(), preamble_manager->version_);
+  logger->debug("PreambleManager: Created");
 
   return preamble_manager;
 }
@@ -96,99 +94,21 @@ auto PreambleManager::BuildFromLayout(
     }
   }
 
-  auto packages = preamble_compilation_->getPackages();
-  logger_->debug("PreambleManager: Extracting {} packages", packages.size());
-
-  packages_.clear();
-
-  for (const auto* package : packages) {
-    if (package == nullptr) {
-      continue;
-    }
-
-    auto file_path_str = source_manager_->getFileName(package->location);
-    CanonicalPath package_file_path(file_path_str);
-
-    packages_[std::string(package->name)] = PackageEntry{
-        .symbol = package, .file_path = std::move(package_file_path)};
-  }
-
-  logger_->debug("PreambleManager: Extracted {} packages", packages_.size());
-
-  auto definitions = preamble_compilation_->getDefinitions();
-  logger_->debug(
-      "PreambleManager: Extracting interfaces from {} definitions",
-      definitions.size());
-
-  interfaces_.clear();
-
-  for (const auto* symbol : definitions) {
-    if (symbol == nullptr) {
-      continue;
-    }
-
-    if (symbol->kind == slang::ast::SymbolKind::Definition) {
-      const auto& definition = symbol->as<slang::ast::DefinitionSymbol>();
-
-      if (definition.definitionKind == slang::ast::DefinitionKind::Interface) {
-        auto file_path_str = source_manager_->getFileName(definition.location);
-        CanonicalPath interface_file_path(file_path_str);
-
-        interfaces_[std::string(definition.name)] = InterfaceEntry{
-            .definition = &definition,
-            .file_path = std::move(interface_file_path)};
-      }
-    }
-  }
-
-  logger_->debug(
-      "PreambleManager: Extracted {} interfaces", interfaces_.size());
-
-  logger_->debug("PreambleManager: Extracting modules from definitions");
-
-  modules_.clear();
-
-  for (const auto* symbol : definitions) {
-    if (symbol == nullptr) {
-      continue;
-    }
-
-    if (symbol->kind == slang::ast::SymbolKind::Definition) {
-      const auto& definition = symbol->as<slang::ast::DefinitionSymbol>();
-
-      if (definition.definitionKind == slang::ast::DefinitionKind::Module) {
-        auto file_path_str = source_manager_->getFileName(definition.location);
-        CanonicalPath module_file_path(file_path_str);
-
-        modules_[std::string(definition.name)] = ModuleEntry{
-            .definition = &definition,
-            .file_path = std::move(module_file_path)};
-      }
-    }
-  }
-
   auto elapsed = timer.GetElapsed();
   logger_->info(
-      "PreambleManager: Build complete - {} packages, {} interfaces, {} "
-      "modules "
-      "({})",
-      packages_.size(), interfaces_.size(), modules_.size(),
+      "PreambleManager: Build complete ({})",
       utils::ScopedTimer::FormatDuration(elapsed));
 }
 
-auto PreambleManager::GetPackages() const
-    -> const std::unordered_map<std::string, PackageEntry>& {
-  return packages_;
+auto PreambleManager::GetPackageMap() const -> const
+    slang::flat_hash_map<std::string_view, const slang::ast::PackageSymbol*>& {
+  return preamble_compilation_->getPackageMap();
 }
 
-auto PreambleManager::GetInterfaces() const
-    -> const std::unordered_map<std::string, InterfaceEntry>& {
-  return interfaces_;
-}
-
-auto PreambleManager::GetModules() const
-    -> const std::unordered_map<std::string, ModuleEntry>& {
-  return modules_;
+auto PreambleManager::GetDefinitionMap() const -> const slang::flat_hash_map<
+    std::tuple<std::string_view, const slang::ast::Scope*>,
+    std::pair<std::vector<const slang::ast::Symbol*>, bool>>& {
+  return preamble_compilation_->getDefinitionMap();
 }
 
 auto PreambleManager::GetIncludeDirectories() const
@@ -206,37 +126,6 @@ auto PreambleManager::GetSourceManager() const -> const slang::SourceManager& {
 
 auto PreambleManager::GetCompilation() const -> const slang::ast::Compilation& {
   return *preamble_compilation_;
-}
-
-auto PreambleManager::GetVersion() const -> uint64_t {
-  return version_;
-}
-
-auto PreambleManager::GetPackage(std::string_view name) const
-    -> const slang::ast::PackageSymbol* {
-  auto it = packages_.find(std::string(name));
-  if (it != packages_.end()) {
-    return it->second.symbol;
-  }
-  return nullptr;
-}
-
-auto PreambleManager::GetInterfaceDefinition(std::string_view name) const
-    -> const slang::ast::Symbol* {
-  auto it = interfaces_.find(std::string(name));
-  if (it != interfaces_.end()) {
-    return it->second.definition;
-  }
-  return nullptr;
-}
-
-auto PreambleManager::GetModuleDefinition(std::string_view name) const
-    -> const slang::ast::Symbol* {
-  auto it = modules_.find(std::string(name));
-  if (it != modules_.end()) {
-    return it->second.definition;
-  }
-  return nullptr;
 }
 
 }  // namespace slangd::services
