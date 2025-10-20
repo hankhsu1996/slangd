@@ -23,8 +23,8 @@ class SlangdConfigFile {
 
   // Path filtering conditions (If block)
   struct PathCondition {
-    std::optional<std::string> path_match;    // Include only if matches
-    std::optional<std::string> path_exclude;  // Exclude if matches
+    std::vector<std::string> path_match;    // Include only if matches any
+    std::vector<std::string> path_exclude;  // Exclude if matches any
   };
 
   // Constructor with optional logger

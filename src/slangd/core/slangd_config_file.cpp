@@ -86,17 +86,43 @@ auto SlangdConfigFile::LoadFromFile(
     // Parse If section (path filtering)
     if (yaml["If"]) {
       if (yaml["If"]["PathMatch"]) {
-        config.path_condition_.path_match =
-            yaml["If"]["PathMatch"].as<std::string>();
-        config.logger_->debug(
-            "Loaded PathMatch: {}", *config.path_condition_.path_match);
+        const auto& match_node = yaml["If"]["PathMatch"];
+        if (match_node.IsScalar()) {
+          // Single pattern
+          config.path_condition_.path_match.push_back(
+              match_node.as<std::string>());
+          config.logger_->debug(
+              "Loaded PathMatch: {}", config.path_condition_.path_match[0]);
+        } else if (match_node.IsSequence()) {
+          // List of patterns
+          for (const auto& pattern : match_node) {
+            config.path_condition_.path_match.push_back(
+                pattern.as<std::string>());
+          }
+          config.logger_->debug(
+              "Loaded PathMatch with {} patterns",
+              config.path_condition_.path_match.size());
+        }
       }
 
       if (yaml["If"]["PathExclude"]) {
-        config.path_condition_.path_exclude =
-            yaml["If"]["PathExclude"].as<std::string>();
-        config.logger_->debug(
-            "Loaded PathExclude: {}", *config.path_condition_.path_exclude);
+        const auto& exclude_node = yaml["If"]["PathExclude"];
+        if (exclude_node.IsScalar()) {
+          // Single pattern
+          config.path_condition_.path_exclude.push_back(
+              exclude_node.as<std::string>());
+          config.logger_->debug(
+              "Loaded PathExclude: {}", config.path_condition_.path_exclude[0]);
+        } else if (exclude_node.IsSequence()) {
+          // List of patterns
+          for (const auto& pattern : exclude_node) {
+            config.path_condition_.path_exclude.push_back(
+                pattern.as<std::string>());
+          }
+          config.logger_->debug(
+              "Loaded PathExclude with {} patterns",
+              config.path_condition_.path_exclude.size());
+        }
       }
     }
 
@@ -123,8 +149,8 @@ auto SlangdConfigFile::LoadFromFile(
 auto SlangdConfigFile::ShouldIncludeFile(std::string_view relative_path) const
     -> bool {
   // No conditions specified -> include everything
-  if (!path_condition_.path_match.has_value() &&
-      !path_condition_.path_exclude.has_value()) {
+  if (path_condition_.path_match.empty() &&
+      path_condition_.path_exclude.empty()) {
     return true;
   }
 
@@ -132,19 +158,28 @@ auto SlangdConfigFile::ShouldIncludeFile(std::string_view relative_path) const
   std::string path_str(relative_path);
 
   try {
-    // Check PathMatch: if specified, path must match to be included
-    if (path_condition_.path_match.has_value()) {
-      std::regex match_pattern(*path_condition_.path_match);
-      if (!std::regex_match(path_str, match_pattern)) {
-        return false;  // Doesn't match PathMatch -> exclude
+    // Check PathMatch: if specified, path must match at least ONE pattern (OR)
+    if (!path_condition_.path_match.empty()) {
+      bool matches_any = false;
+      for (const auto& pattern : path_condition_.path_match) {
+        std::regex match_pattern(pattern);
+        if (std::regex_match(path_str, match_pattern)) {
+          matches_any = true;
+          break;  // Found a match, no need to check remaining patterns
+        }
+      }
+      if (!matches_any) {
+        return false;  // Doesn't match any PathMatch pattern -> exclude
       }
     }
 
-    // Check PathExclude: if specified and matches, exclude
-    if (path_condition_.path_exclude.has_value()) {
-      std::regex exclude_pattern(*path_condition_.path_exclude);
-      if (std::regex_match(path_str, exclude_pattern)) {
-        return false;  // Matches PathExclude -> exclude
+    // Check PathExclude: if specified and matches ANY pattern, exclude (OR)
+    if (!path_condition_.path_exclude.empty()) {
+      for (const auto& pattern : path_condition_.path_exclude) {
+        std::regex exclude_pattern(pattern);
+        if (std::regex_match(path_str, exclude_pattern)) {
+          return false;  // Matches a PathExclude pattern -> exclude
+        }
       }
     }
 

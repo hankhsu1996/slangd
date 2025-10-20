@@ -70,12 +70,24 @@ Use the `If` block to filter files during discovery. Both explicit file sources 
 
 ### PathExclude
 
-Exclude files matching a regex pattern (paths relative to workspace root):
+Exclude files matching a regex pattern (paths relative to workspace root).
 
+**Single pattern:**
 ```yaml
 If:
   PathExclude: .*/generated/.*    # Exclude generated code
 ```
+
+**Multiple patterns (OR logic):**
+```yaml
+If:
+  PathExclude:
+    - .*/generated/.*     # Exclude generated code OR
+    - .*_tb\.sv           # testbenches OR
+    - .*/build/.*         # build outputs
+```
+
+When multiple patterns are specified, a file is excluded if it matches **any** pattern (OR relationship).
 
 Common patterns:
 - `.*build/.*` - Exclude build outputs
@@ -84,24 +96,58 @@ Common patterns:
 
 ### PathMatch
 
-Include only files matching a regex pattern:
+Include only files matching a regex pattern.
 
+**Single pattern:**
 ```yaml
 If:
   PathMatch: rtl/.*\.sv$     # Only RTL .sv files
 ```
 
-### Combined Conditions
-
-PathMatch and PathExclude use AND logic:
-
+**Multiple patterns (OR logic):**
 ```yaml
 If:
-  PathMatch: rtl/.*          # Must be under rtl/
-  PathExclude: .*/generated/.*    # But not in generated/
+  PathMatch:
+    - rtl/.*\.sv      # Include RTL .sv files OR
+    - common/.*\.sv   # common .sv files
 ```
 
-This includes files under `rtl/` except those in `rtl/generated/`.
+When multiple patterns are specified, a file is included if it matches **any** pattern (OR relationship).
+
+### Combined Conditions
+
+PathMatch and PathExclude use AND logic between them:
+
+**Single patterns:**
+```yaml
+If:
+  PathMatch: rtl/.*          # Must be under rtl/ AND
+  PathExclude: .*/generated/.*    # not in generated/
+```
+
+**Mixed single and list:**
+```yaml
+If:
+  PathMatch:
+    - rtl/.*        # Must match rtl/ OR tb/ (OR within PathMatch) AND
+    - tb/.*
+  PathExclude: .*/generated/.*    # not match generated/ (single pattern)
+```
+
+**Multiple lists:**
+```yaml
+If:
+  PathMatch:
+    - rtl/.*        # Must match rtl/ OR common/ (OR within PathMatch) AND
+    - common/.*
+  PathExclude:
+    - .*/generated/.*    # not match generated/ OR build/ (OR within PathExclude)
+    - .*/build/.*
+```
+
+**Logic summary:**
+- Within a condition (PathMatch or PathExclude): **OR** - any pattern can match
+- Between conditions (PathMatch AND PathExclude): **AND** - must satisfy both
 
 ### Pattern Syntax
 

@@ -246,3 +246,123 @@ FileLists:
   REQUIRE(config.has_value());
   REQUIRE(config->GetAutoDiscover() == false);
 }
+
+TEST_CASE("SlangdConfigFile PathMatch with list uses OR logic", "[config]") {
+  const auto* content = R"(
+If:
+  PathMatch:
+    - rtl/.*\.sv
+    - tb/.*\.sv
+)";
+
+  TempConfigFile temp(content);
+  auto config = slangd::SlangdConfigFile::LoadFromFile(temp.Path());
+
+  REQUIRE(config.has_value());
+
+  // Should include files matching either pattern
+  REQUIRE(config->ShouldIncludeFile("rtl/design.sv"));
+  REQUIRE(config->ShouldIncludeFile("tb/testbench.sv"));
+
+  // Should exclude files not matching any pattern
+  REQUIRE(!config->ShouldIncludeFile("common/defines.sv"));
+  REQUIRE(!config->ShouldIncludeFile("rtl/design.svh"));
+}
+
+TEST_CASE("SlangdConfigFile PathExclude with list uses OR logic", "[config]") {
+  const auto* content = R"(
+If:
+  PathExclude:
+    - .*/generated/.*
+    - .*_tb\.sv
+    - .*/build/.*
+)";
+
+  TempConfigFile temp(content);
+  auto config = slangd::SlangdConfigFile::LoadFromFile(temp.Path());
+
+  REQUIRE(config.has_value());
+
+  // Should exclude files matching any pattern
+  REQUIRE(!config->ShouldIncludeFile("rtl/generated/generated.sv"));
+  REQUIRE(!config->ShouldIncludeFile("rtl/module_tb.sv"));
+  REQUIRE(!config->ShouldIncludeFile("rtl/build/output.sv"));
+
+  // Should include files not matching any pattern
+  REQUIRE(config->ShouldIncludeFile("rtl/design.sv"));
+  REQUIRE(config->ShouldIncludeFile("tb/testbench.sv"));
+}
+
+TEST_CASE("SlangdConfigFile PathMatch list AND PathExclude list", "[config]") {
+  const auto* content = R"(
+If:
+  PathMatch:
+    - rtl/.*
+    - tb/.*
+  PathExclude:
+    - .*/generated/.*
+    - .*_tb\.sv
+)";
+
+  TempConfigFile temp(content);
+  auto config = slangd::SlangdConfigFile::LoadFromFile(temp.Path());
+
+  REQUIRE(config.has_value());
+
+  // Should include: matches PathMatch AND doesn't match PathExclude
+  REQUIRE(config->ShouldIncludeFile("rtl/design.sv"));
+  REQUIRE(config->ShouldIncludeFile("tb/testbench.sv"));
+
+  // Should exclude: doesn't match any PathMatch pattern
+  REQUIRE(!config->ShouldIncludeFile("common/utils.sv"));
+
+  // Should exclude: matches PathMatch but also matches PathExclude
+  REQUIRE(!config->ShouldIncludeFile("rtl/generated/gen.sv"));
+  REQUIRE(!config->ShouldIncludeFile("rtl/module_tb.sv"));
+  REQUIRE(!config->ShouldIncludeFile("tb/top_tb.sv"));
+}
+
+TEST_CASE("SlangdConfigFile mixed single and list patterns", "[config]") {
+  const auto* content = R"(
+If:
+  PathMatch:
+    - rtl/.*
+    - common/.*
+  PathExclude: .*/generated/.*
+)";
+
+  TempConfigFile temp(content);
+  auto config = slangd::SlangdConfigFile::LoadFromFile(temp.Path());
+
+  REQUIRE(config.has_value());
+
+  // Should include: matches one of PathMatch list AND doesn't match single
+  // PathExclude
+  REQUIRE(config->ShouldIncludeFile("rtl/design.sv"));
+  REQUIRE(config->ShouldIncludeFile("common/defines.sv"));
+
+  // Should exclude: doesn't match PathMatch list
+  REQUIRE(!config->ShouldIncludeFile("tb/testbench.sv"));
+
+  // Should exclude: matches PathMatch list but matches PathExclude
+  REQUIRE(!config->ShouldIncludeFile("rtl/generated/gen.sv"));
+  REQUIRE(!config->ShouldIncludeFile("common/generated/gen.sv"));
+}
+
+TEST_CASE(
+    "SlangdConfigFile empty PathMatch list includes everything", "[config]") {
+  const auto* content = R"(
+If:
+  PathMatch: []
+)";
+
+  TempConfigFile temp(content);
+  auto config = slangd::SlangdConfigFile::LoadFromFile(temp.Path());
+
+  REQUIRE(config.has_value());
+
+  // Empty list means no filtering
+  REQUIRE(config->ShouldIncludeFile("rtl/design.sv"));
+  REQUIRE(config->ShouldIncludeFile("tb/testbench.sv"));
+  REQUIRE(config->ShouldIncludeFile("common/utils.sv"));
+}
