@@ -27,6 +27,39 @@ using slangd::test::RunAsyncTest;
 using Fixture = MultiFileSemanticFixture;
 
 TEST_CASE(
+    "Opening package file itself without duplicate diagnostics",
+    "[package][preamble][self]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string pkg = R"(
+      package util_pkg;
+        parameter WIDTH = 32;
+        typedef logic [WIDTH-1:0] data_t;
+      endpackage
+    )";
+
+    const std::string other = R"(
+      module dut;
+        import util_pkg::*;
+        data_t reg_data;
+      endmodule
+    )";
+
+    fixture.CreateBufferIDOffset();
+    fixture.CreateFile("util_pkg.sv", pkg);
+    fixture.CreateFile("dut.sv", other);
+
+    // Open the package file itself - package appears in both preamble and
+    // overlay
+    auto session = fixture.BuildSession("util_pkg.sv", executor);
+    Fixture::AssertNoErrors(*session);
+
+    co_return;
+  });
+}
+
+TEST_CASE(
     "Cross-compilation package binding with PreambleManager",
     "[package][preamble]") {
   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
@@ -55,8 +88,7 @@ TEST_CASE(
     fixture.CreateFile("module_file.sv", ref);
 
     auto session = fixture.BuildSession("module_file.sv", executor);
-    REQUIRE(session != nullptr);
-
+    Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "config_pkg", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "DATA_WIDTH", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "word_t", 0, 0);
@@ -99,8 +131,7 @@ TEST_CASE(
     fixture.CreateFile("top.sv", ref);
 
     auto session = fixture.BuildSession("top.sv", executor);
-    REQUIRE(session != nullptr);
-
+    Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def1, "word_t", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def2, "BUS_WIDTH", 0, 0);
 
@@ -139,8 +170,7 @@ TEST_CASE(
     fixture.CreateFile("counter.sv", ref);
 
     auto session = fixture.BuildSession("counter.sv", executor);
-    REQUIRE(session != nullptr);
-
+    Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "config_pkg", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "counter_t", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "MAX_COUNT", 0, 0);
@@ -182,8 +212,7 @@ TEST_CASE(
     fixture.CreateFile("test.sv", ref);
 
     auto session = fixture.BuildSession("test.sv", executor);
-    REQUIRE(session != nullptr);
-
+    Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "field_a", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "field_b", 0, 0);
 
@@ -225,8 +254,7 @@ TEST_CASE(
     fixture.CreateFile("processor.sv", ref);
 
     auto session = fixture.BuildSession("processor.sv", executor);
-    REQUIRE(session != nullptr);
-
+    Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "STATUS_OK", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "STATUS_ERROR", 0, 0);
 
@@ -269,8 +297,7 @@ TEST_CASE(
     fixture.CreateFile("processor.sv", ref);
 
     auto session = fixture.BuildSession("processor.sv", executor);
-    REQUIRE(session != nullptr);
-
+    Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "HelperClass", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "INDEX", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "WIDTH", 0, 0);
@@ -325,7 +352,7 @@ TEST_CASE(
     fixture.CreateFile("cpu.sv", ref);
 
     auto session = fixture.BuildSession("cpu.sv", executor);
-    REQUIRE(session != nullptr);
+    Fixture::AssertNoErrors(*session);
 
     // TODO: L1Cache should resolve to typedef (line 10) not generic class (line
     // 4) Currently resolves to generic class Cache definition More intuitive
