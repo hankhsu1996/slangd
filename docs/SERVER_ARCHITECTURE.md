@@ -158,7 +158,7 @@ SlangdLspServer (LSP protocol layer)
   - Interfaces from PreambleManager (read from disk via `SyntaxTree::fromFile`)
   - Per-file, cached by SessionManager (LRU eviction)
 
-**Critical insight:** Packages are NOT loaded as syntax trees - PreambleAwareCompilation injects preamble PackageSymbol\* pointers directly into packageMap for cross-compilation binding. Interfaces are still read from disk for port resolution. See `PACKAGE_PREAMBLE.md` for details.
+**Critical insight:** Packages are NOT loaded as syntax trees - PreambleAwareCompilation injects preamble PackageSymbol\* pointers directly into packageMap for cross-compilation binding. Interfaces are still read from disk for port resolution. See `PREAMBLE.md` for details.
 
 **Invalidation rules:**
 
