@@ -45,8 +45,7 @@ auto SessionManager::UpdateSession(
     std::optional<SessionReadyHook> on_session_ready) -> asio::awaitable<void> {
   co_await asio::post(session_strand_, asio::use_awaitable);
 
-  logger_->debug(
-      "SessionManager::UpdateSession: {} (version {})", uri, version);
+  logger_->debug("Session update: {} (version {})", uri, version);
 
   // Check if we have a cached session with the same version
   if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
@@ -96,7 +95,7 @@ auto SessionManager::InvalidateSessions(std::vector<std::string> uris) -> void {
           active_sessions_.erase(uri);
           std::erase(access_order_, uri);
           pending_sessions_.erase(uri);
-          logger_->debug("SessionManager::InvalidateSessions: {}", uri);
+          logger_->debug("Session invalidated: {}", uri);
         }
         co_return;
       },
@@ -110,7 +109,7 @@ auto SessionManager::InvalidateAllSessions() -> void {
         co_await asio::post(session_strand_, asio::use_awaitable);
 
         logger_->debug(
-            "SessionManager::InvalidateAllSessions ({} active, {} pending)",
+            "All sessions invalidated ({} active, {} pending)",
             active_sessions_.size(), pending_sessions_.size());
 
         for (auto& [uri, pending] : pending_sessions_) {
@@ -152,9 +151,7 @@ auto SessionManager::UpdatePreambleManager(
       [this, preamble_manager]() -> asio::awaitable<void> {
         co_await asio::post(session_strand_, asio::use_awaitable);
 
-        logger_->debug(
-            "SessionManager::UpdatePreambleManager: Updating preamble manager "
-            "pointer");
+        logger_->debug("Preamble manager updated");
 
         preamble_manager_ = preamble_manager;
 
@@ -180,9 +177,6 @@ auto SessionManager::StartSessionCreation(
             [uri, content, this, pending]()
                 -> asio::awaitable<
                     std::optional<std::shared_ptr<OverlaySession>>> {
-              utils::ScopedTimer timer(
-                  "SessionManager session creation", logger_);
-
               // Check cancellation flag (lock-free, stays on pool thread)
               if (pending->cancelled.load(std::memory_order_acquire)) {
                 logger_->debug(
@@ -246,17 +240,12 @@ auto SessionManager::StartSessionCreation(
               // evicted)
               if (pending->on_compilation_ready) {
                 CompilationState state{
-                    .source_manager = partial_session->GetSourceManagerPtr(),
                     .compilation = partial_session->GetCompilationPtr(),
                     .main_buffer_id = partial_session->GetMainBufferID()};
                 (*pending->on_compilation_ready)(state);
               }
 
               pending->compilation_ready.Set();
-
-              logger_->debug(
-                  "SessionManager Phase 1 complete (elaboration): {}", uri);
-
               co_return partial_session;
             },
             asio::use_awaitable);
@@ -279,8 +268,6 @@ auto SessionManager::StartSessionCreation(
               }
 
               pending->session_ready.Set();
-              logger_->debug(
-                  "SessionManager Phase 2 complete (indexing): {}", uri);
             }
             pending_sessions_.erase(it);
           } else {

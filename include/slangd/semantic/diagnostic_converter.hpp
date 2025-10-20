@@ -24,7 +24,7 @@ class DiagnosticConverter {
       slang::ast::Compilation& compilation,
       const slang::SourceManager& source_manager,
       slang::BufferID main_buffer_id,
-      std::shared_ptr<spdlog::logger> logger = nullptr)
+      std::shared_ptr<spdlog::logger> logger = spdlog::default_logger())
       -> std::vector<lsp::Diagnostic>;
 
   // Extract diagnostics collected during file-scoped traversal (NO elaboration)

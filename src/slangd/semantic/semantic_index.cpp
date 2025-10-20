@@ -77,13 +77,8 @@ auto SemanticIndex::FromCompilation(
     const services::PreambleManager* preamble_manager,
     std::shared_ptr<spdlog::logger> logger)
     -> std::expected<std::unique_ptr<SemanticIndex>, std::string> {
-  if (!logger) {
-    logger = spdlog::default_logger();
-  }
-
   utils::ScopedTimer timer(
-      fmt::format("SemanticIndex::FromCompilation [{}]", current_file_uri),
-      logger);
+      fmt::format("Semantic indexing: {}", current_file_uri), logger);
 
   auto index = std::unique_ptr<SemanticIndex>(
       new SemanticIndex(source_manager, current_file_uri, logger));

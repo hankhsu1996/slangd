@@ -43,7 +43,7 @@ class PreambleManager {
   // Creates a preamble compilation from all project files and extracts metadata
   [[nodiscard]] static auto CreateFromProjectLayout(
       std::shared_ptr<ProjectLayoutService> layout_service,
-      std::shared_ptr<spdlog::logger> logger = nullptr)
+      std::shared_ptr<spdlog::logger> logger = spdlog::default_logger())
       -> std::shared_ptr<PreambleManager>;
 
   // Non-copyable, non-movable

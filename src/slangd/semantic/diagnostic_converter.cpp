@@ -11,10 +11,6 @@ auto DiagnosticConverter::ExtractParseDiagnostics(
     slang::ast::Compilation& compilation,
     const slang::SourceManager& source_manager, slang::BufferID main_buffer_id,
     std::shared_ptr<spdlog::logger> logger) -> std::vector<lsp::Diagnostic> {
-  if (!logger) {
-    logger = spdlog::default_logger();
-  }
-
   auto slang_diagnostics = compilation.getParseDiagnostics();
   auto diagnostics =
       ExtractDiagnostics(slang_diagnostics, source_manager, main_buffer_id);

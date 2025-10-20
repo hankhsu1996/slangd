@@ -26,7 +26,7 @@ class OverlaySession {
       std::string uri, std::string content,
       std::shared_ptr<ProjectLayoutService> layout_service,
       std::shared_ptr<const PreambleManager> preamble_manager = nullptr,
-      std::shared_ptr<spdlog::logger> logger = nullptr)
+      std::shared_ptr<spdlog::logger> logger = spdlog::default_logger())
       -> std::shared_ptr<OverlaySession>;
 
   // Core compilation building logic (used by Create and parse diagnostics)
@@ -35,7 +35,7 @@ class OverlaySession {
       std::string uri, std::string content,
       std::shared_ptr<ProjectLayoutService> layout_service,
       std::shared_ptr<const PreambleManager> preamble_manager,
-      std::shared_ptr<spdlog::logger> logger)
+      std::shared_ptr<spdlog::logger> logger = spdlog::default_logger())
       -> std::tuple<
           std::shared_ptr<slang::SourceManager>,
           std::unique_ptr<slang::ast::Compilation>, slang::BufferID>;
@@ -46,7 +46,8 @@ class OverlaySession {
       std::shared_ptr<slang::SourceManager> source_manager,
       std::shared_ptr<slang::ast::Compilation> compilation,
       std::unique_ptr<semantic::SemanticIndex> semantic_index,
-      slang::BufferID main_buffer_id, std::shared_ptr<spdlog::logger> logger,
+      slang::BufferID main_buffer_id,
+      std::shared_ptr<spdlog::logger> logger = spdlog::default_logger(),
       std::shared_ptr<const PreambleManager> preamble_manager = nullptr)
       -> std::shared_ptr<OverlaySession>;
 

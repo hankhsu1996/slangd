@@ -48,10 +48,6 @@ auto OverlaySession::Create(
     std::shared_ptr<ProjectLayoutService> layout_service,
     std::shared_ptr<const PreambleManager> preamble_manager,
     std::shared_ptr<spdlog::logger> logger) -> std::shared_ptr<OverlaySession> {
-  if (!logger) {
-    logger = spdlog::default_logger();
-  }
-
   utils::ScopedTimer timer("OverlaySession creation", logger);
   logger->debug("Creating overlay session for: {}", uri);
 
@@ -123,9 +119,7 @@ auto OverlaySession::BuildCompilation(
     -> std::tuple<
         std::shared_ptr<slang::SourceManager>,
         std::unique_ptr<slang::ast::Compilation>, slang::BufferID> {
-  if (!logger) {
-    logger = spdlog::default_logger();
-  }
+  utils::ScopedTimer timer("Compilation", logger);
 
   // Create fresh source manager
   auto source_manager = std::make_shared<slang::SourceManager>();
@@ -144,11 +138,6 @@ auto OverlaySession::BuildCompilation(
       pp_options.predefines.push_back(define);
     }
     options.set(pp_options);
-
-    logger->debug(
-        "Applied {} include dirs, {} defines",
-        layout_service->GetIncludeDirectories().size(),
-        layout_service->GetDefines().size());
   }
 
   // Get file path for deduplication (needed before creating compilation)

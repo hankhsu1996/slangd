@@ -60,7 +60,7 @@ class SemanticIndex {
       const slang::SourceManager& source_manager,
       const std::string& current_file_uri,
       const services::PreambleManager* preamble_manager = nullptr,
-      std::shared_ptr<spdlog::logger> logger = nullptr)
+      std::shared_ptr<spdlog::logger> logger = spdlog::default_logger())
       -> std::expected<std::unique_ptr<SemanticIndex>, std::string>;
 
   // Query methods

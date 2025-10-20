@@ -31,12 +31,13 @@ auto LanguageService::CreateDiagnosticHook(std::string uri, int version)
     // Extract diagnostics (on strand, session cannot be evicted)
     auto parse_diagnostics =
         semantic::DiagnosticConverter::ExtractParseDiagnostics(
-            *state.compilation, *state.source_manager, state.main_buffer_id,
-            logger_);
+            *state.compilation, *state.compilation->getSourceManager(),
+            state.main_buffer_id, logger_);
 
     auto semantic_diagnostics =
         semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
-            *state.compilation, *state.source_manager, state.main_buffer_id);
+            *state.compilation, *state.compilation->getSourceManager(),
+            state.main_buffer_id);
 
     // Combine diagnostics
     parse_diagnostics.insert(

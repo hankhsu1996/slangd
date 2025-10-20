@@ -26,10 +26,6 @@ auto PreambleManager::CreateFromProjectLayout(
     return nullptr;
   }
 
-  if (!logger) {
-    logger = spdlog::default_logger();
-  }
-
   logger->debug("PreambleManager: Creating from ProjectLayoutService");
 
   // Create preamble_manager instance and initialize it
