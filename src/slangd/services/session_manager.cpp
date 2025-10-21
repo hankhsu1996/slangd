@@ -1,5 +1,7 @@
 #include "slangd/services/session_manager.hpp"
 
+#include <thread>
+
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/post.hpp>
@@ -29,7 +31,11 @@ SessionManager::SessionManager(
       open_tracker_(std::move(open_tracker)),
       logger_(std::move(logger)),
       session_strand_(asio::make_strand(executor)),
-      compilation_pool_(std::make_unique<asio::thread_pool>(4)) {
+      compilation_pool_(std::make_unique<asio::thread_pool>([] {
+        const auto hw_threads = std::thread::hardware_concurrency();
+        const auto num_threads = std::min(hw_threads / 2, 16U);
+        return num_threads == 0 ? 1U : num_threads;
+      }())) {
 }
 
 SessionManager::~SessionManager() {

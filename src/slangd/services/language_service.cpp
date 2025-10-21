@@ -65,8 +65,8 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
       ProjectLayoutService::Create(executor_, workspace_path, logger_);
   co_await layout_service_->LoadConfig(workspace_path);
 
-  preamble_manager_ =
-      PreambleManager::CreateFromProjectLayout(layout_service_, logger_);
+  preamble_manager_ = co_await PreambleManager::CreateFromProjectLayout(
+      layout_service_, compilation_pool_->get_executor(), logger_);
 
   if (preamble_manager_) {
     logger_->debug(
@@ -195,8 +195,8 @@ auto LanguageService::HandleConfigChange() -> asio::awaitable<void> {
   layout_service_->RebuildLayout();
 
   // Rebuild PreambleManager with new configuration (search paths, macros, etc.)
-  preamble_manager_ =
-      PreambleManager::CreateFromProjectLayout(layout_service_, logger_);
+  preamble_manager_ = co_await PreambleManager::CreateFromProjectLayout(
+      layout_service_, compilation_pool_->get_executor(), logger_);
 
   if (preamble_manager_) {
     logger_->debug(

@@ -278,11 +278,12 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
   // Build PreambleManager from temp directory files
   // Requires files to be written via CreateFile() first
   auto BuildPreambleManager(asio::any_io_executor executor) const
-      -> std::shared_ptr<slangd::services::PreambleManager> {
+      -> asio::awaitable<std::shared_ptr<slangd::services::PreambleManager>> {
     auto layout_service = slangd::ProjectLayoutService::Create(
         executor, GetTempDir(), spdlog::default_logger());
-    return slangd::services::PreambleManager::CreateFromProjectLayout(
-        layout_service, spdlog::default_logger());
+    co_return co_await slangd::services::PreambleManager::
+        CreateFromProjectLayout(
+            layout_service, executor, spdlog::default_logger());
   }
 
   // Create BufferID offset package to force validation detection of missing
@@ -309,12 +310,12 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
   // Used for cross-file navigation tests with preamble support
   auto BuildSession(
       std::string_view current_file_name, asio::any_io_executor executor)
-      -> std::shared_ptr<slangd::services::OverlaySession> {
+      -> asio::awaitable<std::shared_ptr<slangd::services::OverlaySession>> {
     auto layout_service = slangd::ProjectLayoutService::Create(
         executor, GetTempDir(), spdlog::default_logger());
     auto preamble_manager =
-        slangd::services::PreambleManager::CreateFromProjectLayout(
-            layout_service, spdlog::default_logger());
+        co_await slangd::services::PreambleManager::CreateFromProjectLayout(
+            layout_service, executor, spdlog::default_logger());
 
     // Read current file content from disk
     auto current_path = GetTempDir().Path() / current_file_name;
@@ -326,9 +327,8 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
     // Convert actual file path to URI
     std::string uri = CanonicalPath(current_path).ToUri();
 
-    // Create OverlaySession with preamble_manager (handles all compilation
-    // setup)
-    return slangd::services::OverlaySession::Create(
+    // Create OverlaySession with preamble_manager
+    co_return slangd::services::OverlaySession::Create(
         uri, content, layout_service, preamble_manager);
   }
 

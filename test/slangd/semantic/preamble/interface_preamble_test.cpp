@@ -50,7 +50,7 @@ TEST_CASE(
     fixture.CreateFile("simple_if.sv", def);
     fixture.CreateFile("dut.sv", ref);
 
-    auto session = fixture.BuildSession("dut.sv", executor);
+    auto session = co_await fixture.BuildSession("dut.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "simple_if", 0, 0);
 
@@ -83,7 +83,7 @@ TEST_CASE(
     fixture.CreateFile("bus_if.sv", def);
     fixture.CreateFile("processor.sv", ref);
 
-    auto session = fixture.BuildSession("processor.sv", executor);
+    auto session = co_await fixture.BuildSession("processor.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "bus_if", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "bus_if", 1, 0);
@@ -117,7 +117,7 @@ TEST_CASE(
     fixture.CreateFile("channel_if.sv", def);
     fixture.CreateFile("router.sv", ref);
 
-    auto session = fixture.BuildSession("router.sv", executor);
+    auto session = co_await fixture.BuildSession("router.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "channel_if", 0, 0);
 
@@ -149,7 +149,7 @@ TEST_CASE(
     fixture.CreateFile("data_if.sv", def);
     fixture.CreateFile("top.sv", ref);
 
-    auto session = fixture.BuildSession("top.sv", executor);
+    auto session = co_await fixture.BuildSession("top.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "data_if", 0, 0);
 
@@ -182,7 +182,7 @@ TEST_CASE(
     fixture.CreateFile("axi_if.sv", def);
     fixture.CreateFile("master.sv", ref);
 
-    auto session = fixture.BuildSession("master.sv", executor);
+    auto session = co_await fixture.BuildSession("master.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "axi_if", 0, 0);
 
@@ -216,7 +216,7 @@ TEST_CASE(
     fixture.CreateFile("stream_if.sv", def);
     fixture.CreateFile("arbiter.sv", ref);
 
-    auto session = fixture.BuildSession("arbiter.sv", executor);
+    auto session = co_await fixture.BuildSession("arbiter.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "stream_if", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "stream_if", 1, 0);
@@ -260,7 +260,7 @@ TEST_CASE(
     fixture.CreateFile("stream_if.sv", if_def);
     fixture.CreateFile("arbiter.sv", ref);
 
-    auto session = fixture.BuildSession("arbiter.sv", executor);
+    auto session = co_await fixture.BuildSession("arbiter.sv", executor);
     Fixture::AssertNoErrors(*session);
     // Verify interface type can be resolved
     Fixture::AssertCrossFileDef(*session, ref, if_def, "stream_if", 0, 0);
@@ -300,7 +300,7 @@ TEST_CASE(
     fixture.CreateFile("handshake_if.sv", def);
     fixture.CreateFile("requester.sv", ref);
 
-    auto session = fixture.BuildSession("requester.sv", executor);
+    auto session = co_await fixture.BuildSession("requester.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "handshake_if", 0, 0);
 
@@ -343,7 +343,7 @@ TEST_CASE(
     fixture.CreateFile("memory_if.sv", def2);
     fixture.CreateFile("controller.sv", ref);
 
-    auto session = fixture.BuildSession("controller.sv", executor);
+    auto session = co_await fixture.BuildSession("controller.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def1, "fifo_if", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def1, "fifo_if", 1, 0);
@@ -382,7 +382,7 @@ TEST_CASE(
     fixture.CreateFile("simple_if.sv", def);
     fixture.CreateFile("dut.sv", ref);
 
-    auto session = fixture.BuildSession("dut.sv", executor);
+    auto session = co_await fixture.BuildSession("dut.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "data", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "valid", 0, 0);
@@ -421,7 +421,7 @@ TEST_CASE(
     fixture.CreateFile("channel_if.sv", def);
     fixture.CreateFile("router.sv", ref);
 
-    auto session = fixture.BuildSession("router.sv", executor);
+    auto session = co_await fixture.BuildSession("router.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "data", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "valid", 0, 0);
@@ -460,7 +460,7 @@ TEST_CASE(
     fixture.CreateFile("axi_if.sv", def);
     fixture.CreateFile("master.sv", ref);
 
-    auto session = fixture.BuildSession("master.sv", executor);
+    auto session = co_await fixture.BuildSession("master.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "awaddr", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "awvalid", 0, 0);
@@ -501,7 +501,7 @@ TEST_CASE(
     fixture.CreateFile("stream_if.sv", def);
     fixture.CreateFile("arbiter.sv", ref);
 
-    auto session = fixture.BuildSession("arbiter.sv", executor);
+    auto session = co_await fixture.BuildSession("arbiter.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "data", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "valid", 0, 0);

@@ -6,6 +6,8 @@
 #include <utility>
 #include <vector>
 
+#include <asio/any_io_executor.hpp>
+#include <asio/awaitable.hpp>
 #include <slang/text/SourceLocation.h>
 #include <slang/util/Hash.h>
 #include <spdlog/spdlog.h>
@@ -43,8 +45,9 @@ class PreambleManager {
   // Creates a preamble compilation from all project files and extracts metadata
   [[nodiscard]] static auto CreateFromProjectLayout(
       std::shared_ptr<ProjectLayoutService> layout_service,
+      asio::any_io_executor compilation_executor,
       std::shared_ptr<spdlog::logger> logger = spdlog::default_logger())
-      -> std::shared_ptr<PreambleManager>;
+      -> asio::awaitable<std::shared_ptr<PreambleManager>>;
 
   // Non-copyable, non-movable
   PreambleManager(const PreambleManager&) = delete;
@@ -74,7 +77,8 @@ class PreambleManager {
   // Build preamble_manager from ProjectLayoutService - public method
   auto BuildFromLayout(
       std::shared_ptr<ProjectLayoutService> layout_service,
-      std::shared_ptr<spdlog::logger> logger) -> void;
+      std::shared_ptr<spdlog::logger> logger,
+      asio::any_io_executor compilation_executor) -> asio::awaitable<void>;
 
  private:
   std::vector<CanonicalPath> include_directories_;

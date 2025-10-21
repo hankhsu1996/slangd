@@ -52,7 +52,7 @@ TEST_CASE(
 
     // Open the package file itself - package appears in both preamble and
     // overlay
-    auto session = fixture.BuildSession("util_pkg.sv", executor);
+    auto session = co_await fixture.BuildSession("util_pkg.sv", executor);
     Fixture::AssertNoErrors(*session);
 
     co_return;
@@ -87,7 +87,7 @@ TEST_CASE(
     fixture.CreateFile("package_file.sv", def);
     fixture.CreateFile("module_file.sv", ref);
 
-    auto session = fixture.BuildSession("module_file.sv", executor);
+    auto session = co_await fixture.BuildSession("module_file.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "config_pkg", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "DATA_WIDTH", 0, 0);
@@ -130,7 +130,7 @@ TEST_CASE(
     fixture.CreateFile("constants_pkg.sv", def2);
     fixture.CreateFile("top.sv", ref);
 
-    auto session = fixture.BuildSession("top.sv", executor);
+    auto session = co_await fixture.BuildSession("top.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def1, "word_t", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def2, "BUS_WIDTH", 0, 0);
@@ -169,7 +169,7 @@ TEST_CASE(
     fixture.CreateFile("config_pkg.sv", def);
     fixture.CreateFile("counter.sv", ref);
 
-    auto session = fixture.BuildSession("counter.sv", executor);
+    auto session = co_await fixture.BuildSession("counter.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "config_pkg", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "counter_t", 0, 0);
@@ -211,7 +211,7 @@ TEST_CASE(
     fixture.CreateFile("types_pkg.sv", def);
     fixture.CreateFile("test.sv", ref);
 
-    auto session = fixture.BuildSession("test.sv", executor);
+    auto session = co_await fixture.BuildSession("test.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "field_a", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "field_b", 0, 0);
@@ -253,7 +253,7 @@ TEST_CASE(
     fixture.CreateFile("status_pkg.sv", def);
     fixture.CreateFile("processor.sv", ref);
 
-    auto session = fixture.BuildSession("processor.sv", executor);
+    auto session = co_await fixture.BuildSession("processor.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "STATUS_OK", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "STATUS_ERROR", 0, 0);
@@ -296,7 +296,7 @@ TEST_CASE(
     fixture.CreateFile("util_pkg.sv", def);
     fixture.CreateFile("processor.sv", ref);
 
-    auto session = fixture.BuildSession("processor.sv", executor);
+    auto session = co_await fixture.BuildSession("processor.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "HelperClass", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "INDEX", 0, 0);
@@ -351,7 +351,7 @@ TEST_CASE(
     fixture.CreateFile("cache_pkg.sv", def);
     fixture.CreateFile("cpu.sv", ref);
 
-    auto session = fixture.BuildSession("cpu.sv", executor);
+    auto session = co_await fixture.BuildSession("cpu.sv", executor);
     Fixture::AssertNoErrors(*session);
 
     // TODO: L1Cache should resolve to typedef (line 10) not generic class (line

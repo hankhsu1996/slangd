@@ -49,7 +49,7 @@ TEST_CASE(
     fixture.CreateFile("alu.sv", def);
     fixture.CreateFile("top.sv", ref);
 
-    auto session = fixture.BuildSession("top.sv", executor);
+    auto session = co_await fixture.BuildSession("top.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "ALU", 0, 0);
 
@@ -82,7 +82,7 @@ TEST_CASE(
     fixture.CreateFile("adder.sv", def);
     fixture.CreateFile("top.sv", ref);
 
-    auto session = fixture.BuildSession("top.sv", executor);
+    auto session = co_await fixture.BuildSession("top.sv", executor);
     Fixture::AssertCrossFileDef(*session, ref, def, "a_port", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "c_port", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "sum_port", 0, 0);
@@ -121,7 +121,7 @@ TEST_CASE(
     fixture.CreateFile("configurable.sv", def);
     fixture.CreateFile("top.sv", ref);
 
-    auto session = fixture.BuildSession("top.sv", executor);
+    auto session = co_await fixture.BuildSession("top.sv", executor);
     Fixture::AssertCrossFileDef(*session, ref, def, "PARAM_A", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "PARAM_C", 0, 0);
 
@@ -163,7 +163,7 @@ TEST_CASE(
     fixture.CreateFile("alu.sv", def);
     fixture.CreateFile("top.sv", ref);
 
-    auto session = fixture.BuildSession("top.sv", executor);
+    auto session = co_await fixture.BuildSession("top.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "ALU", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "DATA_WIDTH", 0, 0);
@@ -204,7 +204,7 @@ TEST_CASE(
     fixture.CreateFile("counter.sv", def);
     fixture.CreateFile("top.sv", ref);
 
-    auto session = fixture.BuildSession("top.sv", executor);
+    auto session = co_await fixture.BuildSession("top.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "counter", 0, 0);
 
@@ -247,7 +247,7 @@ TEST_CASE(
     fixture.CreateFile("multiplier.sv", def2);
     fixture.CreateFile("calculator.sv", ref);
 
-    auto session = fixture.BuildSession("calculator.sv", executor);
+    auto session = co_await fixture.BuildSession("calculator.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def1, "adder", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def2, "multiplier", 0, 0);
@@ -287,7 +287,7 @@ TEST_CASE(
     fixture.CreateFile("configurable.sv", def);
     fixture.CreateFile("top.sv", ref);
 
-    auto session = fixture.BuildSession("top.sv", executor);
+    auto session = co_await fixture.BuildSession("top.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def, "MODE", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def, "MODE", 1, 0);
@@ -334,7 +334,7 @@ TEST_CASE(
     fixture.CreateFile("module_b.sv", def_b);
     fixture.CreateFile("top.sv", ref);
 
-    auto session = fixture.BuildSession("top.sv", executor);
+    auto session = co_await fixture.BuildSession("top.sv", executor);
     Fixture::AssertNoErrors(*session);
     Fixture::AssertCrossFileDef(*session, ref, def_a, "ModuleA", 0, 0);
     Fixture::AssertCrossFileDef(*session, ref, def_b, "ModuleB", 0, 0);
