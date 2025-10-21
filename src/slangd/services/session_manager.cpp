@@ -1,7 +1,5 @@
 #include "slangd/services/session_manager.hpp"
 
-#include <ranges>
-
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/post.hpp>
@@ -9,7 +7,6 @@
 #include <asio/use_awaitable.hpp>
 
 #include "slangd/services/overlay_session.hpp"
-#include "slangd/utils/scoped_timer.hpp"
 
 namespace slangd::services {
 
@@ -47,20 +44,27 @@ auto SessionManager::UpdateSession(
 
   logger_->debug("Session update: {} (version {})", uri, version);
 
-  // Check if we have a cached session with the same version
-  if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
+  // Cancel cleanup timer if exists (file reopened within cleanup window)
+  if (auto timer_it = cleanup_timers_.find(uri);
+      timer_it != cleanup_timers_.end()) {
+    timer_it->second->cancel();
+    cleanup_timers_.erase(timer_it);
+    logger_->debug("Cancelled cleanup timer for reopened file: {}", uri);
+  }
+
+  // Check if we have a stored session with the same version
+  if (auto it = sessions_.find(uri); it != sessions_.end()) {
     if (it->second.version == version) {
-      UpdateAccessOrder(uri);
       co_return;
     }
     logger_->debug(
         "SessionManager version changed: {} (old: {}, new: {})", uri,
         it->second.version, version);
-    active_sessions_.erase(uri);
+    sessions_.erase(uri);
   }
 
   // Check if pending session already exists
-  if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
+  if (auto it = pending_.find(uri); it != pending_.end()) {
     if (it->second->version == version) {
       co_return;  // Same version, reuse pending session
     } else {
@@ -70,13 +74,13 @@ auto SessionManager::UpdateSession(
           "new version {})",
           uri, it->second->version, version);
       it->second->cancelled.store(true, std::memory_order_release);
-      pending_sessions_.erase(it);
+      pending_.erase(it);
     }
   }
 
   auto new_pending = StartSessionCreation(
       uri, content, version, on_compilation_ready, on_session_ready);
-  pending_sessions_[uri] = new_pending;
+  pending_[uri] = new_pending;
 
   co_return;
 }
@@ -88,13 +92,17 @@ auto SessionManager::InvalidateSessions(std::vector<std::string> uris) -> void {
         co_await asio::post(session_strand_, asio::use_awaitable);
 
         for (const auto& uri : uris) {
-          if (auto it = pending_sessions_.find(uri);
-              it != pending_sessions_.end()) {
+          if (auto it = pending_.find(uri); it != pending_.end()) {
             it->second->cancelled.store(true, std::memory_order_release);
           }
-          active_sessions_.erase(uri);
-          std::erase(access_order_, uri);
-          pending_sessions_.erase(uri);
+          // Cancel cleanup timer if exists
+          if (auto timer_it = cleanup_timers_.find(uri);
+              timer_it != cleanup_timers_.end()) {
+            timer_it->second->cancel();
+            cleanup_timers_.erase(timer_it);
+          }
+          sessions_.erase(uri);
+          pending_.erase(uri);
           logger_->debug("Session invalidated: {}", uri);
         }
         co_return;
@@ -109,16 +117,21 @@ auto SessionManager::InvalidateAllSessions() -> void {
         co_await asio::post(session_strand_, asio::use_awaitable);
 
         logger_->debug(
-            "All sessions invalidated ({} active, {} pending)",
-            active_sessions_.size(), pending_sessions_.size());
+            "All sessions invalidated ({} stored, {} pending)",
+            sessions_.size(), pending_.size());
 
-        for (auto& [uri, pending] : pending_sessions_) {
+        for (auto& [uri, pending] : pending_) {
           pending->cancelled.store(true, std::memory_order_release);
         }
 
-        active_sessions_.clear();
-        access_order_.clear();
-        pending_sessions_.clear();
+        // Cancel all cleanup timers
+        for (auto& [uri, timer] : cleanup_timers_) {
+          timer->cancel();
+        }
+
+        sessions_.clear();
+        pending_.clear();
+        cleanup_timers_.clear();
         co_return;
       },
       asio::detached);
@@ -130,13 +143,12 @@ auto SessionManager::CancelPendingSession(std::string uri) -> void {
       [this, uri]() -> asio::awaitable<void> {
         co_await asio::post(session_strand_, asio::use_awaitable);
 
-        if (auto it = pending_sessions_.find(uri);
-            it != pending_sessions_.end()) {
+        if (auto it = pending_.find(uri); it != pending_.end()) {
           it->second->cancelled.store(true, std::memory_order_release);
-          pending_sessions_.erase(it);
+          pending_.erase(it);
           logger_->debug(
-              "Cancelled pending session for: {} (active={}, pending={})", uri,
-              active_sessions_.size(), pending_sessions_.size());
+              "Cancelled pending session for: {} (stored={}, pending={})", uri,
+              sessions_.size(), pending_.size());
         }
 
         co_return;
@@ -210,18 +222,20 @@ auto SessionManager::StartSessionCreation(
 
               auto semantic_index = std::move(*result);
 
-              // Check if still current before storing
+              // Switch to strand to check pending_ map and store results
+              // (shared state requires strand protection)
               co_await asio::post(session_strand_, asio::use_awaitable);
 
-              auto it = pending_sessions_.find(uri);
-              if (it == pending_sessions_.end() ||
-                  it->second->version != pending->version) {
+              auto it = pending_.find(uri);
+              if (it == pending_.end() ||
+                  it->second->version != pending->version ||
+                  it->second->cancelled.load(std::memory_order_acquire)) {
                 logger_->debug(
                     "Session creation cancelled after elaboration: {}", uri);
                 co_return std::nullopt;
               }
 
-              // Store Phase 1 in cache, then broadcast
+              // Store Phase 1, then broadcast
               auto compilation_shared =
                   std::shared_ptr<slang::ast::Compilation>(
                       std::move(compilation));
@@ -229,15 +243,13 @@ auto SessionManager::StartSessionCreation(
                   source_manager, compilation_shared, std::move(semantic_index),
                   main_buffer_id, logger_, preamble_manager_);
 
-              active_sessions_[uri] = CacheEntry{
+              sessions_[uri] = SessionEntry{
                   .session = partial_session,
                   .version = pending->version,
                   .phase = SessionPhase::kElaborationComplete};
-              UpdateAccessOrder(uri);
-              EvictOldestIfNeeded();
 
               // Execute Phase 1 hook if provided (on strand, session cannot be
-              // evicted)
+              // cleaned up)
               if (pending->on_compilation_ready) {
                 CompilationState state{
                     .compilation = partial_session->GetCompilationPtr(),
@@ -250,36 +262,35 @@ auto SessionManager::StartSessionCreation(
             },
             asio::use_awaitable);
 
+        // Return to strand for Phase 2 storage (session upgrade)
         co_await asio::post(session_strand_, asio::use_awaitable);
 
         if (result.has_value() && result.value()) {
-          auto it = pending_sessions_.find(uri);
-          if (it != pending_sessions_.end() &&
-              it->second->version == pending->version) {
+          auto it = pending_.find(uri);
+          if (it != pending_.end() && it->second->version == pending->version) {
             // Upgrade to Phase 2, then broadcast
-            if (auto cache_it = active_sessions_.find(uri);
-                cache_it != active_sessions_.end()) {
-              cache_it->second.phase = SessionPhase::kIndexingComplete;
+            if (auto session_it = sessions_.find(uri);
+                session_it != sessions_.end()) {
+              session_it->second.phase = SessionPhase::kIndexingComplete;
 
               // Execute Phase 2 hook if provided (on strand, session cannot be
-              // evicted)
+              // cleaned up)
               if (pending->on_session_ready) {
-                (*pending->on_session_ready)(*cache_it->second.session);
+                (*pending->on_session_ready)(*session_it->second.session);
               }
 
               pending->session_ready.Set();
             }
-            pending_sessions_.erase(it);
+            pending_.erase(it);
           } else {
             logger_->debug(
                 "Session creation superseded during Phase 2: {}", uri);
           }
         } else {
           logger_->debug("Session creation failed or cancelled: {}", uri);
-          auto it = pending_sessions_.find(uri);
-          if (it != pending_sessions_.end() &&
-              it->second->version == pending->version) {
-            pending_sessions_.erase(it);
+          auto it = pending_.find(uri);
+          if (it != pending_.end() && it->second->version == pending->version) {
+            pending_.erase(it);
           }
         }
       },
@@ -288,46 +299,57 @@ auto SessionManager::StartSessionCreation(
   return pending;
 }
 
-auto SessionManager::UpdateAccessOrder(const std::string& uri) -> void {
-  std::erase(access_order_, uri);
-  access_order_.insert(access_order_.begin(), uri);  // MRU at front
-}
+auto SessionManager::ScheduleCleanup(std::string uri) -> void {
+  asio::co_spawn(
+      executor_,
+      [this, uri]() -> asio::awaitable<void> {
+        co_await asio::post(session_strand_, asio::use_awaitable);
 
-auto SessionManager::EvictOldestIfNeeded() -> void {
-  while (active_sessions_.size() > kMaxCacheSize) {
-    if (access_order_.empty()) {
-      logger_->error(
-          "SessionManager LRU tracking out of sync (active: {}, LRU: {})",
-          active_sessions_.size(), access_order_.size());
-      break;
-    }
+        // Cancel existing timer if any
+        if (auto it = cleanup_timers_.find(uri); it != cleanup_timers_.end()) {
+          it->second->cancel();
+          cleanup_timers_.erase(it);
+        }
 
-    // Smart eviction: prefer closed files over open files
-    std::string uri_to_evict;
-    bool found_closed = false;
+        // Create new timer for cleanup delay
+        auto timer =
+            std::make_unique<asio::steady_timer>(executor_, kCleanupDelay);
+        auto* timer_ptr = timer.get();
+        cleanup_timers_[uri] = std::move(timer);
 
-    for (const auto& uri : access_order_ | std::views::reverse) {
-      if (!open_tracker_->Contains(uri)) {
-        uri_to_evict = uri;
-        found_closed = true;
-        logger_->debug(
-            "SessionManager evicting closed file: {} ({}/{} entries)",
-            uri_to_evict, active_sessions_.size(), kMaxCacheSize);
-        break;
-      }
-    }
+        timer_ptr->async_wait([this, uri](std::error_code ec) {
+          if (!ec) {
+            // Timer expired - remove session
+            asio::co_spawn(
+                executor_,
+                [this, uri]() -> asio::awaitable<void> {
+                  co_await asio::post(session_strand_, asio::use_awaitable);
 
-    if (!found_closed) {
-      uri_to_evict = access_order_.back();
-      logger_->debug(
-          "SessionManager evicting open file (no closed files available): {} "
-          "({}/{} entries)",
-          uri_to_evict, active_sessions_.size(), kMaxCacheSize);
-    }
+                  // Only remove if timer wasn't replaced by UpdateSession
+                  // Prevents TOCTOU race where UpdateSession cancels timer
+                  // while callback is firing
+                  if (auto timer_it = cleanup_timers_.find(uri);
+                      timer_it != cleanup_timers_.end()) {
+                    sessions_.erase(uri);
+                    cleanup_timers_.erase(uri);
 
-    active_sessions_.erase(uri_to_evict);
-    std::erase(access_order_, uri_to_evict);
-  }
+                    logger_->debug(
+                        "Session removed after cleanup delay: {} (stored={})",
+                        uri, sessions_.size());
+                  }
+
+                  co_return;
+                },
+                asio::detached);
+          } else if (ec != asio::error::operation_aborted) {
+            // Log unexpected errors (ignore cancellation)
+            logger_->warn("Cleanup timer error for {}: {}", uri, ec.message());
+          }
+        });
+
+        co_return;
+      },
+      asio::detached);
 }
 
 }  // namespace slangd::services

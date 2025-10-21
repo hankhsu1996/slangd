@@ -77,6 +77,10 @@ class SessionManager {
   // Cancel pending session compilation (called when document is closed)
   auto CancelPendingSession(std::string uri) -> void;
 
+  // Schedule cleanup of session after delay (called when document closes)
+  // Supports prefetch pattern: if reopened within delay, reuse stored session
+  auto ScheduleCleanup(std::string uri) -> void;
+
   // Updates the preamble_manager pointer used for all future session creations
   // Must be called when PreambleManager is rebuilt (e.g., config changes)
   auto UpdatePreambleManager(
@@ -123,12 +127,8 @@ class SessionManager {
       std::optional<SessionReadyHook> on_session_ready)
       -> std::shared_ptr<PendingCreation>;
 
-  // LRU cache management helpers
-  auto UpdateAccessOrder(const std::string& uri) -> void;
-  auto EvictOldestIfNeeded() -> void;
-
-  // Cache entry with version and phase tracking
-  struct CacheEntry {
+  // Session entry with version and phase tracking
+  struct SessionEntry {
     std::shared_ptr<OverlaySession> session;
     int version;
     SessionPhase phase;
@@ -144,15 +144,18 @@ class SessionManager {
   // Strand for thread-safe session map access
   asio::strand<asio::any_io_executor> session_strand_;
 
+  // Type aliases for cleaner member declarations
+  using SessionMap = std::unordered_map<std::string, SessionEntry>;
+  using PendingMap =
+      std::unordered_map<std::string, std::shared_ptr<PendingCreation>>;
+  using TimerMap =
+      std::unordered_map<std::string, std::unique_ptr<asio::steady_timer>>;
+
   // Protected by session_strand_:
-  std::unordered_map<std::string, CacheEntry> active_sessions_;
-
-  std::unordered_map<std::string, std::shared_ptr<PendingCreation>>
-      pending_sessions_;
-
-  // LRU tracking for cache eviction (most recently used first)
-  std::vector<std::string> access_order_;
-  static constexpr size_t kMaxCacheSize = 8;
+  SessionMap sessions_;
+  PendingMap pending_;
+  TimerMap cleanup_timers_;
+  static constexpr auto kCleanupDelay = std::chrono::seconds(5);
 
   // Background compilation pool
   std::unique_ptr<asio::thread_pool> compilation_pool_;
@@ -164,22 +167,21 @@ template <typename Fn>
 auto SessionManager::WithSession(std::string uri, Fn callback)
     -> asio::awaitable<std::expected<
         std::invoke_result_t<Fn, const OverlaySession&>, std::string>> {
-  // Acquire strand - prevents eviction during callback execution
+  // Acquire strand - prevents cleanup during callback execution
   co_await asio::post(session_strand_, asio::use_awaitable);
 
-  // Fast path: Check cache
-  if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
+  // Fast path: Check storage
+  if (auto it = sessions_.find(uri); it != sessions_.end()) {
     if (it->second.phase >= SessionPhase::kIndexingComplete) {
-      UpdateAccessOrder(uri);
       // Execute callback synchronously on strand with const reference
-      // Session cannot be evicted while we hold strand
+      // Session cannot be removed while we hold strand
       auto result = callback(*it->second.session);
       co_return result;
     }
   }
 
   // Slow path: Wait for Phase 2 completion
-  if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
+  if (auto it = pending_.find(uri); it != pending_.end()) {
     logger_->debug("Session wait (indexing): {}", uri);
 
     auto pending = it->second;
@@ -188,21 +190,21 @@ auto SessionManager::WithSession(std::string uri, Fn callback)
     // Re-acquire strand
     co_await asio::post(session_strand_, asio::use_awaitable);
 
-    // Check if session is now in cache
-    if (auto cache_it = active_sessions_.find(uri);
-        cache_it != active_sessions_.end() &&
-        cache_it->second.phase >= SessionPhase::kIndexingComplete) {
-      UpdateAccessOrder(uri);
-      auto result = callback(*cache_it->second.session);
+    // Check if session is now in storage
+    if (auto session_it = sessions_.find(uri);
+        session_it != sessions_.end() &&
+        session_it->second.phase >= SessionPhase::kIndexingComplete) {
+      auto result = callback(*session_it->second.session);
       co_return result;
     }
 
     logger_->info(
-        "WithSession: Session not found for {} after notification (evicted or "
+        "WithSession: Session not found for {} after notification (cleaned up "
+        "or "
         "cancelled)",
         uri);
     co_return std::unexpected(
-        "Session not found after notification (evicted or cancelled)");
+        "Session not found after notification (cleaned up or cancelled)");
   }
 
   logger_->info("Session not found: {}", uri);
@@ -213,14 +215,12 @@ template <typename Fn>
 auto SessionManager::WithCompilationState(std::string uri, Fn callback)
     -> asio::awaitable<std::expected<
         std::invoke_result_t<Fn, const CompilationState&>, std::string>> {
-  // Acquire strand - prevents eviction during callback execution
+  // Acquire strand - prevents cleanup during callback execution
   co_await asio::post(session_strand_, asio::use_awaitable);
 
-  // Fast path: Check cache
-  if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
+  // Fast path: Check storage
+  if (auto it = sessions_.find(uri); it != sessions_.end()) {
     if (it->second.phase >= SessionPhase::kElaborationComplete) {
-      UpdateAccessOrder(uri);
-
       // Create temporary CompilationState on stack
       // Shared_ptrs keep session components alive during callback
       // but don't escape to caller
@@ -230,13 +230,14 @@ auto SessionManager::WithCompilationState(std::string uri, Fn callback)
 
       // Execute callback with const reference
       auto result = callback(state);
-      // Release strand, shared_ptrs in state destroyed, session can be evicted
+      // Release strand, shared_ptrs in state destroyed, session can be cleaned
+      // up
       co_return result;
     }
   }
 
   // Slow path: Wait for Phase 1 completion
-  if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
+  if (auto it = pending_.find(uri); it != pending_.end()) {
     logger_->debug("Session wait (compilation): {}", uri);
 
     auto pending = it->second;
@@ -245,15 +246,13 @@ auto SessionManager::WithCompilationState(std::string uri, Fn callback)
     // Re-acquire strand
     co_await asio::post(session_strand_, asio::use_awaitable);
 
-    // Check if session is now in cache
-    if (auto cache_it = active_sessions_.find(uri);
-        cache_it != active_sessions_.end() &&
-        cache_it->second.phase >= SessionPhase::kElaborationComplete) {
-      UpdateAccessOrder(uri);
-
+    // Check if session is now in storage
+    if (auto session_it = sessions_.find(uri);
+        session_it != sessions_.end() &&
+        session_it->second.phase >= SessionPhase::kElaborationComplete) {
       CompilationState state{
-          .compilation = cache_it->second.session->GetCompilationPtr(),
-          .main_buffer_id = cache_it->second.session->GetMainBufferID()};
+          .compilation = session_it->second.session->GetCompilationPtr(),
+          .main_buffer_id = session_it->second.session->GetMainBufferID()};
 
       auto result = callback(state);
       co_return result;
@@ -261,10 +260,10 @@ auto SessionManager::WithCompilationState(std::string uri, Fn callback)
 
     logger_->info(
         "WithCompilationState: Session not found for {} after notification "
-        "(evicted or cancelled)",
+        "(cleaned up or cancelled)",
         uri);
     co_return std::unexpected(
-        "Session not found after notification (evicted or cancelled)");
+        "Session not found after notification (cleaned up or cancelled)");
   }
 
   logger_->info("Session not found: {}", uri);

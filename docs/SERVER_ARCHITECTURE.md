@@ -70,46 +70,26 @@ Background thread:
 **Key properties**:
 
 - Hook executes on strand after caching, before signaling events
-- Session cannot be evicted while hook runs (guaranteed execution)
+- Session cannot be removed while hook runs (guaranteed execution)
 - Single-publish: full diagnostics (parse + semantic) to avoid visual flicker
 - `forceElaborate()` populates `compilation.diagMap` during indexing (file-scoped)
 
-## Executor & Threading Model
+## Async & Threading Model
 
-### Main Event Loop (io_context)
+**High-level overview:**
 
-- **Single-threaded**: All LSP protocol handling, file tracking, and cache management
-- **Strand coordination**: `asio::strand` serializes access to shared state
-- **Non-blocking**: Uses `co_await` for all potentially slow operations
+- **Main event loop** (io_context): All LSP protocol handling, file tracking, session lifecycle
+- **Strand coordination**: Serializes access to shared state (document tracking, session storage)
+- **Background thread pool**: CPU-intensive compilation and semantic indexing
+- **Coroutines**: `co_await` enables non-blocking operations while maintaining responsiveness
 
-### Background Thread Pool Pattern
+**Request flow:**
 
 ```
-// Dispatch expensive work to background threads
-result = co_await spawn_on_pool(heavy_computation)
-
-// Post result back to main thread for cache/protocol handling
-co_await post_to_main_thread()
+LSP Request → Check session storage → Background compilation (if needed) → LSP Response
 ```
 
-### Why This Pattern Works
-
-- **Isolation**: Background threads only access immutable data (no shared state)
-- **Coordination**: Results posted back to main thread for cache updates
-- **Responsiveness**: Main thread stays available for new LSP requests
-- **Concurrency**: Multiple SystemVerilog files can compile simultaneously
-
-### Async Operation Flow
-
-1. **LSP Request**: Arrives on main thread via JSON-RPC
-2. **Cache Check**: Main thread checks LRU cache (fast path)
-3. **Background Dispatch**: Cache miss triggers `co_spawn` to thread pool
-4. **Compilation**: SystemVerilog parsing/analysis runs on background thread
-5. **Result Handoff**: `asio::post` switches context back to main thread
-6. **Cache Update**: Main thread adds result to LRU cache
-7. **LSP Response**: Main thread sends response to VSCode
-
-**Critical insight**: The `co_await` + `asio::post` pattern enables true async without breaking thread safety.
+For detailed async patterns, executor model, synchronization mechanisms, and when/why/how to use them, see `ASYNC_ARCHITECTURE.md`.
 
 ## State Management
 
@@ -137,10 +117,10 @@ SlangdLspServer (LSP protocol layer)
 
 - **SlangdLspServer**: LSP protocol, delegates to LanguageService
 - **LanguageService**: Public API, feature implementations, owns SessionManager
-- **SessionManager**: Session lifecycle (create/cache/invalidate), provides access via WithSession callbacks
+- **SessionManager**: Session lifecycle (create/store/invalidate), provides access via WithSession callbacks
 - **OverlaySession**: Data class (Compilation + SemanticIndex + SourceManager)
 
-**Architecture**: SessionManager centralizes all session lifecycle (create/cache/invalidate). LanguageService features are read-only consumers using callback pattern (no shared_ptr escape).
+**Architecture**: SessionManager centralizes all session lifecycle (create/store/invalidate). LanguageService features are read-only consumers using callback pattern (no shared_ptr escape).
 
 ### Compilation Architecture
 
@@ -156,7 +136,7 @@ SlangdLspServer (LSP protocol layer)
   - Current file buffer (in-memory, authoritative)
   - Packages via cross-compilation binding (PackageSymbol\* pointers from preamble)
   - Interfaces from PreambleManager (read from disk via `SyntaxTree::fromFile`)
-  - Per-file, cached by SessionManager (LRU eviction)
+  - Per-file, cached by SessionManager (1:1 mapping with debounced removal)
 
 **Critical insight:** Packages are NOT loaded as syntax trees - PreambleAwareCompilation injects preamble PackageSymbol\* pointers directly into packageMap for cross-compilation binding. Interfaces are still read from disk for port resolution. See `PREAMBLE.md` for details.
 
@@ -204,7 +184,7 @@ SlangdLspServer (protocol layer - thin delegates)
 LanguageService (domain layer - state management + feature implementations)
   ├─ OpenDocumentTracker open_tracker_  ← Tracks which documents are open (shared)
   ├─ DocumentStateManager doc_state_  ← Document state (content + version)
-  ├─ SessionManager session_manager_  ← Compilation cache + lifecycle
+  ├─ SessionManager session_manager_  ← Session storage + lifecycle
   ├─ DiagnosticPublisher diagnostic_publisher_  ← Callback from LSP server
   │
   ├─ Document Lifecycle
@@ -226,16 +206,16 @@ DocumentStateManager (synchronized storage)
   ├─ documents_: map<uri, DocumentState{content, version}>  ← Domain state
   └─ strand_: asio::strand  ← Thread-safe access
 
-SessionManager (compilation cache)
-  ├─ open_tracker_: shared reference  ← Queries for eviction decisions
+SessionManager (session storage)
+  ├─ open_tracker_: shared reference  ← Queries for open state
   ├─ session_strand_: asio::strand  ← Thread-safe access to maps
-  ├─ active_sessions_: map<uri, CacheEntry{session, version}>  ← Version-aware cache
-  ├─ pending_sessions_: map<uri, PendingCreation{hooks, events}>  ← Being created
-  ├─ access_order_: vector<uri>  ← LRU tracking (MRU first)
-  ├─ Cache key: URI + LSP document version (not content hash)
+  ├─ sessions_: map<uri, SessionEntry{session, version}>  ← Version-aware storage
+  ├─ pending_: map<uri, PendingCreation{hooks, events}>  ← Being created
+  ├─ cleanup_timers_: map<uri, timer>  ← Cleanup delay (5s)
+  ├─ Storage key: URI + LSP document version (not content hash)
   └─ UpdateSession accepts optional hooks for server-push features
 
-For detailed session management design including memory bounds, eviction policy, and
+For detailed session management design including debounced removal, memory efficiency, and
 VSCode behavioral patterns, see SESSION_MANAGEMENT.md.
 ```
 
@@ -259,11 +239,12 @@ VSCode behavioral patterns, see SESSION_MANAGEMENT.md.
 - Diagnostics use this pattern - server decides when to send them
 - Example: After save, server publishes diagnostics without client asking
 
-**Caching strategy**:
+**Session storage strategy**:
 
-- **Version comparison**: Reuses session if LSP document version unchanged (0ms cache hit)
-- **Close/reopen optimization**: Closed files stay in cache (no RemoveSession call)
-- **LRU eviction**: Automatically removes oldest entries when limit exceeded (16 files)
+- **Version comparison**: Reuses session if LSP document version unchanged (0ms storage hit)
+- **Debounced cleanup**: Closed files stay in storage for 5 seconds (supports prefetch pattern)
+- **Prefetch optimization**: VSCode hover opens/closes files within 50-100ms - reuse avoids rebuild
+- **No size limits**: Preamble architecture enables ~10MB per session (100 files = 1GB acceptable)
 - **No content hashing**: LSP provides version tracking - no need to hash content
 
 **Why this design**:
@@ -273,8 +254,8 @@ VSCode behavioral patterns, see SESSION_MANAGEMENT.md.
 3. **Consistent handlers**: All protocol handlers are 1-line thin delegates (no state access)
 4. **No duplication**: Eliminated redundant storage between protocol and domain layers
 5. **Typing performance**: `OnDocumentChanged` updates state only (no session rebuild), save triggers rebuild
-6. **Close/reopen efficiency**: Reopening file reuses cache if version matches (no ~500ms rebuild)
-7. **Memory management**: LRU eviction prevents unbounded growth
+6. **Close/reopen efficiency**: Reopening file reuses stored session if version matches (no ~500ms rebuild)
+7. **Memory efficiency**: Preamble architecture enables 1:1 mapping (~10MB per session)
 8. **Simplicity**: No content hashing overhead, rely on LSP version tracking
 
 ### Two-Phase Session Creation

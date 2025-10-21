@@ -28,7 +28,7 @@ LanguageService::LanguageService(
 auto LanguageService::CreateDiagnosticHook(std::string uri, int version)
     -> std::function<void(const CompilationState&)> {
   return [this, uri = std::move(uri), version](const CompilationState& state) {
-    // Extract diagnostics (on strand, session cannot be evicted)
+    // Extract diagnostics (on strand, session cannot be cleaned up)
     auto parse_diagnostics =
         semantic::DiagnosticConverter::ExtractParseDiagnostics(
             *state.compilation, *state.compilation->getSourceManager(),
@@ -326,8 +326,9 @@ auto LanguageService::OnDocumentClosed(std::string uri) -> void {
       },
       asio::detached);
 
-  // Keep completed sessions in cache for close/reopen optimization
-  // LRU eviction will handle cleanup when cache size limit is reached
+  // Schedule cleanup of session after delay
+  // Supports prefetch pattern: if reopened within 5s, reuse stored session
+  session_manager_->ScheduleCleanup(uri);
 }
 
 auto LanguageService::OnDocumentsChanged(std::vector<std::string> /*uris*/)

@@ -87,7 +87,8 @@ SystemVerilog LSP server with modular design:
 ## Documentation
 
 - **`docs/DESIGN_PRINCIPLES.md`**: Core philosophy and case studies for working with Slang library infrastructure
-- **`docs/SERVER_ARCHITECTURE.md`**: Server layers, session lifecycle, two-phase diagnostics, and threading model
+- **`docs/SERVER_ARCHITECTURE.md`**: Server layers, session lifecycle, two-phase diagnostics, and component overview
+- **`docs/ASYNC_ARCHITECTURE.md`**: Detailed async patterns, executor model, channel synchronization, and coroutine coordination
 - **`docs/SESSION_MANAGEMENT.md`**: Session lifecycle management, memory-bounded caching, eviction policy, and VSCode interaction patterns
 - **`docs/PREAMBLE.md`**: Preamble architecture for packages and interfaces, cross-compilation symbol binding, and critical constraints around missing symbols
 - **`docs/CONFIGURATION.md`**: .slangd config file format, file discovery modes, and path filtering
