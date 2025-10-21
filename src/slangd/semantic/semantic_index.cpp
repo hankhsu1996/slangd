@@ -2607,6 +2607,14 @@ void SemanticIndex::ValidateSymbolCoverage(
     std::vector<slang::parsing::Token> identifiers;
 
     void visit(const slang::syntax::SyntaxNode& node) {
+      // Skip scoped names (dot access) to filter out hierarchical paths
+      // We don't currently support go-to-definition for hierarchical paths,
+      // so this is a good approximation for validation. Trade-off: also skips
+      // struct field access validation, but that's acceptable for diagnostic
+      if (node.kind == slang::syntax::SyntaxKind::ScopedName) {
+        return;  // Skip entire subtree
+      }
+
       // Recursively visit all children
       for (uint32_t i = 0; i < node.getChildCount(); i++) {
         const auto* child = node.childNode(i);
