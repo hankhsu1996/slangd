@@ -1,425 +1,243 @@
 # Async Architecture
 
-This document describes the asynchronous architecture of slangd.
+Async architecture of slangd using ASIO coroutines for non-blocking LSP operations.
 
 ---
 
 ## System Overview
 
-**Flow:** JSON-RPC reads messages → spawns handlers → handlers wait for sessions → sessions compile on pool
+```
+JSON-RPC → LSP Handlers → Language Service → Session Manager → Compilation Pool
+           (executor_)    (executor_)        (session_strand_)  (compilation_pool_)
+```
+
+**Key insight**: Main thread handles protocol coordination, background threads handle computation.
 
 ---
 
 ## Executors
 
-### `executor_` - Main LSP Executor (single-threaded, from `io_context`)
+### executor\_ - Main LSP Executor
 
-- All LSP handlers run here by default
-- Single-threaded, but coroutines enable concurrency (one handler can suspend while others run)
-- Safe to `co_await` (suspends current coroutine, allows other handlers to execute)
+- Single-threaded io_context for all LSP protocol handling
+- Coroutines enable concurrency (handlers suspend while others run)
+- Safe to `co_await` (suspends current handler, allows others to execute)
 
-### `strand_` - Serialization Strand (derived from `executor_`)
+### session_strand\_ - Serialization Strand
 
-- Protects shared mutable state: `open_files_` map
-- Executes tasks one at a time (serialized)
-- **Critical constraint:** Only O(1) operations allowed (no `co_await` slow operations)
-- **Note:** Transport layer has its own strand for message ordering - application strand only needed for local state
+- Protects shared mutable state (document maps, session storage, timers)
+- Executes tasks one at a time (serialized access)
+- **Critical constraint**: Only O(1) operations allowed (no `co_await` slow operations)
+- Pattern: Enter → Access → Exit immediately
 
-### `compilation_pool_` - CPU Work Pool (4 threads, separate `thread_pool`)
+### compilation_pool\_ - CPU Work Pool
 
-- CPU-intensive compilation and semantic indexing
-- Isolated from LSP handlers
-- SessionManager spawns work here
-
----
-
-## Layer Architecture
-
-### Layer 1: JSON-RPC Endpoint
-
-**Location:** `/home/hankhsu/workspace/c++/jsonrpc-cpp-lib/src/endpoint/endpoint.cpp`
-
-**Pattern:** Concurrent message reading
-
-```cpp
-while (is_running_) {
-  auto message = co_await transport_->ReceiveMessage();
-
-  // Spawn handler concurrently - don't block read loop
-  asio::co_spawn(executor_, HandleMessage(message), asio::detached);
-}
-```
-
-**Key characteristic:** Each message handler runs independently. Loop immediately reads next message.
-
-### Layer 2: LSP Server (SlangdLspServer)
-
-**Location:** `src/slangd/core/slangd_lsp_server.cpp`
-
-**Responsibilities:**
-
-- Dispatch LSP requests/notifications to handlers
-- Manage shared state via `strand_`
-- Spawn background work
-
-**Executor usage:**
-
-- Handlers execute on `executor_` (default context)
-- Shared state access via `strand_` (enter/exit pattern)
-- Background work spawned to `executor_` with `asio::detached`
-
-### Layer 3: Language Service
-
-**Location:** `src/slangd/services/language_service.cpp`
-
-**Responsibilities:**
-
-- Facade for LSP features
-- Coordinate between SessionManager and feature implementations
-- Spawn compilation pool work when needed
-
-**Executor usage:**
-
-- Runs on `executor_` (called from LSP layer)
-- Spawns to `compilation_pool_` for PreambleManager builds
-- Waits for SessionManager async operations via `co_await`
-
-### Layer 4: Session Manager
-
-**Location:** `src/slangd/services/session_manager.cpp`
-
-**Responsibilities:**
-
-- Session lifecycle: create, cache, invalidate
-- Spawn compilation/indexing to `compilation_pool_`
-- Signal completion via ASIO channels
-
-**Executor usage:**
-
-- Public API runs on `executor_`
-- Spawns compilation work to `compilation_pool_`
-- Uses channels for async coordination between layers
+- Background thread pool for compilation and semantic indexing
+- Isolated from LSP handlers (no shared state)
+- Work spawned here via `asio::co_spawn`
 
 ---
 
-## Handler Patterns
+## When, Why, and How to Synchronize
 
-### Notifications (OnDidSave, OnDidChange, etc.)
+### When Do We Need Synchronization?
 
-Pattern: Return immediately, spawn background work
+1. **Multiple coroutines accessing shared mutable state**
 
-```cpp
-auto OnNotification(...) -> asio::awaitable<void> {
-  // 1. Access shared state via strand
-  co_await asio::post(strand_, asio::use_awaitable);
-  auto [content, version] = GetFileData(uri);
-  co_await asio::post(executor_, asio::use_awaitable);
+   - Document tracking (open files, versions, content)
+   - Session storage (sessions\_, pending\_, cleanup_timers\_)
 
-  // 2. Spawn background work (detached)
-  asio::co_spawn(
-      executor_,
-      [=]() -> asio::awaitable<void> {
-        co_await language_service_->OnDocumentSaved(...);
-        co_await ProcessDiagnostics(uri);
-      },
-      asio::detached);
+2. **Coordinating async work completion**
 
-  // 3. Return immediately (don't wait for background work)
-  co_return Ok();
-}
-```
+   - Waiting for compilation before extracting diagnostics
+   - Waiting for indexing before serving go-to-definition
+   - Notifying multiple waiters when session becomes ready
 
-### Requests (OnDocumentSymbols, OnGotoDefinition, etc.)
+3. **Cancelling stale work**
+   - User saves v6 while v5 compiling → cancel v5, start v6
 
-Pattern: Can wait for results (runs on executor\_)
+### Why Do We Need Synchronization?
 
-```cpp
-auto OnRequest(...) -> asio::awaitable<Result> {
-  // Already on executor_ - no strand needed if no shared state access
-  auto session = co_await language_service_->GetSession(uri);
-  co_return session->ComputeFeature();
-}
-```
+**Without synchronization → race conditions:**
 
-**Key difference:** Requests can `co_await` because they run on `executor_` where waiting is safe (other handlers run concurrently on other threads).
+- Two coroutines access map simultaneously → undefined behavior
+
+**Without coordination → wasted work:**
+
+- Save v5 → compile (8s), save v6 → compile (8s overlapping) → v5 wasted
+
+**Without notification → polling overhead:**
+
+- Busy-wait for completion wastes CPU and adds latency
+
+### How Do We Achieve Synchronization?
+
+**1. Strand** - Serialize access to shared state
+
+- **When**: Accessing document/session storage maps
+- **Pattern**: `co_await post(strand_)` → O(1) access → `co_await post(executor_)`
+
+**2. BroadcastEvent** - Notify multiple waiters when work completes
+
+- **When**: Waiting for compilation/indexing without blocking
+- **Pattern**: Producer sets event → All consumers wake and check storage
+- **Key property**: True broadcast (all waiters notified, late joiners complete immediately)
+
+**3. Cancellation** - Stop stale work
+
+- **When**: New document version invalidates ongoing work
+- **Pattern**: `atomic<bool> cancelled` flag checked periodically during work
 
 ---
 
 ## Synchronization Mechanisms
 
-### 1. Channels (Session Ready Signals)
+### BroadcastEvent for Multi-Waiter Notification
 
-**Two-phase creation:**
+**Problem with ASIO channels**: One-shot delivery (first waiter gets value, others don't).
 
-```cpp
-struct PendingCreation {
-  channel<CompilationState> compilation_ready;  // Phase 1: ~126ms
-  channel<OverlaySession> session_ready;        // Phase 2: ~455ms
-};
+**Solution**: Custom BroadcastEvent primitive with true broadcast semantics:
+
+- All current waiters notified simultaneously
+- Late joiners complete immediately if already set
+- Lightweight (no data storage, pure notification)
+
+**Pattern** (notification + storage):
+
+```
+Producer:
+  1. Store data in session storage
+  2. Set BroadcastEvent
+
+Consumer:
+  1. AsyncWait on BroadcastEvent
+  2. Check session storage for data
 ```
 
-**Usage:**
+**Why separation**: Storage is source of truth, events are notifications. Avoids data transfer overhead through event mechanism.
 
-- Diagnostics: `co_await compilation_ready->async_receive()` (fast path)
-- Document symbols: `co_await session_ready->async_receive()` (full session)
+### Two-Phase Session Creation
 
-**Why channels:** Suspend coroutine without blocking thread. Other handlers continue executing.
+**Phase 1 - Elaboration Complete** (~126ms):
 
-**Channel Usage Pattern:**
+- Compilation and diagnostics available
+- `compilation_ready` event fires
+- Diagnostic extraction hooks execute
 
-ASIO channels are single-producer, single-consumer (one-shot delivery). For multi-consumer scenarios, we use the **notification + cache pattern**.
+**Phase 2 - Indexing Complete** (~455ms):
 
-**Alternatives avoided:**
-- Custom broadcast mechanism (100+ lines, complex state)
-- Retry logic (wasteful, confusing semantics)
-- Multiple channels per waiter (memory overhead)
+- Semantic index built (symbols, definitions, references)
+- `session_ready` event fires
+- LSP features (go-to-def, symbols) can proceed
 
-**Design insight:** Channels are for efficient wake-up, cache is for data storage. Work with ASIO's design (one-shot channels), not against it.
+**Benefits**:
 
-```cpp
-// Pattern: Channels notify, cache provides data
-auto GetSession(uri) -> asio::awaitable<Session> {
-  // 1. Fast path: Check cache (source of truth)
-  if (active_sessions_.contains(uri)) return active_sessions_[uri];
+- Fast diagnostics (don't wait for indexing)
+- Multiple waiters notified simultaneously (via BroadcastEvent)
+- Hooks guarantee execution before storage (server-push features)
 
-  // 2. Slow path: Wait for notification
-  if (pending_sessions_.contains(uri)) {
-    auto result = co_await channel->async_receive(ec);
-    if (!ec) return result;  // First waiter: got value directly
+### Cancellation Semantics
 
-    // 3. Re-check cache after notification (other waiters)
-    if (active_sessions_.contains(uri)) return active_sessions_[uri];
+**Problem**: User rapidly saves → pending sessions get cancelled.
 
-    // 4. Not in cache - truly cancelled
-    return nullptr;
-  }
-}
+**Solution**: Fail fast with error (no retry logic)
+
+- Cancelled request returns error immediately (~1ms)
+- Client sends new request with current context
+- Matches LSP server conventions (clangd, rust-analyzer)
+- Return error (not empty) to prevent UI flicker
+
+**Session replacement pattern**:
+
+```
+Create new pending → Cancel old → Replace atomically (no gap)
 ```
 
-**Why this works:**
-- **First waiter:** Gets value from channel (optimization - avoids cache write/read)
-- **Subsequent waiters:** Wake when channel closes → check cache (populated by background task)
-- **Cancelled sessions:** Not in cache → all waiters correctly get nullptr
+---
 
-**Key insight:** Channels are notification mechanisms, not data storage. Cache is source of truth.
+## Handler Patterns
 
-This pattern is common in async systems (futex, pub/sub, database notifications).
+### Notifications (OnDidSave, OnDidChange)
 
-### 2. GetSession() / GetCompilationState()
+**Pattern**: Return immediately, spawn background work
 
-Wait for session creation without blocking:
-
-```cpp
-// Runs on executor_ - safe to wait
-auto session = co_await session_manager_->GetSession(uri);
-
-// Implementation uses notification + cache pattern (see above)
+```
+OnNotification():
+  post(strand_) → get document data → post(executor_)
+  co_spawn(background_work, detached)  # Don't wait
+  co_return  # Handler finishes immediately
 ```
 
-### 3. Cancellation Signals
+### Requests (OnDocumentSymbols, OnGotoDefinition)
 
-**Purpose:** Discard stale work when new document version arrives
+**Pattern**: Can wait for results
 
-**SessionManager pattern:**
-
-```cpp
-// Store signal with pending session
-auto pending = make_shared<PendingCreation>();
-pending->cancellation = make_shared<asio::cancellation_signal>();
-
-// Bind to spawned work
-asio::co_spawn(
-    compilation_pool_->get_executor(),
-    Work(slot),
-    asio::bind_cancellation_slot(pending->cancellation->slot(), asio::use_awaitable));
-
-// On new version: emit cancellation
-if (old_pending) {
-  old_pending->cancellation->emit(asio::cancellation_type::terminal);
-}
+```
+OnRequest():
+  session = co_await GetSession(uri)  # Waits if needed
+  co_return session.ComputeFeature()
 ```
 
-**SemanticIndex pattern:**
-
-```cpp
-// Check cancellation at strategic points
-if (IsCancelled(cancellation_slot)) {
-  return nullptr;  // Abort work, return to caller
-}
-```
+**Key difference**: Requests run on executor\_ where waiting is safe (other handlers continue).
 
 ---
 
 ## Strand Usage Pattern
 
-**Rule:** Enter → Fast Access → Exit
+**Rule**: Enter → Fast O(1) Access → Exit
 
-```cpp
-// ✅ CORRECT
-co_await asio::post(strand_, asio::use_awaitable);  // Enter
-auto file = GetOpenFile(uri);                        // O(1) map lookup
-auto version = file.version;
-co_await asio::post(executor_, asio::use_awaitable); // Exit immediately
+**CORRECT**:
 
-// ❌ WRONG: Blocks all handlers
-co_await asio::post(strand_, asio::use_awaitable);
-auto session = co_await GetSession(uri);  // Blocks strand for seconds!
+```
+co_await post(strand_)          # Enter
+file = GetOpenFile(uri)         # O(1) lookup
+version = file.version
+co_await post(executor_)        # Exit immediately
 ```
 
-**Why this matters:** Strand is single-threaded. If one coroutine blocks on strand, ALL handlers waiting to access shared state are frozen.
+**WRONG - Blocks all handlers**:
+
+```
+co_await post(strand_)
+session = co_await GetSession(uri)  # Blocks strand for seconds!
+```
+
+**Why this matters**: Strand is single-threaded. One blocking coroutine freezes all handlers waiting for shared state access.
 
 ---
 
 ## Data Flow Example: OnDidSave
 
 ```
-1. JSON-RPC receives "textDocument/didSave"
-   ↓
-2. Spawns OnDidSave handler (detached on executor_)
-   ↓
-3. Handler posts to strand_ → gets file content → posts back to executor_
-   ↓
-4. Handler spawns background work (detached) and returns
-   ↓ (background continues)
-5. Language service updates PreambleManager (spawned to compilation_pool_)
-   ↓
-6. SessionManager::UpdateSession()
-   - Cancels old pending session (emit signal)
-   - Spawns new compilation to compilation_pool_
-   ↓
-7. Compilation completes → signals compilation_ready channel
-   ↓
-8. ProcessDiagnostics (waiting on channel) receives signal
-   ↓
-9. Extracts diagnostics from CompilationState → publishes to client
+1. JSON-RPC receives didSave notification
+2. Spawn handler (detached on executor_)
+3. Handler: strand_ → get content → executor_ → spawn background → return
+4. Background: UpdateSession spawns compilation to compilation_pool_
+5. Compilation completes → store session → set compilation_ready event
+6. Diagnostic extraction (waiting on event) wakes → extracts → publishes
+7. Indexing completes → set session_ready event
+8. LSP feature requests (waiting on event) wake → serve features
 ```
 
-**Key points:**
+**Key points**:
 
-- Handler returns at step 4 (doesn't wait)
-- Compilation runs on isolated pool (step 6)
-- Channel signals when ready (step 7)
-- No polling or blocking
-
----
-
-## Executor Selection Rules
-
-```
-Task Type                 → Executor
-─────────────────────────────────────────
-LSP handler (default)     → executor_
-Shared state access       → strand_
-Compilation/indexing      → compilation_pool_
-Background work           → executor_ (detached spawn)
-```
-
----
-
-## Session Cancellation Semantics
-
-### Problem: Cancelled Sessions
-
-When user rapidly saves/edits, pending sessions get cancelled:
-
-```
-t=0: Save v5 → pending_sessions_[uri] = v5_pending
-t=1: GetDocSymbol waits on v5_pending->channel
-t=2: Save v6 → cancels v5, creates v6_pending
-t=3: GetDocSymbol gets channel error
-     → What to do? Retry for v6? Return empty? Return error?
-```
-
-### Solution: Fail Fast with Error
-
-**No retry logic** - requests fail immediately when session cancelled:
-
-```cpp
-auto GetSession(uri) {
-  if (cached) return cached;
-
-  if (pending) {
-    auto session = co_await pending->channel->receive(ec);
-    if (!ec) return session;
-    // Channel error → cancelled → return nullptr (no retry!)
-  }
-
-  return nullptr;  // Caller handles failure
-}
-```
-
-**Return error (not empty)** to prevent UI flicker:
-
-```cpp
-auto GetDocumentSymbols(uri) {
-  auto session = co_await GetSession(uri);
-
-  if (!session) {
-    // Return ERROR → client keeps old symbols visible (no flicker!)
-    return UnexpectedFromCode(kInternalError, "Document was modified");
-  }
-
-  return session->GetSymbols();
-}
-```
-
-### Why No Retry?
-
-**Problem with retry logic:**
-
-- Old request (for v5) waits 8+ seconds for v6 to compile
-- User already moved on to v7 by then
-- Client doesn't know request was "upgraded"
-
-**Why fail-fast is better:**
-
-- Request fails immediately (~1ms)
-- Client sends new request with current context
-- Clear semantics: cancelled = error
-- Matches clangd/rust-analyzer behavior
-
-### Session Replacement Pattern
-
-**Critical:** Create new BEFORE cancelling old (no gap):
-
-```cpp
-// ✅ CORRECT - no gap
-auto new_pending = StartSessionCreation(uri, content, version);
-if (old_pending) {
-  old_pending->cancel();
-}
-pending_sessions_[uri] = new_pending;  // Atomic replacement
-
-// ❌ WRONG - gap allows race condition
-pending_sessions_.erase(uri);  // Remove old
-// GAP: GetSession retry finds nothing!
-pending_sessions_[uri] = new_pending;  // Add new
-```
-
-### Error Propagation
-
-```
-GetSession → nullptr
-  ↓
-GetDocumentSymbols → UnexpectedFromCode(kInternalError, "Document was modified")
-  ↓
-OnDocumentSymbols → forwards error
-  ↓
-LSP client → keeps old symbols visible (no flicker!)
-```
+- Handler returns at step 3 (non-blocking)
+- Compilation runs isolated on pool (step 4-5)
+- Events signal when ready (steps 5, 7)
+- Multiple waiters wake simultaneously (broadcast)
 
 ---
 
 ## Architecture Invariants
 
-1. **Strand is never blocked** - Only O(1) operations while on strand
-2. **Handlers run on executor\_** - Single-threaded io_context, but coroutines allow concurrency
-3. **Heavy work on compilation_pool\_** - CPU-bound operations isolated from LSP handlers
-4. **Channels for synchronization** - No polling or busy-waiting
-5. **Cancellation for long work** - New document versions cancel stale compilation
+1. **Strand never blocked** - Only O(1) operations while on strand
+2. **Handlers on executor\_** - Single-threaded, but coroutines enable concurrency
+3. **Heavy work on compilation_pool\_** - CPU-bound operations isolated
+4. **BroadcastEvents for coordination** - No polling or busy-waiting
+5. **Cancellation for long work** - Atomic flag checked periodically
 6. **Errors for cancelled sessions** - Return error (not empty) to prevent UI flicker
 
-**Violation detection:**
+**Violation detection**:
 
 - Strand blocking → All handlers freeze (8+ second delays)
 - Missing cancellation → CPU waste compiling old versions

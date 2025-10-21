@@ -74,42 +74,22 @@ Background thread:
 - Single-publish: full diagnostics (parse + semantic) to avoid visual flicker
 - `forceElaborate()` populates `compilation.diagMap` during indexing (file-scoped)
 
-## Executor & Threading Model
+## Async & Threading Model
 
-### Main Event Loop (io_context)
+**High-level overview:**
 
-- **Single-threaded**: All LSP protocol handling, file tracking, and session lifecycle
-- **Strand coordination**: `asio::strand` serializes access to shared state
-- **Non-blocking**: Uses `co_await` for all potentially slow operations
+- **Main event loop** (io_context): All LSP protocol handling, file tracking, session lifecycle
+- **Strand coordination**: Serializes access to shared state (document tracking, session storage)
+- **Background thread pool**: CPU-intensive compilation and semantic indexing
+- **Coroutines**: `co_await` enables non-blocking operations while maintaining responsiveness
 
-### Background Thread Pool Pattern
+**Request flow:**
 
 ```
-// Dispatch expensive work to background threads
-result = co_await spawn_on_pool(heavy_computation)
-
-// Post result back to main thread for cache/protocol handling
-co_await post_to_main_thread()
+LSP Request → Check session storage → Background compilation (if needed) → LSP Response
 ```
 
-### Why This Pattern Works
-
-- **Isolation**: Background threads only access immutable data (no shared state)
-- **Coordination**: Results posted back to main thread for cache updates
-- **Responsiveness**: Main thread stays available for new LSP requests
-- **Concurrency**: Multiple SystemVerilog files can compile simultaneously
-
-### Async Operation Flow
-
-1. **LSP Request**: Arrives on main thread via JSON-RPC
-2. **Cache Check**: Main thread checks cache (fast path)
-3. **Background Dispatch**: Cache miss triggers `co_spawn` to thread pool
-4. **Compilation**: SystemVerilog parsing/analysis runs on background thread
-5. **Result Handoff**: `asio::post` switches context back to main thread
-6. **Cache Update**: Main thread adds result to cache
-7. **LSP Response**: Main thread sends response to VSCode
-
-**Critical insight**: The `co_await` + `asio::post` pattern enables true async without breaking thread safety.
+For detailed async patterns, executor model, synchronization mechanisms, and when/why/how to use them, see `ASYNC_ARCHITECTURE.md`.
 
 ## State Management
 
@@ -259,10 +239,10 @@ VSCode behavioral patterns, see SESSION_MANAGEMENT.md.
 - Diagnostics use this pattern - server decides when to send them
 - Example: After save, server publishes diagnostics without client asking
 
-**Caching strategy**:
+**Session storage strategy**:
 
-- **Version comparison**: Reuses session if LSP document version unchanged (0ms cache hit)
-- **Debounced removal**: Closed files stay in storage for 5 seconds (supports prefetch pattern)
+- **Version comparison**: Reuses session if LSP document version unchanged (0ms storage hit)
+- **Debounced cleanup**: Closed files stay in storage for 5 seconds (supports prefetch pattern)
 - **Prefetch optimization**: VSCode hover opens/closes files within 50-100ms - reuse avoids rebuild
 - **No size limits**: Preamble architecture enables ~10MB per session (100 files = 1GB acceptable)
 - **No content hashing**: LSP provides version tracking - no need to hash content
