@@ -281,9 +281,16 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
       -> asio::awaitable<std::shared_ptr<slangd::services::PreambleManager>> {
     auto layout_service = slangd::ProjectLayoutService::Create(
         executor, GetTempDir(), spdlog::default_logger());
-    co_return co_await slangd::services::PreambleManager::
-        CreateFromProjectLayout(
+    auto result =
+        co_await slangd::services::PreambleManager::CreateFromProjectLayout(
             layout_service, executor, spdlog::default_logger());
+
+    if (!result) {
+      throw std::runtime_error(
+          fmt::format("BuildPreambleManager failed: {}", result.error()));
+    }
+
+    co_return *result;
   }
 
   // Create BufferID offset package to force validation detection of missing
@@ -313,9 +320,17 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
       -> asio::awaitable<std::shared_ptr<slangd::services::OverlaySession>> {
     auto layout_service = slangd::ProjectLayoutService::Create(
         executor, GetTempDir(), spdlog::default_logger());
-    auto preamble_manager =
+    auto preamble_result =
         co_await slangd::services::PreambleManager::CreateFromProjectLayout(
             layout_service, executor, spdlog::default_logger());
+
+    if (!preamble_result) {
+      throw std::runtime_error(
+          fmt::format(
+              "BuildSession preamble failed: {}", preamble_result.error()));
+    }
+
+    auto preamble_manager = *preamble_result;
 
     // Read current file content from disk
     auto current_path = GetTempDir().Path() / current_file_name;

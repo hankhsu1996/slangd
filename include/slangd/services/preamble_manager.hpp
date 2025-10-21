@@ -1,5 +1,6 @@
 #pragma once
 
+#include <expected>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -41,13 +42,13 @@ class PreambleManager {
   // Default constructor
   PreambleManager() = default;
 
-  // Factory method - convenient way to create and initialize a PreambleManager
-  // Creates a preamble compilation from all project files and extracts metadata
+  // Factory method
   [[nodiscard]] static auto CreateFromProjectLayout(
       std::shared_ptr<ProjectLayoutService> layout_service,
       asio::any_io_executor compilation_executor,
       std::shared_ptr<spdlog::logger> logger = spdlog::default_logger())
-      -> asio::awaitable<std::shared_ptr<PreambleManager>>;
+      -> asio::awaitable<
+          std::expected<std::shared_ptr<PreambleManager>, std::string>>;
 
   // Non-copyable, non-movable
   PreambleManager(const PreambleManager&) = delete;
@@ -73,12 +74,6 @@ class PreambleManager {
 
   // Compilation accessor for symbol compilation checking
   [[nodiscard]] auto GetCompilation() const -> const slang::ast::Compilation&;
-
-  // Build preamble_manager from ProjectLayoutService - public method
-  auto BuildFromLayout(
-      std::shared_ptr<ProjectLayoutService> layout_service,
-      std::shared_ptr<spdlog::logger> logger,
-      asio::any_io_executor compilation_executor) -> asio::awaitable<void>;
 
  private:
   std::vector<CanonicalPath> include_directories_;

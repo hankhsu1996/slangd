@@ -23,69 +23,49 @@ auto PreambleManager::CreateFromProjectLayout(
     std::shared_ptr<ProjectLayoutService> layout_service,
     asio::any_io_executor compilation_executor,
     std::shared_ptr<spdlog::logger> logger)
-    -> asio::awaitable<std::shared_ptr<PreambleManager>> {
-  if (!layout_service) {
-    if (logger) {
-      logger->error("PreambleManager: ProjectLayoutService is null");
-    }
-    co_return nullptr;
-  }
+    -> asio::awaitable<
+        std::expected<std::shared_ptr<PreambleManager>, std::string>> {
+  auto preamble = std::make_shared<PreambleManager>();
+  preamble->logger_ = logger;
+  utils::ScopedTimer timer("PreambleManager build", logger);
+  logger->debug("PreambleManager: Building from layout service");
 
-  logger->debug("PreambleManager: Creating from ProjectLayoutService");
-
-  // Create preamble_manager instance and initialize it
-  auto preamble_manager = std::make_shared<PreambleManager>();
-  co_await preamble_manager->BuildFromLayout(
-      layout_service, logger, compilation_executor);
-
-  logger->debug("PreambleManager: Created");
-
-  co_return preamble_manager;
-}
-
-auto PreambleManager::BuildFromLayout(
-    std::shared_ptr<ProjectLayoutService> layout_service,
-    std::shared_ptr<spdlog::logger> logger,
-    asio::any_io_executor compilation_executor) -> asio::awaitable<void> {
-  logger_ = logger;
-  utils::ScopedTimer timer("PreambleManager build", logger_);
-  logger_->debug("PreambleManager: Building from layout service");
-
-  // Create fresh source manager for preamble compilation
-  source_manager_ = std::make_shared<slang::SourceManager>();
+  // Create fresh source manager
+  preamble->source_manager_ = std::make_shared<slang::SourceManager>();
 
   // Start with standard LSP compilation options
   auto options = utils::CreateLspCompilationOptions();
 
   // Get include directories and defines from layout service
-  include_directories_ = layout_service->GetIncludeDirectories();
-  defines_ = layout_service->GetDefines();
+  preamble->include_directories_ = layout_service->GetIncludeDirectories();
+  preamble->defines_ = layout_service->GetDefines();
 
   // Add project-specific preprocessor options
   auto pp_options = options.getOrDefault<slang::parsing::PreprocessorOptions>();
-  for (const auto& include_dir : include_directories_) {
+  for (const auto& include_dir : preamble->include_directories_) {
     pp_options.additionalIncludePaths.emplace_back(include_dir.Path());
   }
-  for (const auto& define : defines_) {
+  for (const auto& define : preamble->defines_) {
     pp_options.predefines.push_back(define);
   }
   options.set(pp_options);
 
   // Create preamble compilation with options
-  preamble_compilation_ = std::make_shared<slang::ast::Compilation>(options);
+  preamble->preamble_compilation_ =
+      std::make_shared<slang::ast::Compilation>(options);
 
-  logger_->debug(
+  logger->debug(
       "PreambleManager: Applied {} include dirs, {} defines",
-      include_directories_.size(), defines_.size());
+      preamble->include_directories_.size(), preamble->defines_.size());
 
   // Get all source files from layout service
   auto source_files = layout_service->GetSourceFiles();
-  logger_->debug(
+  logger->debug(
       "PreambleManager: Processing {} source files", source_files.size());
 
   if (source_files.empty()) {
-    logger_->warn("PreambleManager: No source files to process");
-    co_return;
+    logger->debug("PreambleManager: No source files (empty preamble)");
+    co_return preamble;
   }
 
   // Pre-allocate results vector
@@ -100,10 +80,11 @@ auto PreambleManager::BuildFromLayout(
     parse_tasks.push_back(
         asio::co_spawn(
             compilation_executor,
-            [this, i, &source_files, &results,
+            [&preamble, i, &source_files, &results,
              &options]() -> asio::awaitable<void> {
               auto tree_result = slang::syntax::SyntaxTree::fromFile(
-                  source_files[i].Path().string(), *source_manager_, options);
+                  source_files[i].Path().string(), *preamble->source_manager_,
+                  options);
 
               if (tree_result) {
                 results[i] = tree_result.value();
@@ -121,22 +102,23 @@ auto PreambleManager::BuildFromLayout(
   }
 
   // Add trees to compilation sequentially (addSyntaxTree is NOT thread-safe)
+  std::vector<std::string> failed_files;
   for (size_t i = 0; i < results.size(); ++i) {
     if (results[i]) {
-      preamble_compilation_->addSyntaxTree(*results[i]);
+      preamble->preamble_compilation_->addSyntaxTree(*results[i]);
     } else {
-      logger_->warn(
-          "PreambleManager: Failed to parse file: {}",
-          source_files[i].Path().string());
+      failed_files.push_back(source_files[i].Path().string());
     }
   }
 
-  auto elapsed = timer.GetElapsed();
-  logger_->info(
-      "PreambleManager: Build complete ({}, {} files, parallel parsing)",
-      utils::ScopedTimer::FormatDuration(elapsed), source_files.size());
+  // Log warnings for parse failures (preamble is optional, partial is fine)
+  if (!failed_files.empty()) {
+    logger->warn(
+        "PreambleManager: {} file(s) failed to parse (first: {})",
+        failed_files.size(), failed_files[0]);
+  }
 
-  co_return;
+  co_return preamble;
 }
 
 auto PreambleManager::GetPackageMap() const -> const

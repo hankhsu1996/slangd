@@ -65,15 +65,21 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
       ProjectLayoutService::Create(executor_, workspace_path, logger_);
   co_await layout_service_->LoadConfig(workspace_path);
 
-  preamble_manager_ = co_await PreambleManager::CreateFromProjectLayout(
+  auto preamble_result = co_await PreambleManager::CreateFromProjectLayout(
       layout_service_, compilation_pool_->get_executor(), logger_);
 
-  if (preamble_manager_) {
-    logger_->debug(
-        "LanguageService created PreambleManager with {} packages",
-        preamble_manager_->GetPackageMap().size());
+  if (!preamble_result) {
+    logger_->warn(
+        "LanguageService preamble creation failed: {} (continuing without "
+        "preamble)",
+        preamble_result.error());
+    preamble_manager_ = nullptr;
   } else {
-    logger_->error("LanguageService failed to create PreambleManager");
+    preamble_manager_ = *preamble_result;
+    logger_->debug(
+        "LanguageService created PreambleManager ({} packages, {} definitions)",
+        preamble_manager_->GetPackageMap().size(),
+        preamble_manager_->GetDefinitionMap().size());
   }
 
   session_manager_ = std::make_unique<SessionManager>(
@@ -194,20 +200,25 @@ auto LanguageService::HandleConfigChange() -> asio::awaitable<void> {
 
   layout_service_->RebuildLayout();
 
-  // Rebuild PreambleManager with new configuration (search paths, macros, etc.)
-  preamble_manager_ = co_await PreambleManager::CreateFromProjectLayout(
+  // Rebuild PreambleManager with new configuration
+  auto preamble_result = co_await PreambleManager::CreateFromProjectLayout(
       layout_service_, compilation_pool_->get_executor(), logger_);
 
-  if (preamble_manager_) {
-    logger_->debug(
-        "LanguageService rebuilt PreambleManager with {} packages",
-        preamble_manager_->GetPackageMap().size());
+  if (!preamble_result) {
+    logger_->warn(
+        "LanguageService preamble rebuild failed: {} (continuing without "
+        "preamble)",
+        preamble_result.error());
+    preamble_manager_ = nullptr;
   } else {
-    logger_->error("LanguageService failed to rebuild PreambleManager");
+    preamble_manager_ = *preamble_result;
+    logger_->debug(
+        "LanguageService rebuilt PreambleManager ({} packages, {} definitions)",
+        preamble_manager_->GetPackageMap().size(),
+        preamble_manager_->GetDefinitionMap().size());
   }
 
-  // Update SessionManager's preamble_manager reference for future session
-  // creations
+  // Update SessionManager's preamble reference for future sessions
   session_manager_->UpdatePreambleManager(preamble_manager_);
 
   session_manager_->InvalidateAllSessions();

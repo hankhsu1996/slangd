@@ -122,6 +122,12 @@ SystemVerilog LSP server with modular design:
 - Naming: prefer full words over abbreviations; remove redundant context from names
 - Comments: describe technical behavior, not project state (no alpha/beta/v1/staging/milestone)
 
+**Error Handling:**
+
+- **Preconditions** (programmer errors): Fail-fast, no runtime checks
+- **Runtime errors** (expected failures): Use `std::expected<T, std::string>`
+- **Distinction**: Can this happen in correct code? No → precondition (crash). Yes → std::expected (handle).
+
 **Forward Declaration vs Include:**
 
 - Headers: forward declare pointers/references; include for values/methods/inheritance
