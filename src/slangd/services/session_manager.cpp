@@ -44,27 +44,27 @@ auto SessionManager::UpdateSession(
 
   logger_->debug("Session update: {} (version {})", uri, version);
 
-  // Cancel removal timer if exists (file reopened within debounce window)
-  if (auto timer_it = removal_timers_.find(uri);
-      timer_it != removal_timers_.end()) {
+  // Cancel cleanup timer if exists (file reopened within cleanup window)
+  if (auto timer_it = cleanup_timers_.find(uri);
+      timer_it != cleanup_timers_.end()) {
     timer_it->second->cancel();
-    removal_timers_.erase(timer_it);
-    logger_->debug("Cancelled removal timer for reopened file: {}", uri);
+    cleanup_timers_.erase(timer_it);
+    logger_->debug("Cancelled cleanup timer for reopened file: {}", uri);
   }
 
-  // Check if we have a cached session with the same version
-  if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
+  // Check if we have a stored session with the same version
+  if (auto it = sessions_.find(uri); it != sessions_.end()) {
     if (it->second.version == version) {
       co_return;
     }
     logger_->debug(
         "SessionManager version changed: {} (old: {}, new: {})", uri,
         it->second.version, version);
-    active_sessions_.erase(uri);
+    sessions_.erase(uri);
   }
 
   // Check if pending session already exists
-  if (auto it = pending_sessions_.find(uri); it != pending_sessions_.end()) {
+  if (auto it = pending_.find(uri); it != pending_.end()) {
     if (it->second->version == version) {
       co_return;  // Same version, reuse pending session
     } else {
@@ -74,13 +74,13 @@ auto SessionManager::UpdateSession(
           "new version {})",
           uri, it->second->version, version);
       it->second->cancelled.store(true, std::memory_order_release);
-      pending_sessions_.erase(it);
+      pending_.erase(it);
     }
   }
 
   auto new_pending = StartSessionCreation(
       uri, content, version, on_compilation_ready, on_session_ready);
-  pending_sessions_[uri] = new_pending;
+  pending_[uri] = new_pending;
 
   co_return;
 }
@@ -92,12 +92,11 @@ auto SessionManager::InvalidateSessions(std::vector<std::string> uris) -> void {
         co_await asio::post(session_strand_, asio::use_awaitable);
 
         for (const auto& uri : uris) {
-          if (auto it = pending_sessions_.find(uri);
-              it != pending_sessions_.end()) {
+          if (auto it = pending_.find(uri); it != pending_.end()) {
             it->second->cancelled.store(true, std::memory_order_release);
           }
-          active_sessions_.erase(uri);
-          pending_sessions_.erase(uri);
+          sessions_.erase(uri);
+          pending_.erase(uri);
           logger_->debug("Session invalidated: {}", uri);
         }
         co_return;
@@ -112,15 +111,15 @@ auto SessionManager::InvalidateAllSessions() -> void {
         co_await asio::post(session_strand_, asio::use_awaitable);
 
         logger_->debug(
-            "All sessions invalidated ({} active, {} pending)",
-            active_sessions_.size(), pending_sessions_.size());
+            "All sessions invalidated ({} stored, {} pending)",
+            sessions_.size(), pending_.size());
 
-        for (auto& [uri, pending] : pending_sessions_) {
+        for (auto& [uri, pending] : pending_) {
           pending->cancelled.store(true, std::memory_order_release);
         }
 
-        active_sessions_.clear();
-        pending_sessions_.clear();
+        sessions_.clear();
+        pending_.clear();
         co_return;
       },
       asio::detached);
@@ -132,13 +131,12 @@ auto SessionManager::CancelPendingSession(std::string uri) -> void {
       [this, uri]() -> asio::awaitable<void> {
         co_await asio::post(session_strand_, asio::use_awaitable);
 
-        if (auto it = pending_sessions_.find(uri);
-            it != pending_sessions_.end()) {
+        if (auto it = pending_.find(uri); it != pending_.end()) {
           it->second->cancelled.store(true, std::memory_order_release);
-          pending_sessions_.erase(it);
+          pending_.erase(it);
           logger_->debug(
-              "Cancelled pending session for: {} (active={}, pending={})", uri,
-              active_sessions_.size(), pending_sessions_.size());
+              "Cancelled pending session for: {} (stored={}, pending={})", uri,
+              sessions_.size(), pending_.size());
         }
 
         co_return;
@@ -215,15 +213,15 @@ auto SessionManager::StartSessionCreation(
               // Check if still current before storing
               co_await asio::post(session_strand_, asio::use_awaitable);
 
-              auto it = pending_sessions_.find(uri);
-              if (it == pending_sessions_.end() ||
+              auto it = pending_.find(uri);
+              if (it == pending_.end() ||
                   it->second->version != pending->version) {
                 logger_->debug(
                     "Session creation cancelled after elaboration: {}", uri);
                 co_return std::nullopt;
               }
 
-              // Store Phase 1 in cache, then broadcast
+              // Store Phase 1, then broadcast
               auto compilation_shared =
                   std::shared_ptr<slang::ast::Compilation>(
                       std::move(compilation));
@@ -231,13 +229,13 @@ auto SessionManager::StartSessionCreation(
                   source_manager, compilation_shared, std::move(semantic_index),
                   main_buffer_id, logger_, preamble_manager_);
 
-              active_sessions_[uri] = CacheEntry{
+              sessions_[uri] = SessionEntry{
                   .session = partial_session,
                   .version = pending->version,
                   .phase = SessionPhase::kElaborationComplete};
 
               // Execute Phase 1 hook if provided (on strand, session cannot be
-              // evicted)
+              // cleaned up)
               if (pending->on_compilation_ready) {
                 CompilationState state{
                     .compilation = partial_session->GetCompilationPtr(),
@@ -253,33 +251,31 @@ auto SessionManager::StartSessionCreation(
         co_await asio::post(session_strand_, asio::use_awaitable);
 
         if (result.has_value() && result.value()) {
-          auto it = pending_sessions_.find(uri);
-          if (it != pending_sessions_.end() &&
-              it->second->version == pending->version) {
+          auto it = pending_.find(uri);
+          if (it != pending_.end() && it->second->version == pending->version) {
             // Upgrade to Phase 2, then broadcast
-            if (auto cache_it = active_sessions_.find(uri);
-                cache_it != active_sessions_.end()) {
-              cache_it->second.phase = SessionPhase::kIndexingComplete;
+            if (auto session_it = sessions_.find(uri);
+                session_it != sessions_.end()) {
+              session_it->second.phase = SessionPhase::kIndexingComplete;
 
               // Execute Phase 2 hook if provided (on strand, session cannot be
-              // evicted)
+              // cleaned up)
               if (pending->on_session_ready) {
-                (*pending->on_session_ready)(*cache_it->second.session);
+                (*pending->on_session_ready)(*session_it->second.session);
               }
 
               pending->session_ready.Set();
             }
-            pending_sessions_.erase(it);
+            pending_.erase(it);
           } else {
             logger_->debug(
                 "Session creation superseded during Phase 2: {}", uri);
           }
         } else {
           logger_->debug("Session creation failed or cancelled: {}", uri);
-          auto it = pending_sessions_.find(uri);
-          if (it != pending_sessions_.end() &&
-              it->second->version == pending->version) {
-            pending_sessions_.erase(it);
+          auto it = pending_.find(uri);
+          if (it != pending_.end() && it->second->version == pending->version) {
+            pending_.erase(it);
           }
         }
       },
@@ -288,23 +284,23 @@ auto SessionManager::StartSessionCreation(
   return pending;
 }
 
-auto SessionManager::ScheduleDebouncedRemoval(std::string uri) -> void {
+auto SessionManager::ScheduleCleanup(std::string uri) -> void {
   asio::co_spawn(
       executor_,
       [this, uri]() -> asio::awaitable<void> {
         co_await asio::post(session_strand_, asio::use_awaitable);
 
         // Cancel existing timer if any
-        if (auto it = removal_timers_.find(uri); it != removal_timers_.end()) {
+        if (auto it = cleanup_timers_.find(uri); it != cleanup_timers_.end()) {
           it->second->cancel();
-          removal_timers_.erase(it);
+          cleanup_timers_.erase(it);
         }
 
-        // Create new timer for debounced removal
-        auto timer = std::make_unique<asio::steady_timer>(
-            executor_, kRemovalDebounceDelay);
+        // Create new timer for cleanup delay
+        auto timer =
+            std::make_unique<asio::steady_timer>(executor_, kCleanupDelay);
         auto* timer_ptr = timer.get();
-        removal_timers_[uri] = std::move(timer);
+        cleanup_timers_[uri] = std::move(timer);
 
         timer_ptr->async_wait([this, uri](std::error_code ec) {
           if (!ec) {
@@ -314,19 +310,19 @@ auto SessionManager::ScheduleDebouncedRemoval(std::string uri) -> void {
                 [this, uri]() -> asio::awaitable<void> {
                   co_await asio::post(session_strand_, asio::use_awaitable);
 
-                  active_sessions_.erase(uri);
-                  removal_timers_.erase(uri);
+                  sessions_.erase(uri);
+                  cleanup_timers_.erase(uri);
 
                   logger_->debug(
-                      "Session removed after debounce delay: {} (active={})",
-                      uri, active_sessions_.size());
+                      "Session removed after cleanup delay: {} (stored={})",
+                      uri, sessions_.size());
 
                   co_return;
                 },
                 asio::detached);
           } else if (ec != asio::error::operation_aborted) {
             // Log unexpected errors (ignore cancellation)
-            logger_->warn("Removal timer error for {}: {}", uri, ec.message());
+            logger_->warn("Cleanup timer error for {}: {}", uri, ec.message());
           }
         });
 

@@ -78,7 +78,7 @@ Background thread:
 
 ### Main Event Loop (io_context)
 
-- **Single-threaded**: All LSP protocol handling, file tracking, and cache management
+- **Single-threaded**: All LSP protocol handling, file tracking, and session lifecycle
 - **Strand coordination**: `asio::strand` serializes access to shared state
 - **Non-blocking**: Uses `co_await` for all potentially slow operations
 
@@ -137,10 +137,10 @@ SlangdLspServer (LSP protocol layer)
 
 - **SlangdLspServer**: LSP protocol, delegates to LanguageService
 - **LanguageService**: Public API, feature implementations, owns SessionManager
-- **SessionManager**: Session lifecycle (create/cache/invalidate), provides access via WithSession callbacks
+- **SessionManager**: Session lifecycle (create/store/invalidate), provides access via WithSession callbacks
 - **OverlaySession**: Data class (Compilation + SemanticIndex + SourceManager)
 
-**Architecture**: SessionManager centralizes all session lifecycle (create/cache/invalidate). LanguageService features are read-only consumers using callback pattern (no shared_ptr escape).
+**Architecture**: SessionManager centralizes all session lifecycle (create/store/invalidate). LanguageService features are read-only consumers using callback pattern (no shared_ptr escape).
 
 ### Compilation Architecture
 
@@ -204,7 +204,7 @@ SlangdLspServer (protocol layer - thin delegates)
 LanguageService (domain layer - state management + feature implementations)
   ├─ OpenDocumentTracker open_tracker_  ← Tracks which documents are open (shared)
   ├─ DocumentStateManager doc_state_  ← Document state (content + version)
-  ├─ SessionManager session_manager_  ← Compilation cache + lifecycle
+  ├─ SessionManager session_manager_  ← Session storage + lifecycle
   ├─ DiagnosticPublisher diagnostic_publisher_  ← Callback from LSP server
   │
   ├─ Document Lifecycle
@@ -226,13 +226,13 @@ DocumentStateManager (synchronized storage)
   ├─ documents_: map<uri, DocumentState{content, version}>  ← Domain state
   └─ strand_: asio::strand  ← Thread-safe access
 
-SessionManager (compilation cache)
+SessionManager (session storage)
   ├─ open_tracker_: shared reference  ← Queries for open state
   ├─ session_strand_: asio::strand  ← Thread-safe access to maps
-  ├─ active_sessions_: map<uri, CacheEntry{session, version}>  ← Version-aware cache
-  ├─ pending_sessions_: map<uri, PendingCreation{hooks, events}>  ← Being created
-  ├─ removal_timers_: map<uri, timer>  ← Debounced removal (5s delay)
-  ├─ Cache key: URI + LSP document version (not content hash)
+  ├─ sessions_: map<uri, SessionEntry{session, version}>  ← Version-aware storage
+  ├─ pending_: map<uri, PendingCreation{hooks, events}>  ← Being created
+  ├─ cleanup_timers_: map<uri, timer>  ← Cleanup delay (5s)
+  ├─ Storage key: URI + LSP document version (not content hash)
   └─ UpdateSession accepts optional hooks for server-push features
 
 For detailed session management design including debounced removal, memory efficiency, and
@@ -262,7 +262,7 @@ VSCode behavioral patterns, see SESSION_MANAGEMENT.md.
 **Caching strategy**:
 
 - **Version comparison**: Reuses session if LSP document version unchanged (0ms cache hit)
-- **Debounced removal**: Closed files stay in cache for 5 seconds (supports prefetch pattern)
+- **Debounced removal**: Closed files stay in storage for 5 seconds (supports prefetch pattern)
 - **Prefetch optimization**: VSCode hover opens/closes files within 50-100ms - reuse avoids rebuild
 - **No size limits**: Preamble architecture enables ~10MB per session (100 files = 1GB acceptable)
 - **No content hashing**: LSP provides version tracking - no need to hash content
@@ -274,7 +274,7 @@ VSCode behavioral patterns, see SESSION_MANAGEMENT.md.
 3. **Consistent handlers**: All protocol handlers are 1-line thin delegates (no state access)
 4. **No duplication**: Eliminated redundant storage between protocol and domain layers
 5. **Typing performance**: `OnDocumentChanged` updates state only (no session rebuild), save triggers rebuild
-6. **Close/reopen efficiency**: Reopening file reuses cache if version matches (no ~500ms rebuild)
+6. **Close/reopen efficiency**: Reopening file reuses stored session if version matches (no ~500ms rebuild)
 7. **Memory efficiency**: Preamble architecture enables 1:1 mapping (~10MB per session)
 8. **Simplicity**: No content hashing overhead, rely on LSP version tracking
 

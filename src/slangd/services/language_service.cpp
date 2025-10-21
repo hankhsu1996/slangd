@@ -326,9 +326,9 @@ auto LanguageService::OnDocumentClosed(std::string uri) -> void {
       },
       asio::detached);
 
-  // Schedule debounced removal of active session
-  // Supports prefetch pattern: if reopened within 5s, reuse cached session
-  session_manager_->ScheduleDebouncedRemoval(uri);
+  // Schedule cleanup of session after delay
+  // Supports prefetch pattern: if reopened within 5s, reuse stored session
+  session_manager_->ScheduleCleanup(uri);
 }
 
 auto LanguageService::OnDocumentsChanged(std::vector<std::string> /*uris*/)
