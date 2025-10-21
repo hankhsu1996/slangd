@@ -77,6 +77,10 @@ class SessionManager {
   // Cancel pending session compilation (called when document is closed)
   auto CancelPendingSession(std::string uri) -> void;
 
+  // Schedule debounced removal of active session (called when document closes)
+  // Supports prefetch pattern: if reopened within delay, reuse cached session
+  auto ScheduleDebouncedRemoval(std::string uri) -> void;
+
   // Updates the preamble_manager pointer used for all future session creations
   // Must be called when PreambleManager is rebuilt (e.g., config changes)
   auto UpdatePreambleManager(
@@ -123,10 +127,6 @@ class SessionManager {
       std::optional<SessionReadyHook> on_session_ready)
       -> std::shared_ptr<PendingCreation>;
 
-  // LRU cache management helpers
-  auto UpdateAccessOrder(const std::string& uri) -> void;
-  auto EvictOldestIfNeeded() -> void;
-
   // Cache entry with version and phase tracking
   struct CacheEntry {
     std::shared_ptr<OverlaySession> session;
@@ -150,9 +150,10 @@ class SessionManager {
   std::unordered_map<std::string, std::shared_ptr<PendingCreation>>
       pending_sessions_;
 
-  // LRU tracking for cache eviction (most recently used first)
-  std::vector<std::string> access_order_;
-  static constexpr size_t kMaxCacheSize = 8;
+  // Debounced session removal timers (protected by session_strand_)
+  std::unordered_map<std::string, std::unique_ptr<asio::steady_timer>>
+      removal_timers_;
+  static constexpr auto kRemovalDebounceDelay = std::chrono::seconds(5);
 
   // Background compilation pool
   std::unique_ptr<asio::thread_pool> compilation_pool_;
@@ -170,9 +171,8 @@ auto SessionManager::WithSession(std::string uri, Fn callback)
   // Fast path: Check cache
   if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
     if (it->second.phase >= SessionPhase::kIndexingComplete) {
-      UpdateAccessOrder(uri);
       // Execute callback synchronously on strand with const reference
-      // Session cannot be evicted while we hold strand
+      // Session cannot be removed while we hold strand
       auto result = callback(*it->second.session);
       co_return result;
     }
@@ -192,7 +192,6 @@ auto SessionManager::WithSession(std::string uri, Fn callback)
     if (auto cache_it = active_sessions_.find(uri);
         cache_it != active_sessions_.end() &&
         cache_it->second.phase >= SessionPhase::kIndexingComplete) {
-      UpdateAccessOrder(uri);
       auto result = callback(*cache_it->second.session);
       co_return result;
     }
@@ -219,8 +218,6 @@ auto SessionManager::WithCompilationState(std::string uri, Fn callback)
   // Fast path: Check cache
   if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
     if (it->second.phase >= SessionPhase::kElaborationComplete) {
-      UpdateAccessOrder(uri);
-
       // Create temporary CompilationState on stack
       // Shared_ptrs keep session components alive during callback
       // but don't escape to caller
@@ -249,8 +246,6 @@ auto SessionManager::WithCompilationState(std::string uri, Fn callback)
     if (auto cache_it = active_sessions_.find(uri);
         cache_it != active_sessions_.end() &&
         cache_it->second.phase >= SessionPhase::kElaborationComplete) {
-      UpdateAccessOrder(uri);
-
       CompilationState state{
           .compilation = cache_it->second.session->GetCompilationPtr(),
           .main_buffer_id = cache_it->second.session->GetMainBufferID()};

@@ -70,7 +70,7 @@ Background thread:
 **Key properties**:
 
 - Hook executes on strand after caching, before signaling events
-- Session cannot be evicted while hook runs (guaranteed execution)
+- Session cannot be removed while hook runs (guaranteed execution)
 - Single-publish: full diagnostics (parse + semantic) to avoid visual flicker
 - `forceElaborate()` populates `compilation.diagMap` during indexing (file-scoped)
 
@@ -102,11 +102,11 @@ co_await post_to_main_thread()
 ### Async Operation Flow
 
 1. **LSP Request**: Arrives on main thread via JSON-RPC
-2. **Cache Check**: Main thread checks LRU cache (fast path)
+2. **Cache Check**: Main thread checks cache (fast path)
 3. **Background Dispatch**: Cache miss triggers `co_spawn` to thread pool
 4. **Compilation**: SystemVerilog parsing/analysis runs on background thread
 5. **Result Handoff**: `asio::post` switches context back to main thread
-6. **Cache Update**: Main thread adds result to LRU cache
+6. **Cache Update**: Main thread adds result to cache
 7. **LSP Response**: Main thread sends response to VSCode
 
 **Critical insight**: The `co_await` + `asio::post` pattern enables true async without breaking thread safety.
@@ -156,7 +156,7 @@ SlangdLspServer (LSP protocol layer)
   - Current file buffer (in-memory, authoritative)
   - Packages via cross-compilation binding (PackageSymbol\* pointers from preamble)
   - Interfaces from PreambleManager (read from disk via `SyntaxTree::fromFile`)
-  - Per-file, cached by SessionManager (LRU eviction)
+  - Per-file, cached by SessionManager (1:1 mapping with debounced removal)
 
 **Critical insight:** Packages are NOT loaded as syntax trees - PreambleAwareCompilation injects preamble PackageSymbol\* pointers directly into packageMap for cross-compilation binding. Interfaces are still read from disk for port resolution. See `PREAMBLE.md` for details.
 
@@ -227,15 +227,15 @@ DocumentStateManager (synchronized storage)
   └─ strand_: asio::strand  ← Thread-safe access
 
 SessionManager (compilation cache)
-  ├─ open_tracker_: shared reference  ← Queries for eviction decisions
+  ├─ open_tracker_: shared reference  ← Queries for open state
   ├─ session_strand_: asio::strand  ← Thread-safe access to maps
   ├─ active_sessions_: map<uri, CacheEntry{session, version}>  ← Version-aware cache
   ├─ pending_sessions_: map<uri, PendingCreation{hooks, events}>  ← Being created
-  ├─ access_order_: vector<uri>  ← LRU tracking (MRU first)
+  ├─ removal_timers_: map<uri, timer>  ← Debounced removal (5s delay)
   ├─ Cache key: URI + LSP document version (not content hash)
   └─ UpdateSession accepts optional hooks for server-push features
 
-For detailed session management design including memory bounds, eviction policy, and
+For detailed session management design including debounced removal, memory efficiency, and
 VSCode behavioral patterns, see SESSION_MANAGEMENT.md.
 ```
 
@@ -262,8 +262,9 @@ VSCode behavioral patterns, see SESSION_MANAGEMENT.md.
 **Caching strategy**:
 
 - **Version comparison**: Reuses session if LSP document version unchanged (0ms cache hit)
-- **Close/reopen optimization**: Closed files stay in cache (no RemoveSession call)
-- **LRU eviction**: Automatically removes oldest entries when limit exceeded (16 files)
+- **Debounced removal**: Closed files stay in cache for 5 seconds (supports prefetch pattern)
+- **Prefetch optimization**: VSCode hover opens/closes files within 50-100ms - reuse avoids rebuild
+- **No size limits**: Preamble architecture enables ~10MB per session (100 files = 1GB acceptable)
 - **No content hashing**: LSP provides version tracking - no need to hash content
 
 **Why this design**:
@@ -274,7 +275,7 @@ VSCode behavioral patterns, see SESSION_MANAGEMENT.md.
 4. **No duplication**: Eliminated redundant storage between protocol and domain layers
 5. **Typing performance**: `OnDocumentChanged` updates state only (no session rebuild), save triggers rebuild
 6. **Close/reopen efficiency**: Reopening file reuses cache if version matches (no ~500ms rebuild)
-7. **Memory management**: LRU eviction prevents unbounded growth
+7. **Memory efficiency**: Preamble architecture enables 1:1 mapping (~10MB per session)
 8. **Simplicity**: No content hashing overhead, rely on LSP version tracking
 
 ### Two-Phase Session Creation

@@ -326,8 +326,9 @@ auto LanguageService::OnDocumentClosed(std::string uri) -> void {
       },
       asio::detached);
 
-  // Keep completed sessions in cache for close/reopen optimization
-  // LRU eviction will handle cleanup when cache size limit is reached
+  // Schedule debounced removal of active session
+  // Supports prefetch pattern: if reopened within 5s, reuse cached session
+  session_manager_->ScheduleDebouncedRemoval(uri);
 }
 
 auto LanguageService::OnDocumentsChanged(std::vector<std::string> /*uris*/)

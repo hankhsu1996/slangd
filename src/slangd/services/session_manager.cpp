@@ -1,7 +1,5 @@
 #include "slangd/services/session_manager.hpp"
 
-#include <ranges>
-
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/post.hpp>
@@ -9,7 +7,6 @@
 #include <asio/use_awaitable.hpp>
 
 #include "slangd/services/overlay_session.hpp"
-#include "slangd/utils/scoped_timer.hpp"
 
 namespace slangd::services {
 
@@ -47,10 +44,17 @@ auto SessionManager::UpdateSession(
 
   logger_->debug("Session update: {} (version {})", uri, version);
 
+  // Cancel removal timer if exists (file reopened within debounce window)
+  if (auto timer_it = removal_timers_.find(uri);
+      timer_it != removal_timers_.end()) {
+    timer_it->second->cancel();
+    removal_timers_.erase(timer_it);
+    logger_->debug("Cancelled removal timer for reopened file: {}", uri);
+  }
+
   // Check if we have a cached session with the same version
   if (auto it = active_sessions_.find(uri); it != active_sessions_.end()) {
     if (it->second.version == version) {
-      UpdateAccessOrder(uri);
       co_return;
     }
     logger_->debug(
@@ -93,7 +97,6 @@ auto SessionManager::InvalidateSessions(std::vector<std::string> uris) -> void {
             it->second->cancelled.store(true, std::memory_order_release);
           }
           active_sessions_.erase(uri);
-          std::erase(access_order_, uri);
           pending_sessions_.erase(uri);
           logger_->debug("Session invalidated: {}", uri);
         }
@@ -117,7 +120,6 @@ auto SessionManager::InvalidateAllSessions() -> void {
         }
 
         active_sessions_.clear();
-        access_order_.clear();
         pending_sessions_.clear();
         co_return;
       },
@@ -233,8 +235,6 @@ auto SessionManager::StartSessionCreation(
                   .session = partial_session,
                   .version = pending->version,
                   .phase = SessionPhase::kElaborationComplete};
-              UpdateAccessOrder(uri);
-              EvictOldestIfNeeded();
 
               // Execute Phase 1 hook if provided (on strand, session cannot be
               // evicted)
@@ -288,46 +288,51 @@ auto SessionManager::StartSessionCreation(
   return pending;
 }
 
-auto SessionManager::UpdateAccessOrder(const std::string& uri) -> void {
-  std::erase(access_order_, uri);
-  access_order_.insert(access_order_.begin(), uri);  // MRU at front
-}
+auto SessionManager::ScheduleDebouncedRemoval(std::string uri) -> void {
+  asio::co_spawn(
+      executor_,
+      [this, uri]() -> asio::awaitable<void> {
+        co_await asio::post(session_strand_, asio::use_awaitable);
 
-auto SessionManager::EvictOldestIfNeeded() -> void {
-  while (active_sessions_.size() > kMaxCacheSize) {
-    if (access_order_.empty()) {
-      logger_->error(
-          "SessionManager LRU tracking out of sync (active: {}, LRU: {})",
-          active_sessions_.size(), access_order_.size());
-      break;
-    }
+        // Cancel existing timer if any
+        if (auto it = removal_timers_.find(uri); it != removal_timers_.end()) {
+          it->second->cancel();
+          removal_timers_.erase(it);
+        }
 
-    // Smart eviction: prefer closed files over open files
-    std::string uri_to_evict;
-    bool found_closed = false;
+        // Create new timer for debounced removal
+        auto timer = std::make_unique<asio::steady_timer>(
+            executor_, kRemovalDebounceDelay);
+        auto* timer_ptr = timer.get();
+        removal_timers_[uri] = std::move(timer);
 
-    for (const auto& uri : access_order_ | std::views::reverse) {
-      if (!open_tracker_->Contains(uri)) {
-        uri_to_evict = uri;
-        found_closed = true;
-        logger_->debug(
-            "SessionManager evicting closed file: {} ({}/{} entries)",
-            uri_to_evict, active_sessions_.size(), kMaxCacheSize);
-        break;
-      }
-    }
+        timer_ptr->async_wait([this, uri](std::error_code ec) {
+          if (!ec) {
+            // Timer expired - remove session
+            asio::co_spawn(
+                executor_,
+                [this, uri]() -> asio::awaitable<void> {
+                  co_await asio::post(session_strand_, asio::use_awaitable);
 
-    if (!found_closed) {
-      uri_to_evict = access_order_.back();
-      logger_->debug(
-          "SessionManager evicting open file (no closed files available): {} "
-          "({}/{} entries)",
-          uri_to_evict, active_sessions_.size(), kMaxCacheSize);
-    }
+                  active_sessions_.erase(uri);
+                  removal_timers_.erase(uri);
 
-    active_sessions_.erase(uri_to_evict);
-    std::erase(access_order_, uri_to_evict);
-  }
+                  logger_->debug(
+                      "Session removed after debounce delay: {} (active={})",
+                      uri, active_sessions_.size());
+
+                  co_return;
+                },
+                asio::detached);
+          } else if (ec != asio::error::operation_aborted) {
+            // Log unexpected errors (ignore cancellation)
+            logger_->warn("Removal timer error for {}: {}", uri, ec.message());
+          }
+        });
+
+        co_return;
+      },
+      asio::detached);
 }
 
 }  // namespace slangd::services
