@@ -95,6 +95,12 @@ auto SessionManager::InvalidateSessions(std::vector<std::string> uris) -> void {
           if (auto it = pending_.find(uri); it != pending_.end()) {
             it->second->cancelled.store(true, std::memory_order_release);
           }
+          // Cancel cleanup timer if exists
+          if (auto timer_it = cleanup_timers_.find(uri);
+              timer_it != cleanup_timers_.end()) {
+            timer_it->second->cancel();
+            cleanup_timers_.erase(timer_it);
+          }
           sessions_.erase(uri);
           pending_.erase(uri);
           logger_->debug("Session invalidated: {}", uri);
@@ -118,8 +124,14 @@ auto SessionManager::InvalidateAllSessions() -> void {
           pending->cancelled.store(true, std::memory_order_release);
         }
 
+        // Cancel all cleanup timers
+        for (auto& [uri, timer] : cleanup_timers_) {
+          timer->cancel();
+        }
+
         sessions_.clear();
         pending_.clear();
+        cleanup_timers_.clear();
         co_return;
       },
       asio::detached);
@@ -210,12 +222,14 @@ auto SessionManager::StartSessionCreation(
 
               auto semantic_index = std::move(*result);
 
-              // Check if still current before storing
+              // Switch to strand to check pending_ map and store results
+              // (shared state requires strand protection)
               co_await asio::post(session_strand_, asio::use_awaitable);
 
               auto it = pending_.find(uri);
               if (it == pending_.end() ||
-                  it->second->version != pending->version) {
+                  it->second->version != pending->version ||
+                  it->second->cancelled.load(std::memory_order_acquire)) {
                 logger_->debug(
                     "Session creation cancelled after elaboration: {}", uri);
                 co_return std::nullopt;
@@ -248,6 +262,7 @@ auto SessionManager::StartSessionCreation(
             },
             asio::use_awaitable);
 
+        // Return to strand for Phase 2 storage (session upgrade)
         co_await asio::post(session_strand_, asio::use_awaitable);
 
         if (result.has_value() && result.value()) {
@@ -310,12 +325,18 @@ auto SessionManager::ScheduleCleanup(std::string uri) -> void {
                 [this, uri]() -> asio::awaitable<void> {
                   co_await asio::post(session_strand_, asio::use_awaitable);
 
-                  sessions_.erase(uri);
-                  cleanup_timers_.erase(uri);
+                  // Only remove if timer wasn't replaced by UpdateSession
+                  // Prevents TOCTOU race where UpdateSession cancels timer
+                  // while callback is firing
+                  if (auto timer_it = cleanup_timers_.find(uri);
+                      timer_it != cleanup_timers_.end()) {
+                    sessions_.erase(uri);
+                    cleanup_timers_.erase(uri);
 
-                  logger_->debug(
-                      "Session removed after cleanup delay: {} (stored={})",
-                      uri, sessions_.size());
+                    logger_->debug(
+                        "Session removed after cleanup delay: {} (stored={})",
+                        uri, sessions_.size());
+                  }
 
                   co_return;
                 },

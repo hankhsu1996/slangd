@@ -28,7 +28,7 @@ LanguageService::LanguageService(
 auto LanguageService::CreateDiagnosticHook(std::string uri, int version)
     -> std::function<void(const CompilationState&)> {
   return [this, uri = std::move(uri), version](const CompilationState& state) {
-    // Extract diagnostics (on strand, session cannot be evicted)
+    // Extract diagnostics (on strand, session cannot be cleaned up)
     auto parse_diagnostics =
         semantic::DiagnosticConverter::ExtractParseDiagnostics(
             *state.compilation, *state.compilation->getSourceManager(),
