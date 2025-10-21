@@ -54,6 +54,22 @@ Slang symbols are location-independent pointers. A compilation can reference sym
 └────────────────────────────────────────────┘
 ```
 
+## Thread-Safety Constraint
+
+**Architectural consequence**: Preamble's 1:many sharing inherently creates concurrent access to shared symbols. When overlay sessions run concurrently on the thread pool (for performance and responsiveness), multiple threads simultaneously access the same preamble compilation.
+
+**Slang's design assumption**: Single-threaded sequential access. Many Slang operations are lazy (deferred until first access) and assume no concurrent modification. Examples include scope elaboration, name resolution caching, type construction, and symbol binding.
+
+**The gap**: Preamble architecture creates multi-threaded access pattern that Slang was not designed for. This is not a feature requirement - it's an emergent property of the architecture:
+
+```
+Preamble sharing (1:many) + Concurrent overlay compilation = Concurrent preamble access
+```
+
+**Consequence**: Any lazy operation in Slang that modifies state can race when multiple overlay sessions trigger it simultaneously on shared preamble symbols.
+
+**Solution**: Serialize overlay elaboration using asio strand on multi-threaded compilation pool. Preserves parallel preamble parsing while preventing concurrent preamble access. No Slang modifications required.
+
 ## Safe Conversion Architecture
 
 **CRITICAL PRINCIPLE: Always derive SourceManager from the AST node that owns the range**
@@ -202,6 +218,7 @@ Why complete symbols work better:
 **Module/interface instantiation**: Overlay calls `getDefinition("my_module")` → finds preamble DefinitionSymbol\* in `definitionMap` → Slang creates instance using definition metadata → instantiation works transparently.
 
 **Cross-file navigation**: When user clicks on a port/parameter name in an instantiation:
+
 1. SemanticIndex finds the `UninstantiatedDefSymbol` for that instance
 2. Calls `symbol.getDefinition()` to get the preamble DefinitionSymbol\*
 3. Accesses `definition->portList` or `definition->parameters` to find the declaration
@@ -259,24 +276,29 @@ Design enables testing through:
 Key test scenarios:
 
 **Packages:**
+
 - Basic import (`import pkg::PARAM`)
 - Wildcard import (`import pkg::*`)
 - Scoped references (`pkg::my_var`)
 - Type resolution (`pkg::my_type_t`)
 
 **Interfaces:**
+
 - Interface instantiation (`my_iface bus()`)
 - Signal access through interface (`bus.data`)
 
 **Modules:**
+
 - Module instantiation with ports (`my_module inst(.a(x))`)
 - Module instantiation with parameters (`my_module #(.WIDTH(8)) inst`)
 - Cross-file port/parameter navigation
 
 **Deduplication:**
+
 - Opening files that contain definitions (no redefinition errors)
 
 **Scale:**
+
 - Many packages/interfaces/modules
 - Many symbols per construct
 

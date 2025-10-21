@@ -20,6 +20,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 **Build & Test:**
 
 - `bazel build //...` - Build everything
+- `bazel build //... --config=debug` - Build with debug symbols
 - `bazel test //...` - Run all tests
 - `find src include test -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i` - Format code
 - `bazel run @hedron_compile_commands//:refresh_all` - Refresh compile database

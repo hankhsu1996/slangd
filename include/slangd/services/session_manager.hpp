@@ -161,8 +161,15 @@ class SessionManager {
   TimerMap cleanup_timers_;
   static constexpr auto kCleanupDelay = std::chrono::seconds(5);
 
-  // Background compilation pool
+  // Background compilation pool (multi-threaded for preamble parsing
+  // parallelism)
   std::unique_ptr<asio::thread_pool> compilation_pool_;
+
+  // Strand for serializing overlay elaboration on compilation pool
+  // Overlay elaboration triggers lazy operations on shared preamble symbols
+  // Serialization prevents concurrent preamble access (Slang is
+  // single-threaded)
+  asio::strand<asio::any_io_executor> overlay_strand_;
 };
 
 // Template method implementations

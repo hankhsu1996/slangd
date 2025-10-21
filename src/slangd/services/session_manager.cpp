@@ -35,7 +35,11 @@ SessionManager::SessionManager(
         const auto hw_threads = std::thread::hardware_concurrency();
         const auto num_threads = std::min(hw_threads / 2, 16U);
         return num_threads == 0 ? 1U : num_threads;
-      }())) {
+      }())),
+      overlay_strand_(asio::make_strand(compilation_pool_->get_executor())) {
+  // Multi-threaded pool enables parallel preamble syntax tree parsing
+  // overlay_strand_ serializes overlay elaboration (prevents concurrent
+  // preamble access - Slang compilation is not thread-safe)
 }
 
 SessionManager::~SessionManager() {
@@ -197,7 +201,7 @@ auto SessionManager::StartSessionCreation(
       [this, uri, content, pending, preamble_manager,
        layout_service]() -> asio::awaitable<void> {
         auto result = co_await asio::co_spawn(
-            compilation_pool_->get_executor(),
+            overlay_strand_,
             [uri, content, this, pending, preamble_manager, layout_service]()
                 -> asio::awaitable<
                     std::optional<std::shared_ptr<OverlaySession>>> {
