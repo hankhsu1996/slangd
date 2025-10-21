@@ -123,6 +123,8 @@ class SessionManager {
 
   auto StartSessionCreation(
       std::string uri, std::string content, int version,
+      std::shared_ptr<const PreambleManager> preamble_manager,
+      std::shared_ptr<ProjectLayoutService> layout_service,
       std::optional<CompilationReadyHook> on_compilation_ready,
       std::optional<SessionReadyHook> on_session_ready)
       -> std::shared_ptr<PendingCreation>;
@@ -136,10 +138,12 @@ class SessionManager {
 
   // Dependencies
   asio::any_io_executor executor_;
+  std::shared_ptr<spdlog::logger> logger_;
+
+  // Shared state protected by session_strand_
   std::shared_ptr<ProjectLayoutService> layout_service_;
   std::shared_ptr<const PreambleManager> preamble_manager_;
   std::shared_ptr<OpenDocumentTracker> open_tracker_;
-  std::shared_ptr<spdlog::logger> logger_;
 
   // Strand for thread-safe session map access
   asio::strand<asio::any_io_executor> session_strand_;

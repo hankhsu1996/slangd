@@ -73,6 +73,10 @@ class LanguageService : public LanguageServiceBase {
   auto CreateDiagnosticHook(std::string uri, int version)
       -> std::function<void(const CompilationState&)>;
 
+  // Preamble rebuild helpers
+  auto RebuildPreambleAndSessions() -> asio::awaitable<void>;
+  auto ScheduleDebouncedPreambleRebuild() -> void;
+
   // Core dependencies
   std::shared_ptr<ProjectLayoutService> layout_service_;
   std::shared_ptr<const PreambleManager> preamble_manager_;
@@ -93,6 +97,13 @@ class LanguageService : public LanguageServiceBase {
 
   // Callback for publishing diagnostics (set by LSP server layer)
   DiagnosticPublisher diagnostic_publisher_;
+
+  // Preamble rebuild debouncing and concurrency protection
+  std::optional<asio::steady_timer> preamble_rebuild_timer_;
+  static constexpr auto kPreambleDebounceDelay =
+      std::chrono::milliseconds(1500);
+  bool preamble_rebuild_in_progress_ = false;
+  bool preamble_rebuild_pending_ = false;
 };
 
 }  // namespace slangd::services

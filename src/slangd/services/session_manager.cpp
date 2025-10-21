@@ -26,10 +26,10 @@ SessionManager::SessionManager(
     std::shared_ptr<OpenDocumentTracker> open_tracker,
     std::shared_ptr<spdlog::logger> logger)
     : executor_(executor),
+      logger_(std::move(logger)),
       layout_service_(std::move(layout_service)),
       preamble_manager_(std::move(preamble_manager)),
       open_tracker_(std::move(open_tracker)),
-      logger_(std::move(logger)),
       session_strand_(asio::make_strand(executor)),
       compilation_pool_(std::make_unique<asio::thread_pool>([] {
         const auto hw_threads = std::thread::hardware_concurrency();
@@ -47,6 +47,11 @@ auto SessionManager::UpdateSession(
     std::optional<CompilationReadyHook> on_compilation_ready,
     std::optional<SessionReadyHook> on_session_ready) -> asio::awaitable<void> {
   co_await asio::post(session_strand_, asio::use_awaitable);
+
+  // Capture shared_ptr snapshots to pass to background thread pool
+  // Prevents data race when UpdatePreambleManager swaps these pointers
+  auto preamble = preamble_manager_;
+  auto layout = layout_service_;
 
   logger_->debug("Session update: {} (version {})", uri, version);
 
@@ -85,7 +90,8 @@ auto SessionManager::UpdateSession(
   }
 
   auto new_pending = StartSessionCreation(
-      uri, content, version, on_compilation_ready, on_session_ready);
+      uri, content, version, preamble, layout, on_compilation_ready,
+      on_session_ready);
   pending_[uri] = new_pending;
 
   co_return;
@@ -168,11 +174,8 @@ auto SessionManager::UpdatePreambleManager(
       executor_,
       [this, preamble_manager]() -> asio::awaitable<void> {
         co_await asio::post(session_strand_, asio::use_awaitable);
-
-        logger_->debug("Preamble manager updated");
-
         preamble_manager_ = preamble_manager;
-
+        logger_->debug("Preamble manager updated");
         co_return;
       },
       asio::detached);
@@ -180,6 +183,8 @@ auto SessionManager::UpdatePreambleManager(
 
 auto SessionManager::StartSessionCreation(
     std::string uri, std::string content, int version,
+    std::shared_ptr<const PreambleManager> preamble_manager,
+    std::shared_ptr<ProjectLayoutService> layout_service,
     std::optional<CompilationReadyHook> on_compilation_ready,
     std::optional<SessionReadyHook> on_session_ready)
     -> std::shared_ptr<PendingCreation> {
@@ -189,10 +194,11 @@ auto SessionManager::StartSessionCreation(
 
   asio::co_spawn(
       executor_,
-      [this, uri, content, pending]() -> asio::awaitable<void> {
+      [this, uri, content, pending, preamble_manager,
+       layout_service]() -> asio::awaitable<void> {
         auto result = co_await asio::co_spawn(
             compilation_pool_->get_executor(),
-            [uri, content, this, pending]()
+            [uri, content, this, pending, preamble_manager, layout_service]()
                 -> asio::awaitable<
                     std::optional<std::shared_ptr<OverlaySession>>> {
               // Check cancellation flag (lock-free, stays on pool thread)
@@ -204,8 +210,7 @@ auto SessionManager::StartSessionCreation(
 
               auto [source_manager, compilation, main_buffer_id] =
                   OverlaySession::BuildCompilation(
-                      uri, content, layout_service_, preamble_manager_,
-                      logger_);
+                      uri, content, layout_service, preamble_manager, logger_);
 
               // Check again after expensive BuildCompilation
               if (pending->cancelled.load(std::memory_order_acquire)) {
@@ -215,7 +220,7 @@ auto SessionManager::StartSessionCreation(
               }
 
               auto result = semantic::SemanticIndex::FromCompilation(
-                  *compilation, *source_manager, uri, preamble_manager_.get(),
+                  *compilation, *source_manager, uri, preamble_manager.get(),
                   logger_);
 
               if (!result) {
@@ -247,7 +252,7 @@ auto SessionManager::StartSessionCreation(
                       std::move(compilation));
               auto partial_session = OverlaySession::CreateFromParts(
                   source_manager, compilation_shared, std::move(semantic_index),
-                  main_buffer_id, logger_, preamble_manager_);
+                  main_buffer_id, logger_, preamble_manager);
 
               sessions_[uri] = SessionEntry{
                   .session = partial_session,
