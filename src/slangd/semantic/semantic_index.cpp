@@ -410,7 +410,15 @@ void SemanticIndex::IndexVisitor::TraverseType(const slang::ast::Type& type) {
       } else if (
           const auto* class_target =
               resolved_type.as_if<slang::ast::ClassType>()) {
-        auto definition_loc = CreateSymbolLspLocation(*class_target, logger_);
+        // For specialized classes (e.g., MyClass#(int)), use the generic class
+        // definition. Specialized classes are created during overlay
+        // compilation but their source location belongs to preamble buffers.
+        const slang::ast::Symbol* def_symbol = class_target;
+        if (class_target->genericClass != nullptr) {
+          def_symbol = class_target->genericClass;
+        }
+
+        auto definition_loc = CreateSymbolLspLocation(*def_symbol, logger_);
         if (definition_loc) {
           // Index package name if this is a scoped type reference
           if (type_ref.getSyntax() != nullptr) {
