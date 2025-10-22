@@ -275,6 +275,94 @@ Background compilation:
 - Multi-waiter: Verify multiple GetSession() calls share single compilation
 - Broadcast notification: Verify all waiters wake on Set(), late joiners complete immediately
 
+## Preamble Rebuild and Session Coordination
+
+### The Dependency Chain
+
+**Why sessions must hold preamble reference:**
+
+Sessions contain SemanticIndex which stores raw pointers to AST symbols for document symbols feature. These pointers are only valid while the Compilation (and its preamble) remains alive. If preamble is freed, document symbols feature would access dangling pointers and crash.
+
+**Implication**: Session lifetime determines preamble lifetime. Multiple sessions from the same preamble generation → multiple references → preamble stays alive.
+
+### The Memory Spike Problem (Rapid Saves)
+
+**Scenario**: User saves file 10 times rapidly during a 20-second preamble build on slow server.
+
+**Original design (loop-based rebuild)**:
+- Iteration 1: Build preamble A, spawn 4 session tasks (async)
+- Iteration 2: Start immediately → build preamble B while iteration 1's sessions still building
+- Iteration 3+: Continue looping...
+- Result: 5-10 preambles alive simultaneously (each 1GB) → 10GB memory spike
+
+**Root cause**: Looping immediately after preamble build doesn't wait for previous iteration's sessions to complete. Since sessions hold preamble references, old preambles can't be freed until their sessions finish.
+
+### Approaches Evaluated
+
+**Approach 1: Wait for session tasks to complete**
+- **Idea**: After spawning session tasks, wait for them to finish before checking for next rebuild
+- **Why doesn't work**: Requires tracking async task completion, adds complexity ("semaphore" pattern)
+- **Issue**: Loses parallelism if made synchronous (4×200ms = 800ms vs 200ms parallel)
+
+**Approach 2: Arbitrary delay between rebuilds**
+- **Idea**: Add 1.5s delay between iterations, hope sessions complete in that time
+- **Why it's a band-aid**: Not guaranteed (what if sessions take >1.5s?), relies on timing assumptions
+- **When it fails**: Slow server or complex files → sessions still overlapping
+
+**Approach 3: Drop Compilation after diagnostics (blocked)**
+- **Idea**: Extract diagnostics, then drop Compilation+preamble, keep only SemanticIndex
+- **Why doesn't work**: Document symbols feature uses raw symbol pointers from Compilation
+- **Blocker**: Would require architectural change to document symbols
+
+### Current Solution (Temporary)
+
+**Implemented**: Remove loop, schedule next rebuild with debounce delay
+
+**How it works**:
+- Rebuild completes fully (including sessions spawned, though still running async)
+- If more saves happened → schedule next rebuild (1.5s debounce)
+- Gap between rebuilds allows previous sessions to complete and release preamble
+
+**Why this reduces memory**:
+- Prevents continuous overlapping iterations
+- Session tasks (200ms) typically complete during 1.5s gap (7.5× safety margin)
+- Reduces peak from 10GB → 2-3GB (acceptable for most cases)
+
+**Known limitations**:
+- Still timing-dependent (not guaranteed)
+- Rare cases: If sessions take >1.5s, might still have 2 preambles briefly
+- **This is explicitly a band-aid** pending proper architectural fix
+
+**Acceptable tradeoff**:
+- Much better than 10GB spikes (2-3GB is manageable)
+- Works for 95%+ of real-world scenarios
+- Buys time for proper fix without major architectural changes
+
+### Proper Fix (Future Work)
+
+**Root cause**: Document symbols uses semantic symbols (requires Compilation), but document symbols is inherently a syntactic feature (file structure/outline).
+
+**Solution**: Migrate document symbols to syntax tree traversal
+- Parse tree available immediately after parsing
+- No semantic elaboration needed
+- No dependency on Compilation or preamble
+- **Enables dropping Compilation after diagnostics extraction**
+
+**What this unlocks**:
+- Sessions no longer hold preamble long-term
+- Preamble freed immediately after diagnostics published
+- No memory accumulation even with rapid rebuilds
+- Removes need for complex task coordination
+- Simpler, cleaner architecture
+
+**Estimated effort**: 2-3 days
+- Implement syntax tree document symbol builder
+- Migrate feature to use syntax tree version
+- Remove Compilation retention from sessions
+- Simplify preamble rebuild logic (no task joining needed)
+
+**Design principle**: Features should use the lightest representation that supports their needs. Document symbols needs structure, not semantics.
+
 ## Future Optimizations
 
 **Memory reduction**: Lower per-session cost → increase cache limit → less eviction thrashing

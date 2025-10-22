@@ -203,6 +203,7 @@ auto LanguageService::RebuildPreambleAndSessions() -> asio::awaitable<void> {
   }
 
   preamble_rebuild_in_progress_ = true;
+  preamble_rebuild_pending_ = false;  // Clear before rebuild
 
   // Rebuild PreambleManager with current configuration
   auto preamble_result = co_await PreambleManager::CreateFromProjectLayout(
@@ -215,21 +216,25 @@ auto LanguageService::RebuildPreambleAndSessions() -> asio::awaitable<void> {
         preamble_result.error());
     preamble_manager_ = nullptr;
   } else {
-    preamble_manager_ = *preamble_result;
+    // Move from result to avoid holding extra shared_ptr copy
+    preamble_manager_ = std::move(*preamble_result);
     logger_->debug(
-        "LanguageService rebuilt PreambleManager ({} packages, {} definitions)",
+        "LanguageService rebuilt PreambleManager ({} packages, {} "
+        "definitions)",
         preamble_manager_->GetPackageMap().size(),
         preamble_manager_->GetDefinitionMap().size());
   }
 
-  // Atomic swap
-  session_manager_->UpdatePreambleManager(preamble_manager_);
-  session_manager_->InvalidateAllSessions();
+  // Atomic swap - await to ensure update completes before invalidation
+  co_await session_manager_->UpdatePreambleManager(preamble_manager_);
+  co_await session_manager_->InvalidateAllSessions();
 
-  // Rebuild sessions for all open files to restore LSP features immediately
+  // Rebuild sessions to republish diagnostics (server-push)
+  // Client doesn't know preamble was rebuilt, so we must push updates
   auto open_uris = co_await doc_state_.GetAllUris();
   logger_->debug(
-      "LanguageService rebuilding {} open file sessions after preamble rebuild",
+      "LanguageService rebuilding {} open file sessions after preamble "
+      "rebuild",
       open_uris.size());
 
   for (const auto& uri : open_uris) {
@@ -243,14 +248,16 @@ auto LanguageService::RebuildPreambleAndSessions() -> asio::awaitable<void> {
 
   logger_->info("LanguageService completed preamble rebuild");
 
-  preamble_rebuild_in_progress_ = false;
-
-  // Check if more saves happened during rebuild
+  // If more saves happened during rebuild, schedule next rebuild
+  // Use debounce delay to allow session tasks to complete (avoid overlap)
   if (preamble_rebuild_pending_) {
+    logger_->debug(
+        "More saves happened during rebuild, scheduling next rebuild");
     preamble_rebuild_pending_ = false;
-    logger_->debug("Starting pending preamble rebuild");
-    co_await RebuildPreambleAndSessions();
+    ScheduleDebouncedPreambleRebuild();
   }
+
+  preamble_rebuild_in_progress_ = false;
 }
 
 auto LanguageService::HandleConfigChange() -> asio::awaitable<void> {
@@ -305,7 +312,7 @@ auto LanguageService::HandleSourceFileChange(
     case lsp::FileChangeType::kDeleted:
       // Structural changes require layout rebuild
       layout_service_->ScheduleDebouncedRebuild();
-      session_manager_->InvalidateAllSessions();
+      co_await session_manager_->InvalidateAllSessions();
       logger_->debug(
           "LanguageService handled structural change: {} ({})", uri,
           static_cast<int>(change_type));
@@ -325,7 +332,7 @@ auto LanguageService::HandleSourceFileChange(
       // Conservative invalidation: Any file might be a package/interface
       // included in all OverlaySessions. Without dependency tracking,
       // invalidate all sessions to ensure correctness.
-      session_manager_->InvalidateAllSessions();
+      co_await session_manager_->InvalidateAllSessions();
       logger_->debug(
           "LanguageService invalidated all sessions due to file change: {}",
           uri);

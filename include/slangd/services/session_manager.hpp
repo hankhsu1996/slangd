@@ -72,7 +72,10 @@ class SessionManager {
 
   auto InvalidateSessions(std::vector<std::string> uris) -> void;
 
-  auto InvalidateAllSessions() -> void;  // For preamble_manager version change
+  // Invalidate all sessions - for config/file changes
+  // Returns awaitable to ensure sessions are cleared before proceeding
+  // Prevents old sessions from holding preamble references during rebuild
+  auto InvalidateAllSessions() -> asio::awaitable<void>;
 
   // Cancel pending session compilation (called when document is closed)
   auto CancelPendingSession(std::string uri) -> void;
@@ -81,10 +84,12 @@ class SessionManager {
   // Supports prefetch pattern: if reopened within delay, reuse stored session
   auto ScheduleCleanup(std::string uri) -> void;
 
-  // Updates the preamble_manager pointer used for all future session creations
-  // Must be called when PreambleManager is rebuilt (e.g., config changes)
+  // Updates preamble_manager pointer (thread-safe via strand)
+  // Returns awaitable to ensure update completes before proceeding
+  // Prevents queueing multiple shared_ptr copies in lambdas
   auto UpdatePreambleManager(
-      std::shared_ptr<const PreambleManager> preamble_manager) -> void;
+      std::shared_ptr<const PreambleManager> preamble_manager)
+      -> asio::awaitable<void>;
 
   // Callback-based session access - prevents shared_ptr escape
   // Executes callback on session_strand_ with const reference to session
@@ -159,6 +164,7 @@ class SessionManager {
   SessionMap sessions_;
   PendingMap pending_;
   TimerMap cleanup_timers_;
+  std::vector<asio::awaitable<void>> active_session_tasks_;
   static constexpr auto kCleanupDelay = std::chrono::seconds(5);
 
   // Background compilation pool (multi-threaded for preamble parsing

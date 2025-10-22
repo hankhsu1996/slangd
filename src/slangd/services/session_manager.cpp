@@ -126,33 +126,6 @@ auto SessionManager::InvalidateSessions(std::vector<std::string> uris) -> void {
       asio::detached);
 }
 
-auto SessionManager::InvalidateAllSessions() -> void {
-  asio::co_spawn(
-      executor_,
-      [this]() -> asio::awaitable<void> {
-        co_await asio::post(session_strand_, asio::use_awaitable);
-
-        logger_->debug(
-            "All sessions invalidated ({} stored, {} pending)",
-            sessions_.size(), pending_.size());
-
-        for (auto& [uri, pending] : pending_) {
-          pending->cancelled.store(true, std::memory_order_release);
-        }
-
-        // Cancel all cleanup timers
-        for (auto& [uri, timer] : cleanup_timers_) {
-          timer->cancel();
-        }
-
-        sessions_.clear();
-        pending_.clear();
-        cleanup_timers_.clear();
-        co_return;
-      },
-      asio::detached);
-}
-
 auto SessionManager::CancelPendingSession(std::string uri) -> void {
   asio::co_spawn(
       executor_,
@@ -173,16 +146,50 @@ auto SessionManager::CancelPendingSession(std::string uri) -> void {
 }
 
 auto SessionManager::UpdatePreambleManager(
-    std::shared_ptr<const PreambleManager> preamble_manager) -> void {
-  asio::co_spawn(
-      executor_,
-      [this, preamble_manager]() -> asio::awaitable<void> {
-        co_await asio::post(session_strand_, asio::use_awaitable);
-        preamble_manager_ = preamble_manager;
-        logger_->debug("Preamble manager updated");
-        co_return;
-      },
-      asio::detached);
+    std::shared_ptr<const PreambleManager> preamble_manager)
+    -> asio::awaitable<void> {
+  // Execute on strand immediately (no queueing with co_spawn)
+  // This prevents multiple shared_ptr copies being held in queued lambdas
+  co_await asio::post(session_strand_, asio::use_awaitable);
+  preamble_manager_ = std::move(preamble_manager);
+  logger_->debug("Preamble manager updated");
+}
+
+auto SessionManager::InvalidateAllSessions() -> asio::awaitable<void> {
+  // Execute on strand immediately (no queueing with co_spawn)
+  // This ensures old sessions are destroyed before proceeding
+  co_await asio::post(session_strand_, asio::use_awaitable);
+
+  logger_->debug(
+      "Invalidating all sessions ({} stored, {} pending, {} active tasks)",
+      sessions_.size(), pending_.size(), active_session_tasks_.size());
+
+  // Cancel all pending session creations
+  for (auto& [uri, pending] : pending_) {
+    pending->cancelled.store(true, std::memory_order_release);
+  }
+
+  // Cancel all cleanup timers
+  for (auto& [uri, timer] : cleanup_timers_) {
+    timer->cancel();
+  }
+
+  // Wait for all active session tasks to finish
+  // This ensures lambdas complete and release their preamble captures
+  // Move tasks out to avoid concurrent modification during join
+  std::vector<asio::awaitable<void>> tasks_to_join;
+  std::swap(tasks_to_join, active_session_tasks_);
+
+  logger_->debug("Waiting for {} active tasks to drain", tasks_to_join.size());
+  for (auto& task : tasks_to_join) {
+    co_await std::move(task);
+  }
+  logger_->debug("All active tasks drained");
+
+  // Now safe to clear maps - all lambdas have released their captures
+  sessions_.clear();
+  pending_.clear();
+  cleanup_timers_.clear();
 }
 
 auto SessionManager::StartSessionCreation(
@@ -196,7 +203,8 @@ auto SessionManager::StartSessionCreation(
   pending->on_compilation_ready = std::move(on_compilation_ready);
   pending->on_session_ready = std::move(on_session_ready);
 
-  asio::co_spawn(
+  // Spawn task and store awaitable for joining later
+  auto task = asio::co_spawn(
       executor_,
       [this, uri, content, pending, preamble_manager,
        layout_service]() -> asio::awaitable<void> {
@@ -309,7 +317,11 @@ auto SessionManager::StartSessionCreation(
           }
         }
       },
-      asio::detached);
+      asio::use_awaitable);
+
+  // Store task for joining in InvalidateAllSessions
+  // Must be on strand (called from UpdateSession which is on strand)
+  active_session_tasks_.push_back(std::move(task));
 
   return pending;
 }
