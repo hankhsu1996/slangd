@@ -40,14 +40,14 @@ auto ToLspPosition(
     const slang::SourceLocation& location,
     const slang::SourceManager& source_manager) -> lsp::Position;
 
-// Create LSP location for a symbol using an explicit SourceManager.
-// This is the low-level function that performs the actual conversion.
-// Use this when you need to specify which SourceManager to use (e.g., for
-// specialized class members that need preamble SM).
-inline auto CreateSymbolLspLocationWithSM(
+// Create LSP range for a symbol's name using an explicit SourceManager.
+// Returns a range that spans from the symbol location to location + name
+// length. Returns nullopt if symbol has invalid location or negative line
+// numbers. This is the low-level function - use CreateSymbolRange() for
+// automatic SM derivation.
+inline auto CreateSymbolRangeWithSM(
     const slang::ast::Symbol& symbol,
-    const slang::SourceManager& source_manager)
-    -> std::optional<lsp::Location> {
+    const slang::SourceManager& source_manager) -> std::optional<lsp::Range> {
   // Check valid location
   if (!symbol.location.valid()) {
     return std::nullopt;
@@ -65,24 +65,55 @@ inline auto CreateSymbolLspLocationWithSM(
   lsp::Position end = start;
   end.character += static_cast<int>(symbol.name.length());
 
-  // Get base location (for URI extraction) and set our computed range
+  return lsp::Range{.start = start, .end = end};
+}
+
+// Create LSP location (URI + range) for a symbol using an explicit
+// SourceManager. This is the low-level function that performs the actual
+// conversion. Use CreateSymbolLocation() for automatic SourceManager
+// derivation.
+inline auto CreateSymbolLocationWithSM(
+    const slang::ast::Symbol& symbol,
+    const slang::SourceManager& source_manager)
+    -> std::optional<lsp::Location> {
+  // Compute the range (validates location, checks for negative lines)
+  auto range_opt = CreateSymbolRangeWithSM(symbol, source_manager);
+  if (!range_opt.has_value()) {
+    return std::nullopt;
+  }
+
+  // Get base location for URI extraction
   lsp::Location location = ToLspLocation(symbol.location, source_manager);
-  location.range = {.start = start, .end = end};
+  location.range = *range_opt;
 
   return location;
 }
 
-// Create LSP location (URI + range) for a symbol's name.
-// Automatically uses the correct SourceManager from the symbol's compilation.
-// This prevents BufferID mismatch crashes by ensuring preamble symbols use
-// preamble's SM and overlay symbols use overlay's SM.
+// Create LSP range for a symbol's name.
+// Automatically derives SourceManager from the symbol's compilation.
+// SAFE CONVERSION: Prevents BufferID mismatch when symbol is from preamble.
 // Returns nullopt if symbol has no source manager or invalid location.
-inline auto CreateSymbolLspLocation(
+inline auto CreateSymbolRange(const slang::ast::Symbol& symbol)
+    -> std::optional<lsp::Range> {
+  const auto& compilation = symbol.getCompilation();
+  const auto* source_manager = compilation.getSourceManager();
+  if (source_manager == nullptr) {
+    return std::nullopt;
+  }
+
+  return CreateSymbolRangeWithSM(symbol, *source_manager);
+}
+
+// Create LSP location (URI + range) for a symbol's name.
+// Automatically derives SourceManager from the symbol's compilation.
+// SAFE CONVERSION: Prevents BufferID mismatch when symbol is from preamble.
+// Returns nullopt if symbol has no source manager or invalid location.
+inline auto CreateSymbolLocation(
     const slang::ast::Symbol& symbol, std::shared_ptr<spdlog::logger> logger)
     -> std::optional<lsp::Location> {
   // Trace before dangerous operations (crash investigation)
   logger->trace(
-      "CreateSymbolLspLocation: name='{}' kind={}", symbol.name,
+      "CreateSymbolLocation: name='{}' kind={}", symbol.name,
       toString(symbol.kind));
 
   // Use symbol's compilation to get the correct SourceManager
@@ -95,7 +126,7 @@ inline auto CreateSymbolLspLocation(
     return std::nullopt;
   }
 
-  return CreateSymbolLspLocationWithSM(symbol, *source_manager);
+  return CreateSymbolLocationWithSM(symbol, *source_manager);
 }
 
 // Create LSP location from Slang range, using symbol's SourceManager.

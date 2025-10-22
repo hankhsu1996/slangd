@@ -35,20 +35,17 @@ class DocumentSymbolBuilder {
       lsp::DocumentSymbol& parent, const slang::ast::Scope* parent_scope,
       const std::unordered_map<
           const slang::ast::Scope*, std::vector<const SemanticEntry*>>&
-          children_map,
-      const slang::SourceManager& source_manager) -> void;
+          children_map) -> void;
 
   // Special handling for enum type aliases - extract enum values
   static auto HandleEnumTypeAlias(
       lsp::DocumentSymbol& enum_doc_symbol,
-      const slang::ast::Symbol* type_alias_symbol,
-      const slang::SourceManager& source_manager) -> void;
+      const slang::ast::Symbol* type_alias_symbol) -> void;
 
   // Special handling for struct type aliases - extract struct fields
   static auto HandleStructTypeAlias(
       lsp::DocumentSymbol& struct_doc_symbol,
-      const slang::ast::Symbol* type_alias_symbol,
-      const slang::SourceManager& source_manager) -> void;
+      const slang::ast::Symbol* type_alias_symbol) -> void;
 
   // Filter out empty generate blocks to reduce symbol tree clutter
   static auto FilterEmptyGenerateBlocks(

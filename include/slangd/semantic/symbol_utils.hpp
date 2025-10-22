@@ -8,11 +8,6 @@
 
 namespace slangd::semantic {
 
-// Convert Slang symbol location to LSP range
-auto ComputeLspRange(
-    const slang::ast::Symbol& symbol,
-    const slang::SourceManager& source_manager) -> lsp::Range;
-
 // Check if symbol should be indexed for semantic analysis
 auto ShouldIndexForSemanticIndex(const slang::ast::Symbol& symbol) -> bool;
 
