@@ -1,5 +1,6 @@
 #include "slangd/services/session_manager.hpp"
 
+#include <mimalloc.h>
 #include <thread>
 
 #include <asio/co_spawn.hpp>
@@ -9,6 +10,7 @@
 #include <asio/use_awaitable.hpp>
 
 #include "slangd/services/overlay_session.hpp"
+#include "slangd/utils/memory_utils.hpp"
 
 namespace slangd::services {
 
@@ -151,8 +153,19 @@ auto SessionManager::UpdatePreambleManager(
   // Execute on strand immediately (no queueing with co_spawn)
   // This prevents multiple shared_ptr copies being held in queued lambdas
   co_await asio::post(session_strand_, asio::use_awaitable);
+
+  auto before_mb = utils::GetRssMB();
   preamble_manager_ = std::move(preamble_manager);
-  logger_->debug("Preamble manager updated");
+
+  // Force mimalloc to return unused memory pages to OS
+  // Note: old preamble may still be held by existing sessions
+  mi_collect(true);
+
+  auto after_mb = utils::GetRssMB();
+  auto freed_mb = before_mb > after_mb ? before_mb - after_mb : 0;
+  logger_->debug(
+      "Preamble swap: {} MB -> {} MB (freed {} MB)", before_mb, after_mb,
+      freed_mb);
 }
 
 auto SessionManager::InvalidateAllSessions() -> asio::awaitable<void> {
@@ -187,9 +200,19 @@ auto SessionManager::InvalidateAllSessions() -> asio::awaitable<void> {
   logger_->debug("All active tasks drained");
 
   // Now safe to clear maps - all lambdas have released their captures
+  auto before_mb = utils::GetRssMB();
   sessions_.clear();
   pending_.clear();
   cleanup_timers_.clear();
+
+  // Force mimalloc to return unused memory pages to OS
+  mi_collect(true);
+
+  auto after_mb = utils::GetRssMB();
+  auto freed_mb = before_mb > after_mb ? before_mb - after_mb : 0;
+  logger_->debug(
+      "Cleared sessions: {} MB -> {} MB (freed {} MB)", before_mb, after_mb,
+      freed_mb);
 }
 
 auto SessionManager::StartSessionCreation(

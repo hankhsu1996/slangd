@@ -1,5 +1,7 @@
 #include "slangd/services/preamble_manager.hpp"
 
+#include <mimalloc.h>
+
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/post.hpp>
@@ -15,6 +17,7 @@
 
 #include "slangd/core/project_layout_service.hpp"
 #include "slangd/utils/compilation_options.hpp"
+#include "slangd/utils/memory_utils.hpp"
 #include "slangd/utils/scoped_timer.hpp"
 
 namespace slangd::services {
@@ -117,6 +120,18 @@ auto PreambleManager::CreateFromProjectLayout(
         "PreambleManager: {} file(s) failed to parse (first: {})",
         failed_files.size(), failed_files[0]);
   }
+
+  auto before_mb = utils::GetRssMB();
+
+  // Force mimalloc to return unused memory pages to OS
+  // Cleanup temporary parsing allocations
+  mi_collect(true);
+
+  auto after_mb = utils::GetRssMB();
+  auto freed_mb = before_mb > after_mb ? before_mb - after_mb : 0;
+  logger->debug(
+      "Preamble build complete: {} MB -> {} MB (freed {} MB)", before_mb,
+      after_mb, freed_mb);
 
   co_return preamble;
 }

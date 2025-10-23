@@ -47,6 +47,9 @@ bazel_dep(name = "fmt", version = "11.1.3")
 # Testing framework
 bazel_dep(name = "catch2", version = "3.8.0")
 
+# Memory allocator
+bazel_dep(name = "mimalloc", version = "2.2.4")
+
 # Toolchains for musl libc
 bazel_dep(name = "toolchains_musl", version = "0.1.27", dev_dependency = True)
 toolchains_musl = use_extension("@toolchains_musl//:toolchains_musl.bzl", "toolchains_musl", dev_dependency = True)

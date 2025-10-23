@@ -81,6 +81,8 @@
     "https://bcr.bazel.build/modules/libpfm/4.11.0/MODULE.bazel": "45061ff025b301940f1e30d2c16bea596c25b176c8b6b3087e92615adbd52902",
     "https://bcr.bazel.build/modules/llvm-project/17.0.3.bcr.2/MODULE.bazel": "af2b22e8f1aa2f8386eab55b7f87e45653efb8ab58715f498bcf68e61092e637",
     "https://bcr.bazel.build/modules/llvm-project/17.0.3.bcr.2/source.json": "02e38f750332990f065cd0dfa4ffb52697dd72bbd5defcfb6d35cb8d7728ba5a",
+    "https://bcr.bazel.build/modules/mimalloc/2.2.4/MODULE.bazel": "21cbf233701e90ea32b83c20e4581fef8d56b5485316152ce0f0a7a07d787e71",
+    "https://bcr.bazel.build/modules/mimalloc/2.2.4/source.json": "1bd8a4f6a39e226161480cf03b0937926da57790138f46cef2c463baa0d651dc",
     "https://bcr.bazel.build/modules/nlohmann_json/3.11.3/MODULE.bazel": "87023db2f55fc3a9949c7b08dc711fae4d4be339a80a99d04453c4bb3998eefc",
     "https://bcr.bazel.build/modules/nlohmann_json/3.11.3/source.json": "296c63a90c6813e53b3812d24245711981fc7e563d98fe15625f55181494488a",
     "https://bcr.bazel.build/modules/platforms/0.0.10/MODULE.bazel": "8cb8efaf200bdeb2150d93e162c40f388529a25852b332cec879373771e48ed5",
