@@ -2554,11 +2554,11 @@ void SemanticIndex::ValidateNoRangeOverlaps() const {
          curr.ref_range.start < prev.ref_range.end);
 
     if (overlap) {
-      // Log warning but don't crash - LSP server should continue working
+      // Log trace but don't crash - LSP server should continue working
       // Extract filename from URI for more readable output
       auto filename =
           current_file_uri_.substr(current_file_uri_.find_last_of('/') + 1);
-      logger_->warn(
+      logger_->trace(
           "Range overlap for symbol '{}' at line {} (char {}-{}) in '{}'",
           curr.name, curr.ref_range.start.line + 1,
           curr.ref_range.start.character, curr.ref_range.end.character,
@@ -2673,7 +2673,7 @@ void SemanticIndex::ValidateSymbolCoverage(
       missing_by_line[line_number].push_back(token.valueText());
     }
 
-    logger_->warn(
+    logger_->trace(
         "File {} has {} identifiers without definitions on {} lines:",
         file_name, missing.size(), missing_by_line.size());
 
@@ -2686,7 +2686,7 @@ void SemanticIndex::ValidateSymbolCoverage(
         }
         symbols_str += symbols[i];
       }
-      logger_->warn("  Line {}: {}", line, symbols_str);
+      logger_->trace("  Line {}: {}", line, symbols_str);
     }
   }
 }
