@@ -215,3 +215,65 @@ TEST_CASE(
     co_return;
   });
 }
+
+TEST_CASE(
+    "Inherited class property from parameterized base class",
+    "[class][preamble][inheritance][property][regression]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    // Minimal reproduction of UVM uvm_driver.seq_item_port pattern
+    // Key pattern: accessing inherited property from parameterized base class
+    const std::string def = R"(
+      package driver_pkg;
+        class seq_item_port#(type T = int);
+          function void get_next_item(ref T item);
+          endfunction
+        endclass
+
+        virtual class base_driver#(type REQ = int);
+          seq_item_port#(REQ) seq_item_port;
+
+          function new();
+          endfunction
+        endclass
+      endpackage
+    )";
+
+    const std::string ref = R"(
+      package test_pkg;
+        import driver_pkg::*;
+
+        class my_seq_item;
+        endclass
+
+        class my_driver extends base_driver#(my_seq_item);
+          function void run();
+            my_seq_item req;
+            // CRITICAL: Accessing inherited property seq_item_port
+            // This causes invalid coordinates because:
+            // 1. my_driver extends base_driver#(my_seq_item) - specialization in overlay
+            // 2. seq_item_port is defined in generic base_driver in preamble
+            // 3. Symbol location points to preamble but compilation is overlay
+            seq_item_port.get_next_item(req);
+          endfunction
+        endclass
+      endpackage
+    )";
+
+    fixture.CreateBufferIDOffset();
+    fixture.CreateFile("driver_pkg.sv", def);
+    fixture.CreateFile("test_pkg.sv", ref);
+
+    // This should not crash or fail with invalid coordinates error
+    auto session = co_await fixture.BuildSession("test_pkg.sv", executor);
+    Fixture::AssertNoErrors(*session);
+
+    // The critical test: semantic indexing completes without:
+    // - "Failed to build semantic index" error
+    // - "invalid coordinates" error for seq_item_port reference
+    // - Crash/segfault
+
+    co_return;
+  });
+}

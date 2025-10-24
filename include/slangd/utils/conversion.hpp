@@ -160,9 +160,22 @@ inline auto CreateLspLocation(
     return std::nullopt;
   }
 
+  // Explicit validation: Check if location's BufferID exists in this SM
+  // This happens with cross-compilation (preamble symbols in overlay SM)
+  if (!sm->isValidLocation(range.start())) {
+    return std::nullopt;
+  }
+
   // Get location (with URI) and update its range
   lsp::Location location = ToLspLocation(range.start(), *sm);
   location.range = ToLspRange(range, *sm);
+
+  // Defensive check: Ensure conversion produced valid coordinates
+  // Both line and character should be >= 0
+  if (location.range.start.line < 0 || location.range.start.character < 0) {
+    return std::nullopt;
+  }
+
   return location;
 }
 
@@ -193,9 +206,20 @@ inline auto CreateLspLocation(
     return std::nullopt;
   }
 
+  // Explicit validation: Check if location's BufferID exists in this SM
+  if (!sm->isValidLocation(range.start())) {
+    return std::nullopt;
+  }
+
   // Get location (with URI) and update its range
   lsp::Location location = ToLspLocation(range.start(), *sm);
   location.range = ToLspRange(range, *sm);
+
+  // Defensive check: Ensure conversion produced valid coordinates
+  if (location.range.start.line < 0 || location.range.start.character < 0) {
+    return std::nullopt;
+  }
+
   return location;
 }
 
