@@ -110,6 +110,7 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
 
     // Second pass: add files to compilation in order, tracking the current
     // file's index
+    slang::BufferID current_file_buffer_id;
     for (size_t i = 0; i < files.size(); ++i) {
       const auto& file_spec = files[i];
       std::string filename = fmt::format("file_{}.sv", i);
@@ -127,11 +128,17 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
       auto tree =
           slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
       compilation->addSyntaxTree(tree);
+
+      // Save BufferID for the current file
+      if (static_cast<int>(i) == current_file_index) {
+        current_file_buffer_id = buffer.id;
+      }
     }
 
     // Build index from the current file's perspective
     auto result = SemanticIndex::FromCompilation(
-        *compilation, *source_manager, current_file_uri);
+        *compilation, *source_manager, current_file_uri,
+        current_file_buffer_id);
 
     if (!result) {
       throw std::runtime_error(
@@ -158,6 +165,7 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
     auto compilation = std::make_unique<slang::ast::Compilation>(options);
 
     std::vector<std::string> file_paths;
+    slang::BufferID first_buffer_id;
 
     // Add each file to the compilation
     for (size_t i = 0; i < file_contents.size(); ++i) {
@@ -172,12 +180,17 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
       auto tree =
           slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
       compilation->addSyntaxTree(tree);
+
+      // Save BufferID for the first file
+      if (i == 0) {
+        first_buffer_id = buffer.id;
+      }
     }
 
     // Use the first file URI for the index
     std::string first_file_uri = "file:///file_0.sv";
     auto result = SemanticIndex::FromCompilation(
-        *compilation, *source_manager, first_file_uri);
+        *compilation, *source_manager, first_file_uri, first_buffer_id);
 
     if (!result) {
       throw std::runtime_error(

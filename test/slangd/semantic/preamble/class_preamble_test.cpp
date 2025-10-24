@@ -147,6 +147,9 @@ TEST_CASE(
     // (data=get_default_data())
     const std::string def = R"(
       package uvm_pkg;
+        // Forward declaration to avoid "used before declared" errors in CI
+        typedef class uvm_object;
+
         virtual class uvm_event_base#(parameter type T = int) extends uvm_object;
           T default_data;
 
@@ -167,7 +170,7 @@ TEST_CASE(
           endfunction
         endclass
 
-        // Base class for inheritance
+        // Full class body (forward declared above)
         virtual class uvm_object;
         endclass
       endpackage

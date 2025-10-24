@@ -36,6 +36,10 @@ auto PreambleManager::CreateFromProjectLayout(
   // Create fresh source manager
   preamble->source_manager_ = std::make_shared<slang::SourceManager>();
 
+  // Set BufferID offset to prevent collisions with overlay compilations
+  // Preamble uses offset 1024, overlay uses 0 (default)
+  preamble->source_manager_->setBufferIDOffset(1024);
+
   // Start with standard LSP compilation options
   auto options = utils::CreateLspCompilationOptions();
 

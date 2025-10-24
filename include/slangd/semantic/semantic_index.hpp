@@ -58,7 +58,7 @@ class SemanticIndex {
   static auto FromCompilation(
       slang::ast::Compilation& compilation,
       const slang::SourceManager& source_manager,
-      const std::string& current_file_uri,
+      const std::string& current_file_uri, slang::BufferID current_file_buffer,
       const services::PreambleManager* preamble_manager = nullptr,
       std::shared_ptr<spdlog::logger> logger = spdlog::default_logger())
       -> std::expected<std::unique_ptr<SemanticIndex>, std::string>;
@@ -135,9 +135,11 @@ class SemanticIndex {
    public:
     explicit IndexVisitor(
         SemanticIndex& index, std::string current_file_uri,
+        slang::BufferID current_file_buffer,
         const services::PreambleManager* preamble_manager)
         : index_(index),
           current_file_uri_(std::move(current_file_uri)),
+          current_file_buffer_(current_file_buffer),
           preamble_manager_(preamble_manager),
           logger_(index.logger_) {
     }
@@ -193,6 +195,7 @@ class SemanticIndex {
    private:
     std::reference_wrapper<SemanticIndex> index_;
     std::string current_file_uri_;
+    slang::BufferID current_file_buffer_;
     const services::PreambleManager* preamble_manager_;
     std::shared_ptr<spdlog::logger> logger_;
 

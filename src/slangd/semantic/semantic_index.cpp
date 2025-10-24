@@ -73,7 +73,7 @@ auto SemanticIndex::IsInCurrentFile(
 auto SemanticIndex::FromCompilation(
     slang::ast::Compilation& compilation,
     const slang::SourceManager& source_manager,
-    const std::string& current_file_uri,
+    const std::string& current_file_uri, slang::BufferID current_file_buffer,
     const services::PreambleManager* preamble_manager,
     std::shared_ptr<spdlog::logger> logger)
     -> std::expected<std::unique_ptr<SemanticIndex>, std::string> {
@@ -84,7 +84,8 @@ auto SemanticIndex::FromCompilation(
       new SemanticIndex(source_manager, current_file_uri, logger));
 
   // Create visitor for comprehensive symbol collection and reference tracking
-  auto visitor = IndexVisitor(*index, current_file_uri, preamble_manager);
+  auto visitor = IndexVisitor(
+      *index, current_file_uri, current_file_buffer, preamble_manager);
 
   // THREE-PATH TRAVERSAL APPROACH
   // Slang's API provides disjoint symbol collections:
@@ -1001,6 +1002,12 @@ void SemanticIndex::IndexVisitor::handle(
     return;
   }
 
+  // Skip expressions not in current file (e.g. default arguments in preamble)
+  if (expr.sourceRange.start().buffer() != current_file_buffer_) {
+    this->visitDefault(expr);
+    return;
+  }
+
   const auto* subroutine_symbol = std::get_if<0>(&expr.subroutine);
   if (subroutine_symbol == nullptr || !(*subroutine_symbol)->location.valid()) {
     this->visitDefault(expr);
@@ -1139,19 +1146,16 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
 
-  // Handle subroutine definition location conversion.
-  // CRITICAL: If the subroutine is in a specialized ClassType from preamble,
-  // the symbol belongs to overlay compilation but has location from preamble
-  // file. We must use the preamble's SourceManager in this case.
+  // Convert definition location
+  // For specialized class methods, use preamble SM since definition is in
+  // preamble
   std::optional<lsp::Location> def_loc;
 
-  // parent_scope already defined above for is_class_method check
   if (is_class_method) {
     const auto& parent_class =
         parent_scope->asSymbol().as<slang::ast::ClassType>();
 
     if (parent_class.genericClass != nullptr) {
-      // Specialized class - use preamble SM
       const auto* preamble_scope = parent_class.genericClass->getParentScope();
       if (preamble_scope != nullptr) {
         const auto& preamble_comp = preamble_scope->getCompilation();
@@ -1164,12 +1168,13 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
 
-  // Fall back to normal CreateSymbolLspLocation if not a specialized class
-  // member
   if (!def_loc) {
     def_loc = CreateSymbolLocation(**subroutine_symbol, logger_);
   }
 
+  // Convert reference location
+  // Since we filtered out cross-file expressions above, this is always in
+  // current file
   auto ref_loc = CreateLspLocation(expr, *call_range, logger_);
 
   if (def_loc && ref_loc) {

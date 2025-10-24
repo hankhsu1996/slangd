@@ -258,8 +258,8 @@ auto SessionManager::StartSessionCreation(
               }
 
               auto result = semantic::SemanticIndex::FromCompilation(
-                  *compilation, *source_manager, uri, preamble_manager.get(),
-                  logger_);
+                  *compilation, *source_manager, uri, main_buffer_id,
+                  preamble_manager.get(), logger_);
 
               if (!result) {
                 logger_->error(

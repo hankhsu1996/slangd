@@ -70,24 +70,52 @@ Preamble sharing (1:many) + Concurrent overlay compilation = Concurrent preamble
 
 **Solution**: Serialize overlay elaboration using asio strand on multi-threaded compilation pool. Preserves parallel preamble parsing while preventing concurrent preamble access. No Slang modifications required.
 
-## Safe Conversion Architecture
+## Cross-Compilation Safety Principles
 
-**CRITICAL PRINCIPLE: Always derive SourceManager from the AST node that owns the range**
+### 1. Modify Slang When Needed
 
-BufferIDs in source ranges belong to the SourceManager that parsed them. Using wrong SourceManager causes crashes.
+Slangd has a Slang fork. Use it to solve fundamental architectural issues rather than working around them.
 
-**Important**: BufferIDs are per-compilation indices, not global identifiers. Preamble BufferID 15 and overlay BufferID 15 are completely different buffers. You cannot use `buffer.getId() < bufferCount` to detect cross-compilation - the IDs overlap.
+**Examples**:
+- Added `Expression::compilation` to track evaluation context
+- Made `packageMap` protected for preamble injection
+- Future: Add source tracking if cross-compilation needs require it
 
-### Slang Fork Enhancements
+**Philosophy**: If the fix requires Slang changes, implement them. Clean architecture in the library is better than complex workarounds in slangd.
 
-**Solutions:**
+### 2. Never Use SourceManager Directly
 
-1. Added `Compilation* compilation` to `Expression` base class (commit 42ed17f3)
-2. Added `Compilation* compilation` to `Symbol` base class (current work)
+BufferIDs are per-SourceManager indices. Using wrong SM causes crashes or silent corruption (wrong file).
 
-Each expression and symbol stores its compilation, enabling automatic SourceManager derivation.
+**Rule**: Always derive SourceManager from AST nodes:
+- Symbols: `symbol.getCompilation()->getSourceManager()`
+- Expressions: `expr.compilation->getSourceManager()`
 
-**Impact:** Eliminates cross-compilation safety issues. All AST nodes automatically use correct SourceManager.
+**Why dangerous**: Preamble BufferID 1 ≠ Overlay BufferID 1. Same ID, different files. Converting with wrong SM gives "valid" coordinates for wrong file.
+
+### 3. Respect Semantic Boundaries
+
+Not all AST nodes traversed belong to the file being processed.
+
+**The issue**: Slang creates specialized classes in overlay compilation but populates them from preamble syntax. Traversing overlay AST encounters nodes with preamble source locations.
+
+**Consequences without filtering**:
+- Duplicate indexing (same preamble expression indexed from multiple overlay files)
+- Cross-file corruption (preamble references in overlay file's index)
+- SourceManager mismatches (BufferIDs interpreted by wrong compilation)
+
+**The BufferID Problem**: BufferIDs are just integers (1, 2, 3...). Preamble SM and overlay SM can both have BufferID 1, but they mean different files. No way to tell which SM owns a BufferID without tracking it explicitly.
+
+**Failed approaches**:
+- Direct BufferID comparison: `if (buffer != current_buffer)` - can collide
+- Query filename: `sm.getRawFileName(buffer)` - returns valid name even for wrong SM when IDs collide
+- Both produce silent corruption when BufferIDs overlap
+
+**Solution (implemented)**: BufferID offset - Preamble SM uses offset 1024, overlay uses 0. Prevents collision since overlay only has 1-2 buffers while preamble starts at 1024+. Implemented via `setBufferIDOffset()` in Slang's SourceManager with `getBufferIndex()` helper for array access.
+
+**Future enhancement**: Encode compilation ID in BufferID itself (bits 32-47 of 64-bit value) for globally unique IDs across all compilations. Current offset solution is sufficient for preamble+overlay architecture.
+
+**Semantic boundary is the file**, not the compilation or buffer. Cross-compilation means one file's index should not contain another file's AST nodes.
 
 ### Conversion Pattern
 

@@ -69,9 +69,16 @@ inline auto CreateSymbolRangeWithSM(
 }
 
 // Create LSP location (URI + range) for a symbol using an explicit
-// SourceManager. This is the low-level function that performs the actual
-// conversion. Use CreateSymbolLocation() for automatic SourceManager
-// derivation.
+// SourceManager.
+//
+// LOW-LEVEL FUNCTION: This is an implementation detail. Most code should use
+// CreateSymbolLocation() instead, which automatically gets the correct
+// SourceManager from symbol.getCompilation().
+//
+// WARNING: Manually passing a SourceManager that doesn't match the symbol's
+// compilation will cause BufferID mismatches and invalid coordinates. Only use
+// this if you're absolutely certain the SourceManager is correct for the
+// symbol's location.
 inline auto CreateSymbolLocationWithSM(
     const slang::ast::Symbol& symbol,
     const slang::SourceManager& source_manager)
