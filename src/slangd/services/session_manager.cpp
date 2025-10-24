@@ -341,7 +341,7 @@ auto SessionManager::StartSessionCreation(
                 "Session creation superseded during Phase 2: {}", uri);
           }
         } else {
-          logger_->warn("Session creation failed or cancelled for: {}", uri);
+          logger_->debug("Session creation failed or cancelled for: {}", uri);
         }
 
         // Always signal session_ready if not already signaled
