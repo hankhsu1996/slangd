@@ -2693,7 +2693,7 @@ void SemanticIndex::ValidateSymbolCoverage(
       missing_by_line[line_number].push_back(token.valueText());
     }
 
-    logger_->warn(
+    logger_->trace(
         "File {} has {} identifiers without definitions on {} lines:",
         file_name, missing.size(), missing_by_line.size());
 
@@ -2706,7 +2706,7 @@ void SemanticIndex::ValidateSymbolCoverage(
         }
         symbols_str += symbols[i];
       }
-      logger_->warn("  Line {}: {}", line, symbols_str);
+      logger_->trace("  Line {}: {}", line, symbols_str);
     }
   }
 }
