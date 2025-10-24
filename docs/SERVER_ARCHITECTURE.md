@@ -140,6 +140,8 @@ SlangdLspServer (LSP protocol layer)
 
 **Critical insight:** Packages are NOT loaded as syntax trees - PreambleAwareCompilation injects preamble PackageSymbol\* pointers directly into packageMap for cross-compilation binding. Interfaces are still read from disk for port resolution. See `PREAMBLE.md` for details.
 
+**Memory considerations:** Preamble sharing and session caching have specific memory characteristics. See `MEMORY_ARCHITECTURE.md` for details on memory profile, fragmentation behavior, and expected RSS.
+
 **Invalidation rules:**
 
 | Event                   | PreambleManager | OverlaySession            | Reason                                                     |

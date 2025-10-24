@@ -199,6 +199,9 @@ auto SessionManager::InvalidateAllSessions() -> asio::awaitable<void> {
   }
   logger_->debug("All active tasks drained");
 
+  // Destroy awaitables to release lambda captures (including preamble refs)
+  tasks_to_join.clear();
+
   // Now safe to clear maps - all lambdas have released their captures
   auto before_mb = utils::GetRssMB();
   sessions_.clear();

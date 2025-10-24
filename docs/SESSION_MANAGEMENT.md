@@ -297,6 +297,8 @@ Sessions contain SemanticIndex which stores raw pointers to AST symbols for docu
 
 **Root cause**: Looping immediately after preamble build doesn't wait for previous iteration's sessions to complete. Since sessions hold preamble references, old preambles can't be freed until their sessions finish.
 
+**For detailed explanation of memory fragmentation, allocator behavior, and why RSS stays at peak, see `MEMORY_ARCHITECTURE.md`.**
+
 ### Approaches Evaluated
 
 **Approach 1: Wait for session tasks to complete**
