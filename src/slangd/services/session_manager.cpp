@@ -175,7 +175,7 @@ auto SessionManager::InvalidateAllSessions() -> asio::awaitable<void> {
 
   logger_->debug(
       "Invalidating all sessions ({} stored, {} pending, {} active tasks)",
-      sessions_.size(), pending_.size(), active_session_tasks_.size());
+      sessions_.size(), pending_.size(), active_task_completions_.size());
 
   // Cancel all pending session creations
   for (auto& [uri, pending] : pending_) {
@@ -187,20 +187,17 @@ auto SessionManager::InvalidateAllSessions() -> asio::awaitable<void> {
     timer->cancel();
   }
 
-  // Wait for all active session tasks to finish
-  // This ensures lambdas complete and release their preamble captures
-  // Move tasks out to avoid concurrent modification during join
-  std::vector<asio::awaitable<void>> tasks_to_join;
-  std::swap(tasks_to_join, active_session_tasks_);
+  // Wait for all active session tasks to complete and release preamble captures
+  // Move completions out to avoid concurrent modification
+  std::vector<std::shared_ptr<TaskCompletion>> completions_to_await;
+  std::swap(completions_to_await, active_task_completions_);
 
-  logger_->debug("Waiting for {} active tasks to drain", tasks_to_join.size());
-  for (auto& task : tasks_to_join) {
-    co_await std::move(task);
+  logger_->debug(
+      "Waiting for {} active tasks to drain", completions_to_await.size());
+  for (auto& completion : completions_to_await) {
+    co_await completion->complete.AsyncWait(asio::use_awaitable);
   }
   logger_->debug("All active tasks drained");
-
-  // Destroy awaitables to release lambda captures (including preamble refs)
-  tasks_to_join.clear();
 
   // Now safe to clear maps - all lambdas have released their captures
   auto before_mb = utils::GetRssMB();
@@ -229,11 +226,16 @@ auto SessionManager::StartSessionCreation(
   pending->on_compilation_ready = std::move(on_compilation_ready);
   pending->on_session_ready = std::move(on_session_ready);
 
-  // Spawn task and store awaitable for joining later
-  auto task = asio::co_spawn(
+  // Track completion for preamble rebuild coordination
+  // Must be on strand (called from UpdateSession which is on strand)
+  auto completion = std::make_shared<TaskCompletion>(executor_);
+  active_task_completions_.push_back(completion);
+
+  // Spawn session creation with detached - runs immediately
+  asio::co_spawn(
       executor_,
-      [this, uri, content, pending, preamble_manager,
-       layout_service]() -> asio::awaitable<void> {
+      [this, uri, content, pending, preamble_manager, layout_service,
+       completion]() -> asio::awaitable<void> {
         auto result = co_await asio::co_spawn(
             overlay_strand_,
             [uri, content, this, pending, preamble_manager, layout_service]()
@@ -263,7 +265,7 @@ auto SessionManager::StartSessionCreation(
 
               if (!result) {
                 logger_->error(
-                    "Failed to build semantic index for '{}': {}", uri,
+                    "Semantic indexing failed for '{}': {}", uri,
                     result.error());
                 // Return nullopt - session creation failed
                 co_return std::nullopt;
@@ -314,6 +316,8 @@ auto SessionManager::StartSessionCreation(
         // Return to strand for Phase 2 storage (session upgrade)
         co_await asio::post(session_strand_, asio::use_awaitable);
 
+        bool session_ready_signaled = false;
+
         if (result.has_value() && result.value()) {
           auto it = pending_.find(uri);
           if (it != pending_.end() && it->second->version == pending->version) {
@@ -329,6 +333,7 @@ auto SessionManager::StartSessionCreation(
               }
 
               pending->session_ready.Set();
+              session_ready_signaled = true;
             }
             pending_.erase(it);
           } else {
@@ -336,18 +341,30 @@ auto SessionManager::StartSessionCreation(
                 "Session creation superseded during Phase 2: {}", uri);
           }
         } else {
-          logger_->debug("Session creation failed or cancelled: {}", uri);
+          logger_->warn("Session creation failed or cancelled for: {}", uri);
+        }
+
+        // Always signal session_ready if not already signaled
+        // This ensures waiters don't hang forever on failure/cancellation
+        if (!session_ready_signaled) {
+          // If inner coroutine failed before Phase 1, signal compilation_ready
+          // too
+          if (!result.has_value() || !result.value()) {
+            pending->compilation_ready.Set();
+          }
+          pending->session_ready.Set();
+
+          // Clean up pending_ entry if it still points to this version
           auto it = pending_.find(uri);
           if (it != pending_.end() && it->second->version == pending->version) {
             pending_.erase(it);
           }
         }
-      },
-      asio::use_awaitable);
 
-  // Store task for joining in InvalidateAllSessions
-  // Must be on strand (called from UpdateSession which is on strand)
-  active_session_tasks_.push_back(std::move(task));
+        // Signal completion (success or failure)
+        completion->complete.Set();
+      },
+      asio::detached);
 
   return pending;
 }

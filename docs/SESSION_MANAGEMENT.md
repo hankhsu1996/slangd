@@ -316,54 +316,45 @@ Sessions contain SemanticIndex which stores raw pointers to AST symbols for docu
 - **Why doesn't work**: Document symbols feature uses raw symbol pointers from Compilation
 - **Blocker**: Would require architectural change to document symbols
 
-### Current Solution (Temporary)
+### Current Solution
 
-**Implemented**: Remove loop, schedule next rebuild with debounce delay
+**Implemented**: Task completion tracking with BroadcastEvent coordination
 
-**How it works**:
-- Rebuild completes fully (including sessions spawned, though still running async)
-- If more saves happened → schedule next rebuild (1.5s debounce)
-- Gap between rebuilds allows previous sessions to complete and release preamble
+**Pattern**:
+- Session creation spawned with `asio::detached` (runs immediately)
+- Each task holds `BroadcastEvent` for completion notification
+- On completion (success or cancellation), task signals event
+- During preamble rebuild, `InvalidateAllSessions` waits for all events
+- Only after tasks drain and release captures → proceed with rebuild
 
-**Why this reduces memory**:
-- Prevents continuous overlapping iterations
-- Session tasks (200ms) typically complete during 1.5s gap (7.5× safety margin)
-- Reduces peak from 10GB → 2-3GB (acceptable for most cases)
+**Why this works**:
+- Deterministic (not timing-dependent)
+- Non-blocking (sessions run immediately)
+- Guaranteed memory safety (old preamble freed only after refs released)
+- Minimal overhead (reuses existing BroadcastEvent pattern)
+- Reduces peak from 10GB → 2GB reliably
 
-**Known limitations**:
-- Still timing-dependent (not guaranteed)
-- Rare cases: If sessions take >1.5s, might still have 2 preambles briefly
-- **This is explicitly a band-aid** pending proper architectural fix
+**Trade-offs**:
+- Small coordination complexity vs 10s LSP blackout (unacceptable) or 10GB memory (fatal)
+- Sessions hold Compilation+preamble long-term (required for future completion feature)
 
-**Acceptable tradeoff**:
-- Much better than 10GB spikes (2-3GB is manageable)
-- Works for 95%+ of real-world scenarios
-- Buys time for proper fix without major architectural changes
+### Future Considerations
 
-### Proper Fix (Future Work)
+**Note**: Sessions must continue holding Compilation+preamble long-term for future features (completion, hover with type info). The current coordination is necessary given these requirements.
 
-**Root cause**: Document symbols uses semantic symbols (requires Compilation), but document symbols is inherently a syntactic feature (file structure/outline).
-
-**Solution**: Migrate document symbols to syntax tree traversal
+**Potential optimization**: Migrate document symbols to syntax tree traversal
 - Parse tree available immediately after parsing
-- No semantic elaboration needed
-- No dependency on Compilation or preamble
-- **Enables dropping Compilation after diagnostics extraction**
+- No semantic elaboration needed for outline view
+- Reduces per-session memory footprint
+- Simplifies some code paths
 
-**What this unlocks**:
-- Sessions no longer hold preamble long-term
-- Preamble freed immediately after diagnostics published
-- No memory accumulation even with rapid rebuilds
-- Removes need for complex task coordination
-- Simpler, cleaner architecture
+**Why this doesn't eliminate coordination**:
+- Completion feature still requires Compilation
+- Sessions must still hold preamble references
+- Task coordination still needed during preamble rebuild
+- But: Lower memory per session enables higher session cache limits
 
-**Estimated effort**: 2-3 days
-- Implement syntax tree document symbol builder
-- Migrate feature to use syntax tree version
-- Remove Compilation retention from sessions
-- Simplify preamble rebuild logic (no task joining needed)
-
-**Design principle**: Features should use the lightest representation that supports their needs. Document symbols needs structure, not semantics.
+**Design principle**: Accept necessary complexity when constraints are real. The current solution is minimal given the requirements (responsive LSP during 10s+ rebuilds, bounded memory, support future features).
 
 ## Future Optimizations
 
