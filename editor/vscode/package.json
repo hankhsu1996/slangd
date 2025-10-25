@@ -11,8 +11,10 @@
     "systemverilog",
     "verilog",
     "hdl",
-    "lsp",
-    "language-server"
+    "rtl",
+    "fpga",
+    "asic",
+    "hardware"
   ],
   "homepage": "https://github.com/hankhsu1996/slangd",
   "bugs": {
