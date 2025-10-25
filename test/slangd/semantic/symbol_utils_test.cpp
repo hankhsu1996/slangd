@@ -11,6 +11,8 @@
 #include <slang/syntax/SyntaxTree.h>
 #include <spdlog/spdlog.h>
 
+#include "slangd/utils/conversion.hpp"
+
 constexpr auto kLogLevel = spdlog::level::debug;
 
 auto main(int argc, char* argv[]) -> int {
@@ -25,25 +27,22 @@ auto main(int argc, char* argv[]) -> int {
   return Catch::Session().run(argc, argv);
 }
 
-using slangd::semantic::ComputeLspRange;
+using slangd::CreateSymbolRange;
 
 TEST_CASE(
-    "ComputeLspRange handles symbols without locations", "[symbol_utils]") {
-  auto source_manager = std::make_shared<slang::SourceManager>();
-
+    "CreateSymbolRange handles symbols without locations", "[symbol_utils]") {
   // Create a mock symbol without location for edge case testing
   slang::Bag options;
   auto compilation = std::make_unique<slang::ast::Compilation>(options);
 
-  // Use base class reference - ComputeLspRange expects Symbol&
+  // Use base class reference - CreateSymbolRange expects Symbol&
   const slang::ast::Symbol& root = compilation->getRoot();
 
-  // Test that ComputeLspRange doesn't crash with symbols without location
-  auto range = ComputeLspRange(root, *source_manager);
+  // Test that CreateSymbolRange doesn't crash with symbols without location
+  // It automatically derives SourceManager from symbol's compilation
+  // FAIL-FAST: Returns nullopt instead of zero range
+  auto range_opt = CreateSymbolRange(root);
 
-  // Should return zero range for symbols without location
-  REQUIRE(range.start.line == 0);
-  REQUIRE(range.start.character == 0);
-  REQUIRE(range.end.line == 0);
-  REQUIRE(range.end.character == 0);
+  // Should return nullopt for symbols without location
+  REQUIRE(!range_opt.has_value());
 }

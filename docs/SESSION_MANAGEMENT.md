@@ -275,6 +275,87 @@ Background compilation:
 - Multi-waiter: Verify multiple GetSession() calls share single compilation
 - Broadcast notification: Verify all waiters wake on Set(), late joiners complete immediately
 
+## Preamble Rebuild and Session Coordination
+
+### The Dependency Chain
+
+**Why sessions must hold preamble reference:**
+
+Sessions contain SemanticIndex which stores raw pointers to AST symbols for document symbols feature. These pointers are only valid while the Compilation (and its preamble) remains alive. If preamble is freed, document symbols feature would access dangling pointers and crash.
+
+**Implication**: Session lifetime determines preamble lifetime. Multiple sessions from the same preamble generation → multiple references → preamble stays alive.
+
+### The Memory Spike Problem (Rapid Saves)
+
+**Scenario**: User saves file 10 times rapidly during a 20-second preamble build on slow server.
+
+**Original design (loop-based rebuild)**:
+- Iteration 1: Build preamble A, spawn 4 session tasks (async)
+- Iteration 2: Start immediately → build preamble B while iteration 1's sessions still building
+- Iteration 3+: Continue looping...
+- Result: 5-10 preambles alive simultaneously (each 1GB) → 10GB memory spike
+
+**Root cause**: Looping immediately after preamble build doesn't wait for previous iteration's sessions to complete. Since sessions hold preamble references, old preambles can't be freed until their sessions finish.
+
+**For detailed explanation of memory fragmentation, allocator behavior, and why RSS stays at peak, see `MEMORY_ARCHITECTURE.md`.**
+
+### Approaches Evaluated
+
+**Approach 1: Wait for session tasks to complete**
+- **Idea**: After spawning session tasks, wait for them to finish before checking for next rebuild
+- **Why doesn't work**: Requires tracking async task completion, adds complexity ("semaphore" pattern)
+- **Issue**: Loses parallelism if made synchronous (4×200ms = 800ms vs 200ms parallel)
+
+**Approach 2: Arbitrary delay between rebuilds**
+- **Idea**: Add 1.5s delay between iterations, hope sessions complete in that time
+- **Why it's a band-aid**: Not guaranteed (what if sessions take >1.5s?), relies on timing assumptions
+- **When it fails**: Slow server or complex files → sessions still overlapping
+
+**Approach 3: Drop Compilation after diagnostics (blocked)**
+- **Idea**: Extract diagnostics, then drop Compilation+preamble, keep only SemanticIndex
+- **Why doesn't work**: Document symbols feature uses raw symbol pointers from Compilation
+- **Blocker**: Would require architectural change to document symbols
+
+### Current Solution
+
+**Implemented**: Task completion tracking with BroadcastEvent coordination
+
+**Pattern**:
+- Session creation spawned with `asio::detached` (runs immediately)
+- Each task holds `BroadcastEvent` for completion notification
+- On completion (success or cancellation), task signals event
+- During preamble rebuild, `InvalidateAllSessions` waits for all events
+- Only after tasks drain and release captures → proceed with rebuild
+
+**Why this works**:
+- Deterministic (not timing-dependent)
+- Non-blocking (sessions run immediately)
+- Guaranteed memory safety (old preamble freed only after refs released)
+- Minimal overhead (reuses existing BroadcastEvent pattern)
+- Reduces peak from 10GB → 2GB reliably
+
+**Trade-offs**:
+- Small coordination complexity vs 10s LSP blackout (unacceptable) or 10GB memory (fatal)
+- Sessions hold Compilation+preamble long-term (required for future completion feature)
+
+### Future Considerations
+
+**Note**: Sessions must continue holding Compilation+preamble long-term for future features (completion, hover with type info). The current coordination is necessary given these requirements.
+
+**Potential optimization**: Migrate document symbols to syntax tree traversal
+- Parse tree available immediately after parsing
+- No semantic elaboration needed for outline view
+- Reduces per-session memory footprint
+- Simplifies some code paths
+
+**Why this doesn't eliminate coordination**:
+- Completion feature still requires Compilation
+- Sessions must still hold preamble references
+- Task coordination still needed during preamble rebuild
+- But: Lower memory per session enables higher session cache limits
+
+**Design principle**: Accept necessary complexity when constraints are real. The current solution is minimal given the requirements (responsive LSP during 10s+ rebuilds, bounded memory, support future features).
+
 ## Future Optimizations
 
 **Memory reduction**: Lower per-session cost → increase cache limit → less eviction thrashing

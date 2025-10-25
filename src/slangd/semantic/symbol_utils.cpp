@@ -8,20 +8,7 @@
 #include <slang/ast/symbols/SubroutineSymbols.h>
 #include <slang/ast/types/AllTypes.h>
 
-#include "slangd/utils/conversion.hpp"
-
 namespace slangd::semantic {
-
-auto ComputeLspRange(
-    const slang::ast::Symbol& symbol,
-    const slang::SourceManager& source_manager) -> lsp::Range {
-  if (symbol.location) {
-    return ToLspRange(symbol.location, source_manager);
-  }
-  // Return zero range for symbols without location
-  return lsp::Range{
-      .start = {.line = 0, .character = 0}, .end = {.line = 0, .character = 0}};
-}
 
 auto ShouldIndexForSemanticIndex(const slang::ast::Symbol& symbol) -> bool {
   using SK = slang::ast::SymbolKind;

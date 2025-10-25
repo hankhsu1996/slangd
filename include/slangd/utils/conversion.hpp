@@ -40,14 +40,14 @@ auto ToLspPosition(
     const slang::SourceLocation& location,
     const slang::SourceManager& source_manager) -> lsp::Position;
 
-// Create LSP location for a symbol using an explicit SourceManager.
-// This is the low-level function that performs the actual conversion.
-// Use this when you need to specify which SourceManager to use (e.g., for
-// specialized class members that need preamble SM).
-inline auto CreateSymbolLspLocationWithSM(
+// Create LSP range for a symbol's name using an explicit SourceManager.
+// Returns a range that spans from the symbol location to location + name
+// length. Returns nullopt if symbol has invalid location or negative line
+// numbers. This is the low-level function - use CreateSymbolRange() for
+// automatic SM derivation.
+inline auto CreateSymbolRangeWithSM(
     const slang::ast::Symbol& symbol,
-    const slang::SourceManager& source_manager)
-    -> std::optional<lsp::Location> {
+    const slang::SourceManager& source_manager) -> std::optional<lsp::Range> {
   // Check valid location
   if (!symbol.location.valid()) {
     return std::nullopt;
@@ -65,24 +65,62 @@ inline auto CreateSymbolLspLocationWithSM(
   lsp::Position end = start;
   end.character += static_cast<int>(symbol.name.length());
 
-  // Get base location (for URI extraction) and set our computed range
+  return lsp::Range{.start = start, .end = end};
+}
+
+// Create LSP location (URI + range) for a symbol using an explicit
+// SourceManager.
+//
+// LOW-LEVEL FUNCTION: This is an implementation detail. Most code should use
+// CreateSymbolLocation() instead, which automatically gets the correct
+// SourceManager from symbol.getCompilation().
+//
+// WARNING: Manually passing a SourceManager that doesn't match the symbol's
+// compilation will cause BufferID mismatches and invalid coordinates. Only use
+// this if you're absolutely certain the SourceManager is correct for the
+// symbol's location.
+inline auto CreateSymbolLocationWithSM(
+    const slang::ast::Symbol& symbol,
+    const slang::SourceManager& source_manager)
+    -> std::optional<lsp::Location> {
+  // Compute the range (validates location, checks for negative lines)
+  auto range_opt = CreateSymbolRangeWithSM(symbol, source_manager);
+  if (!range_opt.has_value()) {
+    return std::nullopt;
+  }
+
+  // Get base location for URI extraction
   lsp::Location location = ToLspLocation(symbol.location, source_manager);
-  location.range = {.start = start, .end = end};
+  location.range = *range_opt;
 
   return location;
 }
 
-// Create LSP location (URI + range) for a symbol's name.
-// Automatically uses the correct SourceManager from the symbol's compilation.
-// This prevents BufferID mismatch crashes by ensuring preamble symbols use
-// preamble's SM and overlay symbols use overlay's SM.
+// Create LSP range for a symbol's name.
+// Automatically derives SourceManager from the symbol's compilation.
+// SAFE CONVERSION: Prevents BufferID mismatch when symbol is from preamble.
 // Returns nullopt if symbol has no source manager or invalid location.
-inline auto CreateSymbolLspLocation(
+inline auto CreateSymbolRange(const slang::ast::Symbol& symbol)
+    -> std::optional<lsp::Range> {
+  const auto& compilation = symbol.getCompilation();
+  const auto* source_manager = compilation.getSourceManager();
+  if (source_manager == nullptr) {
+    return std::nullopt;
+  }
+
+  return CreateSymbolRangeWithSM(symbol, *source_manager);
+}
+
+// Create LSP location (URI + range) for a symbol's name.
+// Automatically derives SourceManager from the symbol's compilation.
+// SAFE CONVERSION: Prevents BufferID mismatch when symbol is from preamble.
+// Returns nullopt if symbol has no source manager or invalid location.
+inline auto CreateSymbolLocation(
     const slang::ast::Symbol& symbol, std::shared_ptr<spdlog::logger> logger)
     -> std::optional<lsp::Location> {
   // Trace before dangerous operations (crash investigation)
   logger->trace(
-      "CreateSymbolLspLocation: name='{}' kind={}", symbol.name,
+      "CreateSymbolLocation: name='{}' kind={}", symbol.name,
       toString(symbol.kind));
 
   // Use symbol's compilation to get the correct SourceManager
@@ -95,7 +133,7 @@ inline auto CreateSymbolLspLocation(
     return std::nullopt;
   }
 
-  return CreateSymbolLspLocationWithSM(symbol, *source_manager);
+  return CreateSymbolLocationWithSM(symbol, *source_manager);
 }
 
 // Create LSP location from Slang range, using symbol's SourceManager.
@@ -122,9 +160,22 @@ inline auto CreateLspLocation(
     return std::nullopt;
   }
 
+  // Explicit validation: Check if location's BufferID exists in this SM
+  // This happens with cross-compilation (preamble symbols in overlay SM)
+  if (!sm->isValidLocation(range.start())) {
+    return std::nullopt;
+  }
+
   // Get location (with URI) and update its range
   lsp::Location location = ToLspLocation(range.start(), *sm);
   location.range = ToLspRange(range, *sm);
+
+  // Defensive check: Ensure conversion produced valid coordinates
+  // Both line and character should be >= 0
+  if (location.range.start.line < 0 || location.range.start.character < 0) {
+    return std::nullopt;
+  }
+
   return location;
 }
 
@@ -155,9 +206,20 @@ inline auto CreateLspLocation(
     return std::nullopt;
   }
 
+  // Explicit validation: Check if location's BufferID exists in this SM
+  if (!sm->isValidLocation(range.start())) {
+    return std::nullopt;
+  }
+
   // Get location (with URI) and update its range
   lsp::Location location = ToLspLocation(range.start(), *sm);
   location.range = ToLspRange(range, *sm);
+
+  // Defensive check: Ensure conversion produced valid coordinates
+  if (location.range.start.line < 0 || location.range.start.character < 0) {
+    return std::nullopt;
+  }
+
   return location;
 }
 

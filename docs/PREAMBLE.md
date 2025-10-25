@@ -54,24 +54,68 @@ Slang symbols are location-independent pointers. A compilation can reference sym
 └────────────────────────────────────────────┘
 ```
 
-## Safe Conversion Architecture
+## Thread-Safety Constraint
 
-**CRITICAL PRINCIPLE: Always derive SourceManager from the AST node that owns the range**
+**Architectural consequence**: Preamble's 1:many sharing inherently creates concurrent access to shared symbols. When overlay sessions run concurrently on the thread pool (for performance and responsiveness), multiple threads simultaneously access the same preamble compilation.
 
-BufferIDs in source ranges belong to the SourceManager that parsed them. Using wrong SourceManager causes crashes.
+**Slang's design assumption**: Single-threaded sequential access. Many Slang operations are lazy (deferred until first access) and assume no concurrent modification. Examples include scope elaboration, name resolution caching, type construction, and symbol binding.
 
-**Important**: BufferIDs are per-compilation indices, not global identifiers. Preamble BufferID 15 and overlay BufferID 15 are completely different buffers. You cannot use `buffer.getId() < bufferCount` to detect cross-compilation - the IDs overlap.
+**The gap**: Preamble architecture creates multi-threaded access pattern that Slang was not designed for. This is not a feature requirement - it's an emergent property of the architecture:
 
-### Slang Fork Enhancements
+```
+Preamble sharing (1:many) + Concurrent overlay compilation = Concurrent preamble access
+```
 
-**Solutions:**
+**Consequence**: Any lazy operation in Slang that modifies state can race when multiple overlay sessions trigger it simultaneously on shared preamble symbols.
 
-1. Added `Compilation* compilation` to `Expression` base class (commit 42ed17f3)
-2. Added `Compilation* compilation` to `Symbol` base class (current work)
+**Solution**: Serialize overlay elaboration using asio strand on multi-threaded compilation pool. Preserves parallel preamble parsing while preventing concurrent preamble access. No Slang modifications required.
 
-Each expression and symbol stores its compilation, enabling automatic SourceManager derivation.
+## Cross-Compilation Safety Principles
 
-**Impact:** Eliminates cross-compilation safety issues. All AST nodes automatically use correct SourceManager.
+### 1. Modify Slang When Needed
+
+Slangd has a Slang fork. Use it to solve fundamental architectural issues rather than working around them.
+
+**Examples**:
+- Added `Expression::compilation` to track evaluation context
+- Made `packageMap` protected for preamble injection
+- Future: Add source tracking if cross-compilation needs require it
+
+**Philosophy**: If the fix requires Slang changes, implement them. Clean architecture in the library is better than complex workarounds in slangd.
+
+### 2. Never Use SourceManager Directly
+
+BufferIDs are per-SourceManager indices. Using wrong SM causes crashes or silent corruption (wrong file).
+
+**Rule**: Always derive SourceManager from AST nodes:
+- Symbols: `symbol.getCompilation()->getSourceManager()`
+- Expressions: `expr.compilation->getSourceManager()`
+
+**Why dangerous**: Preamble BufferID 1 ≠ Overlay BufferID 1. Same ID, different files. Converting with wrong SM gives "valid" coordinates for wrong file.
+
+### 3. Respect Semantic Boundaries
+
+Not all AST nodes traversed belong to the file being processed.
+
+**The issue**: Slang creates specialized classes in overlay compilation but populates them from preamble syntax. Traversing overlay AST encounters nodes with preamble source locations.
+
+**Consequences without filtering**:
+- Duplicate indexing (same preamble expression indexed from multiple overlay files)
+- Cross-file corruption (preamble references in overlay file's index)
+- SourceManager mismatches (BufferIDs interpreted by wrong compilation)
+
+**The BufferID Problem**: BufferIDs are just integers (1, 2, 3...). Preamble SM and overlay SM can both have BufferID 1, but they mean different files. No way to tell which SM owns a BufferID without tracking it explicitly.
+
+**Failed approaches**:
+- Direct BufferID comparison: `if (buffer != current_buffer)` - can collide
+- Query filename: `sm.getRawFileName(buffer)` - returns valid name even for wrong SM when IDs collide
+- Both produce silent corruption when BufferIDs overlap
+
+**Solution (implemented)**: BufferID offset - Preamble SM uses offset 1024, overlay uses 0. Prevents collision since overlay only has 1-2 buffers while preamble starts at 1024+. Implemented via `setBufferIDOffset()` in Slang's SourceManager with `getBufferIndex()` helper for array access.
+
+**Future enhancement**: Encode compilation ID in BufferID itself (bits 32-47 of 64-bit value) for globally unique IDs across all compilations. Current offset solution is sufficient for preamble+overlay architecture.
+
+**Semantic boundary is the file**, not the compilation or buffer. Cross-compilation means one file's index should not contain another file's AST nodes.
 
 ### Conversion Pattern
 
@@ -202,6 +246,7 @@ Why complete symbols work better:
 **Module/interface instantiation**: Overlay calls `getDefinition("my_module")` → finds preamble DefinitionSymbol\* in `definitionMap` → Slang creates instance using definition metadata → instantiation works transparently.
 
 **Cross-file navigation**: When user clicks on a port/parameter name in an instantiation:
+
 1. SemanticIndex finds the `UninstantiatedDefSymbol` for that instance
 2. Calls `symbol.getDefinition()` to get the preamble DefinitionSymbol\*
 3. Accesses `definition->portList` or `definition->parameters` to find the declaration
@@ -259,24 +304,29 @@ Design enables testing through:
 Key test scenarios:
 
 **Packages:**
+
 - Basic import (`import pkg::PARAM`)
 - Wildcard import (`import pkg::*`)
 - Scoped references (`pkg::my_var`)
 - Type resolution (`pkg::my_type_t`)
 
 **Interfaces:**
+
 - Interface instantiation (`my_iface bus()`)
 - Signal access through interface (`bus.data`)
 
 **Modules:**
+
 - Module instantiation with ports (`my_module inst(.a(x))`)
 - Module instantiation with parameters (`my_module #(.WIDTH(8)) inst`)
 - Cross-file port/parameter navigation
 
 **Deduplication:**
+
 - Opening files that contain definitions (no redefinition errors)
 
 **Scale:**
+
 - Many packages/interfaces/modules
 - Many symbols per construct
 

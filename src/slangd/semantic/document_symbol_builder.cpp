@@ -9,6 +9,7 @@
 
 #include "slangd/semantic/semantic_index.hpp"
 #include "slangd/semantic/symbol_utils.hpp"
+#include "slangd/utils/conversion.hpp"
 
 namespace slangd::semantic {
 
@@ -16,7 +17,6 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
     const std::string& uri, const SemanticIndex& semantic_index)
     -> std::vector<lsp::DocumentSymbol> {
   const auto& semantic_entries = semantic_index.GetSemanticEntries();
-  const auto& source_manager = semantic_index.GetSourceManager();
 
   // Build parent-to-children map from flat symbols, filtering by URI
   std::unordered_map<
@@ -122,10 +122,8 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
               auto child_doc_symbol = std::move(*child_doc_symbol_opt);
               if (child_entry->symbol->kind ==
                   slang::ast::SymbolKind::TypeAlias) {
-                HandleEnumTypeAlias(
-                    child_doc_symbol, child_entry->symbol, source_manager);
-                HandleStructTypeAlias(
-                    child_doc_symbol, child_entry->symbol, source_manager);
+                HandleEnumTypeAlias(child_doc_symbol, child_entry->symbol);
+                HandleStructTypeAlias(child_doc_symbol, child_entry->symbol);
               }
 
               // CRITICAL FIX: Recursively attach children to this child symbol
@@ -138,8 +136,7 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
                 child_as_scope = &child_entry->symbol->as<slang::ast::Scope>();
               }
               AttachChildrenToSymbol(
-                  child_doc_symbol, child_as_scope, children_map,
-                  source_manager);
+                  child_doc_symbol, child_as_scope, children_map);
 
               doc_symbol.children->push_back(std::move(child_doc_symbol));
             }
@@ -150,15 +147,15 @@ auto DocumentSymbolBuilder::BuildDocumentSymbolTree(
     } else {
       // Normal scope-based lookup
       DocumentSymbolBuilder::AttachChildrenToSymbol(
-          doc_symbol, symbol_as_scope, children_map, source_manager);
+          doc_symbol, symbol_as_scope, children_map);
     }
 
     // Special handling for enum and struct type aliases
     if (root_entry->symbol->kind == slang::ast::SymbolKind::TypeAlias) {
       DocumentSymbolBuilder::HandleEnumTypeAlias(
-          doc_symbol, root_entry->symbol, source_manager);
+          doc_symbol, root_entry->symbol);
       DocumentSymbolBuilder::HandleStructTypeAlias(
-          doc_symbol, root_entry->symbol, source_manager);
+          doc_symbol, root_entry->symbol);
     }
 
     result.push_back(std::move(doc_symbol));
@@ -195,8 +192,7 @@ auto DocumentSymbolBuilder::AttachChildrenToSymbol(
     lsp::DocumentSymbol& parent, const slang::ast::Scope* parent_scope,
     const std::unordered_map<
         const slang::ast::Scope*, std::vector<const SemanticEntry*>>&
-        children_map,
-    const slang::SourceManager& source_manager) -> void {
+        children_map) -> void {
   if (parent_scope == nullptr) {
     return;  // No scope to check for children
   }
@@ -226,10 +222,14 @@ auto DocumentSymbolBuilder::AttachChildrenToSymbol(
         if (ShouldIndexForDocumentSymbols(member)) {
           // Create DocumentSymbol directly for the member
           if (!member.name.empty()) {
+            auto range_opt = CreateSymbolRange(member);
+            if (!range_opt.has_value()) {
+              continue;  // Skip symbols without valid location
+            }
             lsp::DocumentSymbol member_doc_symbol;
             member_doc_symbol.name = std::string(member.name);
             member_doc_symbol.kind = ConvertToLspKindForDocuments(member);
-            member_doc_symbol.range = ComputeLspRange(member, source_manager);
+            member_doc_symbol.range = *range_opt;
             member_doc_symbol.selectionRange = member_doc_symbol.range;
             member_doc_symbol.children = std::vector<lsp::DocumentSymbol>();
             parent.children->push_back(std::move(member_doc_symbol));
@@ -260,15 +260,12 @@ auto DocumentSymbolBuilder::AttachChildrenToSymbol(
     if (child_as_scope == nullptr && child_entry->symbol->isScope()) {
       child_as_scope = &child_entry->symbol->as<slang::ast::Scope>();
     }
-    AttachChildrenToSymbol(
-        child_doc_symbol, child_as_scope, children_map, source_manager);
+    AttachChildrenToSymbol(child_doc_symbol, child_as_scope, children_map);
 
     // Special handling for enum and struct type aliases in children too
     if (child_entry->symbol->kind == slang::ast::SymbolKind::TypeAlias) {
-      HandleEnumTypeAlias(
-          child_doc_symbol, child_entry->symbol, source_manager);
-      HandleStructTypeAlias(
-          child_doc_symbol, child_entry->symbol, source_manager);
+      HandleEnumTypeAlias(child_doc_symbol, child_entry->symbol);
+      HandleStructTypeAlias(child_doc_symbol, child_entry->symbol);
     }
 
     parent.children->push_back(std::move(child_doc_symbol));
@@ -277,8 +274,7 @@ auto DocumentSymbolBuilder::AttachChildrenToSymbol(
 
 auto DocumentSymbolBuilder::HandleEnumTypeAlias(
     lsp::DocumentSymbol& enum_doc_symbol,
-    const slang::ast::Symbol* type_alias_symbol,
-    const slang::SourceManager& source_manager) -> void {
+    const slang::ast::Symbol* type_alias_symbol) -> void {
   using SK = slang::ast::SymbolKind;
 
   // Check if this is a TypeAlias of an enum
@@ -312,18 +308,12 @@ auto DocumentSymbolBuilder::HandleEnumTypeAlias(
     enum_value_symbol.kind = lsp::SymbolKind::kEnumMember;
 
     // Set range from the enum value location
-    if (enum_value.location) {
-      enum_value_symbol.range = ComputeLspRange(enum_value, source_manager);
-      enum_value_symbol.selectionRange = enum_value_symbol.range;
-    } else {
-      // Default range if no location
-      enum_value_symbol.range = {
-          .start = {.line = 0, .character = 0},
-          .end = {.line = 0, .character = 0}};
-      enum_value_symbol.selectionRange = {
-          .start = {.line = 0, .character = 0},
-          .end = {.line = 0, .character = 0}};
+    auto range_opt = CreateSymbolRange(enum_value);
+    if (!range_opt.has_value()) {
+      continue;  // Skip enum values without valid location
     }
+    enum_value_symbol.range = *range_opt;
+    enum_value_symbol.selectionRange = enum_value_symbol.range;
 
     enum_value_symbol.children = std::vector<lsp::DocumentSymbol>();
     enum_doc_symbol.children->push_back(std::move(enum_value_symbol));
@@ -332,8 +322,7 @@ auto DocumentSymbolBuilder::HandleEnumTypeAlias(
 
 auto DocumentSymbolBuilder::HandleStructTypeAlias(
     lsp::DocumentSymbol& struct_doc_symbol,
-    const slang::ast::Symbol* type_alias_symbol,
-    const slang::SourceManager& source_manager) -> void {
+    const slang::ast::Symbol* type_alias_symbol) -> void {
   using SK = slang::ast::SymbolKind;
 
   // Check if this is a TypeAlias of a struct
@@ -370,18 +359,12 @@ auto DocumentSymbolBuilder::HandleStructTypeAlias(
       field_doc_symbol.kind = lsp::SymbolKind::kField;
 
       // Set range from the field location
-      if (field_symbol.location.valid()) {
-        field_doc_symbol.range = ComputeLspRange(field_symbol, source_manager);
-        field_doc_symbol.selectionRange = field_doc_symbol.range;
-      } else {
-        // Default range if no location
-        field_doc_symbol.range = {
-            .start = {.line = 0, .character = 0},
-            .end = {.line = 0, .character = 0}};
-        field_doc_symbol.selectionRange = {
-            .start = {.line = 0, .character = 0},
-            .end = {.line = 0, .character = 0}};
+      auto range_opt = CreateSymbolRange(field_symbol);
+      if (!range_opt.has_value()) {
+        continue;  // Skip fields without valid location
       }
+      field_doc_symbol.range = *range_opt;
+      field_doc_symbol.selectionRange = field_doc_symbol.range;
 
       field_doc_symbol.children = std::vector<lsp::DocumentSymbol>();
       struct_doc_symbol.children->push_back(std::move(field_doc_symbol));

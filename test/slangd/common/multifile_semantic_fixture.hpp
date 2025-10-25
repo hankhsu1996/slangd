@@ -110,6 +110,7 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
 
     // Second pass: add files to compilation in order, tracking the current
     // file's index
+    slang::BufferID current_file_buffer_id;
     for (size_t i = 0; i < files.size(); ++i) {
       const auto& file_spec = files[i];
       std::string filename = fmt::format("file_{}.sv", i);
@@ -127,11 +128,17 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
       auto tree =
           slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
       compilation->addSyntaxTree(tree);
+
+      // Save BufferID for the current file
+      if (static_cast<int>(i) == current_file_index) {
+        current_file_buffer_id = buffer.id;
+      }
     }
 
     // Build index from the current file's perspective
     auto result = SemanticIndex::FromCompilation(
-        *compilation, *source_manager, current_file_uri);
+        *compilation, *source_manager, current_file_uri,
+        current_file_buffer_id);
 
     if (!result) {
       throw std::runtime_error(
@@ -158,6 +165,7 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
     auto compilation = std::make_unique<slang::ast::Compilation>(options);
 
     std::vector<std::string> file_paths;
+    slang::BufferID first_buffer_id;
 
     // Add each file to the compilation
     for (size_t i = 0; i < file_contents.size(); ++i) {
@@ -172,12 +180,17 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
       auto tree =
           slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager);
       compilation->addSyntaxTree(tree);
+
+      // Save BufferID for the first file
+      if (i == 0) {
+        first_buffer_id = buffer.id;
+      }
     }
 
     // Use the first file URI for the index
     std::string first_file_uri = "file:///file_0.sv";
     auto result = SemanticIndex::FromCompilation(
-        *compilation, *source_manager, first_file_uri);
+        *compilation, *source_manager, first_file_uri, first_buffer_id);
 
     if (!result) {
       throw std::runtime_error(
@@ -278,11 +291,19 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
   // Build PreambleManager from temp directory files
   // Requires files to be written via CreateFile() first
   auto BuildPreambleManager(asio::any_io_executor executor) const
-      -> std::shared_ptr<slangd::services::PreambleManager> {
+      -> asio::awaitable<std::shared_ptr<slangd::services::PreambleManager>> {
     auto layout_service = slangd::ProjectLayoutService::Create(
         executor, GetTempDir(), spdlog::default_logger());
-    return slangd::services::PreambleManager::CreateFromProjectLayout(
-        layout_service, spdlog::default_logger());
+    auto result =
+        co_await slangd::services::PreambleManager::CreateFromProjectLayout(
+            layout_service, executor, spdlog::default_logger());
+
+    if (!result) {
+      throw std::runtime_error(
+          fmt::format("BuildPreambleManager failed: {}", result.error()));
+    }
+
+    co_return *result;
   }
 
   // Create BufferID offset package to force validation detection of missing
@@ -309,12 +330,20 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
   // Used for cross-file navigation tests with preamble support
   auto BuildSession(
       std::string_view current_file_name, asio::any_io_executor executor)
-      -> std::shared_ptr<slangd::services::OverlaySession> {
+      -> asio::awaitable<std::shared_ptr<slangd::services::OverlaySession>> {
     auto layout_service = slangd::ProjectLayoutService::Create(
         executor, GetTempDir(), spdlog::default_logger());
-    auto preamble_manager =
-        slangd::services::PreambleManager::CreateFromProjectLayout(
-            layout_service, spdlog::default_logger());
+    auto preamble_result =
+        co_await slangd::services::PreambleManager::CreateFromProjectLayout(
+            layout_service, executor, spdlog::default_logger());
+
+    if (!preamble_result) {
+      throw std::runtime_error(
+          fmt::format(
+              "BuildSession preamble failed: {}", preamble_result.error()));
+    }
+
+    auto preamble_manager = *preamble_result;
 
     // Read current file content from disk
     auto current_path = GetTempDir().Path() / current_file_name;
@@ -326,9 +355,8 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
     // Convert actual file path to URI
     std::string uri = CanonicalPath(current_path).ToUri();
 
-    // Create OverlaySession with preamble_manager (handles all compilation
-    // setup)
-    return slangd::services::OverlaySession::Create(
+    // Create OverlaySession with preamble_manager
+    co_return slangd::services::OverlaySession::Create(
         uri, content, layout_service, preamble_manager);
   }
 

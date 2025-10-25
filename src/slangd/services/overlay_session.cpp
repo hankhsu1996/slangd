@@ -61,7 +61,8 @@ auto OverlaySession::Create(
   // compilation.diagMap Diagnostics are extracted on-demand via
   // ComputeDiagnostics()
   auto result = semantic::SemanticIndex::FromCompilation(
-      *compilation, *source_manager, uri, preamble_manager.get(), logger);
+      *compilation, *source_manager, uri, main_buffer_id,
+      preamble_manager.get(), logger);
 
   if (!result) {
     logger->error(
@@ -123,6 +124,10 @@ auto OverlaySession::BuildCompilation(
 
   // Create fresh source manager
   auto source_manager = std::make_shared<slang::SourceManager>();
+
+  // Set BufferID offset to 0 for overlay (preamble uses 1024)
+  // This ensures no BufferID collision between preamble and overlay
+  source_manager->setBufferIDOffset(0);
 
   // Start with standard LSP compilation options
   auto options = utils::CreateLspCompilationOptions();

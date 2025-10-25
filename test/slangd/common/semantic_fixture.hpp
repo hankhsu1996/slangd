@@ -57,9 +57,12 @@ class SemanticTestFixture {
     auto compilation = std::make_unique<slang::ast::Compilation>(options);
     compilation->addSyntaxTree(tree);
 
+    // Get buffer_id for semantic indexing
+    auto buffer_id = buffer.id;
+
     // Build semantic index (triggers forceElaborate internally)
-    auto result =
-        SemanticIndex::FromCompilation(*compilation, *source_manager, test_uri);
+    auto result = SemanticIndex::FromCompilation(
+        *compilation, *source_manager, test_uri, buffer_id);
 
     if (!result) {
       throw std::runtime_error(
@@ -69,9 +72,6 @@ class SemanticTestFixture {
     }
 
     auto index = std::move(*result);
-
-    // Extract diagnostics (LSP domain) - buffer_id used locally, not stored
-    auto buffer_id = buffer.id;
     auto parse_diags = semantic::DiagnosticConverter::ExtractParseDiagnostics(
         *compilation, *source_manager, buffer_id);
 

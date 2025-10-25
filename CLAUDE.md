@@ -20,6 +20,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 **Build & Test:**
 
 - `bazel build //...` - Build everything
+- `bazel build //... --config=debug` - Build with debug symbols
 - `bazel test //...` - Run all tests
 - `find src include test -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i` - Format code
 - `bazel run @hedron_compile_commands//:refresh_all` - Refresh compile database
@@ -121,6 +122,12 @@ SystemVerilog LSP server with modular design:
 - Print source ranges: `range.start().offset()..range.end().offset()` for offsets, or use `source_manager.getLineNumber(range.start())` for line numbers
 - Naming: prefer full words over abbreviations; remove redundant context from names
 - Comments: describe technical behavior, not project state (no alpha/beta/v1/staging/milestone)
+
+**Error Handling:**
+
+- **Preconditions** (programmer errors): Fail-fast, no runtime checks
+- **Runtime errors** (expected failures): Use `std::expected<T, std::string>`
+- **Distinction**: Can this happen in correct code? No → precondition (crash). Yes → std::expected (handle).
 
 **Forward Declaration vs Include:**
 

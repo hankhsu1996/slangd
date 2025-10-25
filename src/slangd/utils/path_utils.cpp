@@ -92,9 +92,12 @@ auto PathToUri(std::filesystem::path path) -> std::string {
 
 auto NormalizePath(std::filesystem::path path) -> std::filesystem::path {
   try {
-    // weakly_canonical resolves .. and . components and makes path absolute
+    // Convert to absolute path first to avoid weakly_canonical issues with
+    // relative paths containing ../ when parent directories don't exist on disk
+    auto abs_path = std::filesystem::absolute(path);
+    // weakly_canonical resolves .. and . components
     // Works even if the file doesn't exist (unlike canonical)
-    return std::filesystem::weakly_canonical(path);
+    return std::filesystem::weakly_canonical(abs_path);
   } catch (const std::filesystem::filesystem_error& e) {
     spdlog::warn("Failed to normalize path '{}': {}", path.string(), e.what());
     return path;

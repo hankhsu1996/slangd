@@ -1,5 +1,8 @@
 #include "slangd/services/session_manager.hpp"
 
+#include <mimalloc.h>
+#include <thread>
+
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/post.hpp>
@@ -24,12 +27,20 @@ SessionManager::SessionManager(
     std::shared_ptr<OpenDocumentTracker> open_tracker,
     std::shared_ptr<spdlog::logger> logger)
     : executor_(executor),
+      logger_(std::move(logger)),
       layout_service_(std::move(layout_service)),
       preamble_manager_(std::move(preamble_manager)),
       open_tracker_(std::move(open_tracker)),
-      logger_(std::move(logger)),
       session_strand_(asio::make_strand(executor)),
-      compilation_pool_(std::make_unique<asio::thread_pool>(4)) {
+      compilation_pool_(std::make_unique<asio::thread_pool>([] {
+        const auto hw_threads = std::thread::hardware_concurrency();
+        const auto num_threads = std::min(hw_threads / 2, 16U);
+        return num_threads == 0 ? 1U : num_threads;
+      }())),
+      overlay_strand_(asio::make_strand(compilation_pool_->get_executor())) {
+  // Multi-threaded pool enables parallel preamble syntax tree parsing
+  // overlay_strand_ serializes overlay elaboration (prevents concurrent
+  // preamble access - Slang compilation is not thread-safe)
 }
 
 SessionManager::~SessionManager() {
@@ -41,6 +52,11 @@ auto SessionManager::UpdateSession(
     std::optional<CompilationReadyHook> on_compilation_ready,
     std::optional<SessionReadyHook> on_session_ready) -> asio::awaitable<void> {
   co_await asio::post(session_strand_, asio::use_awaitable);
+
+  // Capture shared_ptr snapshots to pass to background thread pool
+  // Prevents data race when UpdatePreambleManager swaps these pointers
+  auto preamble = preamble_manager_;
+  auto layout = layout_service_;
 
   logger_->debug("Session update: {} (version {})", uri, version);
 
@@ -79,7 +95,8 @@ auto SessionManager::UpdateSession(
   }
 
   auto new_pending = StartSessionCreation(
-      uri, content, version, on_compilation_ready, on_session_ready);
+      uri, content, version, preamble, layout, on_compilation_ready,
+      on_session_ready);
   pending_[uri] = new_pending;
 
   co_return;
@@ -110,33 +127,6 @@ auto SessionManager::InvalidateSessions(std::vector<std::string> uris) -> void {
       asio::detached);
 }
 
-auto SessionManager::InvalidateAllSessions() -> void {
-  asio::co_spawn(
-      executor_,
-      [this]() -> asio::awaitable<void> {
-        co_await asio::post(session_strand_, asio::use_awaitable);
-
-        logger_->debug(
-            "All sessions invalidated ({} stored, {} pending)",
-            sessions_.size(), pending_.size());
-
-        for (auto& [uri, pending] : pending_) {
-          pending->cancelled.store(true, std::memory_order_release);
-        }
-
-        // Cancel all cleanup timers
-        for (auto& [uri, timer] : cleanup_timers_) {
-          timer->cancel();
-        }
-
-        sessions_.clear();
-        pending_.clear();
-        cleanup_timers_.clear();
-        co_return;
-      },
-      asio::detached);
-}
-
 auto SessionManager::CancelPendingSession(std::string uri) -> void {
   asio::co_spawn(
       executor_,
@@ -157,23 +147,61 @@ auto SessionManager::CancelPendingSession(std::string uri) -> void {
 }
 
 auto SessionManager::UpdatePreambleManager(
-    std::shared_ptr<const PreambleManager> preamble_manager) -> void {
-  asio::co_spawn(
-      executor_,
-      [this, preamble_manager]() -> asio::awaitable<void> {
-        co_await asio::post(session_strand_, asio::use_awaitable);
+    std::shared_ptr<const PreambleManager> preamble_manager)
+    -> asio::awaitable<void> {
+  // Execute on strand immediately (no queueing with co_spawn)
+  // This prevents multiple shared_ptr copies being held in queued lambdas
+  co_await asio::post(session_strand_, asio::use_awaitable);
 
-        logger_->debug("Preamble manager updated");
+  preamble_manager_ = std::move(preamble_manager);
 
-        preamble_manager_ = preamble_manager;
+  // Force mimalloc to return unused memory pages to OS
+  // Note: old preamble may still be held by existing sessions
+  mi_collect(true);
+}
 
-        co_return;
-      },
-      asio::detached);
+auto SessionManager::InvalidateAllSessions() -> asio::awaitable<void> {
+  // Execute on strand immediately (no queueing with co_spawn)
+  // This ensures old sessions are destroyed before proceeding
+  co_await asio::post(session_strand_, asio::use_awaitable);
+
+  // Cancel all pending session creations
+  for (auto& [uri, pending] : pending_) {
+    pending->cancelled.store(true, std::memory_order_release);
+  }
+
+  // Cancel all cleanup timers
+  for (auto& [uri, timer] : cleanup_timers_) {
+    timer->cancel();
+  }
+
+  // Wait for all active session tasks to complete
+  // SharedTask awaits the heavy work coroutine, destroying its frame and
+  // releasing preamble captures when work completes
+  std::vector<std::shared_ptr<utils::SharedTask>> tasks_to_await;
+  std::swap(tasks_to_await, active_session_tasks_);
+
+  for (auto& task : tasks_to_await) {
+    co_await task->Wait();  // Wait for work to complete (preamble released)
+  }
+
+  // Explicitly destroy SharedTask objects to release moved-from awaitables
+  tasks_to_await.clear();
+
+  // Now safe to clear maps - sessions hold preamble references
+  // Clearing them drops old preamble refcount to 0 → destructor runs
+  sessions_.clear();
+  pending_.clear();
+  cleanup_timers_.clear();
+
+  // Force mimalloc to return unused memory pages to OS
+  mi_collect(true);
 }
 
 auto SessionManager::StartSessionCreation(
     std::string uri, std::string content, int version,
+    std::shared_ptr<const PreambleManager> preamble_manager,
+    std::shared_ptr<ProjectLayoutService> layout_service,
     std::optional<CompilationReadyHook> on_compilation_ready,
     std::optional<SessionReadyHook> on_session_ready)
     -> std::shared_ptr<PendingCreation> {
@@ -181,12 +209,14 @@ auto SessionManager::StartSessionCreation(
   pending->on_compilation_ready = std::move(on_compilation_ready);
   pending->on_session_ready = std::move(on_session_ready);
 
-  asio::co_spawn(
+  // Create task with use_awaitable (captures preamble)
+  auto task = asio::co_spawn(
       executor_,
-      [this, uri, content, pending]() -> asio::awaitable<void> {
+      [this, uri, content, pending, preamble_manager,
+       layout_service]() -> asio::awaitable<void> {
         auto result = co_await asio::co_spawn(
-            compilation_pool_->get_executor(),
-            [uri, content, this, pending]()
+            overlay_strand_,
+            [uri, content, this, pending, preamble_manager, layout_service]()
                 -> asio::awaitable<
                     std::optional<std::shared_ptr<OverlaySession>>> {
               // Check cancellation flag (lock-free, stays on pool thread)
@@ -198,8 +228,7 @@ auto SessionManager::StartSessionCreation(
 
               auto [source_manager, compilation, main_buffer_id] =
                   OverlaySession::BuildCompilation(
-                      uri, content, layout_service_, preamble_manager_,
-                      logger_);
+                      uri, content, layout_service, preamble_manager, logger_);
 
               // Check again after expensive BuildCompilation
               if (pending->cancelled.load(std::memory_order_acquire)) {
@@ -209,12 +238,12 @@ auto SessionManager::StartSessionCreation(
               }
 
               auto result = semantic::SemanticIndex::FromCompilation(
-                  *compilation, *source_manager, uri, preamble_manager_.get(),
-                  logger_);
+                  *compilation, *source_manager, uri, main_buffer_id,
+                  preamble_manager.get(), logger_);
 
               if (!result) {
                 logger_->error(
-                    "Failed to build semantic index for '{}': {}", uri,
+                    "Semantic indexing failed for '{}': {}", uri,
                     result.error());
                 // Return nullopt - session creation failed
                 co_return std::nullopt;
@@ -235,13 +264,17 @@ auto SessionManager::StartSessionCreation(
                 co_return std::nullopt;
               }
 
-              // Store Phase 1, then broadcast
+              // BuildCompilation returns unique_ptr (minimal ownership
+              // assumption) Convert to shared_ptr for multi-owner storage:
+              // - SessionEntry holds compilation
+              // - OverlaySession holds compilation
+              // - Diagnostic hook may access compilation
               auto compilation_shared =
                   std::shared_ptr<slang::ast::Compilation>(
                       std::move(compilation));
               auto partial_session = OverlaySession::CreateFromParts(
                   source_manager, compilation_shared, std::move(semantic_index),
-                  main_buffer_id, logger_, preamble_manager_);
+                  main_buffer_id, logger_, preamble_manager);
 
               sessions_[uri] = SessionEntry{
                   .session = partial_session,
@@ -265,6 +298,8 @@ auto SessionManager::StartSessionCreation(
         // Return to strand for Phase 2 storage (session upgrade)
         co_await asio::post(session_strand_, asio::use_awaitable);
 
+        bool session_ready_signaled = false;
+
         if (result.has_value() && result.value()) {
           auto it = pending_.find(uri);
           if (it != pending_.end() && it->second->version == pending->version) {
@@ -280,6 +315,7 @@ auto SessionManager::StartSessionCreation(
               }
 
               pending->session_ready.Set();
+              session_ready_signaled = true;
             }
             pending_.erase(it);
           } else {
@@ -287,14 +323,37 @@ auto SessionManager::StartSessionCreation(
                 "Session creation superseded during Phase 2: {}", uri);
           }
         } else {
-          logger_->debug("Session creation failed or cancelled: {}", uri);
+          logger_->debug("Session creation failed or cancelled for: {}", uri);
+        }
+
+        // Always signal session_ready if not already signaled
+        // This ensures waiters don't hang forever on failure/cancellation
+        if (!session_ready_signaled) {
+          // If inner coroutine failed before Phase 1, signal compilation_ready
+          // too
+          if (!result.has_value() || !result.value()) {
+            pending->compilation_ready.Set();
+          }
+          pending->session_ready.Set();
+
+          // Clean up pending_ entry if it still points to this version
           auto it = pending_.find(uri);
           if (it != pending_.end() && it->second->version == pending->version) {
             pending_.erase(it);
           }
         }
+
+        // Signal completion (success or failure)
       },
-      asio::detached);
+      asio::use_awaitable);
+
+  // Wrap in SharedTask and start immediately
+  auto shared_task =
+      std::make_shared<utils::SharedTask>(std::move(task), executor_);
+  shared_task->Start();  // Spawns lightweight detached executor
+
+  // Store for cleanup during preamble rebuild
+  active_session_tasks_.push_back(shared_task);
 
   return pending;
 }

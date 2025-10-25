@@ -19,6 +19,7 @@
 #include "slangd/services/overlay_session.hpp"
 #include "slangd/services/preamble_manager.hpp"
 #include "slangd/utils/broadcast_event.hpp"
+#include "slangd/utils/shared_task.hpp"
 
 namespace slangd::services {
 
@@ -72,7 +73,10 @@ class SessionManager {
 
   auto InvalidateSessions(std::vector<std::string> uris) -> void;
 
-  auto InvalidateAllSessions() -> void;  // For preamble_manager version change
+  // Invalidate all sessions - for config/file changes
+  // Returns awaitable to ensure sessions are cleared before proceeding
+  // Prevents old sessions from holding preamble references during rebuild
+  auto InvalidateAllSessions() -> asio::awaitable<void>;
 
   // Cancel pending session compilation (called when document is closed)
   auto CancelPendingSession(std::string uri) -> void;
@@ -81,10 +85,12 @@ class SessionManager {
   // Supports prefetch pattern: if reopened within delay, reuse stored session
   auto ScheduleCleanup(std::string uri) -> void;
 
-  // Updates the preamble_manager pointer used for all future session creations
-  // Must be called when PreambleManager is rebuilt (e.g., config changes)
+  // Updates preamble_manager pointer (thread-safe via strand)
+  // Returns awaitable to ensure update completes before proceeding
+  // Prevents queueing multiple shared_ptr copies in lambdas
   auto UpdatePreambleManager(
-      std::shared_ptr<const PreambleManager> preamble_manager) -> void;
+      std::shared_ptr<const PreambleManager> preamble_manager)
+      -> asio::awaitable<void>;
 
   // Callback-based session access - prevents shared_ptr escape
   // Executes callback on session_strand_ with const reference to session
@@ -123,6 +129,8 @@ class SessionManager {
 
   auto StartSessionCreation(
       std::string uri, std::string content, int version,
+      std::shared_ptr<const PreambleManager> preamble_manager,
+      std::shared_ptr<ProjectLayoutService> layout_service,
       std::optional<CompilationReadyHook> on_compilation_ready,
       std::optional<SessionReadyHook> on_session_ready)
       -> std::shared_ptr<PendingCreation>;
@@ -136,10 +144,12 @@ class SessionManager {
 
   // Dependencies
   asio::any_io_executor executor_;
+  std::shared_ptr<spdlog::logger> logger_;
+
+  // Shared state protected by session_strand_
   std::shared_ptr<ProjectLayoutService> layout_service_;
   std::shared_ptr<const PreambleManager> preamble_manager_;
   std::shared_ptr<OpenDocumentTracker> open_tracker_;
-  std::shared_ptr<spdlog::logger> logger_;
 
   // Strand for thread-safe session map access
   asio::strand<asio::any_io_executor> session_strand_;
@@ -155,10 +165,18 @@ class SessionManager {
   SessionMap sessions_;
   PendingMap pending_;
   TimerMap cleanup_timers_;
+  std::vector<std::shared_ptr<utils::SharedTask>> active_session_tasks_;
   static constexpr auto kCleanupDelay = std::chrono::seconds(5);
 
-  // Background compilation pool
+  // Background compilation pool (multi-threaded for preamble parsing
+  // parallelism)
   std::unique_ptr<asio::thread_pool> compilation_pool_;
+
+  // Strand for serializing overlay elaboration on compilation pool
+  // Overlay elaboration triggers lazy operations on shared preamble symbols
+  // Serialization prevents concurrent preamble access (Slang is
+  // single-threaded)
+  asio::strand<asio::any_io_executor> overlay_strand_;
 };
 
 // Template method implementations
