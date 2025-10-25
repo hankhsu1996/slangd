@@ -122,6 +122,37 @@ export function activate(context: vscode.ExtensionContext) {
       `Failed to start SystemVerilog Language Server: ${error}`
     );
   }
+
+  // Register restart command
+  const restartCommand = vscode.commands.registerCommand(
+    "systemverilog.restartServer",
+    async () => {
+      if (!client) {
+        vscode.window.showWarningMessage(
+          "SystemVerilog language server is not running"
+        );
+        return;
+      }
+
+      try {
+        outputChannel.appendLine("Restarting language server...");
+        await client.stop();
+        await client.start();
+        outputChannel.appendLine("Language server restarted successfully");
+        vscode.window.showInformationMessage(
+          "SystemVerilog language server restarted"
+        );
+      } catch (error) {
+        outputChannel.appendLine(
+          `ERROR: Failed to restart language server: ${error}`
+        );
+        vscode.window.showErrorMessage(
+          `Failed to restart SystemVerilog language server: ${error}`
+        );
+      }
+    }
+  );
+  context.subscriptions.push(restartCommand);
 }
 
 export function deactivate(): Thenable<void> | undefined {

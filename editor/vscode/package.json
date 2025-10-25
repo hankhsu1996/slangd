@@ -40,6 +40,13 @@
     "watch": "webpack --watch"
   },
   "contributes": {
+    "commands": [
+      {
+        "command": "systemverilog.restartServer",
+        "title": "Restart language server",
+        "category": "slangd"
+      }
+    ],
     "configuration": {
       "title": "SystemVerilog",
       "properties": {
