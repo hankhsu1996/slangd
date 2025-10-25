@@ -33,6 +33,10 @@ This extension is primarily a testbed for integrating [`slangd`](https://github.
 
 Please open issues or suggestions at [slangd GitHub repo](https://github.com/hankhsu1996/slangd/issues).
 
+## Credits
+
+Extension icon: [Web developer icons created by kerismaker - Flaticon](https://www.flaticon.com/free-icons/web-developer)
+
 ## License
 
 MIT © 2025 Shou-Li Hsu
