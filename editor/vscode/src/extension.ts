@@ -10,11 +10,32 @@ import {
 
 let client: LanguageClient;
 let outputChannel: vscode.OutputChannel;
+let statusBarItem: vscode.StatusBarItem;
 
 export function activate(context: vscode.ExtensionContext) {
   outputChannel = vscode.window.createOutputChannel(
     "SystemVerilog Language Server"
   );
+
+  // Check platform support
+  if (process.platform !== "linux") {
+    const platformName = process.platform === "darwin" ? "macOS" : process.platform === "win32" ? "Windows" : process.platform;
+    const message = `Slangd currently supports Linux only. ${platformName} support is not yet available.`;
+    vscode.window.showErrorMessage(message);
+    outputChannel.appendLine(`ERROR: ${message}`);
+    return; // Stop activation on unsupported platforms
+  }
+
+  // Create status bar item (left side, low priority)
+  statusBarItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Left,
+    0
+  );
+  statusBarItem.text = "slangd: idle";
+  statusBarItem.command = "systemverilog.showOutputChannel";
+  statusBarItem.tooltip = "Show slangd output";
+  statusBarItem.show();
+  context.subscriptions.push(statusBarItem);
 
   // Get the path to the server executable from the settings
   const config = vscode.workspace.getConfiguration("systemverilog");
@@ -81,7 +102,7 @@ export function activate(context: vscode.ExtensionContext) {
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: "file", language: "systemverilog" }],
     synchronize: {
-      fileEvents: vscode.workspace.createFileSystemWatcher("**/*.{sv,svh,v}"),
+      fileEvents: vscode.workspace.createFileSystemWatcher("**/*.{sv,svh,v,vh}"),
     },
     outputChannel,
     traceOutputChannel: outputChannel,
@@ -97,6 +118,11 @@ export function activate(context: vscode.ExtensionContext) {
     clientOptions
   );
 
+  // Listen for status notifications from server (before starting client)
+  client.onNotification("$/slangd/status", (params: { status: string }) => {
+    statusBarItem.text = `slangd: ${params.status}`;
+  });
+
   // Handle client errors
   client.onDidChangeState((event) => {
     if (event.newState === 1) {
@@ -107,6 +133,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   try {
     client.start();
+
     context.subscriptions.push({
       dispose: () => {
         if (client) {
@@ -122,6 +149,46 @@ export function activate(context: vscode.ExtensionContext) {
       `Failed to start SystemVerilog Language Server: ${error}`
     );
   }
+
+  // Register command to show output channel
+  const showOutputCommand = vscode.commands.registerCommand(
+    "systemverilog.showOutputChannel",
+    () => {
+      outputChannel.show();
+    }
+  );
+  context.subscriptions.push(showOutputCommand);
+
+  // Register restart command
+  const restartCommand = vscode.commands.registerCommand(
+    "systemverilog.restartServer",
+    async () => {
+      if (!client) {
+        vscode.window.showWarningMessage(
+          "SystemVerilog language server is not running"
+        );
+        return;
+      }
+
+      try {
+        outputChannel.appendLine("Restarting language server...");
+        await client.stop();
+        await client.start();
+        outputChannel.appendLine("Language server restarted successfully");
+        vscode.window.showInformationMessage(
+          "SystemVerilog language server restarted"
+        );
+      } catch (error) {
+        outputChannel.appendLine(
+          `ERROR: Failed to restart language server: ${error}`
+        );
+        vscode.window.showErrorMessage(
+          `Failed to restart SystemVerilog language server: ${error}`
+        );
+      }
+    }
+  );
+  context.subscriptions.push(restartCommand);
 }
 
 export function deactivate(): Thenable<void> | undefined {

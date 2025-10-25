@@ -15,6 +15,7 @@
 #include "slangd/services/overlay_session.hpp"
 #include "slangd/services/preamble_manager.hpp"
 #include "slangd/services/session_manager.hpp"
+#include "slangd/utils/broadcast_event.hpp"
 
 namespace slangd::services {
 
@@ -68,6 +69,11 @@ class LanguageService : public LanguageServiceBase {
     diagnostic_publisher_ = std::move(publisher);
   }
 
+  // Set callback for publishing status updates to LSP client
+  auto SetStatusPublisher(StatusPublisher publisher) -> void override {
+    status_publisher_ = std::move(publisher);
+  }
+
  private:
   // Helper to create diagnostic extraction hook for session creation
   auto CreateDiagnosticHook(std::string uri, int version)
@@ -91,12 +97,20 @@ class LanguageService : public LanguageServiceBase {
 
   std::unique_ptr<SessionManager> session_manager_;
 
+  // Workspace initialization synchronization
+  // Set once at the end of InitializeWorkspace, stays set permanently
+  // All public methods wait on this event before proceeding
+  utils::BroadcastEvent workspace_ready_;
+
   // Background thread pool for parse diagnostics
   std::unique_ptr<asio::thread_pool> compilation_pool_;
   static constexpr size_t kThreadPoolSize = 4;
 
   // Callback for publishing diagnostics (set by LSP server layer)
   DiagnosticPublisher diagnostic_publisher_;
+
+  // Callback for publishing status updates (set by LSP server layer)
+  StatusPublisher status_publisher_;
 
   // Preamble rebuild debouncing and concurrency protection
   std::optional<asio::steady_timer> preamble_rebuild_timer_;

@@ -1,18 +1,19 @@
 {
-  "name": "systemverilog",
-  "displayName": "SystemVerilog",
+  "name": "slangd",
+  "displayName": "Slangd",
   "version": "0.1.0",
-  "description": "SystemVerilog language support using slangd LSP",
+  "description": "SystemVerilog language support",
   "categories": [
-    "Programming Languages",
-    "Linters"
+    "Programming Languages"
   ],
   "keywords": [
     "systemverilog",
     "verilog",
     "hdl",
-    "lsp",
-    "language-server"
+    "rtl",
+    "fpga",
+    "asic",
+    "hardware"
   ],
   "homepage": "https://github.com/hankhsu1996/slangd",
   "bugs": {
@@ -40,6 +41,13 @@
     "watch": "webpack --watch"
   },
   "contributes": {
+    "commands": [
+      {
+        "command": "systemverilog.restartServer",
+        "title": "Restart language server",
+        "category": "slangd"
+      }
+    ],
     "configuration": {
       "title": "SystemVerilog",
       "properties": {
@@ -78,6 +86,13 @@
           ".vh"
         ],
         "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "systemverilog",
+        "scopeName": "source-text.sv",
+        "path": "./syntaxes/systemverilog.tmLanguage.json"
       }
     ]
   },

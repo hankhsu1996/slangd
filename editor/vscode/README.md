@@ -1,37 +1,67 @@
-# SystemVerilog VS Code Extension (Experimental)
+# Slangd
 
-This extension provides **early-stage SystemVerilog language support** for Visual Studio Code using the [slangd](https://github.com/hankhsu1996/slangd) language server.
+SystemVerilog language support for VS Code. Built on [slang](https://github.com/MikePopoloski/slang), the fastest and most compliant open-source SystemVerilog frontend, Slangd uses a full compiler frontend for accurate language understanding, not regex-based approximations.
 
-> ⚠️ **Warning**: This extension is still in development. Features are incomplete and the interface may change without notice.
+## Features
 
-## What works today
+- **Real-time diagnostics** from a proven compiler frontend
+- **Go-to-definition** across your entire workspace
+- **Document symbols** for exploring design hierarchy
 
-- ✅ Basic diagnostics (syntax and semantic errors) via `slangd`
-- ✅ Document and workspace-level navigation (symbols, outlines, etc.)
-- 🛠️ Built directly on top of the in-progress [slangd](https://github.com/hankhsu1996/slangd) C++ LSP implementation
+## Requirements
 
-## What doesn't (yet)
+- VS Code 1.85.0 or later
+- Linux (statically linked, works on any distribution)
 
-- ❌ No stable API
-- ❌ No support for user settings
-- ❌ No guarantee of correctness or stability
-- ❌ No language features beyond diagnostics and navigation
+The slangd binary is bundled with the extension.
 
-Most LSP features such as hover, go-to-definition, and reference search are planned but not yet implemented.
+## Configuration
 
-## How to try it
+Slangd works out of the box by auto-discovering SystemVerilog files. For more control, create a `.slangd` configuration file.
 
-1. Build the `slangd` binary (already bundled in the extension).
-2. Install the extension manually (`.vsix`) or from your local build.
-3. Open a SystemVerilog (`.sv`) file and check if diagnostics appear.
+### Extension Settings
 
-## Development context
+- `systemverilog.server.path` - Custom path to slangd executable (leave empty to use bundled version)
+- `systemverilog.server.logLevel` - Server log level: `trace`, `debug`, `info`, `warn`, `error`, `off`
 
-This extension is primarily a testbed for integrating [`slangd`](https://github.com/hankhsu1996/slangd) into editors. It is not intended for general production use at this stage.
+### Workspace Configuration (Optional)
 
-## Feedback
+Create a `.slangd` file in your workspace root for advanced project settings:
 
-Please open issues or suggestions at [slangd GitHub repo](https://github.com/hankhsu1996/slangd/issues).
+```yaml
+# File discovery (default: auto-discover workspace files)
+AutoDiscover: true
+
+# Explicit source files
+Files:
+  - path/to/file.sv
+
+# Filelist files (.f format)
+FileLists:
+  Paths:
+    - rtl/rtl.f
+  Absolute: false
+
+# Path filtering (regex patterns)
+If:
+  PathMatch: rtl/.*\.sv # Include only matching files
+  PathExclude: .*/build/.* # Exclude matching files
+
+# Include directories
+IncludeDirs:
+  - rtl/include/
+
+# Preprocessor defines
+Defines:
+  - SIMULATION
+  - DATA_WIDTH: 32
+```
+
+See [configuration documentation](https://github.com/hankhsu1996/slangd/blob/main/docs/CONFIGURATION.md) for detailed examples and advanced usage.
+
+## Credits
+
+Extension icon: [Web developer icons created by kerismaker - Flaticon](https://www.flaticon.com/free-icons/web-developer)
 
 ## License
 

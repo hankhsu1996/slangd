@@ -1,12 +1,16 @@
 .vscode/**
 .vscode-test/**
-src/**
 .gitignore
 .git/**
 .github/**
 node_modules/**
+src/**
 tsconfig.json
+webpack.config.js
+.eslintrc.json
 **/*.map
 **/*.ts
+*.log
+*.vsix
 !bin/**
 !out/**

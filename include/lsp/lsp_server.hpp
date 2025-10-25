@@ -1,10 +1,7 @@
 #pragma once
 
-#include <functional>
 #include <memory>
-#include <optional>
 #include <string>
-#include <unordered_map>
 
 #include <asio.hpp>
 #include <jsonrpc/endpoint/endpoint.hpp>
@@ -242,6 +239,20 @@ class LspServer {
     if (!result) {
       Logger()->error(
           "LspServer failed to publish diagnostics: {}",
+          result.error().Message());
+      co_return LspError::UnexpectedFromRpcError(result.error());
+    }
+    co_return Ok();
+  }
+
+  // Send custom notification (for server-specific extensions)
+  template <typename T>
+  auto SendCustomNotification(std::string method, T params)
+      -> asio::awaitable<std::expected<void, LspError>> {
+    auto result = co_await endpoint_->SendNotification<T>(method, params);
+    if (!result) {
+      Logger()->error(
+          "LspServer failed to send notification '{}': {}", method,
           result.error().Message());
       co_return LspError::UnexpectedFromRpcError(result.error());
     }
