@@ -4,8 +4,7 @@
   "version": "0.1.0",
   "description": "SystemVerilog language support",
   "categories": [
-    "Programming Languages",
-    "Linters"
+    "Programming Languages"
   ],
   "keywords": [
     "systemverilog",
