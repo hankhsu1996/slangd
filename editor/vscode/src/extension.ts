@@ -23,6 +23,8 @@ export function activate(context: vscode.ExtensionContext) {
     0
   );
   statusBarItem.text = "slangd: idle";
+  statusBarItem.command = "systemverilog.showOutputChannel";
+  statusBarItem.tooltip = "Show slangd output";
   statusBarItem.show();
   context.subscriptions.push(statusBarItem);
 
@@ -138,6 +140,15 @@ export function activate(context: vscode.ExtensionContext) {
       `Failed to start SystemVerilog Language Server: ${error}`
     );
   }
+
+  // Register command to show output channel
+  const showOutputCommand = vscode.commands.registerCommand(
+    "systemverilog.showOutputChannel",
+    () => {
+      outputChannel.show();
+    }
+  );
+  context.subscriptions.push(showOutputCommand);
 
   // Register restart command
   const restartCommand = vscode.commands.registerCommand(
