@@ -17,6 +17,15 @@ export function activate(context: vscode.ExtensionContext) {
     "SystemVerilog Language Server"
   );
 
+  // Check platform support
+  if (process.platform !== "linux") {
+    const platformName = process.platform === "darwin" ? "macOS" : process.platform === "win32" ? "Windows" : process.platform;
+    const message = `Slangd currently supports Linux only. ${platformName} support is not yet available.`;
+    vscode.window.showErrorMessage(message);
+    outputChannel.appendLine(`ERROR: ${message}`);
+    return; // Stop activation on unsupported platforms
+  }
+
   // Create status bar item (left side, low priority)
   statusBarItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left,
