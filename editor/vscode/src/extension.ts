@@ -91,7 +91,7 @@ export function activate(context: vscode.ExtensionContext) {
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: "file", language: "systemverilog" }],
     synchronize: {
-      fileEvents: vscode.workspace.createFileSystemWatcher("**/*.{sv,svh,v}"),
+      fileEvents: vscode.workspace.createFileSystemWatcher("**/*.{sv,svh,v,vh}"),
     },
     outputChannel,
     traceOutputChannel: outputChannel,
