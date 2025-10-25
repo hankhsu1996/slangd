@@ -86,6 +86,13 @@
         ],
         "configuration": "./language-configuration.json"
       }
+    ],
+    "grammars": [
+      {
+        "language": "systemverilog",
+        "scopeName": "source-text.sv",
+        "path": "./syntaxes/systemverilog.tmLanguage.json"
+      }
     ]
   },
   "activationEvents": [],
