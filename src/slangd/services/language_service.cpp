@@ -118,7 +118,7 @@ auto LanguageService::ComputeParseDiagnostics(
                 nullptr,  // Single-file mode
                 logger_);
 
-        // Extract parse diagnostics using BufferID for fast filtering
+        // Keep as unique_ptr - temporary use, destroyed after extraction
         co_return semantic::DiagnosticConverter::ExtractParseDiagnostics(
             *compilation, *source_manager, main_buffer_id, logger_);
       },
@@ -223,19 +223,15 @@ auto LanguageService::RebuildPreambleAndSessions() -> asio::awaitable<void> {
         "definitions)",
         preamble_manager_->GetPackageMap().size(),
         preamble_manager_->GetDefinitionMap().size());
-  }
 
-  // Atomic swap - await to ensure update completes before invalidation
-  co_await session_manager_->UpdatePreambleManager(preamble_manager_);
-  co_await session_manager_->InvalidateAllSessions();
+    // Atomic swap - await to ensure update completes before invalidation
+    co_await session_manager_->UpdatePreambleManager(preamble_manager_);
+    co_await session_manager_->InvalidateAllSessions();
+  }
 
   // Rebuild sessions to republish diagnostics (server-push)
   // Client doesn't know preamble was rebuilt, so we must push updates
   auto open_uris = co_await doc_state_.GetAllUris();
-  logger_->debug(
-      "LanguageService rebuilding {} open file sessions after preamble "
-      "rebuild",
-      open_uris.size());
 
   for (const auto& uri : open_uris) {
     auto state = co_await doc_state_.Get(uri);

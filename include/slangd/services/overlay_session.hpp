@@ -31,6 +31,11 @@ class OverlaySession {
 
   // Core compilation building logic (used by Create and parse diagnostics)
   // Pass preamble_manager=nullptr for single-file mode
+  //
+  // Returns unique_ptr<Compilation> for minimal ownership assumption:
+  // - Parse diagnostics: temporary use, destroyed immediately (unique_ptr
+  // optimal)
+  // - Sessions: convert to shared_ptr for multi-owner storage
   static auto BuildCompilation(
       std::string uri, std::string content,
       std::shared_ptr<ProjectLayoutService> layout_service,

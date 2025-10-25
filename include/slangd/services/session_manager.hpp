@@ -19,6 +19,7 @@
 #include "slangd/services/overlay_session.hpp"
 #include "slangd/services/preamble_manager.hpp"
 #include "slangd/utils/broadcast_event.hpp"
+#include "slangd/utils/shared_task.hpp"
 
 namespace slangd::services {
 
@@ -160,18 +161,11 @@ class SessionManager {
   using TimerMap =
       std::unordered_map<std::string, std::unique_ptr<asio::steady_timer>>;
 
-  // Task completion tracking for preamble rebuild coordination
-  struct TaskCompletion {
-    utils::BroadcastEvent complete;
-    explicit TaskCompletion(asio::any_io_executor exec) : complete(exec) {
-    }
-  };
-
   // Protected by session_strand_:
   SessionMap sessions_;
   PendingMap pending_;
   TimerMap cleanup_timers_;
-  std::vector<std::shared_ptr<TaskCompletion>> active_task_completions_;
+  std::vector<std::shared_ptr<utils::SharedTask>> active_session_tasks_;
   static constexpr auto kCleanupDelay = std::chrono::seconds(5);
 
   // Background compilation pool (multi-threaded for preamble parsing
