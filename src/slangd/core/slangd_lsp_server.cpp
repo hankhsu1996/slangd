@@ -16,10 +16,27 @@ using lsp::LspErrorCode;
 using lsp::Ok;
 
 namespace {
+
 constexpr std::string_view kServerVersion = "0.1.0";
 constexpr std::string_view kFileWatcherId = "slangd-file-system-watcher";
 constexpr std::string_view kDidChangeWatchedFilesMethod =
     "workspace/didChangeWatchedFiles";
+
+// Status notification params
+struct StatusParams {
+  std::string status;
+
+  [[maybe_unused]] friend void to_json(
+      nlohmann::json& j, const StatusParams& p) {
+    j = nlohmann::json{{"status", p.status}};
+  }
+
+  [[maybe_unused]] friend void from_json(
+      const nlohmann::json& j, StatusParams& p) {
+    j.at("status").get_to(p.status);
+  }
+};
+
 }  // namespace
 
 SlangdLspServer::SlangdLspServer(
@@ -47,18 +64,31 @@ SlangdLspServer::SlangdLspServer(
         };
         asio::co_spawn(executor_, std::move(coroutine), asio::detached);
       });
+
+  // Set up status publisher callback
+  // LanguageService will use this to notify status changes (idle, indexing)
+  language_service_->SetStatusPublisher([this](std::string status) {
+    auto coroutine = [this,
+                      status = std::move(status)]() -> asio::awaitable<void> {
+      // Send custom notification to client
+      StatusParams params{.status = status};
+      co_await SendCustomNotification("$/slangd/status", params);
+    };
+    asio::co_spawn(executor_, std::move(coroutine), asio::detached);
+  });
 }
 
 auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
     -> asio::awaitable<std::expected<lsp::InitializeResult, lsp::LspError>> {
+  // Store workspace URI for initialization in OnInitialized
+  // Return capabilities quickly - don't do heavy work here
   if (const auto& workspace_folders_opt = params.workspaceFolders) {
     if (workspace_folders_opt->size() != 1) {
       co_return LspError::UnexpectedFromCode(
           LspErrorCode::kInvalidRequest, "Only one workspace is supported");
     }
 
-    co_await language_service_->InitializeWorkspace(
-        workspace_folders_opt->front().uri);
+    workspace_uri_ = workspace_folders_opt->front().uri;
   }
 
   lsp::TextDocumentSyncOptions sync_options{
@@ -89,6 +119,13 @@ auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
 auto SlangdLspServer::OnInitialized(lsp::InitializedParams /*unused*/)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
   initialized_ = true;
+
+  // Initialize workspace now (blocks until preamble ready)
+  // Status notifications will work here (client ready to receive them)
+  // Document requests that arrive will queue until this completes
+  if (!workspace_uri_.empty()) {
+    co_await language_service_->InitializeWorkspace(workspace_uri_);
+  }
 
   auto register_watcher = [this]() -> asio::awaitable<void> {
     lsp::FileSystemWatcher sv_files{.globPattern = "**/*.{sv,svh,v,vh}"};

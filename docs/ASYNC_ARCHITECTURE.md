@@ -56,6 +56,10 @@ JSON-RPC → LSP Handlers → Language Service → Session Manager → Compilati
 3. **Cancelling stale work**
    - User saves v6 while v5 compiling → cancel v5, start v6
 
+4. **Workspace initialization ordering**
+   - LSP requests arrive before workspace infrastructure ready
+   - Must wait for preamble and session manager to exist
+
 ### Why Do We Need Synchronization?
 
 **Without synchronization → race conditions:**
@@ -87,6 +91,12 @@ JSON-RPC → LSP Handlers → Language Service → Session Manager → Compilati
 
 - **When**: New document version invalidates ongoing work
 - **Pattern**: `atomic<bool> cancelled` flag checked periodically during work
+
+**4. Initialization Event** - Wait for workspace ready
+
+- **When**: LSP operations require workspace infrastructure (preamble, session manager)
+- **Pattern**: All public methods wait on workspace_ready event before proceeding
+- **Key property**: Blocks only during initial startup, not during preamble rebuilds
 
 ---
 
@@ -152,6 +162,27 @@ Consumer:
 ```
 Create new pending → Cancel old → Replace atomically (no gap)
 ```
+
+### Workspace Initialization Synchronization
+
+**Problem**: LSP requests arrive before workspace infrastructure exists (preamble, session manager).
+
+**Solution**: LanguageService maintains workspace_ready event. All public methods wait for this event before proceeding.
+
+**Behavior**:
+
+- Initial startup: Event unset, requests wait until InitializeWorkspace completes
+- After initialization: Event set permanently, AsyncWait returns immediately
+- Preamble rebuilds: Event stays set, no blocking (old preamble remains available)
+
+**Key distinction**: Initial initialization has nothing available (must wait). Preamble rebuilds have old data available (continue serving with current data, swap atomically when ready).
+
+**Benefits**:
+
+- Eliminates lifecycle state checks and nullptr guards throughout codebase
+- No manual pending request tracking or catch-up loops required
+- Requests never receive errors due to initialization timing
+- Single synchronization point instead of distributed guards
 
 ---
 

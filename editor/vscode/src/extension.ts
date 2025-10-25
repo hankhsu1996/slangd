@@ -10,11 +10,21 @@ import {
 
 let client: LanguageClient;
 let outputChannel: vscode.OutputChannel;
+let statusBarItem: vscode.StatusBarItem;
 
 export function activate(context: vscode.ExtensionContext) {
   outputChannel = vscode.window.createOutputChannel(
     "SystemVerilog Language Server"
   );
+
+  // Create status bar item (left side, low priority)
+  statusBarItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Left,
+    0
+  );
+  statusBarItem.text = "slangd: idle";
+  statusBarItem.show();
+  context.subscriptions.push(statusBarItem);
 
   // Get the path to the server executable from the settings
   const config = vscode.workspace.getConfiguration("systemverilog");
@@ -97,6 +107,11 @@ export function activate(context: vscode.ExtensionContext) {
     clientOptions
   );
 
+  // Listen for status notifications from server (before starting client)
+  client.onNotification("$/slangd/status", (params: { status: string }) => {
+    statusBarItem.text = `slangd: ${params.status}`;
+  });
+
   // Handle client errors
   client.onDidChangeState((event) => {
     if (event.newState === 1) {
@@ -107,6 +122,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   try {
     client.start();
+
     context.subscriptions.push({
       dispose: () => {
         if (client) {

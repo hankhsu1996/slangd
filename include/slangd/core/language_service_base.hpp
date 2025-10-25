@@ -32,6 +32,11 @@ class LanguageServiceBase {
   virtual auto SetDiagnosticPublisher(DiagnosticPublisher publisher)
       -> void = 0;
 
+  // Status publishing for language server state (idle, indexing, etc.)
+  using StatusPublisher = std::function<void(std::string status)>;
+
+  virtual auto SetStatusPublisher(StatusPublisher publisher) -> void = 0;
+
   // Diagnostics computation - async operations
   // Compute diagnostics from parsing only (syntax errors)
   virtual auto ComputeParseDiagnostics(std::string uri, std::string content)

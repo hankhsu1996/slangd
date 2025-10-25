@@ -21,6 +21,7 @@ LanguageService::LanguageService(
       executor_(executor),
       open_tracker_(std::make_shared<OpenDocumentTracker>()),
       doc_state_(executor, open_tracker_),
+      workspace_ready_(executor),
       compilation_pool_(std::make_unique<asio::thread_pool>(kThreadPoolSize)) {
   logger_->debug(
       "LanguageService created with {} compilation threads", kThreadPoolSize);
@@ -61,6 +62,11 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
   utils::ScopedTimer timer("Workspace initialization", logger_);
   logger_->debug("LanguageService initializing workspace: {}", workspace_uri);
 
+  // Notify status: indexing started (before any work)
+  if (status_publisher_) {
+    status_publisher_("indexing");
+  }
+
   auto workspace_path = CanonicalPath::FromUri(workspace_uri);
   layout_service_ =
       ProjectLayoutService::Create(executor_, workspace_path, logger_);
@@ -86,6 +92,14 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
   session_manager_ = std::make_unique<SessionManager>(
       executor_, layout_service_, preamble_manager_, open_tracker_, logger_);
 
+  // Notify status: indexing completed
+  if (status_publisher_) {
+    status_publisher_("idle");
+  }
+
+  // Signal workspace ready - wakes all waiting handlers
+  workspace_ready_.Set();
+
   auto elapsed = timer.GetElapsed();
   logger_->info(
       "LanguageService workspace initialized: {} ({})", workspace_uri,
@@ -97,11 +111,8 @@ auto LanguageService::ComputeParseDiagnostics(
     -> asio::awaitable<std::expected<std::vector<lsp::Diagnostic>, LspError>> {
   utils::ScopedTimer timer("ComputeParseDiagnostics", logger_);
 
-  if (!layout_service_) {
-    logger_->error("LanguageService: Workspace not initialized");
-    co_return LspError::UnexpectedFromCode(
-        lsp::error::LspErrorCode::kInternalError, "Workspace not initialized");
-  }
+  // Wait for workspace initialization to complete
+  co_await workspace_ready_.AsyncWait(asio::use_awaitable);
 
   logger_->debug(
       "LanguageService computing parse diagnostics (single-file mode): {}",
@@ -139,11 +150,8 @@ auto LanguageService::GetDefinitionsForPosition(
     -> asio::awaitable<std::expected<std::vector<lsp::Location>, LspError>> {
   utils::ScopedTimer timer("GetDefinitionsForPosition", logger_);
 
-  if (!layout_service_) {
-    logger_->error("LanguageService: Workspace not initialized");
-    co_return LspError::UnexpectedFromCode(
-        lsp::error::LspErrorCode::kInternalError, "Workspace not initialized");
-  }
+  // Wait for workspace initialization to complete
+  co_await workspace_ready_.AsyncWait(asio::use_awaitable);
 
   auto result = co_await session_manager_->WithSession(
       uri, [this, uri, position](const OverlaySession& session) {
@@ -174,11 +182,8 @@ auto LanguageService::GetDocumentSymbols(std::string uri) -> asio::awaitable<
     std::expected<std::vector<lsp::DocumentSymbol>, lsp::error::LspError>> {
   utils::ScopedTimer timer("GetDocumentSymbols", logger_);
 
-  if (!layout_service_) {
-    logger_->error("LanguageService: Workspace not initialized");
-    co_return LspError::UnexpectedFromCode(
-        lsp::error::LspErrorCode::kInternalError, "Workspace not initialized");
-  }
+  // Wait for workspace initialization to complete
+  co_await workspace_ready_.AsyncWait(asio::use_awaitable);
 
   auto result = co_await session_manager_->WithSession(
       uri, [uri](const OverlaySession& session) {
@@ -204,6 +209,11 @@ auto LanguageService::RebuildPreambleAndSessions() -> asio::awaitable<void> {
 
   preamble_rebuild_in_progress_ = true;
   preamble_rebuild_pending_ = false;  // Clear before rebuild
+
+  // Notify status: indexing started
+  if (status_publisher_) {
+    status_publisher_("indexing");
+  }
 
   // Rebuild PreambleManager with current configuration
   auto preamble_result = co_await PreambleManager::CreateFromProjectLayout(
@@ -244,6 +254,11 @@ auto LanguageService::RebuildPreambleAndSessions() -> asio::awaitable<void> {
 
   logger_->info("LanguageService completed preamble rebuild");
 
+  // Notify status: indexing completed
+  if (status_publisher_) {
+    status_publisher_("idle");
+  }
+
   // If more saves happened during rebuild, schedule next rebuild
   // Use debounce delay to allow session tasks to complete (avoid overlap)
   if (preamble_rebuild_pending_) {
@@ -257,10 +272,8 @@ auto LanguageService::RebuildPreambleAndSessions() -> asio::awaitable<void> {
 }
 
 auto LanguageService::HandleConfigChange() -> asio::awaitable<void> {
-  if (!layout_service_) {
-    logger_->error("HandleConfigChange: Workspace not initialized");
-    co_return;
-  }
+  // Wait for workspace initialization to complete
+  co_await workspace_ready_.AsyncWait(asio::use_awaitable);
 
   layout_service_->RebuildLayout();
   co_await RebuildPreambleAndSessions();
@@ -296,9 +309,8 @@ auto LanguageService::ScheduleDebouncedPreambleRebuild() -> void {
 
 auto LanguageService::HandleSourceFileChange(
     std::string uri, lsp::FileChangeType change_type) -> asio::awaitable<void> {
-  if (!layout_service_) {
-    co_return;
-  }
+  // Wait for workspace initialization to complete
+  co_await workspace_ready_.AsyncWait(asio::use_awaitable);
 
   auto path = CanonicalPath::FromUri(uri);
   bool is_sv_file = IsSystemVerilogFile(path.Path());
@@ -349,26 +361,22 @@ auto LanguageService::HandleSourceFileChange(
 auto LanguageService::OnDocumentOpened(
     std::string uri, std::string content, int version)
     -> asio::awaitable<void> {
-  if (!session_manager_) {
-    logger_->error("LanguageService: SessionManager not initialized");
-    co_return;
-  }
+  // Store document state first
+  co_await doc_state_.Update(uri, content, version);
+
+  // Wait for workspace initialization to complete
+  co_await workspace_ready_.AsyncWait(asio::use_awaitable);
 
   // Create session with diagnostic hook
   co_await session_manager_->UpdateSession(
       uri, content, version, CreateDiagnosticHook(uri, version));
-
-  // Store document state after (less time-critical)
-  co_await doc_state_.Update(uri, content, version);
 }
 
 auto LanguageService::OnDocumentChanged(
     std::string uri, std::string content, int version)
     -> asio::awaitable<void> {
-  if (!session_manager_) {
-    logger_->error("LanguageService: SessionManager not initialized");
-    co_return;
-  }
+  // Wait for workspace initialization to complete
+  co_await workspace_ready_.AsyncWait(asio::use_awaitable);
 
   // Store document state only (no session rebuild - typing is fast!)
   co_await doc_state_.Update(uri, content, version);
@@ -376,10 +384,8 @@ auto LanguageService::OnDocumentChanged(
 
 auto LanguageService::OnDocumentSaved(std::string uri)
     -> asio::awaitable<void> {
-  if (!session_manager_) {
-    logger_->error("LanguageService: SessionManager not initialized");
-    co_return;
-  }
+  // Wait for workspace initialization to complete
+  co_await workspace_ready_.AsyncWait(asio::use_awaitable);
 
   // Get document state
   auto doc_state = co_await doc_state_.Get(uri);
@@ -405,8 +411,8 @@ auto LanguageService::OnDocumentSaved(std::string uri)
 }
 
 auto LanguageService::OnDocumentClosed(std::string uri) -> void {
-  if (!session_manager_) {
-    logger_->error("LanguageService: SessionManager not initialized");
+  // If workspace not ready yet, nothing to clean up
+  if (!workspace_ready_.IsSet()) {
     return;
   }
 
