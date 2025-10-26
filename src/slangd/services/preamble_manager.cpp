@@ -16,6 +16,7 @@
 #include <slang/util/Bag.h>
 
 #include "slangd/core/project_layout_service.hpp"
+#include "slangd/utils/barrier.hpp"
 #include "slangd/utils/compilation_options.hpp"
 #include "slangd/utils/memory_utils.hpp"
 #include "slangd/utils/scoped_timer.hpp"
@@ -83,15 +84,15 @@ auto PreambleManager::CreateFromProjectLayout(
   {
     utils::ScopedTimer parse_timer("Parsing syntax trees", logger);
 
-    // Completion counter for barrier synchronization
-    std::atomic<size_t> completed{0};
-    const size_t total_files = source_files.size();
+    // Barrier for coordinating parallel parsing tasks
+    auto barrier = std::make_shared<utils::Barrier>(
+        compilation_executor, source_files.size());
 
     // Post blocking work to thread pool (parallel execution across threads)
     for (size_t i = 0; i < source_files.size(); ++i) {
       asio::post(
           compilation_executor,
-          [&preamble, i, &source_files, &results, &options, &completed]() {
+          [&preamble, i, &source_files, &results, &options, barrier]() {
             auto tree_result = slang::syntax::SyntaxTree::fromFile(
                 source_files[i].Path().string(), *preamble->source_manager_,
                 options);
@@ -102,14 +103,12 @@ auto PreambleManager::CreateFromProjectLayout(
               results[i] = std::nullopt;
             }
 
-            completed.fetch_add(1, std::memory_order_release);
+            barrier->Arrive();
           });
     }
 
-    // Barrier: wait for all tasks to complete
-    while (completed.load(std::memory_order_acquire) < total_files) {
-      co_await asio::post(asio::use_awaitable);
-    }
+    // Wait for all parsing tasks to complete
+    co_await barrier->AsyncWait(asio::use_awaitable);
   }
 
   // Add trees to compilation sequentially (addSyntaxTree is NOT thread-safe)
