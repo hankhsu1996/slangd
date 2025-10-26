@@ -29,13 +29,6 @@ class OverlaySession {
       std::shared_ptr<spdlog::logger> logger = spdlog::default_logger())
       -> std::shared_ptr<OverlaySession>;
 
-  // Core compilation building logic (used by Create and parse diagnostics)
-  // Pass preamble_manager=nullptr for single-file mode
-  //
-  // Returns unique_ptr<Compilation> for minimal ownership assumption:
-  // - Parse diagnostics: temporary use, destroyed immediately (unique_ptr
-  // optimal)
-  // - Sessions: convert to shared_ptr for multi-owner storage
   static auto BuildCompilation(
       std::string uri, std::string content,
       std::shared_ptr<ProjectLayoutService> layout_service,
@@ -45,8 +38,6 @@ class OverlaySession {
           std::shared_ptr<slang::SourceManager>,
           std::unique_ptr<slang::ast::Compilation>, slang::BufferID>;
 
-  // Create session from pre-built compilation and index (for two-phase
-  // creation)
   static auto CreateFromParts(
       std::shared_ptr<slang::SourceManager> source_manager,
       std::shared_ptr<slang::ast::Compilation> compilation,

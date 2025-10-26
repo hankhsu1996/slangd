@@ -142,6 +142,11 @@ SlangdLspServer (LSP protocol layer)
 
 **Memory considerations:** Preamble sharing and session caching have specific memory characteristics. See `MEMORY_ARCHITECTURE.md` for details on memory profile, fragmentation behavior, and expected RSS.
 
+**Preconditions:**
+
+- `OverlaySession::Create()` requires non-null `preamble_manager` (will crash in SemanticIndex otherwise)
+- `LanguageService::OnDocumentOpened()` must wait for `workspace_ready` before calling `SessionManager::UpdateSession()`
+
 **Invalidation rules:**
 
 | Event                   | PreambleManager | OverlaySession            | Reason                                                     |

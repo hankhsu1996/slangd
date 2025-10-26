@@ -38,8 +38,6 @@ auto SemanticIndex::IsInCurrentFile(
     const slang::ast::Symbol& symbol, const std::string& current_file_uri,
     const slang::SourceManager& source_manager,
     const services::PreambleManager* preamble_manager) -> bool {
-  // Preamble symbols are NEVER in current file (separate compilation)
-  // Check by comparing symbol's compilation with preamble compilation
   if (preamble_manager != nullptr) {
     const auto* symbol_scope = symbol.getParentScope();
     if (symbol_scope != nullptr) {

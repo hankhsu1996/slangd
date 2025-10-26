@@ -51,8 +51,6 @@ auto OverlaySession::Create(
   utils::ScopedTimer timer("OverlaySession creation", logger);
   logger->debug("Creating overlay session for: {}", uri);
 
-  // Build fresh compilation with current buffer and optional preamble_manager
-  // files
   auto [source_manager, compilation, main_buffer_id] =
       BuildCompilation(uri, content, layout_service, preamble_manager, logger);
 
