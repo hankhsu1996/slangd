@@ -67,6 +67,11 @@ class SlangdConfigFile {
     return auto_discover_;
   }
 
+  [[nodiscard]] auto GetDiscoverDirs() const
+      -> const std::vector<std::string>& {
+    return discover_dirs_;
+  }
+
   // Path filtering - checks if file should be included based on PathCondition
   // Takes path relative to workspace root with forward slashes
   [[nodiscard]] auto ShouldIncludeFile(std::string_view relative_path) const
@@ -102,6 +107,10 @@ class SlangdConfigFile {
 
   // Auto-discovery flag (default: enabled)
   bool auto_discover_ = true;
+
+  // Directories to discover during auto-discovery (path-based from workspace
+  // root, empty = discover all)
+  std::vector<std::string> discover_dirs_;
 };
 
 }  // namespace slangd

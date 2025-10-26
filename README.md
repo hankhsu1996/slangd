@@ -1,7 +1,7 @@
 # Slangd - SystemVerilog Language Server
 
-[![Build and Test](https://github.com/hankhsu1996/slangd/actions/workflows/build.yml/badge.svg)](https://github.com/hankhsu1996/slangd/actions/workflows/build.yml)
-[![Code Style Check](https://github.com/hankhsu1996/slangd/actions/workflows/style.yml/badge.svg)](https://github.com/hankhsu1996/slangd/actions/workflows/style.yml)
+[![Build and Test](https://github.com/hankhsu1996/slangd/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/hankhsu1996/slangd/actions/workflows/build.yml)
+[![Code Style Check](https://github.com/hankhsu1996/slangd/actions/workflows/style.yml/badge.svg?branch=main)](https://github.com/hankhsu1996/slangd/actions/workflows/style.yml)
 
 Slangd is a SystemVerilog language server implementing the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/). Built on the [Slang](https://github.com/MikePopoloski/slang) compiler frontend, it provides accurate language intelligence for SystemVerilog projects.
 
@@ -11,6 +11,7 @@ Slangd is a SystemVerilog language server implementing the [Language Server Prot
 - **Go-to-definition** - Navigate to symbol definitions across files
 - **Document symbols** - Outline view for modules, classes, packages, and more
 - **Workspace indexing** - Fast cross-file navigation and symbol resolution
+- **Flexible configuration** - Auto-discovery with directory skipping, explicit file lists, path filtering, and more
 
 ## Development
 

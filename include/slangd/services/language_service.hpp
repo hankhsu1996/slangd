@@ -104,7 +104,12 @@ class LanguageService : public LanguageServiceBase {
 
   // Background thread pool for parse diagnostics
   std::unique_ptr<asio::thread_pool> compilation_pool_;
-  static constexpr size_t kThreadPoolSize = 4;
+
+  // Thread pool size: use half of hardware threads with minimum of 1
+  static auto GetThreadPoolSize() -> size_t {
+    auto hw_threads = std::thread::hardware_concurrency();
+    return std::max(size_t{1}, static_cast<size_t>(hw_threads) / 2);
+  }
 
   // Callback for publishing diagnostics (set by LSP server layer)
   DiagnosticPublisher diagnostic_publisher_;

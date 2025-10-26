@@ -2,6 +2,8 @@
 
 #include <unordered_set>
 
+#include "slangd/utils/scoped_timer.hpp"
+
 namespace slangd {
 
 ProjectLayoutBuilder::ProjectLayoutBuilder(
@@ -53,18 +55,21 @@ auto ProjectLayoutBuilder::BuildFromConfig(
   // 4. Apply path filtering (PathMatch/PathExclude from If block)
   size_t original_count = all_files.size();
   std::vector<CanonicalPath> filtered_files;
-  for (const auto& file : all_files) {
-    // Compute relative path from workspace root
-    auto relative =
-        std::filesystem::relative(file.Path(), workspace_root.Path());
+  {
+    utils::ScopedTimer filter_timer("Path filtering", logger_);
+    for (const auto& file : all_files) {
+      // Compute relative path from workspace root
+      auto relative =
+          std::filesystem::relative(file.Path(), workspace_root.Path());
 
-    // Normalize to forward slashes for cross-platform consistency
-    auto relative_str = relative.string();
-    std::ranges::replace(relative_str, '\\', '/');
+      // Normalize to forward slashes for cross-platform consistency
+      auto relative_str = relative.string();
+      std::ranges::replace(relative_str, '\\', '/');
 
-    // Check if file should be included based on config conditions
-    if (config.ShouldIncludeFile(relative_str)) {
-      filtered_files.push_back(file);
+      // Check if file should be included based on config conditions
+      if (config.ShouldIncludeFile(relative_str)) {
+        filtered_files.push_back(file);
+      }
     }
   }
 

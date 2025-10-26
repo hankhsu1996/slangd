@@ -16,6 +16,7 @@
 #include <slang/util/Bag.h>
 
 #include "slangd/core/project_layout_service.hpp"
+#include "slangd/utils/barrier.hpp"
 #include "slangd/utils/compilation_options.hpp"
 #include "slangd/utils/memory_utils.hpp"
 #include "slangd/utils/scoped_timer.hpp"
@@ -79,42 +80,47 @@ auto PreambleManager::CreateFromProjectLayout(
   using TreeResult = std::optional<std::shared_ptr<slang::syntax::SyntaxTree>>;
   std::vector<TreeResult> results(source_files.size());
 
-  // Spawn parallel parsing tasks on compilation pool
-  std::vector<asio::awaitable<void>> parse_tasks;
-  parse_tasks.reserve(source_files.size());
+  // Parse syntax trees in parallel using thread pool
+  {
+    utils::ScopedTimer parse_timer("Parsing syntax trees", logger);
 
-  for (size_t i = 0; i < source_files.size(); ++i) {
-    parse_tasks.push_back(
-        asio::co_spawn(
-            compilation_executor,
-            [&preamble, i, &source_files, &results,
-             &options]() -> asio::awaitable<void> {
-              auto tree_result = slang::syntax::SyntaxTree::fromFile(
-                  source_files[i].Path().string(), *preamble->source_manager_,
-                  options);
+    // Barrier for coordinating parallel parsing tasks
+    auto barrier = std::make_shared<utils::Barrier>(
+        compilation_executor, source_files.size());
 
-              if (tree_result) {
-                results[i] = tree_result.value();
-              } else {
-                results[i] = std::nullopt;
-              }
-              co_return;
-            },
-            asio::use_awaitable));
-  }
+    // Post blocking work to thread pool (parallel execution across threads)
+    for (size_t i = 0; i < source_files.size(); ++i) {
+      asio::post(
+          compilation_executor,
+          [&preamble, i, &source_files, &results, &options, barrier]() {
+            auto tree_result = slang::syntax::SyntaxTree::fromFile(
+                source_files[i].Path().string(), *preamble->source_manager_,
+                options);
 
-  // Wait for all parallel parsing to complete (non-blocking async wait)
-  for (auto& task : parse_tasks) {
-    co_await std::move(task);
+            if (tree_result) {
+              results[i] = tree_result.value();
+            } else {
+              results[i] = std::nullopt;
+            }
+
+            barrier->Arrive();
+          });
+    }
+
+    // Wait for all parsing tasks to complete
+    co_await barrier->AsyncWait(asio::use_awaitable);
   }
 
   // Add trees to compilation sequentially (addSyntaxTree is NOT thread-safe)
   std::vector<std::string> failed_files;
-  for (size_t i = 0; i < results.size(); ++i) {
-    if (results[i]) {
-      preamble->preamble_compilation_->addSyntaxTree(*results[i]);
-    } else {
-      failed_files.push_back(source_files[i].Path().string());
+  {
+    utils::ScopedTimer add_timer("Adding syntax trees to compilation", logger);
+    for (size_t i = 0; i < results.size(); ++i) {
+      if (results[i]) {
+        preamble->preamble_compilation_->addSyntaxTree(*results[i]);
+      } else {
+        failed_files.push_back(source_files[i].Path().string());
+      }
     }
   }
 

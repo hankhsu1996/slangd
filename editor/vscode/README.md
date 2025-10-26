@@ -29,8 +29,10 @@ Slangd works out of the box by auto-discovering SystemVerilog files. For more co
 Create a `.slangd` file in your workspace root for advanced project settings:
 
 ```yaml
-# File discovery (default: auto-discover workspace files)
-AutoDiscover: true
+# File discovery (discover only specific directories)
+AutoDiscover:
+  Enabled: true
+  DiscoverDirs: [rtl, common, design/subsystem-a]  # Paths from workspace root
 
 # Explicit source files
 Files:
