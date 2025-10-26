@@ -4,6 +4,7 @@
 #include <fstream>
 
 #include "slangd/utils/path_utils.hpp"
+#include "slangd/utils/scoped_timer.hpp"
 
 namespace slangd {
 
@@ -102,30 +103,55 @@ WorkspaceDiscoveryProvider::WorkspaceDiscoveryProvider(
 }
 
 auto WorkspaceDiscoveryProvider::DiscoverFiles(
-    const CanonicalPath& workspace_root,
-    const SlangdConfigFile& /*config*/) const -> std::vector<CanonicalPath> {
-  logger_->debug(
-      "WorkspaceDiscoveryProvider discovering files in workspace: {}",
-      workspace_root.String());
+    const CanonicalPath& workspace_root, const SlangdConfigFile& config) const
+    -> std::vector<CanonicalPath> {
+  utils::ScopedTimer timer("Workspace file discovery", logger_);
 
-  auto files = FindSystemVerilogFilesInDirectory(workspace_root);
-  logger_->debug(
-      "WorkspaceDiscoveryProvider discovered {} files", files.size());
+  std::vector<CanonicalPath> all_files;
+  const auto& discover_dirs = config.GetDiscoverDirs();
 
-  return files;
+  if (discover_dirs.empty()) {
+    // No DiscoverDirs specified - discover entire workspace
+    all_files = FindSystemVerilogFilesInDirectory(workspace_root);
+  } else {
+    // DiscoverDirs specified - only discover in those paths
+    for (const auto& dir : discover_dirs) {
+      CanonicalPath discover_path = workspace_root / dir;
+      if (!std::filesystem::exists(discover_path.Path())) {
+        logger_->warn(
+            "DiscoverDirs path does not exist: {}", discover_path.String());
+        continue;
+      }
+
+      auto files = FindSystemVerilogFilesInDirectory(discover_path);
+      all_files.insert(all_files.end(), files.begin(), files.end());
+    }
+  }
+
+  logger_->debug("Discovered {} SystemVerilog files", all_files.size());
+
+  return all_files;
 }
 
 auto WorkspaceDiscoveryProvider::FindSystemVerilogFilesInDirectory(
     const CanonicalPath& directory) const -> std::vector<CanonicalPath> {
   std::vector<CanonicalPath> sv_files;
 
-  logger_->debug(
-      "WorkspaceDiscoveryProvider discovering files in directory: {}",
-      directory.String());
-
   try {
-    for (const auto& entry :
-         std::filesystem::recursive_directory_iterator(directory.Path())) {
+    std::filesystem::recursive_directory_iterator it(directory.Path());
+    for (const auto& entry : it) {
+      // Skip hidden directories
+      if (entry.is_directory()) {
+        auto dirname = entry.path().filename().string();
+
+        // Skip hidden directories (starting with '.')
+        if (!dirname.empty() && dirname[0] == '.') {
+          it.disable_recursion_pending();
+          continue;
+        }
+      }
+
+      // Collect SystemVerilog files
       if (entry.is_regular_file() && IsSystemVerilogFile(entry.path())) {
         sv_files.emplace_back(entry.path());  // CanonicalPath will normalize
       }

@@ -11,6 +11,7 @@ Slangd is a SystemVerilog language server implementing the [Language Server Prot
 - **Go-to-definition** - Navigate to symbol definitions across files
 - **Document symbols** - Outline view for modules, classes, packages, and more
 - **Workspace indexing** - Fast cross-file navigation and symbol resolution
+- **Flexible configuration** - Auto-discovery with directory skipping, explicit file lists, path filtering, and more
 
 ## Development
 

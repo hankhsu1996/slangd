@@ -366,3 +366,99 @@ If:
   REQUIRE(config->ShouldIncludeFile("tb/testbench.sv"));
   REQUIRE(config->ShouldIncludeFile("common/utils.sv"));
 }
+
+TEST_CASE(
+    "SlangdConfigFile AutoDiscover with DiscoverDirs object format",
+    "[config]") {
+  const auto* content = R"(
+AutoDiscover:
+  Enabled: true
+  DiscoverDirs:
+    - rtl
+    - design/subsystem-a
+    - common
+)";
+
+  TempConfigFile temp(content);
+  auto config = slangd::SlangdConfigFile::LoadFromFile(temp.Path());
+
+  REQUIRE(config.has_value());
+  REQUIRE(config->GetAutoDiscover() == true);
+
+  const auto& discover_dirs = config->GetDiscoverDirs();
+  REQUIRE(discover_dirs.size() == 3);
+  REQUIRE(discover_dirs[0] == "rtl");
+  REQUIRE(discover_dirs[1] == "design/subsystem-a");
+  REQUIRE(discover_dirs[2] == "common");
+}
+
+TEST_CASE(
+    "SlangdConfigFile AutoDiscover object format with Enabled false",
+    "[config]") {
+  const auto* content = R"(
+AutoDiscover:
+  Enabled: false
+  DiscoverDirs:
+    - rtl
+)";
+
+  TempConfigFile temp(content);
+  auto config = slangd::SlangdConfigFile::LoadFromFile(temp.Path());
+
+  REQUIRE(config.has_value());
+  REQUIRE(config->GetAutoDiscover() == false);
+
+  // DiscoverDirs should still be loaded even when disabled
+  const auto& discover_dirs = config->GetDiscoverDirs();
+  REQUIRE(discover_dirs.size() == 1);
+  REQUIRE(discover_dirs[0] == "rtl");
+}
+
+TEST_CASE(
+    "SlangdConfigFile AutoDiscover object format without DiscoverDirs",
+    "[config]") {
+  const auto* content = R"(
+AutoDiscover:
+  Enabled: true
+)";
+
+  TempConfigFile temp(content);
+  auto config = slangd::SlangdConfigFile::LoadFromFile(temp.Path());
+
+  REQUIRE(config.has_value());
+  REQUIRE(config->GetAutoDiscover() == true);
+  REQUIRE(config->GetDiscoverDirs().empty());
+}
+
+TEST_CASE(
+    "SlangdConfigFile AutoDiscover bool format (backward compatibility)",
+    "[config]") {
+  const auto* content = R"(
+AutoDiscover: true
+Files:
+  - test.sv
+)";
+
+  TempConfigFile temp(content);
+  auto config = slangd::SlangdConfigFile::LoadFromFile(temp.Path());
+
+  REQUIRE(config.has_value());
+  REQUIRE(config->GetAutoDiscover() == true);
+  REQUIRE(config->GetDiscoverDirs().empty());
+}
+
+TEST_CASE(
+    "SlangdConfigFile without AutoDiscover has empty DiscoverDirs",
+    "[config]") {
+  const auto* content = R"(
+Files:
+  - test.sv
+)";
+
+  TempConfigFile temp(content);
+  auto config = slangd::SlangdConfigFile::LoadFromFile(temp.Path());
+
+  REQUIRE(config.has_value());
+  REQUIRE(config->GetAutoDiscover() == true);  // Default
+  REQUIRE(config->GetDiscoverDirs().empty());
+}

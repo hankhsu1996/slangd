@@ -24,6 +24,36 @@ AutoDiscover: true  # Recursively scan workspace for *.sv, *.svh, *.v, *.vh
 
 When enabled, slangd scans the entire workspace directory for SystemVerilog files. This is useful for projects without explicit file lists.
 
+#### Selective Directory Discovery
+
+For large workspaces (especially monorepos), you can specify which directories to discover for better performance:
+
+```yaml
+AutoDiscover:
+  Enabled: true
+  DiscoverDirs:
+    - rtl                   # Simple directory from workspace root
+    - common                # Simple directory from workspace root
+    - design/subsystem-a    # Nested path from workspace root
+    - design/subsystem-b    # Nested path from workspace root
+```
+
+**Discovery Rules:**
+- Hidden directories (starting with `.`) are always skipped automatically (e.g., `.git`, `.cache`, `.vscode`)
+- `DiscoverDirs` uses path-based matching relative to workspace root
+- If `DiscoverDirs` is empty or omitted, the entire workspace is discovered (default behavior)
+- If `DiscoverDirs` is specified, only those paths are traversed (significant performance benefit for monorepos)
+- The old boolean format (`AutoDiscover: true`) is still supported for backward compatibility
+
+**Example for monorepo:**
+```yaml
+AutoDiscover:
+  Enabled: true
+  DiscoverDirs: [rtl, common, design/subsystem-a]
+```
+
+This discovers only SystemVerilog files in specified directories, significantly reducing discovery time in large monorepos with mixed languages.
+
 ### Explicit File Sources
 
 Specify individual files or filelist files:
@@ -225,6 +255,29 @@ If:
 Defines:
   - UVM_NO_DPI
   - SIMULATION
+```
+
+### Monorepo with Selective Discovery
+
+```yaml
+# Discover only specific directories for faster performance
+AutoDiscover:
+  Enabled: true
+  DiscoverDirs:
+    - rtl
+    - common
+    - design/subsystem-a
+    - design/subsystem-b
+
+# Filter discovered files (optional)
+If:
+  PathExclude: .*/generated/.*
+
+IncludeDirs:
+  - common/include
+
+Defines:
+  - SYNTHESIS
 ```
 
 ## Precedence

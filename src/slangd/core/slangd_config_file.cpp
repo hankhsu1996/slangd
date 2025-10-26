@@ -126,10 +126,31 @@ auto SlangdConfigFile::LoadFromFile(
       }
     }
 
-    // Parse AutoDiscover section
+    // Parse AutoDiscover section (supports both bool and object formats)
     if (yaml["AutoDiscover"]) {
-      config.auto_discover_ = yaml["AutoDiscover"].as<bool>();
-      config.logger_->debug("Loaded AutoDiscover: {}", config.auto_discover_);
+      const auto& auto_discover_node = yaml["AutoDiscover"];
+
+      if (auto_discover_node.IsScalar()) {
+        // Old format: AutoDiscover: true/false
+        config.auto_discover_ = auto_discover_node.as<bool>();
+        config.logger_->debug("Loaded AutoDiscover: {}", config.auto_discover_);
+      } else if (auto_discover_node.IsMap()) {
+        // New format: AutoDiscover: {Enabled: true, DiscoverDirs: [...]}
+        if (auto_discover_node["Enabled"]) {
+          config.auto_discover_ = auto_discover_node["Enabled"].as<bool>();
+          config.logger_->debug(
+              "Loaded AutoDiscover.Enabled: {}", config.auto_discover_);
+        }
+
+        if (auto_discover_node["DiscoverDirs"]) {
+          for (const auto& dir : auto_discover_node["DiscoverDirs"]) {
+            config.discover_dirs_.push_back(dir.as<std::string>());
+          }
+          config.logger_->debug(
+              "Loaded AutoDiscover.DiscoverDirs with {} paths",
+              config.discover_dirs_.size());
+        }
+      }
     }
 
     config.logger_->debug("Loaded .slangd configuration from {}", config_path);
