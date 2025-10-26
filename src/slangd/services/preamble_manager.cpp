@@ -79,42 +79,49 @@ auto PreambleManager::CreateFromProjectLayout(
   using TreeResult = std::optional<std::shared_ptr<slang::syntax::SyntaxTree>>;
   std::vector<TreeResult> results(source_files.size());
 
-  // Spawn parallel parsing tasks on compilation pool
-  std::vector<asio::awaitable<void>> parse_tasks;
-  parse_tasks.reserve(source_files.size());
+  // Parse syntax trees in parallel using thread pool
+  {
+    utils::ScopedTimer parse_timer("Parsing syntax trees", logger);
 
-  for (size_t i = 0; i < source_files.size(); ++i) {
-    parse_tasks.push_back(
-        asio::co_spawn(
-            compilation_executor,
-            [&preamble, i, &source_files, &results,
-             &options]() -> asio::awaitable<void> {
-              auto tree_result = slang::syntax::SyntaxTree::fromFile(
-                  source_files[i].Path().string(), *preamble->source_manager_,
-                  options);
+    // Completion counter for barrier synchronization
+    std::atomic<size_t> completed{0};
+    const size_t total_files = source_files.size();
 
-              if (tree_result) {
-                results[i] = tree_result.value();
-              } else {
-                results[i] = std::nullopt;
-              }
-              co_return;
-            },
-            asio::use_awaitable));
-  }
+    // Post blocking work to thread pool (parallel execution across threads)
+    for (size_t i = 0; i < source_files.size(); ++i) {
+      asio::post(
+          compilation_executor,
+          [&preamble, i, &source_files, &results, &options, &completed]() {
+            auto tree_result = slang::syntax::SyntaxTree::fromFile(
+                source_files[i].Path().string(), *preamble->source_manager_,
+                options);
 
-  // Wait for all parallel parsing to complete (non-blocking async wait)
-  for (auto& task : parse_tasks) {
-    co_await std::move(task);
+            if (tree_result) {
+              results[i] = tree_result.value();
+            } else {
+              results[i] = std::nullopt;
+            }
+
+            completed.fetch_add(1, std::memory_order_release);
+          });
+    }
+
+    // Barrier: wait for all tasks to complete
+    while (completed.load(std::memory_order_acquire) < total_files) {
+      co_await asio::post(asio::use_awaitable);
+    }
   }
 
   // Add trees to compilation sequentially (addSyntaxTree is NOT thread-safe)
   std::vector<std::string> failed_files;
-  for (size_t i = 0; i < results.size(); ++i) {
-    if (results[i]) {
-      preamble->preamble_compilation_->addSyntaxTree(*results[i]);
-    } else {
-      failed_files.push_back(source_files[i].Path().string());
+  {
+    utils::ScopedTimer add_timer("Adding syntax trees to compilation", logger);
+    for (size_t i = 0; i < results.size(); ++i) {
+      if (results[i]) {
+        preamble->preamble_compilation_->addSyntaxTree(*results[i]);
+      } else {
+        failed_files.push_back(source_files[i].Path().string());
+      }
     }
   }
 

@@ -22,9 +22,11 @@ LanguageService::LanguageService(
       open_tracker_(std::make_shared<OpenDocumentTracker>()),
       doc_state_(executor, open_tracker_),
       workspace_ready_(executor),
-      compilation_pool_(std::make_unique<asio::thread_pool>(kThreadPoolSize)) {
+      compilation_pool_(
+          std::make_unique<asio::thread_pool>(GetThreadPoolSize())) {
   logger_->debug(
-      "LanguageService created with {} compilation threads", kThreadPoolSize);
+      "LanguageService created with {} compilation threads",
+      GetThreadPoolSize());
 }
 
 auto LanguageService::CreateDiagnosticHook(std::string uri, int version)
