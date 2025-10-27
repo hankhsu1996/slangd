@@ -2269,13 +2269,16 @@ void SemanticIndex::IndexVisitor::handle(
     }
   }
 
-  // Visit parameter and port expressions (for same-file cases)
-  // UninstantiatedDefSymbol stores these expressions even without
-  // preamble_manager
-  for (const auto* expr : symbol.paramExpressions) {
-    if (expr != nullptr) {
-      expr->visit(*this);
+  // Visit parameter expressions (for same-file cases)
+  // UninstantiatedDefSymbol now stores properly typed ParameterSymbols
+  for (const auto* param : symbol.getParameters()) {
+    if (param->symbol.kind == slang::ast::SymbolKind::Parameter) {
+      const auto& p = param->symbol.as<slang::ast::ParameterSymbol>();
+      if (const auto* expr = p.getInitializer()) {
+        expr->visit(*this);
+      }
     }
+    // Type parameters don't have initializer expressions to visit
   }
 
   // Index interface port connections by extracting symbols from bound
