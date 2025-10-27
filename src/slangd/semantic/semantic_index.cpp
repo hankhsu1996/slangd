@@ -25,7 +25,6 @@
 #include <slang/util/Enum.h>
 #include <spdlog/spdlog.h>
 
-#include "slangd/semantic/document_symbol_builder.hpp"
 #include "slangd/semantic/symbol_utils.hpp"
 #include "slangd/services/preamble_manager.hpp"
 #include "slangd/utils/conversion.hpp"
@@ -244,11 +243,6 @@ auto SemanticIndex::FromCompilation(
   index->ValidateSymbolCoverage(compilation, current_file_uri);
 
   return index;
-}
-
-auto SemanticIndex::GetDocumentSymbols(const std::string& uri) const
-    -> std::vector<lsp::DocumentSymbol> {
-  return DocumentSymbolBuilder::BuildDocumentSymbolTree(uri, *this);
 }
 
 // IndexVisitor helper methods
@@ -1603,10 +1597,6 @@ void SemanticIndex::IndexVisitor::handle(
     // We must get a ClassType specialization to access parameters and members.
     // Use getDefaultSpecialization() to create a temporary instance with
     // default parameter values.
-    //
-    // Get the ClassType scope first so we can store it in the semantic entry
-    // for DocumentSymbolBuilder to use (avoids calling getDefaultSpecialization
-    // again in DocumentSymbolBuilder).
     const slang::ast::Scope* class_type_scope = nullptr;
     if (const auto* parent_scope = class_def.getParentScope()) {
       if (const auto* default_type =
