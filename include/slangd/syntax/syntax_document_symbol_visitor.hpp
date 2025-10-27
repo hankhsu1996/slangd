@@ -32,6 +32,9 @@ class SyntaxDocumentSymbolVisitor
   void handle(const slang::syntax::FunctionDeclarationSyntax& syntax);
   void handle(const slang::syntax::EnumTypeSyntax& syntax);
   void handle(const slang::syntax::StructUnionTypeSyntax& syntax);
+  void handle(const slang::syntax::ImplicitAnsiPortSyntax& syntax);
+  void handle(const slang::syntax::ParameterDeclarationSyntax& syntax);
+  void handle(const slang::syntax::NetDeclarationSyntax& syntax);
 
  private:
   std::vector<lsp::DocumentSymbol> roots_;

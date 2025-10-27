@@ -74,14 +74,19 @@ void SyntaxDocumentSymbolVisitor::visitDefault(
 
 void SyntaxDocumentSymbolVisitor::handle(
     const slang::syntax::ModuleDeclarationSyntax& syntax) {
-  lsp::SymbolKind kind;
-  if (syntax.kind == slang::syntax::SyntaxKind::PackageDeclaration) {
-    kind = lsp::SymbolKind::kPackage;
-  } else if (syntax.kind == slang::syntax::SyntaxKind::InterfaceDeclaration) {
-    kind = lsp::SymbolKind::kInterface;
-  } else {
-    kind = lsp::SymbolKind::kModule;
+  // ModuleDeclarationSyntax handles three syntax kinds with identical structure
+  lsp::SymbolKind kind = lsp::SymbolKind::kModule;
+  switch (syntax.kind) {
+    case slang::syntax::SyntaxKind::PackageDeclaration:
+      kind = lsp::SymbolKind::kPackage;
+      break;
+    case slang::syntax::SyntaxKind::InterfaceDeclaration:
+      kind = lsp::SymbolKind::kInterface;
+      break;
+    default:
+      break;
   }
+
   auto doc_symbol = BuildDocumentSymbol(
       syntax.header->name.valueText(), kind, syntax.sourceRange(),
       syntax.header->name.range());
@@ -168,6 +173,41 @@ void SyntaxDocumentSymbolVisitor::handle(
       }
       auto doc_symbol = BuildDocumentSymbol(
           declarator->name.valueText(), lsp::SymbolKind::kField,
+          declarator->sourceRange(), declarator->name.range());
+      AddToParent(std::move(doc_symbol));
+    }
+  }
+}
+
+void SyntaxDocumentSymbolVisitor::handle(
+    const slang::syntax::ImplicitAnsiPortSyntax& syntax) {
+  if (syntax.declarator != nullptr &&
+      !syntax.declarator->name.valueText().empty()) {
+    auto doc_symbol = BuildDocumentSymbol(
+        syntax.declarator->name.valueText(), lsp::SymbolKind::kVariable,
+        syntax.sourceRange(), syntax.declarator->name.range());
+    AddToParent(std::move(doc_symbol));
+  }
+}
+
+void SyntaxDocumentSymbolVisitor::handle(
+    const slang::syntax::ParameterDeclarationSyntax& syntax) {
+  for (const auto& declarator : syntax.declarators) {
+    if (!declarator->name.valueText().empty()) {
+      auto doc_symbol = BuildDocumentSymbol(
+          declarator->name.valueText(), lsp::SymbolKind::kConstant,
+          declarator->sourceRange(), declarator->name.range());
+      AddToParent(std::move(doc_symbol));
+    }
+  }
+}
+
+void SyntaxDocumentSymbolVisitor::handle(
+    const slang::syntax::NetDeclarationSyntax& syntax) {
+  for (const auto& declarator : syntax.declarators) {
+    if (!declarator->name.valueText().empty()) {
+      auto doc_symbol = BuildDocumentSymbol(
+          declarator->name.valueText(), lsp::SymbolKind::kVariable,
           declarator->sourceRange(), declarator->name.range());
       AddToParent(std::move(doc_symbol));
     }
