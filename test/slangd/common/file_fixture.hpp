@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string_view>
@@ -15,8 +16,16 @@ class FileTestFixture {
   }
 
   explicit FileTestFixture(std::string_view prefix) {
-    // Create a temporary directory for test files
-    temp_dir_ = std::filesystem::temp_directory_path() / prefix;
+    // Use TEST_TMPDIR as required by Bazel test specification
+    // Falls back to system temp directory for non-Bazel environments
+    std::filesystem::path base_temp;
+    if (const char* test_tmpdir = std::getenv("TEST_TMPDIR")) {
+      base_temp = test_tmpdir;
+    } else {
+      base_temp = std::filesystem::temp_directory_path();
+    }
+
+    temp_dir_ = base_temp / prefix;
     std::filesystem::create_directories(temp_dir_);
   }
 
