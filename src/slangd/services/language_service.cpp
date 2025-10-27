@@ -197,6 +197,13 @@ auto LanguageService::GetDocumentSymbols(std::string uri) -> asio::awaitable<
   auto source_manager = std::make_shared<slang::SourceManager>();
   auto options = utils::CreateLspCompilationOptions();
 
+  // Add project-specific preprocessor defines (for ifdef/ifndef support)
+  auto pp_options = options.getOrDefault<slang::parsing::PreprocessorOptions>();
+  for (const auto& define : layout_service_->GetDefines()) {
+    pp_options.predefines.push_back(define);
+  }
+  options.set(pp_options);
+
   auto buffer = source_manager->assignText(uri, doc_state->content);
   auto syntax_tree =
       slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager, options);
