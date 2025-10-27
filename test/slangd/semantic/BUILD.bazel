@@ -5,20 +5,6 @@ Build file for slangd semantic tests.
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 cc_test(
-    name = "document_symbol_test",
-    timeout = "short",
-    srcs = [
-        "document_symbol_test.cpp",
-    ],
-    deps = [
-        "//:slangd_core",
-        "//test/slangd:semantic_fixture",
-        "@catch2",
-        "@slang",
-    ],
-)
-
-cc_test(
     name = "diagnostics_test",
     timeout = "short",
     srcs = [

@@ -6,7 +6,9 @@
 
 #include "slangd/semantic/diagnostic_converter.hpp"
 #include "slangd/services/preamble_manager.hpp"
+#include "slangd/syntax/syntax_document_symbol_visitor.hpp"
 #include "slangd/utils/canonical_path.hpp"
+#include "slangd/utils/compilation_options.hpp"
 #include "slangd/utils/path_utils.hpp"
 #include "slangd/utils/scoped_timer.hpp"
 
@@ -21,6 +23,7 @@ LanguageService::LanguageService(
       executor_(executor),
       open_tracker_(std::make_shared<OpenDocumentTracker>()),
       doc_state_(executor, open_tracker_),
+      config_ready_(executor),
       workspace_ready_(executor),
       compilation_pool_(
           std::make_unique<asio::thread_pool>(GetThreadPoolSize())) {
@@ -73,6 +76,11 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
   layout_service_ =
       ProjectLayoutService::Create(executor_, workspace_path, logger_);
   co_await layout_service_->LoadConfig(workspace_path);
+
+  // Config loaded: syntax features can now use defines for ifdef/ifndef
+  // handling
+  config_ready_.Set();
+  logger_->debug("LanguageService config loaded (syntax features ready)");
 
   auto preamble_result = co_await PreambleManager::CreateFromProjectLayout(
       layout_service_, compilation_pool_->get_executor(), logger_);
@@ -182,23 +190,43 @@ auto LanguageService::GetDefinitionsForPosition(
 
 auto LanguageService::GetDocumentSymbols(std::string uri) -> asio::awaitable<
     std::expected<std::vector<lsp::DocumentSymbol>, lsp::error::LspError>> {
-  utils::ScopedTimer timer("GetDocumentSymbols", logger_);
+  utils::ScopedTimer timer("GetDocumentSymbols (syntax)", logger_);
 
-  // Wait for workspace initialization to complete
-  co_await workspace_ready_.AsyncWait(asio::use_awaitable);
-
-  auto result = co_await session_manager_->WithSession(
-      uri, [uri](const OverlaySession& session) {
-        return session.GetSemanticIndex().GetDocumentSymbols(uri);
-      });
-
-  if (!result) {
-    // Return empty instead of error - prevents VSCode spinning
-    logger_->debug("GetDocumentSymbols failed for {}: {}", uri, result.error());
+  // Get file content from open documents
+  auto doc_state = co_await doc_state_.Get(uri);
+  if (!doc_state) {
+    logger_->debug("GetDocumentSymbols: document not open: {}", uri);
     co_return std::vector<lsp::DocumentSymbol>{};
   }
 
-  co_return *result;
+  // Wait for config to be loaded (needed for correct ifdef/ifndef handling)
+  co_await config_ready_.AsyncWait(asio::use_awaitable);
+
+  // Parse syntax tree directly (no session/preamble needed)
+  auto source_manager = std::make_shared<slang::SourceManager>();
+  auto options = utils::CreateLspCompilationOptions();
+
+  // Add project-specific preprocessor defines (for ifdef/ifndef support)
+  auto pp_options = options.getOrDefault<slang::parsing::PreprocessorOptions>();
+  for (const auto& define : layout_service_->GetDefines()) {
+    pp_options.predefines.push_back(define);
+  }
+  options.set(pp_options);
+
+  auto buffer = source_manager->assignText(uri, doc_state->content);
+  auto syntax_tree =
+      slang::syntax::SyntaxTree::fromBuffer(buffer, *source_manager, options);
+
+  if (!syntax_tree) {
+    logger_->error("GetDocumentSymbols: failed to parse syntax tree: {}", uri);
+    co_return std::vector<lsp::DocumentSymbol>{};
+  }
+
+  // Direct syntax traversal
+  syntax::SyntaxDocumentSymbolVisitor visitor(uri, *source_manager, buffer.id);
+  syntax_tree->root().visit(visitor);
+
+  co_return visitor.GetResult();
 }
 
 auto LanguageService::RebuildPreambleAndSessions() -> asio::awaitable<void> {

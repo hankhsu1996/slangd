@@ -80,7 +80,7 @@ Multiple symbols sharing same type syntax → duplicate traversal. Track `visite
 - GenericClassDefSymbol creates default ClassType and explicitly visits it
 - Module/class bodies only indexed when definition is in current file
 - No automatic traversal from type references
-- Store ClassType scope in SemanticEntry to avoid re-computing `getDefaultSpecialization()` in DocumentSymbolBuilder
+- Store ClassType scope in SemanticEntry to avoid re-computing `getDefaultSpecialization()`
 
 ## Design Principles
 

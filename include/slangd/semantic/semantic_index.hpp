@@ -66,16 +66,11 @@ class SemanticIndex {
   // Query methods
 
   // GetSourceManager() - Still needed for:
-  // 1. DocumentSymbolBuilder enum/struct members (not in SemanticIndex)
-  // 2. ValidateSymbolCoverage (needs to check symbol.location.valid())
-  // 3. Internal indexing (has its own reference via source_manager_)
+  // 1. ValidateSymbolCoverage (needs to check symbol.location.valid())
+  // 2. Internal indexing (has its own reference via source_manager_)
   [[nodiscard]] auto GetSourceManager() const -> const slang::SourceManager& {
     return source_manager_.get();
   }
-
-  // SymbolIndex-compatible API
-  [[nodiscard]] auto GetDocumentSymbols(const std::string& uri) const
-      -> std::vector<lsp::DocumentSymbol>;
 
   // Unified semantic entries access
   [[nodiscard]] auto GetSemanticEntries() const

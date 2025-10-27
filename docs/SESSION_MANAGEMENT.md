@@ -281,7 +281,9 @@ Background compilation:
 
 **Why sessions must hold preamble reference:**
 
-Sessions contain SemanticIndex which stores raw pointers to AST symbols for document symbols feature. These pointers are only valid while the Compilation (and its preamble) remains alive. If preamble is freed, document symbols feature would access dangling pointers and crash.
+Sessions contain SemanticIndex which stores raw pointers to AST symbols for semantic features (go-to-definition, future completion/hover). These pointers are only valid while the Compilation (and its preamble) remains alive. If preamble is freed, semantic features would access dangling pointers and crash.
+
+**Note**: Document symbols (outline view) migrated to syntax-based approach and no longer requires sessions or preamble. However, sessions still hold preamble for other semantic features.
 
 **Implication**: Session lifetime determines preamble lifetime. Multiple sessions from the same preamble generation → multiple references → preamble stays alive.
 
@@ -342,17 +344,17 @@ Sessions contain SemanticIndex which stores raw pointers to AST symbols for docu
 
 **Note**: Sessions must continue holding Compilation+preamble long-term for future features (completion, hover with type info). The current coordination is necessary given these requirements.
 
-**Potential optimization**: Migrate document symbols to syntax tree traversal
+**Implemented optimization**: Document symbols migrated to syntax tree traversal
+- Document symbols (outline view) now use `SyntaxDocumentSymbolVisitor` (syntax-only)
+- No session/preamble dependency for document symbols
 - Parse tree available immediately after parsing
-- No semantic elaboration needed for outline view
-- Reduces per-session memory footprint
-- Simplifies some code paths
+- Reduces memory pressure (symbols don't require full semantic compilation)
 
-**Why this doesn't eliminate coordination**:
-- Completion feature still requires Compilation
-- Sessions must still hold preamble references
+**Remaining session coordination requirements**:
+- Completion, hover, go-to-definition still require Compilation
+- Sessions must still hold preamble references for semantic features
 - Task coordination still needed during preamble rebuild
-- But: Lower memory per session enables higher session cache limits
+- Syntax-based document symbols reduce per-session memory footprint
 
 **Design principle**: Accept necessary complexity when constraints are real. The current solution is minimal given the requirements (responsive LSP during 10s+ rebuilds, bounded memory, support future features).
 

@@ -97,9 +97,12 @@ class LanguageService : public LanguageServiceBase {
 
   std::unique_ptr<SessionManager> session_manager_;
 
-  // Workspace initialization synchronization
-  // Set once at the end of InitializeWorkspace, stays set permanently
-  // All public methods wait on this event before proceeding
+  // Workspace initialization synchronization events
+  // config_ready: Config loaded, layout_service ready (syntax features can use
+  // defines)
+  utils::BroadcastEvent config_ready_;
+  // workspace_ready: Preamble built, session_manager ready (semantic features
+  // available)
   utils::BroadcastEvent workspace_ready_;
 
   // Background thread pool for parse diagnostics

@@ -25,7 +25,6 @@
 #include <slang/util/Enum.h>
 #include <spdlog/spdlog.h>
 
-#include "slangd/semantic/document_symbol_builder.hpp"
 #include "slangd/semantic/symbol_utils.hpp"
 #include "slangd/services/preamble_manager.hpp"
 #include "slangd/utils/conversion.hpp"
@@ -38,8 +37,6 @@ auto SemanticIndex::IsInCurrentFile(
     const slang::ast::Symbol& symbol, const std::string& current_file_uri,
     const slang::SourceManager& source_manager,
     const services::PreambleManager* preamble_manager) -> bool {
-  // Preamble symbols are NEVER in current file (separate compilation)
-  // Check by comparing symbol's compilation with preamble compilation
   if (preamble_manager != nullptr) {
     const auto* symbol_scope = symbol.getParentScope();
     if (symbol_scope != nullptr) {
@@ -246,11 +243,6 @@ auto SemanticIndex::FromCompilation(
   index->ValidateSymbolCoverage(compilation, current_file_uri);
 
   return index;
-}
-
-auto SemanticIndex::GetDocumentSymbols(const std::string& uri) const
-    -> std::vector<lsp::DocumentSymbol> {
-  return DocumentSymbolBuilder::BuildDocumentSymbolTree(uri, *this);
 }
 
 // IndexVisitor helper methods
@@ -1605,10 +1597,6 @@ void SemanticIndex::IndexVisitor::handle(
     // We must get a ClassType specialization to access parameters and members.
     // Use getDefaultSpecialization() to create a temporary instance with
     // default parameter values.
-    //
-    // Get the ClassType scope first so we can store it in the semantic entry
-    // for DocumentSymbolBuilder to use (avoids calling getDefaultSpecialization
-    // again in DocumentSymbolBuilder).
     const slang::ast::Scope* class_type_scope = nullptr;
     if (const auto* parent_scope = class_def.getParentScope()) {
       if (const auto* default_type =
@@ -2524,23 +2512,6 @@ auto SemanticIndex::LookupDefinitionAt(
       // Return the definition location using standard LSP type
       return lsp::Location{.uri = it->def_loc.uri, .range = it->def_loc.range};
     }
-
-    // Debug: Log lookup failures for specific identifiers
-    if (it->name == "STATUS_OK" || it->name == "STATUS_ERROR" ||
-        it->name == "BUS_WIDTH" || it->name == "MAX_COUNT" ||
-        it->name == "MIN_COUNT") {
-      spdlog::debug(
-          "LookupDefinitionAt: '{}' at {}:{} NOT contained in closest entry "
-          "[{}:{}..{}:{}]",
-          it->name, position.line, position.character, it->ref_range.start.line,
-          it->ref_range.start.character, it->ref_range.end.line,
-          it->ref_range.end.character);
-    }
-  } else {
-    spdlog::debug(
-        "LookupDefinitionAt: position {}:{} has no entry before it (empty "
-        "entries?)",
-        position.line, position.character);
   }
 
   return std::nullopt;

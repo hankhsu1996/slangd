@@ -120,11 +120,12 @@ auto SlangdLspServer::OnInitialized(lsp::InitializedParams /*unused*/)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
   initialized_ = true;
 
-  // Initialize workspace now (blocks until preamble ready)
-  // Status notifications will work here (client ready to receive them)
-  // Document requests that arrive will queue until this completes
+  // Initialize workspace in background (syntax-based features work immediately)
+  // Semantic features wait for workspace_ready internally
   if (!workspace_uri_.empty()) {
-    co_await language_service_->InitializeWorkspace(workspace_uri_);
+    asio::co_spawn(
+        executor_, language_service_->InitializeWorkspace(workspace_uri_),
+        asio::detached);
   }
 
   auto register_watcher = [this]() -> asio::awaitable<void> {

@@ -19,16 +19,20 @@ SemanticIndex enables LSP features (go-to-definition, find references, document 
 
 **Note:** `forceElaborate()` is file-scoped (not full design elaboration) and enables both semantic diagnostics and faster indexing through cached resolutions.
 
-## DocumentSymbol Architecture
+## Document Symbols (Syntax-Based)
 
-**Separation of Concerns:**
+**Current Implementation:**
 
-- **SemanticIndex** performs all semantic analysis (symbol resolution, scope traversal, specialization)
-- **DocumentSymbolBuilder** performs pure data transformation (SemanticEntry[] → DocumentSymbol[])
+- **Production**: Uses `SyntaxDocumentSymbolVisitor` for fast syntax-based document symbols
+- **Testing**: SemanticIndex still used in tests to verify semantic analysis correctness
 
-**Critical Rule:** DocumentSymbolBuilder must never call Slang semantic APIs. All computed information must be stored in SemanticEntry during indexing.
+**Key Trade-off:**
 
-### Non-Scope Symbols with Children
+- Syntax-based approach has no session/preamble dependency, responds immediately
+- Cannot distinguish interface ports from regular ports (requires semantic analysis)
+- Accepted limitation per PLAN.md - prioritizes speed and robustness over perfect classification
+
+### Non-Scope Symbols with Children (Semantic Context)
 
 Some symbols are not Scopes but have children in a related Scope (e.g., GenericClassDefSymbol has members in its ClassType specialization).
 
@@ -45,9 +49,9 @@ struct SemanticEntry {
 
 - Semantic work (e.g., `getDefaultSpecialization()`) done once in handler
 - Store resulting scope pointer in `children_scope` field
-- DocumentSymbolBuilder uses stored pointer for children lookup
+- Avoids re-computation when traversing children
 
-**Example:** GenericClassDefSymbol stores ClassType scope from `getDefaultSpecialization()` to avoid re-computation in DocumentSymbolBuilder.
+**Example:** GenericClassDefSymbol stores ClassType scope from `getDefaultSpecialization()` to avoid re-computation.
 
 ## Slang Symbol Organization (Library Constraints)
 

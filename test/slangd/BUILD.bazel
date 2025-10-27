@@ -48,3 +48,14 @@ cc_library(
         "@slang",
     ],
 )
+
+cc_library(
+    name = "syntax_fixture",
+    hdrs = ["common/syntax_fixture.hpp"],
+    visibility = ["//test/slangd:__subpackages__"],
+    deps = [
+        "//:slangd_core",
+        "@catch2",
+        "@slang",
+    ],
+)
