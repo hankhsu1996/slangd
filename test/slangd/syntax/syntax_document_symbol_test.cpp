@@ -20,6 +20,7 @@ auto main(int argc, char* argv[]) -> int {
 }
 
 using Fixture = slangd::test::SyntaxDocumentSymbolFixture;
+using lsp::SymbolKind;
 
 TEST_CASE("SyntaxDocumentSymbolVisitor module works", "[syntax_symbols]") {
   std::string code = R"(
@@ -28,7 +29,7 @@ TEST_CASE("SyntaxDocumentSymbolVisitor module works", "[syntax_symbols]") {
   )";
 
   auto result = Fixture::BuildSymbols(code);
-  Fixture::AssertSymbolExists(result, "test_module", lsp::SymbolKind::kModule);
+  Fixture::AssertSymbol(result, {"test_module"}, SymbolKind::kModule);
 }
 
 TEST_CASE(
@@ -42,9 +43,11 @@ TEST_CASE(
   )";
 
   auto result = Fixture::BuildSymbols(code);
-  Fixture::AssertSymbolExists(result, "test_module", lsp::SymbolKind::kModule);
-  Fixture::AssertSymbolExists(result, "signal_a", lsp::SymbolKind::kVariable);
-  Fixture::AssertSymbolExists(result, "signal_b", lsp::SymbolKind::kVariable);
+  Fixture::AssertSymbol(result, {"test_module"}, SymbolKind::kModule);
+  Fixture::AssertSymbol(
+      result, {"test_module", "signal_a"}, SymbolKind::kVariable);
+  Fixture::AssertSymbol(
+      result, {"test_module", "signal_b"}, SymbolKind::kVariable);
 }
 
 TEST_CASE(
@@ -60,7 +63,8 @@ TEST_CASE(
   )";
 
   auto result = Fixture::BuildSymbols(code);
-  Fixture::AssertSymbolExists(result, "state_t", lsp::SymbolKind::kClass);
+  Fixture::AssertSymbol(result, {"test_module"}, SymbolKind::kModule);
+  Fixture::AssertSymbol(result, {"test_module", "state_t"}, SymbolKind::kEnum);
 }
 
 TEST_CASE(
@@ -72,6 +76,111 @@ TEST_CASE(
   )";
 
   auto result = Fixture::BuildSymbols(code);
-  Fixture::AssertSymbolExists(result, "TestClass", lsp::SymbolKind::kClass);
-  Fixture::AssertSymbolExists(result, "field_a", lsp::SymbolKind::kVariable);
+  Fixture::AssertSymbol(result, {"TestClass"}, SymbolKind::kClass);
+  Fixture::AssertSymbol(
+      result, {"TestClass", "field_a"}, SymbolKind::kVariable);
+}
+
+TEST_CASE("SyntaxDocumentSymbolVisitor package works", "[syntax_symbols]") {
+  std::string code = R"(
+    package test_pkg;
+      logic pkg_signal;
+    endpackage
+  )";
+
+  auto result = Fixture::BuildSymbols(code);
+  Fixture::AssertSymbol(result, {"test_pkg"}, SymbolKind::kPackage);
+  Fixture::AssertSymbol(
+      result, {"test_pkg", "pkg_signal"}, SymbolKind::kVariable);
+}
+
+TEST_CASE("SyntaxDocumentSymbolVisitor interface works", "[syntax_symbols]") {
+  std::string code = R"(
+    interface test_if;
+      logic if_signal;
+    endinterface
+  )";
+
+  auto result = Fixture::BuildSymbols(code);
+  Fixture::AssertSymbol(result, {"test_if"}, SymbolKind::kInterface);
+  Fixture::AssertSymbol(
+      result, {"test_if", "if_signal"}, SymbolKind::kVariable);
+}
+
+TEST_CASE("SyntaxDocumentSymbolVisitor function works", "[syntax_symbols]") {
+  std::string code = R"(
+    module test_module;
+      function logic test_func();
+        return 1'b0;
+      endfunction
+    endmodule
+  )";
+
+  auto result = Fixture::BuildSymbols(code);
+  Fixture::AssertSymbol(result, {"test_module"}, SymbolKind::kModule);
+  Fixture::AssertSymbol(
+      result, {"test_module", "test_func"}, SymbolKind::kFunction);
+}
+
+TEST_CASE("SyntaxDocumentSymbolVisitor task works", "[syntax_symbols]") {
+  std::string code = R"(
+    module test_module;
+      task test_task();
+        $display("hello");
+      endtask
+    endmodule
+  )";
+
+  auto result = Fixture::BuildSymbols(code);
+  Fixture::AssertSymbol(result, {"test_module"}, SymbolKind::kModule);
+  Fixture::AssertSymbol(
+      result, {"test_module", "test_task"}, SymbolKind::kFunction);
+}
+
+TEST_CASE(
+    "SyntaxDocumentSymbolVisitor typedef enum with children works",
+    "[syntax_symbols]") {
+  std::string code = R"(
+    module test_module;
+      typedef enum logic [1:0] {
+        IDLE,
+        ACTIVE,
+        DONE
+      } state_t;
+    endmodule
+  )";
+
+  auto result = Fixture::BuildSymbols(code);
+  Fixture::AssertSymbol(result, {"test_module"}, SymbolKind::kModule);
+  Fixture::AssertSymbol(result, {"test_module", "state_t"}, SymbolKind::kEnum);
+  Fixture::AssertSymbol(
+      result, {"test_module", "state_t", "IDLE"}, SymbolKind::kEnumMember);
+  Fixture::AssertSymbol(
+      result, {"test_module", "state_t", "ACTIVE"}, SymbolKind::kEnumMember);
+  Fixture::AssertSymbol(
+      result, {"test_module", "state_t", "DONE"}, SymbolKind::kEnumMember);
+}
+
+TEST_CASE(
+    "SyntaxDocumentSymbolVisitor typedef struct with children works",
+    "[syntax_symbols]") {
+  std::string code = R"(
+    package test_pkg;
+      typedef struct {
+        logic [7:0] data;
+        logic valid;
+        logic [15:0] address;
+      } packet_t;
+    endpackage
+  )";
+
+  auto result = Fixture::BuildSymbols(code);
+  Fixture::AssertSymbol(result, {"test_pkg"}, SymbolKind::kPackage);
+  Fixture::AssertSymbol(result, {"test_pkg", "packet_t"}, SymbolKind::kStruct);
+  Fixture::AssertSymbol(
+      result, {"test_pkg", "packet_t", "data"}, SymbolKind::kField);
+  Fixture::AssertSymbol(
+      result, {"test_pkg", "packet_t", "valid"}, SymbolKind::kField);
+  Fixture::AssertSymbol(
+      result, {"test_pkg", "packet_t", "address"}, SymbolKind::kField);
 }

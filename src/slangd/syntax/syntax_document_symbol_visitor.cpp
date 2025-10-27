@@ -74,9 +74,17 @@ void SyntaxDocumentSymbolVisitor::visitDefault(
 
 void SyntaxDocumentSymbolVisitor::handle(
     const slang::syntax::ModuleDeclarationSyntax& syntax) {
+  lsp::SymbolKind kind;
+  if (syntax.kind == slang::syntax::SyntaxKind::PackageDeclaration) {
+    kind = lsp::SymbolKind::kPackage;
+  } else if (syntax.kind == slang::syntax::SyntaxKind::InterfaceDeclaration) {
+    kind = lsp::SymbolKind::kInterface;
+  } else {
+    kind = lsp::SymbolKind::kModule;
+  }
   auto doc_symbol = BuildDocumentSymbol(
-      syntax.header->name.valueText(), lsp::SymbolKind::kModule,
-      syntax.sourceRange(), syntax.header->name.range());
+      syntax.header->name.valueText(), kind, syntax.sourceRange(),
+      syntax.header->name.range());
   AddToParent(std::move(doc_symbol));
 
   parent_stack_.push_back(GetLastAddedSymbol());
@@ -110,15 +118,59 @@ void SyntaxDocumentSymbolVisitor::handle(
 
 void SyntaxDocumentSymbolVisitor::handle(
     const slang::syntax::TypedefDeclarationSyntax& syntax) {
+  lsp::SymbolKind kind = lsp::SymbolKind::kClass;
+  if (syntax.type != nullptr) {
+    if (syntax.type->kind == slang::syntax::SyntaxKind::EnumType) {
+      kind = lsp::SymbolKind::kEnum;
+    } else if (syntax.type->kind == slang::syntax::SyntaxKind::StructType) {
+      kind = lsp::SymbolKind::kStruct;
+    }
+  }
   auto doc_symbol = BuildDocumentSymbol(
-      syntax.name.valueText(), lsp::SymbolKind::kClass, syntax.sourceRange(),
-      syntax.name.range());
+      syntax.name.valueText(), kind, syntax.sourceRange(), syntax.name.range());
   AddToParent(std::move(doc_symbol));
 
   if (syntax.type != nullptr) {
     parent_stack_.push_back(GetLastAddedSymbol());
     visitDefault(syntax);
     parent_stack_.pop_back();
+  }
+}
+
+void SyntaxDocumentSymbolVisitor::handle(
+    const slang::syntax::FunctionDeclarationSyntax& syntax) {
+  auto name_token = syntax.prototype->name->getLastToken();
+  auto doc_symbol = BuildDocumentSymbol(
+      name_token.valueText(), lsp::SymbolKind::kFunction, syntax.sourceRange(),
+      name_token.range());
+  AddToParent(std::move(doc_symbol));
+}
+
+void SyntaxDocumentSymbolVisitor::handle(
+    const slang::syntax::EnumTypeSyntax& syntax) {
+  for (const auto& member : syntax.members) {
+    if (member->name.valueText().empty()) {
+      continue;
+    }
+    auto doc_symbol = BuildDocumentSymbol(
+        member->name.valueText(), lsp::SymbolKind::kEnumMember,
+        member->sourceRange(), member->name.range());
+    AddToParent(std::move(doc_symbol));
+  }
+}
+
+void SyntaxDocumentSymbolVisitor::handle(
+    const slang::syntax::StructUnionTypeSyntax& syntax) {
+  for (const auto& member : syntax.members) {
+    for (const auto& declarator : member->declarators) {
+      if (declarator->name.valueText().empty()) {
+        continue;
+      }
+      auto doc_symbol = BuildDocumentSymbol(
+          declarator->name.valueText(), lsp::SymbolKind::kField,
+          declarator->sourceRange(), declarator->name.range());
+      AddToParent(std::move(doc_symbol));
+    }
   }
 }
 

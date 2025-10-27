@@ -40,30 +40,33 @@ class SyntaxDocumentSymbolFixture {
     return {.symbols = visitor.GetResult(), .uri = "file:///test.sv"};
   }
 
-  static auto AssertSymbolExists(
-      const SyntaxDocumentSymbolResult& result, const std::string& name,
-      lsp::SymbolKind kind) -> void {
-    const auto* symbol = FindSymbol(result.symbols, name);
-    REQUIRE(symbol != nullptr);
-    REQUIRE(symbol->kind == kind);
-  }
+  static auto AssertSymbol(
+      const SyntaxDocumentSymbolResult& result,
+      const std::vector<std::string>& path, lsp::SymbolKind kind) -> void {
+    REQUIRE(!path.empty());
 
- private:
-  static auto FindSymbol(
-      const std::vector<lsp::DocumentSymbol>& symbols, const std::string& name)
-      -> const lsp::DocumentSymbol* {
-    for (const auto& symbol : symbols) {
-      if (symbol.name == name) {
-        return &symbol;
-      }
-      if (symbol.children) {
-        const auto* found = FindSymbol(*symbol.children, name);
-        if (found != nullptr) {
-          return found;
+    const std::vector<lsp::DocumentSymbol>* current_level = &result.symbols;
+
+    for (size_t i = 0; i < path.size(); ++i) {
+      const auto& name = path[i];
+      const lsp::DocumentSymbol* found = nullptr;
+
+      for (const auto& symbol : *current_level) {
+        if (symbol.name == name) {
+          found = &symbol;
+          break;
         }
       }
+
+      REQUIRE(found != nullptr);
+
+      if (i == path.size() - 1) {
+        REQUIRE(found->kind == kind);
+      } else {
+        REQUIRE(found->children.has_value());
+        current_level = &(*found->children);
+      }
     }
-    return nullptr;
   }
 };
 
