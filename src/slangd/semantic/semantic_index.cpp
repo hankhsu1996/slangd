@@ -2522,23 +2522,6 @@ auto SemanticIndex::LookupDefinitionAt(
       // Return the definition location using standard LSP type
       return lsp::Location{.uri = it->def_loc.uri, .range = it->def_loc.range};
     }
-
-    // Debug: Log lookup failures for specific identifiers
-    if (it->name == "STATUS_OK" || it->name == "STATUS_ERROR" ||
-        it->name == "BUS_WIDTH" || it->name == "MAX_COUNT" ||
-        it->name == "MIN_COUNT") {
-      spdlog::debug(
-          "LookupDefinitionAt: '{}' at {}:{} NOT contained in closest entry "
-          "[{}:{}..{}:{}]",
-          it->name, position.line, position.character, it->ref_range.start.line,
-          it->ref_range.start.character, it->ref_range.end.line,
-          it->ref_range.end.character);
-    }
-  } else {
-    spdlog::debug(
-        "LookupDefinitionAt: position {}:{} has no entry before it (empty "
-        "entries?)",
-        position.line, position.character);
   }
 
   return std::nullopt;
