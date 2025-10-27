@@ -1,0 +1,14 @@
+"""
+Build file for Syntax tests.
+"""
+
+cc_test(
+    name = "syntax_document_symbol_test",
+    timeout = "short",
+    srcs = ["syntax_document_symbol_test.cpp"],
+    deps = [
+        "//:slangd_core",
+        "//test/slangd:syntax_fixture",
+        "@catch2//:catch2_main",
+    ],
+)
