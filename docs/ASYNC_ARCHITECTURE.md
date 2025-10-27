@@ -58,7 +58,7 @@ JSON-RPC → LSP Handlers → Language Service → Session Manager → Compilati
 
 4. **Workspace initialization ordering**
    - LSP requests arrive before workspace infrastructure ready
-   - Must wait for preamble and session manager to exist
+   - Syntax features wait for config (fast), semantic features wait for preamble (slow)
 
 ### Why Do We Need Synchronization?
 
@@ -92,10 +92,10 @@ JSON-RPC → LSP Handlers → Language Service → Session Manager → Compilati
 - **When**: New document version invalidates ongoing work
 - **Pattern**: `atomic<bool> cancelled` flag checked periodically during work
 
-**4. Initialization Event** - Wait for workspace ready
+**4. Initialization Events** - Wait for workspace infrastructure
 
-- **When**: LSP operations require workspace infrastructure (preamble, session manager)
-- **Pattern**: All public methods wait on workspace_ready event before proceeding
+- **When**: LSP operations require workspace infrastructure
+- **Pattern**: Two-event initialization (config_ready for syntax, workspace_ready for semantics)
 - **Key property**: Blocks only during initial startup, not during preamble rebuilds
 
 ---
@@ -165,24 +165,50 @@ Create new pending → Cancel old → Replace atomically (no gap)
 
 ### Workspace Initialization Synchronization
 
-**Problem**: LSP requests arrive before workspace infrastructure exists (preamble, session manager).
+**Problem**: LSP requests arrive before workspace infrastructure exists. Different features need different parts: syntax features need config (defines), semantic features need preamble.
 
-**Solution**: LanguageService maintains workspace_ready event. All public methods wait for this event before proceeding.
+**Solution**: Two-event initialization pattern.
 
-**Behavior**:
+**Synchronization events**:
 
-- Initial startup: Event unset, requests wait until InitializeWorkspace completes
-- After initialization: Event set permanently, AsyncWait returns immediately
-- Preamble rebuilds: Event stays set, no blocking (old preamble remains available)
+1. `config_ready_` - Set after config loaded and layout_service created (fast)
+2. `workspace_ready_` - Set after preamble built and session_manager created (slow)
 
-**Key distinction**: Initial initialization has nothing available (must wait). Preamble rebuilds have old data available (continue serving with current data, swap atomically when ready).
+**Feature dependencies**:
+
+- `GetDocumentSymbols` waits for `config_ready_` - needs defines for correct `#ifdef` handling
+- `OnDocumentOpened` waits for `workspace_ready_` - needs preamble for session creation
+- Semantic features wait for `workspace_ready_` - need preamble for analysis
+
+**Initialization flow**:
+
+```
+OnInitialized (LSP) -> spawn InitializeWorkspace detached -> returns immediately
+  InitializeWorkspace:
+    1. Load config, create layout_service
+    2. Set config_ready_ (fast: config file parsing)
+    3. Build preamble (slow: parse all project files on background threads)
+    4. Set workspace_ready_
+```
+
+**Why detached initialization**:
+- OnInitialized spawns InitializeWorkspace with `asio::detached`
+- Returns immediately, unblocks executor for incoming LSP requests
+- Syntax features respond after config load, semantic features after preamble build
+- Without detach: all requests blocked until preamble completes on single-threaded executor
+
+**Behavior after initialization**:
+
+- Events stay set permanently, AsyncWait returns immediately
+- Preamble rebuilds don't unset events (old preamble remains available)
+- No blocking during rebuilds
 
 **Benefits**:
 
 - Eliminates lifecycle state checks and nullptr guards throughout codebase
 - No manual pending request tracking or catch-up loops required
 - Requests never receive errors due to initialization timing
-- Single synchronization point instead of distributed guards
+- Optimized responsiveness: fast features fast, slow features only when needed
 
 ---
 

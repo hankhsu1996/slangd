@@ -23,6 +23,7 @@ LanguageService::LanguageService(
       executor_(executor),
       open_tracker_(std::make_shared<OpenDocumentTracker>()),
       doc_state_(executor, open_tracker_),
+      config_ready_(executor),
       workspace_ready_(executor),
       compilation_pool_(
           std::make_unique<asio::thread_pool>(GetThreadPoolSize())) {
@@ -75,6 +76,11 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
   layout_service_ =
       ProjectLayoutService::Create(executor_, workspace_path, logger_);
   co_await layout_service_->LoadConfig(workspace_path);
+
+  // Config loaded: syntax features can now use defines for ifdef/ifndef
+  // handling
+  config_ready_.Set();
+  logger_->debug("LanguageService config loaded (syntax features ready)");
 
   auto preamble_result = co_await PreambleManager::CreateFromProjectLayout(
       layout_service_, compilation_pool_->get_executor(), logger_);
@@ -192,6 +198,9 @@ auto LanguageService::GetDocumentSymbols(std::string uri) -> asio::awaitable<
     logger_->debug("GetDocumentSymbols: document not open: {}", uri);
     co_return std::vector<lsp::DocumentSymbol>{};
   }
+
+  // Wait for config to be loaded (needed for correct ifdef/ifndef handling)
+  co_await config_ready_.AsyncWait(asio::use_awaitable);
 
   // Parse syntax tree directly (no session/preamble needed)
   auto source_manager = std::make_shared<slang::SourceManager>();
