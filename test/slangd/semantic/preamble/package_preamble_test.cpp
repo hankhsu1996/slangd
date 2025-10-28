@@ -371,3 +371,86 @@ TEST_CASE(
     co_return;
   });
 }
+
+TEST_CASE(
+    "String ref parameter type matching with cross-file preamble",
+    "[package][preamble][string][ref]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def = R"(
+      package util_pkg;
+        function automatic int get_length(const ref string text);
+          return text.len();
+        endfunction
+      endpackage
+    )";
+
+    const std::string ref = R"(
+      module test_module;
+        import util_pkg::*;
+
+        function automatic int test_func();
+          string message = "hello";
+          return get_length(message);
+        endfunction
+      endmodule
+    )";
+
+    fixture.CreateBufferIDOffset();
+    fixture.CreateFile("util_pkg.sv", def);
+    fixture.CreateFile("test_module.sv", ref);
+
+    auto session = co_await fixture.BuildSession("test_module.sv", executor);
+    Fixture::AssertNoErrors(*session);
+    Fixture::AssertCrossFileDef(*session, ref, def, "get_length", 0, 0);
+
+    co_return;
+  });
+}
+
+TEST_CASE(
+    "Queue ref parameter type matching with cross-file preamble",
+    "[package][preamble][queue][ref]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def = R"(
+      package util_pkg;
+        function automatic string join_strings(const ref string items[$], input string separator);
+          string result = "";
+          foreach (items[i]) begin
+            result = (i == 0) ? items[i] : {result, separator, items[i]};
+          end
+          return result;
+        endfunction
+      endpackage
+    )";
+
+    const std::string ref = R"(
+      module test_module;
+        import util_pkg::*;
+
+        function automatic string format_data();
+          string parts[$];
+          string sep = ", ";
+
+          parts.push_back("item1");
+          parts.push_back("item2");
+
+          return join_strings(parts, sep);
+        endfunction
+      endmodule
+    )";
+
+    fixture.CreateBufferIDOffset();
+    fixture.CreateFile("util_pkg.sv", def);
+    fixture.CreateFile("test_module.sv", ref);
+
+    auto session = co_await fixture.BuildSession("test_module.sv", executor);
+    Fixture::AssertNoErrors(*session);
+    Fixture::AssertCrossFileDef(*session, ref, def, "join_strings", 0, 0);
+
+    co_return;
+  });
+}
