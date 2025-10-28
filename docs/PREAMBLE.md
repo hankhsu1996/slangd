@@ -83,7 +83,19 @@ Slangd has a Slang fork. Use it to solve fundamental architectural issues rather
 
 **Philosophy**: If the fix requires Slang changes, implement them. Clean architecture in the library is better than complex workarounds in slangd.
 
-### 2. Never Use SourceManager Directly
+### 2. Built-in Types Are Per-Compilation
+
+Built-in types (string, event, void, etc.) are allocated per-Compilation in Builtins, not globally shared. Preamble and overlay have separate built-in type instances.
+
+**Why this matters**: Type pointer equality fails across compilations even for identical built-in types.
+
+**Fixed in Slang (commit 2ab4e016)**: `Type::isMatching()` recognizes built-in types structurally using `!getSyntax()` check (built-in types have no source declaration).
+
+**Impact**: `const ref` parameters with built-in types now work correctly across preamble/overlay boundary. Example: `function f(const ref string s)` called from overlay with preamble-defined function.
+
+**LSP code impact**: None - fix is transparent. Type matching works correctly without special handling.
+
+### 4. Never Use SourceManager Directly
 
 BufferIDs are per-SourceManager indices. Using wrong SM causes crashes or silent corruption (wrong file).
 
@@ -93,7 +105,7 @@ BufferIDs are per-SourceManager indices. Using wrong SM causes crashes or silent
 
 **Why dangerous**: Preamble BufferID 1 ≠ Overlay BufferID 1. Same ID, different files. Converting with wrong SM gives "valid" coordinates for wrong file.
 
-### 3. Respect Semantic Boundaries
+### 5. Respect Semantic Boundaries
 
 Not all AST nodes traversed belong to the file being processed.
 
