@@ -128,7 +128,9 @@ auto SlangdLspServer::OnInitialized(lsp::InitializedParams /*unused*/)
         asio::detached);
   }
 
+  // Register file system watcher dynamically
   auto register_watcher = [this]() -> asio::awaitable<void> {
+    Logger()->info("Registering file system watcher");
     lsp::FileSystemWatcher sv_files{.globPattern = "**/*.{sv,svh,v,vh}"};
     lsp::FileSystemWatcher slangd_config{.globPattern = "**/.slangd"};
     auto registration = lsp::Registration{
@@ -145,6 +147,8 @@ auto SlangdLspServer::OnInitialized(lsp::InitializedParams /*unused*/)
       Logger()->error(
           "Failed to register file system watcher: {}",
           result.error().Message());
+    } else {
+      Logger()->info("File system watcher registered successfully");
     }
     co_return;
   };
@@ -227,6 +231,9 @@ auto SlangdLspServer::OnGotoDefinition(lsp::DefinitionParams params)
 auto SlangdLspServer::OnDidChangeWatchedFiles(
     lsp::DidChangeWatchedFilesParams params)
     -> asio::awaitable<std::expected<void, lsp::LspError>> {
+  Logger()->info(
+      "OnDidChangeWatchedFiles received: {} file change(s)",
+      params.changes.size());
   asio::co_spawn(
       executor_,
       [this, params]() -> asio::awaitable<void> {
