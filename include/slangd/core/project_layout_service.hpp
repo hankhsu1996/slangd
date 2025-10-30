@@ -57,6 +57,10 @@ class ProjectLayoutService {
   // Rebuild the cached ProjectLayout (triggers config file re-reading)
   auto RebuildLayout() -> void;
 
+  // Incremental file updates (only when AutoDiscover enabled)
+  auto AddFile(CanonicalPath path) -> asio::awaitable<void>;
+  auto RemoveFile(CanonicalPath path) -> asio::awaitable<void>;
+
   // Schedule a debounced rebuild for auto-discovery mode
   auto ScheduleDebouncedRebuild() -> void;
 

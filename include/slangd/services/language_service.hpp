@@ -88,6 +88,7 @@ class LanguageService : public LanguageServiceBase {
   std::shared_ptr<const PreambleManager> preamble_manager_;
   std::shared_ptr<spdlog::logger> logger_;
   asio::any_io_executor executor_;
+  CanonicalPath workspace_root_;
 
   // Open document tracking (shared by doc_state_ and session_manager_)
   std::shared_ptr<OpenDocumentTracker> open_tracker_;
@@ -122,8 +123,7 @@ class LanguageService : public LanguageServiceBase {
 
   // Preamble rebuild debouncing and concurrency protection
   std::optional<asio::steady_timer> preamble_rebuild_timer_;
-  static constexpr auto kPreambleDebounceDelay =
-      std::chrono::milliseconds(1500);
+  static constexpr auto kPreambleDebounceDelay = std::chrono::milliseconds(500);
   bool preamble_rebuild_in_progress_ = false;
   bool preamble_rebuild_pending_ = false;
 };
