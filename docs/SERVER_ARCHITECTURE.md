@@ -148,14 +148,32 @@ SlangdLspServer (LSP protocol layer)
 - `OnDocumentOpened()` waits for `workspace_ready` - needs preamble for session creation (slow: parse all files)
 - `OverlaySession::Create()` requires non-null `preamble_manager` (will crash in SemanticIndex otherwise)
 
+**Project Layout Management:**
+
+ProjectLayoutService maintains the list of source files for preamble compilation. File discovery can take 10s+ on NFS with 10k+ files, making full rebuilds expensive.
+
+**Incremental updates** - Layout tracks files using AddFile/RemoveFile on create/delete events:
+
+- Filters applied at add time (PathMatch/PathExclude regex), layout stores post-filter files only
+- Design rationale: GetSourceFiles() called frequently (every preamble rebuild), AddFile() called rarely (user creates file)
+- Gated by AutoDiscover mode - no incremental updates when explicit file lists used
+
+**Config changes** - Only case requiring full layout rebuild:
+
+- Config changes may affect search paths (which directories to scan)
+- HandleConfigChange() reloads config + rebuilds layout + rebuilds preamble
+
 **Invalidation rules:**
 
-| Event                   | PreambleManager | OverlaySession            | Reason                                                     |
-| ----------------------- | --------------- | ------------------------- | ---------------------------------------------------------- |
-| Config change           | Rebuild         | Invalidate + rebuild open | Config affects compilation settings (macros, search paths) |
-| Closed SV file change   | No change       | Invalidate all            | OverlaySession reads fresh content from disk               |
-| SV file created/deleted | Rebuild         | Invalidate all            | File discovery changes (new package/interface/module)      |
-| Open file change        | No change       | Invalidate one            | Handled by text sync (didChange/didSave)                   |
+| Event            | ProjectLayout | PreambleManager | OverlaySession            | Reason                                                     |
+| ---------------- | ------------- | --------------- | ------------------------- | ---------------------------------------------------------- |
+| Config change    | Full rebuild  | Rebuild         | Invalidate + rebuild open | Config affects compilation settings (macros, search paths) |
+| SV file created  | AddFile()     | Rebuild         | Invalidate all            | New file may contain package/interface/module              |
+| SV file deleted  | RemoveFile()  | Rebuild         | Invalidate all            | Removed file may have contained package/interface/module   |
+| SV file modified | No change     | Rebuild         | Invalidate all            | File list unchanged, content changed                       |
+| Open file change | No change     | No change       | Invalidate one            | Handled by text sync (didChange/didSave)                   |
+
+**Debouncing:** Preamble rebuilds use 500ms debounce to batch rapid changes (e.g., git operations). Pending flag prevents rebuild storms by limiting to max 2 rebuilds during rapid changes.
 
 **Config change behavior:** After rebuilding PreambleManager and invalidating all sessions, proactively rebuilds sessions for all open files to restore LSP features immediately (no on-demand lazy rebuild).
 
@@ -179,11 +197,14 @@ SlangdLspServer (protocol layer - thin delegates)
   │   │
   │   └─ OnDidClose(uri) → LanguageService.OnDocumentClosed()
   │
-  ├─ File Watcher Events (external changes - closed files only)
+  ├─ File Watcher Events (external changes)
   │   └─ OnDidChangeWatchedFiles(changes[])
-  │       ├─ Filter open files (handled by text sync above)
-  │       ├─ Config changes → HandleConfigChange() (rebuild PreambleManager)
-  │       └─ SV file changes → HandleSourceFileChange() (invalidate sessions)
+  │       ├─ Config changes → HandleConfigChange()
+  │       │   └─ Reload config + rebuild layout + rebuild preamble
+  │       └─ SV file changes → HandleSourceFileChange(uri, type)
+  │           ├─ Created → AddFile() + debounced preamble rebuild (500ms)
+  │           ├─ Deleted → RemoveFile() + debounced preamble rebuild (500ms)
+  │           └─ Modified → debounced preamble rebuild (500ms, no layout change)
   │
   └─ LSP Feature Handlers (requests from client - respond with data)
       ├─ OnDocumentSymbols(uri) → LanguageService.GetDocumentSymbols(uri)

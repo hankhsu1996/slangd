@@ -248,14 +248,7 @@ auto SlangdLspServer::OnDidChangeWatchedFiles(
 
           auto path = CanonicalPath::FromUri(change.uri);
           if (IsSystemVerilogFile(path.Path())) {
-            // Ignore open files - managed by LSP text sync
-            // (VSCode prompts "reload?" and sends didChange with new version)
-            if (language_service_->IsDocumentOpen(change.uri)) {
-              continue;
-            }
-
-            // Closed file changed - invalidate sessions
-            // (Any file might be package/interface included in all sessions)
+            // Process all file changes (watcher owns preamble rebuilds)
             co_await language_service_->HandleSourceFileChange(
                 change.uri, change.type);
           }

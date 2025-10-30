@@ -248,6 +248,40 @@ When you solve a difficult problem:
 
 **Why**: Future developers (and AI agents) benefit from understanding the thought process, not just the final code.
 
+## Architectural Decision Making
+
+For complex architectural changes, investigate before implementing.
+
+### Core Principles
+
+**Investigate actual behavior, not speculation**
+
+Read code to understand current implementation. Verify performance characteristics with evidence, not assumptions. A "fast" operation might scan 10k files.
+
+**Challenge assumptions with specific questions**
+
+Break vague concerns into concrete questions: "Where are filters applied?" not "Is this architecture good?" Answer each question with code evidence.
+
+**Decompose complexity incrementally**
+
+Don't understand everything at once. Answer questions one by one, building understanding step by step before designing solutions.
+
+**Document decisions with trade-offs**
+
+Record what you considered, why you chose it (with numbers), and what you rejected. "Option A is O(1) read called frequently, Option B is O(n) read with regex on 10k items" - not "Option A is better."
+
+**Correct when evidence contradicts**
+
+Update understanding immediately when code shows your assumption was wrong. Being wrong during investigation is cheap. Being wrong in production is expensive.
+
+### Quality Check
+
+Good architectural decisions have:
+
+- Evidence from code, not speculation
+- Clear rationale for why approach A over B
+- Trade-offs explicitly stated
+
 ## Examples and Case Studies
 
 ### Genvar Loop Reference Resolution

@@ -72,10 +72,10 @@ auto LanguageService::InitializeWorkspace(std::string workspace_uri)
     status_publisher_("indexing");
   }
 
-  auto workspace_path = CanonicalPath::FromUri(workspace_uri);
+  workspace_root_ = CanonicalPath::FromUri(workspace_uri);
   layout_service_ =
-      ProjectLayoutService::Create(executor_, workspace_path, logger_);
-  co_await layout_service_->LoadConfig(workspace_path);
+      ProjectLayoutService::Create(executor_, workspace_root_, logger_);
+  co_await layout_service_->LoadConfig(workspace_root_);
 
   // Config loaded: syntax features can now use defines for ifdef/ifndef
   // handling
@@ -245,6 +245,9 @@ auto LanguageService::RebuildPreambleAndSessions() -> asio::awaitable<void> {
     status_publisher_("indexing");
   }
 
+  // Layout is maintained incrementally by HandleSourceFileChange
+  // Config changes rebuild layout via HandleConfigFileChange
+
   // Rebuild PreambleManager with current configuration
   auto preamble_result = co_await PreambleManager::CreateFromProjectLayout(
       layout_service_, compilation_pool_->get_executor(), logger_);
@@ -302,10 +305,13 @@ auto LanguageService::RebuildPreambleAndSessions() -> asio::awaitable<void> {
 }
 
 auto LanguageService::HandleConfigChange() -> asio::awaitable<void> {
-  // Wait for workspace initialization to complete
   co_await workspace_ready_.AsyncWait(asio::use_awaitable);
 
-  layout_service_->RebuildLayout();
+  // Reload config and rebuild layout (includes full directory scan)
+  auto config_path = workspace_root_ / ".slangd";
+  co_await layout_service_->HandleConfigFileChange(config_path);
+
+  // Rebuild preamble with new config (layout already rebuilt)
   co_await RebuildPreambleAndSessions();
 }
 
@@ -339,52 +345,32 @@ auto LanguageService::ScheduleDebouncedPreambleRebuild() -> void {
 
 auto LanguageService::HandleSourceFileChange(
     std::string uri, lsp::FileChangeType change_type) -> asio::awaitable<void> {
-  // Wait for workspace initialization to complete
   co_await workspace_ready_.AsyncWait(asio::use_awaitable);
 
   auto path = CanonicalPath::FromUri(uri);
-  bool is_sv_file = IsSystemVerilogFile(path.Path());
+  if (!IsSystemVerilogFile(path.Path())) {
+    co_return;
+  }
 
+  // Update layout incrementally based on change type
   switch (change_type) {
     case lsp::FileChangeType::kCreated:
-    case lsp::FileChangeType::kDeleted:
-      // Structural changes require layout rebuild
-      layout_service_->ScheduleDebouncedRebuild();
-      co_await session_manager_->InvalidateAllSessions();
-      logger_->debug(
-          "LanguageService handled structural change: {} ({})", uri,
-          static_cast<int>(change_type));
+      // File created - add to layout if AutoDiscover enabled
+      co_await layout_service_->AddFile(path);
+      break;
 
-      // SystemVerilog files may affect preamble
-      if (is_sv_file) {
-        logger_->debug(
-            "LanguageService: Structural change may affect preamble, "
-            "scheduling "
-            "rebuild: {}",
-            uri);
-        ScheduleDebouncedPreambleRebuild();
-      }
+    case lsp::FileChangeType::kDeleted:
+      // File deleted - remove from layout
+      co_await layout_service_->RemoveFile(path);
       break;
 
     case lsp::FileChangeType::kChanged:
-      // Conservative invalidation: Any file might be a package/interface
-      // included in all OverlaySessions. Without dependency tracking,
-      // invalidate all sessions to ensure correctness.
-      co_await session_manager_->InvalidateAllSessions();
-      logger_->debug(
-          "LanguageService invalidated all sessions due to file change: {}",
-          uri);
-
-      // SystemVerilog files may affect preamble
-      if (is_sv_file) {
-        logger_->debug(
-            "LanguageService: File change may affect preamble, scheduling "
-            "rebuild: {}",
-            uri);
-        ScheduleDebouncedPreambleRebuild();
-      }
+      // File modified - no layout update needed
       break;
   }
+
+  // All changes may affect preamble (packages, interfaces)
+  ScheduleDebouncedPreambleRebuild();
 }
 
 // Document lifecycle events (protocol-level API)
@@ -424,20 +410,10 @@ auto LanguageService::OnDocumentSaved(std::string uri)
     co_return;
   }
 
-  // Rebuild session with saved content and diagnostic hook
+  // Rebuild overlay session only (preamble handled by file watcher)
   co_await session_manager_->UpdateSession(
       uri, doc_state->content, doc_state->version,
       CreateDiagnosticHook(uri, doc_state->version));
-
-  // Check if this file affects preamble (conservative: all .sv/.svh files)
-  auto path = CanonicalPath::FromUri(uri);
-  if (IsSystemVerilogFile(path.Path())) {
-    logger_->debug(
-        "LanguageService: Saved file may affect preamble, scheduling rebuild: "
-        "{}",
-        uri);
-    ScheduleDebouncedPreambleRebuild();
-  }
 }
 
 auto LanguageService::OnDocumentClosed(std::string uri) -> void {

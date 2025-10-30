@@ -175,4 +175,109 @@ auto ProjectLayoutService::ScheduleDebouncedRebuild() -> void {
   });
 }
 
+auto ProjectLayoutService::AddFile(CanonicalPath path)
+    -> asio::awaitable<void> {
+  co_await asio::post(strand_, asio::use_awaitable);
+
+  // Only modify layout when AutoDiscover is enabled
+  if (!config_.GetAutoDiscover()) {
+    logger_->debug(
+        "ProjectLayoutService: AutoDiscover disabled, ignoring file addition: "
+        "{}",
+        path);
+    co_return;
+  }
+
+  // Compute relative path and normalize to forward slashes
+  auto relative =
+      std::filesystem::relative(path.Path(), workspace_root_.Path());
+  auto relative_str = relative.string();
+  std::ranges::replace(relative_str, '\\', '/');
+
+  // Check if file passes filter
+  if (!config_.ShouldIncludeFile(relative_str)) {
+    logger_->debug(
+        "ProjectLayoutService: File filtered out, not adding: {}", path);
+    co_return;
+  }
+
+  // Get current layout files (require layout to exist)
+  if (!cached_layout_) {
+    logger_->warn(
+        "ProjectLayoutService: Cannot add file, layout not initialized: {}",
+        path);
+    co_return;
+  }
+
+  auto current_files = cached_layout_->layout->GetFiles();
+
+  // Check if file already exists
+  if (std::ranges::contains(current_files, path)) {
+    logger_->debug(
+        "ProjectLayoutService: File already in layout, skipping: {}", path);
+    co_return;
+  }
+
+  // Add file to layout
+  current_files.push_back(path);
+
+  // Create new layout with updated files
+  auto include_dirs = cached_layout_->layout->GetIncludeDirs();
+  auto defines = cached_layout_->layout->GetDefines();
+
+  layout_version_++;
+  cached_layout_ = LayoutSnapshot{
+      .layout = std::make_shared<const ProjectLayout>(
+          std::move(current_files), std::move(include_dirs),
+          std::move(defines)),
+      .timestamp = std::chrono::steady_clock::now(),
+      .version = layout_version_};
+
+  logger_->debug(
+      "ProjectLayoutService: Added file to layout: {} (version {})", path,
+      layout_version_);
+}
+
+auto ProjectLayoutService::RemoveFile(CanonicalPath path)
+    -> asio::awaitable<void> {
+  co_await asio::post(strand_, asio::use_awaitable);
+
+  // Get current layout files (require layout to exist)
+  if (!cached_layout_) {
+    logger_->debug(
+        "ProjectLayoutService: Cannot remove file, layout not initialized: {}",
+        path);
+    co_return;
+  }
+
+  auto current_files = cached_layout_->layout->GetFiles();
+
+  // Check if file exists in layout
+  auto it = std::ranges::find(current_files, path);
+  if (it == current_files.end()) {
+    logger_->debug(
+        "ProjectLayoutService: File not in layout, skipping removal: {}", path);
+    co_return;
+  }
+
+  // Remove file from layout
+  current_files.erase(it);
+
+  // Create new layout with updated files
+  auto include_dirs = cached_layout_->layout->GetIncludeDirs();
+  auto defines = cached_layout_->layout->GetDefines();
+
+  layout_version_++;
+  cached_layout_ = LayoutSnapshot{
+      .layout = std::make_shared<const ProjectLayout>(
+          std::move(current_files), std::move(include_dirs),
+          std::move(defines)),
+      .timestamp = std::chrono::steady_clock::now(),
+      .version = layout_version_};
+
+  logger_->debug(
+      "ProjectLayoutService: Removed file from layout: {} (version {})", path,
+      layout_version_);
+}
+
 }  // namespace slangd
