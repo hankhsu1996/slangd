@@ -756,6 +756,53 @@ void SemanticIndex::IndexVisitor::IndexInstanceParameters(
   }
 }
 
+void SemanticIndex::IndexVisitor::IndexInstancePorts(
+    const slang::ast::InstanceSymbol& instance,
+    const slang::syntax::HierarchicalInstanceSyntax& hierarchical_inst_syntax,
+    const slang::ast::Symbol& syntax_owner) {
+  // Index port connection names (e.g., .a_port, .sum_port)
+  // Port connections can be named (.a_port(x)) or ordered (just (x))
+  // We only index named connections where the port name is explicit
+
+  // Iterate through port connection syntax
+  for (const auto* port_conn_base : hierarchical_inst_syntax.connections) {
+    // Only process named port connections
+    if (port_conn_base == nullptr ||
+        port_conn_base->kind !=
+            slang::syntax::SyntaxKind::NamedPortConnection) {
+      continue;
+    }
+
+    const auto& named_port =
+        port_conn_base->as<slang::syntax::NamedPortConnectionSyntax>();
+    std::string_view port_name = named_port.name.valueText();
+
+    // Find corresponding port symbol in port connections
+    auto port_connections = instance.getPortConnections();
+    for (const auto* port_conn : port_connections) {
+      if (port_conn == nullptr) {
+        continue;
+      }
+
+      const auto& port_symbol = port_conn->port;
+      if (port_symbol.name == port_name && port_symbol.location.valid()) {
+        // Create LSP location for port
+        auto port_def_loc = CreateSymbolLocation(port_symbol, logger_);
+        // Use syntax_owner for correct cross-compilation context
+        auto ref_loc =
+            CreateLspLocation(syntax_owner, named_port.name.range(), logger_);
+
+        if (port_def_loc && ref_loc) {
+          AddReference(
+              port_symbol, port_symbol.name, ref_loc->range, *port_def_loc,
+              port_symbol.getParentScope());
+        }
+        break;
+      }
+    }
+  }
+}
+
 // Symbol version: Used for TypeReference and other symbol contexts
 void SemanticIndex::IndexVisitor::IndexPackageInScopedName(
     const slang::syntax::SyntaxNode* syntax,
@@ -981,6 +1028,28 @@ void SemanticIndex::IndexVisitor::handle(
     AddReference(
         *target_symbol, target_symbol->name, ref_loc->range, *def_loc,
         target_symbol->getParentScope());
+  }
+
+  this->visitDefault(expr);
+}
+
+void SemanticIndex::IndexVisitor::handle(
+    const slang::ast::ArbitrarySymbolExpression& expr) {
+  // ArbitrarySymbolExpression wraps interface instance references
+  // For interface port connections, hierRef.path[0] contains the port symbol
+  const slang::ast::Symbol* target_symbol = expr.symbol;
+  if (expr.hierRef.isViaIfacePort() && !expr.hierRef.path.empty()) {
+    target_symbol = expr.hierRef.path[0].symbol;
+  }
+
+  if (target_symbol->location.valid()) {
+    if (auto def_loc = CreateSymbolLocation(*target_symbol, logger_)) {
+      if (auto ref_loc = CreateLspLocation(expr, expr.sourceRange, logger_)) {
+        AddReference(
+            *target_symbol, target_symbol->name, ref_loc->range, *def_loc,
+            target_symbol->getParentScope());
+      }
+    }
   }
 
   this->visitDefault(expr);
@@ -1923,59 +1992,58 @@ void SemanticIndex::IndexVisitor::handle(
       }
     }
 
-    if (is_interface_array) {
-      // 1. Create self-definition for array name
-      auto def_loc = CreateSymbolLocation(instance_array, logger_);
-      if (def_loc) {
-        AddDefinition(
-            instance_array, instance_array.name, *def_loc,
-            instance_array.getParentScope());
-      }
+    // Handle both interface and module arrays
+    // 1. Create self-definition for array name
+    auto def_loc = CreateSymbolLocation(instance_array, logger_);
+    if (def_loc) {
+      AddDefinition(
+          instance_array, instance_array.name, *def_loc,
+          instance_array.getParentScope());
+    }
 
-      // 2. Create reference from interface type name to interface definition
-      const auto* parent_syntax = syntax->parent;
-      if (parent_syntax != nullptr &&
-          parent_syntax->kind ==
-              slang::syntax::SyntaxKind::HierarchyInstantiation) {
-        const auto& inst_syntax =
-            parent_syntax->as<slang::syntax::HierarchyInstantiationSyntax>();
+    // 2. Create reference from type name to definition (module or interface)
+    const auto* parent_syntax = syntax->parent;
+    if (parent_syntax != nullptr &&
+        parent_syntax->kind ==
+            slang::syntax::SyntaxKind::HierarchyInstantiation) {
+      const auto& inst_syntax =
+          parent_syntax->as<slang::syntax::HierarchyInstantiationSyntax>();
 
-        // Get interface definition from first array element
-        if (!instance_array.elements.empty()) {
-          const auto* first_elem = instance_array.elements[0];
-          if (first_elem != nullptr &&
-              first_elem->kind == slang::ast::SymbolKind::Instance) {
-            const auto& first_instance =
-                first_elem->as<slang::ast::InstanceSymbol>();
-            const auto& interface_def = first_instance.getDefinition();
-            auto interface_definition_loc =
-                CreateSymbolLocation(interface_def, logger_);
-            auto ref_loc = CreateLspLocation(
-                first_instance, inst_syntax.type.range(), logger_);
-            if (interface_definition_loc && ref_loc) {
-              AddReference(
-                  interface_def, interface_def.name, ref_loc->range,
-                  *interface_definition_loc, interface_def.getParentScope());
-            }
+      // Get definition from first array element
+      if (!instance_array.elements.empty()) {
+        const auto* first_elem = instance_array.elements[0];
+        if (first_elem != nullptr &&
+            first_elem->kind == slang::ast::SymbolKind::Instance) {
+          const auto& first_instance =
+              first_elem->as<slang::ast::InstanceSymbol>();
+          const auto& definition = first_instance.getDefinition();
+          auto definition_loc = CreateSymbolLocation(definition, logger_);
+          auto ref_loc = CreateLspLocation(
+              first_instance, inst_syntax.type.range(), logger_);
 
-            // 3. Index parameter overrides (e.g., #(.FLAG(1)))
-            if (inst_syntax.parameters != nullptr) {
-              IndexInstanceParameters(
-                  first_instance, *inst_syntax.parameters, instance_array);
-            }
+          if (definition_loc && ref_loc) {
+            AddReference(
+                definition, definition.name, ref_loc->range, *definition_loc,
+                definition.getParentScope());
+          }
+
+          // 3. Index parameter overrides (e.g., #(.FLAG(1)))
+          if (inst_syntax.parameters != nullptr) {
+            IndexInstanceParameters(
+                first_instance, *inst_syntax.parameters, instance_array);
           }
         }
       }
+    }
 
-      // Skip visitDefault to avoid processing child instances
-      // (they would create duplicate type references)
-      return;
+    // For interface arrays, skip visitDefault to avoid duplicate references
+    // For module arrays, also skip (we only need the type reference, not body)
+    if (is_interface_array) {
+      return;  // Skip body elaboration for interfaces
     }
   }
 
-  // For non-interface arrays (module arrays), skip body traversal
-  // SINGLE-FILE MODE: Module array elements should not have their bodies
-  // traversed - same reasoning as single InstanceSymbol handler
+  // Module arrays fall through - body already skipped by SkipBody flag
 }
 
 void SemanticIndex::IndexVisitor::handle(
@@ -1990,8 +2058,8 @@ void SemanticIndex::IndexVisitor::handle(
     return;
   }
 
-  // Create references for interface instances in module bodies
-  if (instance.isInterface() && syntax != nullptr &&
+  // Create references for module and interface instances in module bodies
+  if (syntax != nullptr &&
       syntax->kind == slang::syntax::SyntaxKind::HierarchicalInstance) {
     // 1. Create self-definition for instance name
     auto def_loc = CreateSymbolLocation(instance, logger_);
@@ -2000,7 +2068,7 @@ void SemanticIndex::IndexVisitor::handle(
           instance, instance.name, *def_loc, instance.getParentScope());
     }
 
-    // 2. Create reference from interface type name to interface definition
+    // 2. Create reference from type name to module/interface definition
     const auto* parent_syntax = syntax->parent;
     if (parent_syntax != nullptr &&
         parent_syntax->kind ==
@@ -2008,67 +2076,55 @@ void SemanticIndex::IndexVisitor::handle(
       const auto& inst_syntax =
           parent_syntax->as<slang::syntax::HierarchyInstantiationSyntax>();
 
-      // Get interface definition from instance
-      const auto& interface_def = instance.getDefinition();
-      auto interface_definition_loc =
-          CreateSymbolLocation(interface_def, logger_);
+      // Get definition from instance (module or interface)
+      const auto& definition = instance.getDefinition();
+      auto def_loc = CreateSymbolLocation(definition, logger_);
       auto ref_loc =
           CreateLspLocation(instance, inst_syntax.type.range(), logger_);
-      if (interface_definition_loc && ref_loc) {
+
+      if (def_loc && ref_loc) {
         AddReference(
-            interface_def, interface_def.name, ref_loc->range,
-            *interface_definition_loc, interface_def.getParentScope());
+            definition, definition.name, ref_loc->range, *def_loc,
+            definition.getParentScope());
       }
 
       // 3. Index parameter overrides (e.g., #(.FLAG(1)))
       if (inst_syntax.parameters != nullptr) {
         IndexInstanceParameters(instance, *inst_syntax.parameters, instance);
       }
+
+      // 3b. Index port connection names (e.g., .a_port in .a_port(x))
+      // Get HierarchicalInstanceSyntax to access port connections
+      const auto& hierarchical_inst_syntax =
+          syntax->as<slang::syntax::HierarchicalInstanceSyntax>();
+      IndexInstancePorts(instance, hierarchical_inst_syntax, instance);
+    }
+
+    // 4. Visit parameter value expressions (e.g., .WIDTH(BUS_WIDTH))
+    // The parameter symbols in instance.body have the override values bound
+    for (const auto* param : instance.body.getParameters()) {
+      if (param->symbol.kind == slang::ast::SymbolKind::Parameter) {
+        const auto& p = param->symbol.as<slang::ast::ParameterSymbol>();
+        if (const auto* expr = p.getInitializer()) {
+          expr->visit(*this);
+        }
+      }
+      // Type parameters don't have initializer expressions to visit
     }
   }
 
-  // 4. Index interface port connections (e.g., .port(bus))
-  // For module instances that take interface ports, index the RHS interface
-  // instance references
+  // 5. Visit port connection expressions (e.g., .clk_port(sys_clk))
+  // This indexes all variable references in port connections for all port types
+  // (PortSymbol, MultiPortSymbol, InterfacePortSymbol)
   auto port_connections = instance.getPortConnections();
   for (const auto* port_conn : port_connections) {
     if (port_conn == nullptr) {
       continue;
     }
 
-    // Check if this is an interface port connection
-    if (port_conn->port.kind == slang::ast::SymbolKind::InterfacePort) {
-      // Get the connected interface instance
-      auto iface_conn = port_conn->getIfaceConn();
-      const auto* connected_instance = iface_conn.first;
-
-      if (connected_instance != nullptr &&
-          connected_instance->location.valid()) {
-        // Get the expression for the connection (contains the RHS syntax)
-        const auto* expr = port_conn->getExpression();
-
-        if (expr != nullptr && expr->sourceRange.start().valid()) {
-          // Extract definition range from the connected instance
-          auto definition_loc =
-              CreateSymbolLocation(*connected_instance, logger_);
-          if (definition_loc) {
-            // Calculate precise reference range from the connected instance
-            // name (similar to NamedValueExpression handling)
-            auto ref_start = expr->sourceRange.start();
-            auto reference_range = slang::SourceRange(
-                ref_start, ref_start + static_cast<uint32_t>(
-                                           connected_instance->name.length()));
-
-            auto ref_loc =
-                CreateLspLocation(instance, reference_range, logger_);
-            if (ref_loc) {
-              AddReference(
-                  *connected_instance, connected_instance->name, ref_loc->range,
-                  *definition_loc, connected_instance->getParentScope());
-            }
-          }
-        }
-      }
+    const auto* expr = port_conn->getExpression();
+    if (expr != nullptr) {
+      expr->visit(*this);
     }
   }
 
@@ -2261,7 +2317,8 @@ void SemanticIndex::IndexVisitor::handle(
     return;  // Nothing to index without syntax
   }
 
-  // Always create self-definition for instance name (same-file and cross-file)
+  // Always create self-definition for instance name (same-file and
+  // cross-file)
   if (syntax->kind == slang::syntax::SyntaxKind::HierarchicalInstance) {
     auto def_loc = CreateSymbolLocation(symbol, logger_);
     if (def_loc) {
@@ -2297,8 +2354,8 @@ void SemanticIndex::IndexVisitor::handle(
             assertion_expr->as<slang::ast::SimpleAssertionExpr>();
         const auto& expr = simple.expr;
 
-        // Check if expression is ArbitrarySymbolExpression (interface instance
-        // ref)
+        // Check if expression is ArbitrarySymbolExpression (interface
+        // instance ref)
         if (expr.kind == slang::ast::ExpressionKind::ArbitrarySymbol) {
           const auto& arb = expr.as<slang::ast::ArbitrarySymbolExpression>();
           const auto& ref_symbol = *arb.symbol;  // Dereference not_null
@@ -2402,7 +2459,8 @@ void SemanticIndex::IndexVisitor::handle(
           const auto& def_sym = definition->as<slang::ast::DefinitionSymbol>();
           for (const auto& param_decl : def_sym.parameters) {
             if (param_decl.name == param_name && param_decl.location.valid()) {
-              // Create SourceRange for parameter name (location + name length)
+              // Create SourceRange for parameter name (location + name
+              // length)
               auto end_offset =
                   param_decl.location.offset() + param_decl.name.length();
               auto end_loc = slang::SourceLocation(

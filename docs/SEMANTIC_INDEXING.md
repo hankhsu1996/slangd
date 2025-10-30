@@ -134,10 +134,14 @@ Calling `getRoot()` in `LanguageServerMode`:
 
 **Problem**: Interface instances appear twice during indexing - once as standalone (when processing interface definition) and once nested in modules (Slang creates full instances for port resolution).
 
-**Why interfaces differ from sub-modules**:
+**Why interfaces need special handling**:
 
-- Sub-modules use `UninstantiatedDefSymbol` in LSP mode → visitor doesn't traverse them
-- Interfaces use full `InstanceSymbol` → visitor traverses them by default → causes duplicates
+In LSP mode with `SkipBody` flag optimization:
+
+- Sub-module instances: Body members skipped → visitor doesn't traverse nested body → no duplicates
+- Interface instances: Body NOT skipped (always elaborate) → visitor traverses nested instances → causes duplicates
+
+Interfaces require full elaboration even when nested because interface port connections need member access.
 
 **Solution**: Add `handle(InstanceSymbol&)` that checks parent scope:
 
@@ -246,26 +250,110 @@ Module navigation differs from other features due to cross-compilation metadata 
 - **OverlaySession**: Compiles current file + packages + interfaces only
 - **SemanticIndex**: Indexes local symbols, queries PreambleManager for cross-file metadata
 
-### UninstantiatedDefSymbol Pattern
+### Instance Elaboration in LSP Mode
 
-When a module is instantiated but its definition is not in the current compilation, Slang creates `UninstantiatedDefSymbol` instead of `InstanceSymbol`.
+**Architecture:** LSP mode uses `InstanceSymbol` for all module/interface/program instantiations with selective body elaboration via `InstanceFlags::SkipBody` flag.
 
-**LSP Mode Modification:** In LSP mode, all non-interface module/program instantiations are forced to use `UninstantiatedDefSymbol` for consistency (see `InstanceSymbols.cpp`). Exception: Interfaces require full elaboration for member access.
+**Two Entry Points:**
 
-**Handler Features:**
+1. **Top-Level Instances** (semantic indexing for file being indexed)
 
-1. Instance name self-definition (via `AddDefinition`)
-2. Parameter expression navigation (visit `symbol.paramExpressions`)
-3. Port connection navigation (visit `symbol.getPortConnections()`)
-4. Cross-file module type navigation (query `preamble_manager_->GetModule()`)
+   - Created via `InstanceSymbol::createDefault()`
+   - No `SkipBody` flag → full body elaboration
+   - Enables indexing all symbols in the file
 
-**Pattern:** Following generate loop expression preservation, visit expressions stored in `UninstantiatedDefSymbol` directly without manual syntax parsing.
+2. **Nested Instances** (sub-module instantiations from syntax)
+   - Created via `InstanceSymbol::fromSyntax()`
+   - Automatically sets `SkipBody` flag if parent instance exists
+   - Skips body elaboration (only parameters + ports from header)
 
-**Integration:**
+**The SkipBody Flag Mechanism:**
 
-- Add `CompilationFlags::IgnoreUnknownModules` to suppress unknown module diagnostics
-- SemanticIndex receives optional `PreambleManager*` parameter (nullptr for single-file mode)
-- O(1) module lookup via hash map, O(n) port/parameter lookup (~20 entries)
+The flag is needed because the decision point (nested vs top-level) and action point (skip body or not) are in different functions:
+
+```cpp
+// Decision point: fromSyntax() in InstanceSymbols.cpp:510-514
+if (comp.hasFlag(CompilationFlags::LanguageServerMode) && parentInst) {
+    flags |= InstanceFlags::SkipBody;  // Nested instance in LSP mode
+}
+
+// Action point: fromDefinition() in InstanceSymbols.cpp:1022-1024
+// Skip body for nested module/program. Interface instances always elaborate.
+if (!flags.has(InstanceFlags::SkipBody) ||
+    definition.definitionKind == DefinitionKind::Interface) {
+    // Add body members (always blocks, signals, nested instances, etc.)
+}
+```
+
+**Why This Design:**
+
+- `fromSyntax()` has access to parent hierarchy (can detect nested vs top-level)
+- `fromDefinition()` does the actual elaboration (but doesn't know hierarchy context)
+- Flag communicates "skip body" decision from context-aware code to elaboration code
+
+**Module vs Interface Body Elaboration:**
+
+The SkipBody flag applies differently to modules and interfaces:
+
+**Modules:**
+
+```systemverilog
+module ALU #(parameter WIDTH = 8) (
+    input logic [WIDTH-1:0] a, b,     // HEADER (params + ports)
+    output logic [WIDTH-1:0] result
+);
+    logic [WIDTH-1:0] temp;           // BODY (internal signals)
+    always_comb result = a + b;       // BODY (logic)
+endmodule
+```
+
+For cross-file LSP, modules only need header (parameters + ports) to bind connections. Body members are internal implementation not accessed externally. SkipBody optimization skips body elaboration for nested modules.
+
+**Interfaces:**
+
+```systemverilog
+interface data_if;
+    logic [31:0] data;                // BODY (but accessed externally!)
+    logic valid;
+endinterface
+
+module top;
+    data_if bus();
+    assign bus.data = 32'h1234;       // Member access requires body elaboration
+endmodule
+```
+
+Interface body contains member declarations accessed externally via member selection (`.data`, `.valid`). Must always elaborate body for interface instances, even when nested. The condition `definition.definitionKind == DefinitionKind::Interface` overrides the SkipBody flag.
+
+**Elaboration Logic:**
+
+- SkipBody flag NOT set (top-level): Elaborate body
+- SkipBody flag set + Module/Program: Skip body (header only)
+- SkipBody flag set + Interface: Elaborate body (override, member access needed)
+
+**Benefits:**
+
+1. **Type context for port connections**: Uses `PortConnectionBuilder` which calls `Expression::bindArgument()` with proper target types, enabling assignment pattern type deduction
+2. **Automatic array slicing**: Instance arrays like `counter inst[4]` automatically slice array ports
+3. **Interface port handling**: Creates `ArbitrarySymbolExpression` for interface instances
+4. **Proper validation**: Dimension checking, type validation at binding time
+5. **Reuses existing Slang infrastructure**: No parallel code paths, all edge cases handled
+
+**Performance:**
+
+- Top-level: Full elaboration (same as normal compilation)
+- Nested modules: Header only (parameters + ports, ~10-20 symbols)
+- Nested interfaces: Full elaboration (needed for member access)
+- Result: Sub-millisecond indexing per file even with deep module hierarchies
+
+**Handler Requirements:**
+
+SemanticIndex must handle `InstanceSymbol` for cross-file navigation:
+
+1. Instance name self-definition
+2. Parameter override expression navigation
+3. Port connection expression navigation
+4. Cross-file module/port/parameter type navigation via PreambleManager
 
 **Cross-File Reference Resolution:**
 

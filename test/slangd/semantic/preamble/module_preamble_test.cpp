@@ -342,3 +342,57 @@ TEST_CASE(
     co_return;
   });
 }
+
+TEST_CASE(
+    "Assignment pattern in parameter override - cross-file preamble",
+    "[module][preamble][parameter][assignment_pattern]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def = R"(
+      module ALU #(parameter logic [7:0] INIT_VAL = 8'h00) ();
+      endmodule
+    )";
+
+    const std::string ref = R"(
+      module top;
+        ALU #(.INIT_VAL('{default:'0})) u0();
+      endmodule
+    )";
+
+    fixture.CreateFile("alu.sv", def);
+    fixture.CreateFile("top.sv", ref);
+
+    auto session = co_await fixture.BuildSession("top.sv", executor);
+    Fixture::AssertNoErrors(*session);
+
+    co_return;
+  });
+}
+
+TEST_CASE(
+    "Assignment pattern in port connection - cross-file preamble",
+    "[module][preamble][port][assignment_pattern]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def = R"(
+      module ALU (input logic [7:0] data);
+      endmodule
+    )";
+
+    const std::string ref = R"(
+      module top;
+        ALU u0(.data('{default:'0}));
+      endmodule
+    )";
+
+    fixture.CreateFile("alu.sv", def);
+    fixture.CreateFile("top.sv", ref);
+
+    auto session = co_await fixture.BuildSession("top.sv", executor);
+    Fixture::AssertNoErrors(*session);
+
+    co_return;
+  });
+}
