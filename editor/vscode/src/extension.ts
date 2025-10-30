@@ -101,9 +101,6 @@ export function activate(context: vscode.ExtensionContext) {
   // Options to control the language client
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: "file", language: "systemverilog" }],
-    synchronize: {
-      fileEvents: vscode.workspace.createFileSystemWatcher("**/*.{sv,svh,v,vh}"),
-    },
     outputChannel,
     traceOutputChannel: outputChannel,
     initializationOptions: {

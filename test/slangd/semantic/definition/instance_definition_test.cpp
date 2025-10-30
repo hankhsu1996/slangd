@@ -147,3 +147,25 @@ TEST_CASE(
   Fixture::AssertGoToDefinition(
       *result.index, result.uri, code, "alu_result", 1, 0);
 }
+
+TEST_CASE(
+    "Port connection with concatenation (MultiPort)",
+    "[definition][instance][multiport]") {
+  std::string code = R"(
+    module multi_out({a_out, b_out});
+      output a_out;
+      output b_out;
+      logic a_out, b_out;
+    endmodule
+
+    module top;
+      logic sig_a, sig_b;
+
+      multi_out inst ({sig_a, sig_b});
+    endmodule
+  )";
+
+  auto result = Fixture::BuildIndex(code);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "sig_a", 1, 0);
+  Fixture::AssertGoToDefinition(*result.index, result.uri, code, "sig_b", 1, 0);
+}

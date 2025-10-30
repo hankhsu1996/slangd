@@ -203,4 +203,30 @@ TEST_CASE(
     // Regular undefined variable should still be an error
     Fixture::AssertError(result.diagnostics, "undefined_var");
   }
+
+  SECTION(
+      "Hierarchical reference into un-elaborated instance shows info at "
+      "instance name") {
+    std::string code = R"(
+      module sub_module;
+        logic internal_signal;
+      endmodule
+
+      module top;
+        sub_module inst();
+        logic x = inst.internal_signal;
+      endmodule
+    )";
+    auto result = Fixture::BuildIndex(code);
+
+    // Should have no errors - hierarchical references into un-elaborated
+    // instances are expected in LSP mode
+    Fixture::AssertNoErrors(result.diagnostics);
+
+    // Should have info diagnostic at 'inst' (not error at 'internal_signal')
+    Fixture::AssertDiagnosticExists(
+        result.diagnostics, lsp::DiagnosticSeverity::kHint,
+        "hierarchical reference 'inst' cannot be resolved in the language "
+        "server");
+  }
 }

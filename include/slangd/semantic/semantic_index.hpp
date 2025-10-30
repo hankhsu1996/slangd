@@ -141,6 +141,7 @@ class SemanticIndex {
 
     // Expression handlers
     void handle(const slang::ast::NamedValueExpression& expr);
+    void handle(const slang::ast::ArbitrarySymbolExpression& expr);
     void handle(const slang::ast::CallExpression& expr);
     void handle(const slang::ast::ConversionExpression& expr);
     void handle(const slang::ast::DataTypeExpression& expr);
@@ -256,6 +257,12 @@ class SemanticIndex {
     void IndexInstanceParameters(
         const slang::ast::InstanceSymbol& instance,
         const slang::syntax::ParameterValueAssignmentSyntax& params,
+        const slang::ast::Symbol& syntax_owner);
+
+    void IndexInstancePorts(
+        const slang::ast::InstanceSymbol& instance,
+        const slang::syntax::HierarchicalInstanceSyntax&
+            hierarchical_inst_syntax,
         const slang::ast::Symbol& syntax_owner);
 
     // Index package name in scoped references (pkg::item)

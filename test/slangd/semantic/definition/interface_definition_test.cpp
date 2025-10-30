@@ -338,7 +338,7 @@ TEST_CASE(
     endinterface
 
     module child(
-      common_if.master if_port
+      common_if if_port [4]
     );
     endmodule
 
@@ -354,6 +354,7 @@ TEST_CASE(
   )";
 
   auto result = Fixture::BuildIndex(code);
+  Fixture::AssertNoErrors(result.diagnostics);
 
   // Test interface type name
   Fixture::AssertGoToDefinition(
@@ -456,6 +457,7 @@ TEST_CASE(
   )";
 
   auto result = Fixture::BuildIndex(code);
+  Fixture::AssertNoErrors(result.diagnostics);
 
   // Test interface type definition
   Fixture::AssertGoToDefinition(
