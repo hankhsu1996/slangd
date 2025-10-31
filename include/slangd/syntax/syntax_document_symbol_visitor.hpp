@@ -13,10 +13,10 @@ namespace slangd::syntax {
 // Syntax-based document symbol visitor for LSP documentSymbol requests
 // Traverses syntax tree directly without semantic elaboration
 // Special case: This is the only LSP feature using syntax instead of semantic
-class SyntaxDocumentSymbolVisitor
-    : public slang::syntax::SyntaxVisitor<SyntaxDocumentSymbolVisitor> {
+class SyntaxSymbolVisitor
+    : public slang::syntax::SyntaxVisitor<SyntaxSymbolVisitor> {
  public:
-  SyntaxDocumentSymbolVisitor(
+  SyntaxSymbolVisitor(
       std::string current_file_uri, const slang::SourceManager& source_manager,
       slang::BufferID main_buffer_id);
 

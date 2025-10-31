@@ -34,7 +34,7 @@ class SyntaxDocumentSymbolFixture {
 
     REQUIRE(syntax_tree);
 
-    slangd::syntax::SyntaxDocumentSymbolVisitor visitor(
+    slangd::syntax::SyntaxSymbolVisitor visitor(
         "file:///test.sv", *source_manager, buffer.id);
     syntax_tree->root().visit(visitor);
 

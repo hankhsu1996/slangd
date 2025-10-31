@@ -6,7 +6,20 @@
 
 namespace slangd::syntax {
 
-SyntaxDocumentSymbolVisitor::SyntaxDocumentSymbolVisitor(
+using slang::syntax::ClassDeclarationSyntax;
+using slang::syntax::DataDeclarationSyntax;
+using slang::syntax::EnumTypeSyntax;
+using slang::syntax::FunctionDeclarationSyntax;
+using slang::syntax::ImplicitAnsiPortSyntax;
+using slang::syntax::ModuleDeclarationSyntax;
+using slang::syntax::NetDeclarationSyntax;
+using slang::syntax::ParameterDeclarationSyntax;
+using slang::syntax::StructUnionTypeSyntax;
+using slang::syntax::SyntaxKind;
+using slang::syntax::SyntaxNode;
+using slang::syntax::TypedefDeclarationSyntax;
+
+SyntaxSymbolVisitor::SyntaxSymbolVisitor(
     std::string current_file_uri, const slang::SourceManager& source_manager,
     slang::BufferID main_buffer_id)
     : current_file_uri_(std::move(current_file_uri)),
@@ -14,12 +27,11 @@ SyntaxDocumentSymbolVisitor::SyntaxDocumentSymbolVisitor(
       main_buffer_id_(main_buffer_id) {
 }
 
-auto SyntaxDocumentSymbolVisitor::GetResult()
-    -> std::vector<lsp::DocumentSymbol> {
+auto SyntaxSymbolVisitor::GetResult() -> std::vector<lsp::DocumentSymbol> {
   return std::move(roots_);
 }
 
-auto SyntaxDocumentSymbolVisitor::BuildDocumentSymbol(
+auto SyntaxSymbolVisitor::BuildDocumentSymbol(
     std::string_view name, lsp::SymbolKind kind, slang::SourceRange range,
     slang::SourceRange selection_range) -> lsp::DocumentSymbol {
   return lsp::DocumentSymbol{
@@ -34,15 +46,14 @@ auto SyntaxDocumentSymbolVisitor::BuildDocumentSymbol(
       .children = std::vector<lsp::DocumentSymbol>{}};
 }
 
-auto SyntaxDocumentSymbolVisitor::IsInCurrentFile(slang::SourceRange range)
-    -> bool {
+auto SyntaxSymbolVisitor::IsInCurrentFile(slang::SourceRange range) -> bool {
   if (!range.start()) {
     return false;
   }
   return range.start().buffer() == main_buffer_id_;
 }
 
-auto SyntaxDocumentSymbolVisitor::AddToParent(lsp::DocumentSymbol symbol)
+auto SyntaxSymbolVisitor::AddToParent(lsp::DocumentSymbol symbol)
     -> std::optional<std::reference_wrapper<lsp::DocumentSymbol>> {
   // Never add symbols with empty names (incomplete/invalid code)
   if (symbol.name.empty()) {
@@ -57,9 +68,8 @@ auto SyntaxDocumentSymbolVisitor::AddToParent(lsp::DocumentSymbol symbol)
   return std::ref(parent_stack_.back()->children->back());
 }
 
-auto SyntaxDocumentSymbolVisitor::AddToParentWithChildren(
-    lsp::DocumentSymbol symbol, const slang::syntax::SyntaxNode& syntax_node)
-    -> void {
+auto SyntaxSymbolVisitor::AddToParentWithChildren(
+    lsp::DocumentSymbol symbol, const SyntaxNode& syntax_node) -> void {
   if (auto added = AddToParent(std::move(symbol))) {
     parent_stack_.push_back(&added->get());
     visitDefault(syntax_node);
@@ -67,8 +77,7 @@ auto SyntaxDocumentSymbolVisitor::AddToParentWithChildren(
   }
 }
 
-void SyntaxDocumentSymbolVisitor::visitDefault(
-    const slang::syntax::SyntaxNode& node) {
+void SyntaxSymbolVisitor::visitDefault(const SyntaxNode& node) {
   if (!IsInCurrentFile(node.sourceRange())) {
     return;
   }
@@ -81,15 +90,14 @@ void SyntaxDocumentSymbolVisitor::visitDefault(
   }
 }
 
-void SyntaxDocumentSymbolVisitor::handle(
-    const slang::syntax::ModuleDeclarationSyntax& syntax) {
+void SyntaxSymbolVisitor::handle(const ModuleDeclarationSyntax& syntax) {
   // ModuleDeclarationSyntax handles three syntax kinds with identical structure
   lsp::SymbolKind kind = lsp::SymbolKind::kModule;
   switch (syntax.kind) {
-    case slang::syntax::SyntaxKind::PackageDeclaration:
+    case SyntaxKind::PackageDeclaration:
       kind = lsp::SymbolKind::kPackage;
       break;
-    case slang::syntax::SyntaxKind::InterfaceDeclaration:
+    case SyntaxKind::InterfaceDeclaration:
       kind = lsp::SymbolKind::kInterface;
       break;
     default:
@@ -102,16 +110,14 @@ void SyntaxDocumentSymbolVisitor::handle(
   AddToParentWithChildren(std::move(doc_symbol), syntax);
 }
 
-void SyntaxDocumentSymbolVisitor::handle(
-    const slang::syntax::ClassDeclarationSyntax& syntax) {
+void SyntaxSymbolVisitor::handle(const ClassDeclarationSyntax& syntax) {
   auto doc_symbol = BuildDocumentSymbol(
       syntax.name.valueText(), lsp::SymbolKind::kClass, syntax.name.range(),
       syntax.name.range());
   AddToParentWithChildren(std::move(doc_symbol), syntax);
 }
 
-void SyntaxDocumentSymbolVisitor::handle(
-    const slang::syntax::DataDeclarationSyntax& syntax) {
+void SyntaxSymbolVisitor::handle(const DataDeclarationSyntax& syntax) {
   for (const auto& declarator : syntax.declarators) {
     if (!declarator->name.valueText().empty()) {
       auto doc_symbol = BuildDocumentSymbol(
@@ -122,13 +128,12 @@ void SyntaxDocumentSymbolVisitor::handle(
   }
 }
 
-void SyntaxDocumentSymbolVisitor::handle(
-    const slang::syntax::TypedefDeclarationSyntax& syntax) {
+void SyntaxSymbolVisitor::handle(const TypedefDeclarationSyntax& syntax) {
   lsp::SymbolKind kind = lsp::SymbolKind::kClass;
   if (syntax.type != nullptr) {
-    if (syntax.type->kind == slang::syntax::SyntaxKind::EnumType) {
+    if (syntax.type->kind == SyntaxKind::EnumType) {
       kind = lsp::SymbolKind::kEnum;
-    } else if (syntax.type->kind == slang::syntax::SyntaxKind::StructType) {
+    } else if (syntax.type->kind == SyntaxKind::StructType) {
       kind = lsp::SymbolKind::kStruct;
     }
   }
@@ -137,8 +142,7 @@ void SyntaxDocumentSymbolVisitor::handle(
   AddToParentWithChildren(std::move(doc_symbol), syntax);
 }
 
-void SyntaxDocumentSymbolVisitor::handle(
-    const slang::syntax::FunctionDeclarationSyntax& syntax) {
+void SyntaxSymbolVisitor::handle(const FunctionDeclarationSyntax& syntax) {
   auto name_token = syntax.prototype->name->getLastToken();
   auto doc_symbol = BuildDocumentSymbol(
       name_token.valueText(), lsp::SymbolKind::kFunction, name_token.range(),
@@ -146,8 +150,7 @@ void SyntaxDocumentSymbolVisitor::handle(
   AddToParent(std::move(doc_symbol));
 }
 
-void SyntaxDocumentSymbolVisitor::handle(
-    const slang::syntax::EnumTypeSyntax& syntax) {
+void SyntaxSymbolVisitor::handle(const EnumTypeSyntax& syntax) {
   for (const auto& member : syntax.members) {
     if (member->name.valueText().empty()) {
       continue;
@@ -159,8 +162,7 @@ void SyntaxDocumentSymbolVisitor::handle(
   }
 }
 
-void SyntaxDocumentSymbolVisitor::handle(
-    const slang::syntax::StructUnionTypeSyntax& syntax) {
+void SyntaxSymbolVisitor::handle(const StructUnionTypeSyntax& syntax) {
   for (const auto& member : syntax.members) {
     for (const auto& declarator : member->declarators) {
       if (declarator->name.valueText().empty()) {
@@ -174,8 +176,7 @@ void SyntaxDocumentSymbolVisitor::handle(
   }
 }
 
-void SyntaxDocumentSymbolVisitor::handle(
-    const slang::syntax::ImplicitAnsiPortSyntax& syntax) {
+void SyntaxSymbolVisitor::handle(const ImplicitAnsiPortSyntax& syntax) {
   if (syntax.declarator != nullptr &&
       !syntax.declarator->name.valueText().empty()) {
     auto doc_symbol = BuildDocumentSymbol(
@@ -185,8 +186,7 @@ void SyntaxDocumentSymbolVisitor::handle(
   }
 }
 
-void SyntaxDocumentSymbolVisitor::handle(
-    const slang::syntax::ParameterDeclarationSyntax& syntax) {
+void SyntaxSymbolVisitor::handle(const ParameterDeclarationSyntax& syntax) {
   for (const auto& declarator : syntax.declarators) {
     if (!declarator->name.valueText().empty()) {
       auto doc_symbol = BuildDocumentSymbol(
@@ -197,8 +197,7 @@ void SyntaxDocumentSymbolVisitor::handle(
   }
 }
 
-void SyntaxDocumentSymbolVisitor::handle(
-    const slang::syntax::NetDeclarationSyntax& syntax) {
+void SyntaxSymbolVisitor::handle(const NetDeclarationSyntax& syntax) {
   for (const auto& declarator : syntax.declarators) {
     if (!declarator->name.valueText().empty()) {
       auto doc_symbol = BuildDocumentSymbol(
