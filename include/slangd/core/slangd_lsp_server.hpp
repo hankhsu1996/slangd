@@ -35,8 +35,8 @@ class SlangdLspServer : public lsp::LspServer {
   // Language service - unified interface for all domain operations
   std::shared_ptr<LanguageServiceBase> language_service_{nullptr};
 
-  // Workspace URI from initialize request (used in initialized notification)
-  std::string workspace_uri_;
+  // Workspace folder from initialize request
+  std::optional<lsp::WorkspaceFolder> workspace_folder_;
 
   // Helper method to determine if a path is a config file
   static auto IsConfigFile(const std::string& path) -> bool;
