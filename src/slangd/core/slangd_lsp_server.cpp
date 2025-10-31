@@ -80,7 +80,7 @@ SlangdLspServer::SlangdLspServer(
 
 auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
     -> asio::awaitable<std::expected<lsp::InitializeResult, lsp::LspError>> {
-  // Store workspace URI for initialization in OnInitialized
+  // Store workspace folder for initialization in OnInitialized
   // Return capabilities quickly - don't do heavy work here
   if (const auto& workspace_folders_opt = params.workspaceFolders) {
     if (workspace_folders_opt->size() != 1) {
@@ -88,7 +88,7 @@ auto SlangdLspServer::OnInitialize(lsp::InitializeParams params)
           LspErrorCode::kInvalidRequest, "Only one workspace is supported");
     }
 
-    workspace_uri_ = workspace_folders_opt->front().uri;
+    workspace_folder_ = workspace_folders_opt->front();
   }
 
   lsp::TextDocumentSyncOptions sync_options{
@@ -122,17 +122,29 @@ auto SlangdLspServer::OnInitialized(lsp::InitializedParams /*unused*/)
 
   // Initialize workspace in background (syntax-based features work immediately)
   // Semantic features wait for workspace_ready internally
-  if (!workspace_uri_.empty()) {
+  if (workspace_folder_.has_value()) {
     asio::co_spawn(
-        executor_, language_service_->InitializeWorkspace(workspace_uri_),
+        executor_,
+        language_service_->InitializeWorkspace(workspace_folder_->uri),
         asio::detached);
   }
 
   // Register file system watcher dynamically
   auto register_watcher = [this]() -> asio::awaitable<void> {
     Logger()->info("Registering file system watcher");
-    lsp::FileSystemWatcher sv_files{.globPattern = "**/*.{sv,svh,v,vh}"};
-    lsp::FileSystemWatcher slangd_config{.globPattern = "**/.slangd"};
+
+    // Use RelativePattern to scope watchers to workspace folder
+    lsp::FileSystemWatcher sv_files{
+        .globPattern = lsp::RelativePattern{
+            .baseUri = *workspace_folder_,
+            .pattern = "**/*.{sv,svh,v,vh}",
+        }};
+    lsp::FileSystemWatcher slangd_config{
+        .globPattern = lsp::RelativePattern{
+            .baseUri = *workspace_folder_,
+            .pattern = "**/.slangd",
+        }};
+
     auto registration = lsp::Registration{
         .id = std::string(kFileWatcherId),
         .method = std::string(kDidChangeWatchedFilesMethod),
