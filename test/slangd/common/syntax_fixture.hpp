@@ -122,6 +122,16 @@ class SyntaxDocumentSymbolFixture {
     std::string actual_text = ExtractRangeText(result.source, symbol->range);
     REQUIRE(actual_text == expected_name);
   }
+
+  static auto AssertSymbolChildCount(
+      const SyntaxDocumentSymbolResult& result,
+      const std::vector<std::string>& path, size_t expected_count) -> void {
+    REQUIRE(!path.empty());
+    const auto* symbol = FindSymbol(result, path);
+    REQUIRE(symbol != nullptr);
+    REQUIRE(symbol->children.has_value());
+    REQUIRE(symbol->children->size() == expected_count);
+  }
 };
 
 }  // namespace slangd::test

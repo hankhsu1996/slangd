@@ -217,3 +217,20 @@ TEST_CASE("SyntaxDocumentSymbolVisitor nets work", "[syntax_symbols]") {
   Fixture::AssertSymbol(result, {"top", "clk_wire"}, kVariable);
   Fixture::AssertSymbol(result, {"top", "data_reg"}, kVariable);
 }
+
+TEST_CASE(
+    "SyntaxDocumentSymbolVisitor incomplete code skips invalid symbols",
+    "[syntax_symbols]") {
+  std::string code = R"(
+    module top;
+      function
+    endmodule
+  )";
+
+  auto result = Fixture::BuildSymbols(code);
+
+  // Module parsed successfully
+  Fixture::AssertSymbol(result, {"top"}, kModule);
+  // Incomplete function skipped - no children added
+  Fixture::AssertSymbolChildCount(result, {"top"}, 0);
+}

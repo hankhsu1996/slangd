@@ -43,19 +43,28 @@ auto SyntaxDocumentSymbolVisitor::IsInCurrentFile(slang::SourceRange range)
 }
 
 auto SyntaxDocumentSymbolVisitor::AddToParent(lsp::DocumentSymbol symbol)
-    -> void {
+    -> std::optional<std::reference_wrapper<lsp::DocumentSymbol>> {
+  // Never add symbols with empty names (incomplete/invalid code)
+  if (symbol.name.empty()) {
+    return std::nullopt;
+  }
+
   if (parent_stack_.empty()) {
     roots_.push_back(std::move(symbol));
-  } else {
-    parent_stack_.back()->children->push_back(std::move(symbol));
+    return std::ref(roots_.back());
   }
+  parent_stack_.back()->children->push_back(std::move(symbol));
+  return std::ref(parent_stack_.back()->children->back());
 }
 
-auto SyntaxDocumentSymbolVisitor::GetLastAddedSymbol() -> lsp::DocumentSymbol* {
-  if (parent_stack_.empty()) {
-    return &roots_.back();
+auto SyntaxDocumentSymbolVisitor::AddToParentWithChildren(
+    lsp::DocumentSymbol symbol, const slang::syntax::SyntaxNode& syntax_node)
+    -> void {
+  if (auto added = AddToParent(std::move(symbol))) {
+    parent_stack_.push_back(&added->get());
+    visitDefault(syntax_node);
+    parent_stack_.pop_back();
   }
-  return &parent_stack_.back()->children->back();
 }
 
 void SyntaxDocumentSymbolVisitor::visitDefault(
@@ -90,11 +99,7 @@ void SyntaxDocumentSymbolVisitor::handle(
   auto doc_symbol = BuildDocumentSymbol(
       syntax.header->name.valueText(), kind, syntax.header->name.range(),
       syntax.header->name.range());
-  AddToParent(std::move(doc_symbol));
-
-  parent_stack_.push_back(GetLastAddedSymbol());
-  visitDefault(syntax);
-  parent_stack_.pop_back();
+  AddToParentWithChildren(std::move(doc_symbol), syntax);
 }
 
 void SyntaxDocumentSymbolVisitor::handle(
@@ -102,11 +107,7 @@ void SyntaxDocumentSymbolVisitor::handle(
   auto doc_symbol = BuildDocumentSymbol(
       syntax.name.valueText(), lsp::SymbolKind::kClass, syntax.name.range(),
       syntax.name.range());
-  AddToParent(std::move(doc_symbol));
-
-  parent_stack_.push_back(GetLastAddedSymbol());
-  visitDefault(syntax);
-  parent_stack_.pop_back();
+  AddToParentWithChildren(std::move(doc_symbol), syntax);
 }
 
 void SyntaxDocumentSymbolVisitor::handle(
@@ -133,13 +134,7 @@ void SyntaxDocumentSymbolVisitor::handle(
   }
   auto doc_symbol = BuildDocumentSymbol(
       syntax.name.valueText(), kind, syntax.name.range(), syntax.name.range());
-  AddToParent(std::move(doc_symbol));
-
-  if (syntax.type != nullptr) {
-    parent_stack_.push_back(GetLastAddedSymbol());
-    visitDefault(syntax);
-    parent_stack_.pop_back();
-  }
+  AddToParentWithChildren(std::move(doc_symbol), syntax);
 }
 
 void SyntaxDocumentSymbolVisitor::handle(

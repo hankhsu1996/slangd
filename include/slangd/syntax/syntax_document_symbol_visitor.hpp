@@ -1,6 +1,6 @@
 #pragma once
 
-#include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -48,8 +48,11 @@ class SyntaxDocumentSymbolVisitor
       slang::SourceRange selection_range) -> lsp::DocumentSymbol;
 
   auto IsInCurrentFile(slang::SourceRange range) -> bool;
-  auto AddToParent(lsp::DocumentSymbol symbol) -> void;
-  auto GetLastAddedSymbol() -> lsp::DocumentSymbol*;
+  auto AddToParent(lsp::DocumentSymbol symbol)
+      -> std::optional<std::reference_wrapper<lsp::DocumentSymbol>>;
+  auto AddToParentWithChildren(
+      lsp::DocumentSymbol symbol, const slang::syntax::SyntaxNode& syntax_node)
+      -> void;
 };
 
 }  // namespace slangd::syntax

@@ -21,7 +21,7 @@ TEST_CASE("Position serialization", "[lsp]") {
   REQUIRE(j["character"] == 20);
 
   // Deserialize back to Position
-  lsp::Position pos2;
+  lsp::Position pos2{};
   from_json(j, pos2);
 
   // Verify deserialized object
@@ -48,7 +48,7 @@ TEST_CASE("Range serialization", "[lsp]") {
   REQUIRE(j["end"]["character"] == 30);
 
   // Deserialize back to Range
-  lsp::Range range2;
+  lsp::Range range2{};
   from_json(j, range2);
 
   // Verify deserialized object
@@ -71,7 +71,7 @@ TEST_CASE("SymbolKind serialization", "[lsp]") {
   REQUIRE(j == 2);  // Module is 2 in LSP spec
 
   // Deserialize back to SymbolKind
-  lsp::SymbolKind kind2;
+  lsp::SymbolKind kind2{};
   from_json(j, kind2);
 
   // Verify deserialized object
