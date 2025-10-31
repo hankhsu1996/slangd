@@ -223,7 +223,7 @@ auto LanguageService::GetDocumentSymbols(std::string uri) -> asio::awaitable<
   }
 
   // Direct syntax traversal
-  syntax::SyntaxDocumentSymbolVisitor visitor(uri, *source_manager, buffer.id);
+  syntax::SyntaxSymbolVisitor visitor(uri, *source_manager, buffer.id);
   syntax_tree->root().visit(visitor);
 
   co_return visitor.GetResult();

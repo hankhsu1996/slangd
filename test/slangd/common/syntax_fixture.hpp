@@ -34,7 +34,7 @@ class SyntaxDocumentSymbolFixture {
 
     REQUIRE(syntax_tree);
 
-    slangd::syntax::SyntaxDocumentSymbolVisitor visitor(
+    slangd::syntax::SyntaxSymbolVisitor visitor(
         "file:///test.sv", *source_manager, buffer.id);
     syntax_tree->root().visit(visitor);
 
@@ -121,6 +121,16 @@ class SyntaxDocumentSymbolFixture {
     const std::string& expected_name = path.back();
     std::string actual_text = ExtractRangeText(result.source, symbol->range);
     REQUIRE(actual_text == expected_name);
+  }
+
+  static auto AssertSymbolChildCount(
+      const SyntaxDocumentSymbolResult& result,
+      const std::vector<std::string>& path, size_t expected_count) -> void {
+    REQUIRE(!path.empty());
+    const auto* symbol = FindSymbol(result, path);
+    REQUIRE(symbol != nullptr);
+    REQUIRE(symbol->children.has_value());
+    REQUIRE(symbol->children->size() == expected_count);
   }
 };
 

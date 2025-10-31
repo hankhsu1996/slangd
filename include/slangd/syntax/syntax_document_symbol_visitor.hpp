@@ -1,6 +1,6 @@
 #pragma once
 
-#include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -13,10 +13,10 @@ namespace slangd::syntax {
 // Syntax-based document symbol visitor for LSP documentSymbol requests
 // Traverses syntax tree directly without semantic elaboration
 // Special case: This is the only LSP feature using syntax instead of semantic
-class SyntaxDocumentSymbolVisitor
-    : public slang::syntax::SyntaxVisitor<SyntaxDocumentSymbolVisitor> {
+class SyntaxSymbolVisitor
+    : public slang::syntax::SyntaxVisitor<SyntaxSymbolVisitor> {
  public:
-  SyntaxDocumentSymbolVisitor(
+  SyntaxSymbolVisitor(
       std::string current_file_uri, const slang::SourceManager& source_manager,
       slang::BufferID main_buffer_id);
 
@@ -48,8 +48,11 @@ class SyntaxDocumentSymbolVisitor
       slang::SourceRange selection_range) -> lsp::DocumentSymbol;
 
   auto IsInCurrentFile(slang::SourceRange range) -> bool;
-  auto AddToParent(lsp::DocumentSymbol symbol) -> void;
-  auto GetLastAddedSymbol() -> lsp::DocumentSymbol*;
+  auto AddToParent(lsp::DocumentSymbol symbol)
+      -> std::optional<std::reference_wrapper<lsp::DocumentSymbol>>;
+  auto AddToParentWithChildren(
+      lsp::DocumentSymbol symbol, const slang::syntax::SyntaxNode& syntax_node)
+      -> void;
 };
 
 }  // namespace slangd::syntax
