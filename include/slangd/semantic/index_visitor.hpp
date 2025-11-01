@@ -105,7 +105,7 @@ class IndexVisitor
       const slang::ast::Scope* children_scope = nullptr);
   void AddReference(
       const slang::ast::Symbol& symbol, std::string_view name,
-      lsp::Range ref_range, lsp::Location def_loc,
+      slang::SourceRange ref_range, lsp::Location def_loc,
       const slang::ast::Scope* parent_scope);
   void AddReferenceWithLspDefinition(
       const slang::ast::Symbol& symbol, std::string_view name,
@@ -123,27 +123,16 @@ class IndexVisitor
       const slang::ast::Expression& overlay_context);
   void IndexClassParameters(
       const slang::ast::ClassType& class_type,
-      const slang::syntax::ParameterValueAssignmentSyntax& params,
-      const slang::ast::Expression& overlay_context);
-  void IndexClassParameters(
-      const slang::ast::ClassType& class_type,
-      const slang::syntax::ParameterValueAssignmentSyntax& params,
-      const slang::ast::Symbol& overlay_context);
+      const slang::syntax::ParameterValueAssignmentSyntax& params);
   void IndexInstanceParameters(
       const slang::ast::InstanceSymbol& instance,
-      const slang::syntax::ParameterValueAssignmentSyntax& params,
-      const slang::ast::Symbol& syntax_owner);
+      const slang::syntax::ParameterValueAssignmentSyntax& params);
   void IndexInstancePorts(
       const slang::ast::InstanceSymbol& instance,
-      const slang::syntax::HierarchicalInstanceSyntax& hierarchical_inst_syntax,
-      const slang::ast::Symbol& syntax_owner);
+      const slang::syntax::HierarchicalInstanceSyntax&
+          hierarchical_inst_syntax);
   void IndexPackageInScopedName(
       const slang::syntax::SyntaxNode* syntax,
-      const slang::ast::Symbol& syntax_owner,
-      const slang::ast::Symbol& target_symbol);
-  void IndexPackageInScopedName(
-      const slang::syntax::SyntaxNode* syntax,
-      const slang::ast::Expression& expr_context,
       const slang::ast::Symbol& target_symbol);
 
   static auto ResolveTargetSymbol(const slang::ast::NamedValueExpression& expr)
