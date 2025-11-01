@@ -72,6 +72,25 @@ class SemanticTestFixture {
     }
 
     auto index = std::move(*result);
+
+    // Strict validation for tests - fail on any warnings
+    auto overlap_result = index->ValidateNoRangeOverlaps(true);
+    if (!overlap_result) {
+      throw std::runtime_error(
+          fmt::format(
+              "BuildIndex: Range overlap validation failed: {}",
+              overlap_result.error()));
+    }
+
+    auto coverage_result =
+        index->ValidateSymbolCoverage(*compilation, test_uri, true);
+    if (!coverage_result) {
+      throw std::runtime_error(
+          fmt::format(
+              "BuildIndex: Symbol coverage validation failed: {}",
+              coverage_result.error()));
+    }
+
     auto parse_diags = semantic::DiagnosticConverter::ExtractParseDiagnostics(
         *compilation, *source_manager, buffer_id);
 

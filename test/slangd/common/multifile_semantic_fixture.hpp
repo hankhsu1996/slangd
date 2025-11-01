@@ -149,6 +149,24 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
 
     auto index = std::move(*result);
 
+    // Strict validation for tests - fail on any warnings
+    auto overlap_result = index->ValidateNoRangeOverlaps(true);
+    if (!overlap_result) {
+      throw std::runtime_error(
+          fmt::format(
+              "BuildIndexWithRoles: Range overlap validation failed: {}",
+              overlap_result.error()));
+    }
+
+    auto coverage_result =
+        index->ValidateSymbolCoverage(*compilation, current_file_uri, true);
+    if (!coverage_result) {
+      throw std::runtime_error(
+          fmt::format(
+              "BuildIndexWithRoles: Symbol coverage validation failed: {}",
+              coverage_result.error()));
+    }
+
     return IndexWithRoles{
         .index = std::move(index),
         .source_manager = std::move(source_manager),
@@ -201,6 +219,26 @@ class MultiFileSemanticFixture : public SemanticTestFixture,
     }
 
     auto index = std::move(*result);
+
+    // Strict validation for tests - fail on any warnings
+    auto overlap_result = index->ValidateNoRangeOverlaps(true);
+    if (!overlap_result) {
+      throw std::runtime_error(
+          fmt::format(
+              "BuildIndexFromFilesWithPaths: Range overlap validation failed: "
+              "{}",
+              overlap_result.error()));
+    }
+
+    auto coverage_result =
+        index->ValidateSymbolCoverage(*compilation, first_file_uri, true);
+    if (!coverage_result) {
+      throw std::runtime_error(
+          fmt::format(
+              "BuildIndexFromFilesWithPaths: Symbol coverage validation "
+              "failed: {}",
+              coverage_result.error()));
+    }
 
     return IndexWithFiles{
         .index = std::move(index),

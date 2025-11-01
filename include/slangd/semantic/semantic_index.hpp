@@ -85,17 +85,16 @@ class SemanticIndex {
       const std::string& uri, lsp::Position position) const
       -> std::optional<lsp::Location>;
 
-  void ValidateNoRangeOverlaps() const;
+  // Validation - strict=true fails on first issue, strict=false aggregates all
+  [[nodiscard]] auto ValidateNoRangeOverlaps(bool strict = false) const
+      -> std::expected<void, std::string>;
 
-  // Check for invalid coordinates (line == -1) which indicate conversion
-  // failures Returns error if any invalid coordinates are found (fail-fast
-  // behavior)
-  auto ValidateCoordinates() const -> std::expected<void, std::string>;
+  [[nodiscard]] auto ValidateCoordinates() const
+      -> std::expected<void, std::string>;
 
-  // Logs identifiers that don't have definitions in the semantic index
-  void ValidateSymbolCoverage(
-      slang::ast::Compilation& compilation,
-      const std::string& current_file_uri) const;
+  [[nodiscard]] auto ValidateSymbolCoverage(
+      slang::ast::Compilation& compilation, const std::string& current_file_uri,
+      bool strict = false) const -> std::expected<void, std::string>;
 
  private:
   explicit SemanticIndex(

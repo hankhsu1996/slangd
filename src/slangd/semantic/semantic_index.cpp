@@ -230,17 +230,23 @@ auto SemanticIndex::FromCompilation(
             indexing_errors.size() > 1 ? "s" : ""));
   }
 
-  // Validate no overlaps using O(n) algorithm (entries are now sorted)
-  index->ValidateNoRangeOverlaps();
-
-  // Validate all coordinates are valid (line != -1) - FAIL FAST
-  auto validation_result = index->ValidateCoordinates();
-  if (!validation_result) {
-    return std::unexpected(validation_result.error());
+  // Fatal validation - invalid coordinates crash go-to-definition
+  auto coord_result = index->ValidateCoordinates();
+  if (!coord_result) {
+    return std::unexpected(coord_result.error());
   }
 
-  // Validate symbol coverage to find unsupported constructs
-  index->ValidateSymbolCoverage(compilation, current_file_uri);
+  // Non-fatal validations - log and continue
+  auto overlap_result = index->ValidateNoRangeOverlaps();
+  if (!overlap_result) {
+    logger->warn("{}", overlap_result.error());
+  }
+
+  auto coverage_result =
+      index->ValidateSymbolCoverage(compilation, current_file_uri);
+  if (!coverage_result) {
+    logger->trace("{}", coverage_result.error());
+  }
 
   return index;
 }
@@ -278,46 +284,53 @@ auto SemanticIndex::LookupDefinitionAt(
   return std::nullopt;
 }
 
-void SemanticIndex::ValidateNoRangeOverlaps() const {
+auto SemanticIndex::ValidateNoRangeOverlaps(bool strict) const
+    -> std::expected<void, std::string> {
   if (semantic_entries_.empty()) {
-    return;
+    return {};
   }
 
-  // O(n) validation - entries are pre-sorted, so we only check adjacent pairs
-  // This is much faster than O(n²) and catches all overlaps in sorted data
-  // All entries are in same file (current_file_uri_) by invariant
+  std::vector<std::string> overlaps;
+  auto filename =
+      current_file_uri_.substr(current_file_uri_.find_last_of('/') + 1);
+
   for (size_t i = 1; i < semantic_entries_.size(); ++i) {
     const auto& prev = semantic_entries_[i - 1];
     const auto& curr = semantic_entries_[i];
 
-    // Check if current overlaps with previous (they should be disjoint)
-    // Two ranges [a,b) and [c,d) overlap if: a < d && c < b
-    // Using LSP Position comparison (operator<=> provides full ordering)
     bool overlap =
         (prev.ref_range.start < curr.ref_range.end &&
          curr.ref_range.start < prev.ref_range.end);
 
     if (overlap) {
-      // Log warning but don't crash - LSP server should continue working
-      // Extract filename from URI for more readable output
-      auto filename =
-          current_file_uri_.substr(current_file_uri_.find_last_of('/') + 1);
-      logger_->warn(
+      auto msg = fmt::format(
           "Range overlap for symbol '{}' at line {} (char {}-{}) in '{}'",
           curr.name, curr.ref_range.start.line + 1,
           curr.ref_range.start.character, curr.ref_range.end.character,
           filename);
-      // Don't throw in production - continue processing
+
+      if (strict) {
+        return std::unexpected(msg);
+      }
+      overlaps.push_back(msg);
     }
   }
-  // Range validation passed - no overlaps detected
+
+  if (!overlaps.empty()) {
+    std::string aggregated =
+        fmt::format("Found {} range overlaps:", overlaps.size());
+    for (const auto& overlap : overlaps) {
+      aggregated += "\n  " + overlap;
+    }
+    return std::unexpected(aggregated);
+  }
+
+  return {};
 }
 
 auto SemanticIndex::ValidateCoordinates() const
     -> std::expected<void, std::string> {
-  // Check for invalid coordinates (line == -1) from BufferID conversion
-  // failures FATAL: Invalid coordinates will cause crashes on go-to-definition
-  // Common causes: missing preamble symbols, cross-SourceManager conversion
+  // Always fatal - invalid coordinates (line == -1) crash go-to-definition
   size_t invalid_count = 0;
   std::string first_invalid_symbol;
   for (const auto& entry : semantic_entries_) {
@@ -340,32 +353,26 @@ auto SemanticIndex::ValidateCoordinates() const
             invalid_count, current_file_uri_, first_invalid_symbol));
   }
 
-  return {};  // Success
+  return {};
 }
 
-void SemanticIndex::ValidateSymbolCoverage(
-    slang::ast::Compilation& compilation,
-    const std::string& current_file_uri) const {
-  // Helper visitor to collect all identifier tokens from syntax tree
+auto SemanticIndex::ValidateSymbolCoverage(
+    slang::ast::Compilation& compilation, const std::string& current_file_uri,
+    bool strict) const -> std::expected<void, std::string> {
   struct IdentifierCollector {
     std::vector<slang::parsing::Token> identifiers;
 
     void visit(const slang::syntax::SyntaxNode& node) {
-      // Skip scoped names (dot access) to filter out hierarchical paths
-      // We don't currently support go-to-definition for hierarchical paths,
-      // so this is a good approximation for validation. Trade-off: also skips
-      // struct field access validation, but that's acceptable for diagnostic
+      // Skip hierarchical paths - not currently supported
       if (node.kind == slang::syntax::SyntaxKind::ScopedName) {
-        return;  // Skip entire subtree
+        return;
       }
 
-      // Recursively visit all children
       for (uint32_t i = 0; i < node.getChildCount(); i++) {
         const auto* child = node.childNode(i);
         if (child != nullptr) {
           visit(*child);
         } else {
-          // Check if it's a token
           auto token = node.childToken(i);
           if (token.kind == slang::parsing::TokenKind::Identifier) {
             identifiers.push_back(token);
@@ -375,33 +382,27 @@ void SemanticIndex::ValidateSymbolCoverage(
     }
   };
 
-  // Collect identifiers ONLY from the current file's syntax tree
-  // (not from preamble_manager files - this is the key optimization!)
   IdentifierCollector collector;
   for (const auto& tree : compilation.getSyntaxTrees()) {
-    // Check if this tree is for the current file
     auto tree_location = tree->root().sourceRange().start();
     if (!IsInCurrentFile(
             tree_location, current_file_uri, source_manager_.get())) {
-      continue;  // Skip preamble_manager files - only process current file
+      continue;
     }
 
-    // Found the current file's tree - collect identifiers from it
     collector.visit(tree->root());
-    break;  // We found and processed the current file, done
+    break;
   }
 
-  // Check which identifiers don't have definitions
   std::vector<slang::parsing::Token> missing;
   for (const auto& token : collector.identifiers) {
-    // Skip known built-in enum methods (these have no source definition)
+    // Skip built-in enum methods
     std::string_view token_text = token.valueText();
     if (token_text == "name" || token_text == "num" || token_text == "next" ||
         token_text == "prev" || token_text == "first" || token_text == "last") {
       continue;
     }
 
-    // Convert token location to LSP coordinates for new API
     auto lsp_loc = ToLspLocation(token.location(), source_manager_.get());
     auto lsp_pos = ToLspPosition(token.location(), source_manager_.get());
 
@@ -411,12 +412,10 @@ void SemanticIndex::ValidateSymbolCoverage(
     }
   }
 
-  // Report missing definitions grouped by line
   if (!missing.empty()) {
     auto file_name = source_manager_.get().getFileName(
         source_manager_.get().getFullyExpandedLoc(missing[0].location()));
 
-    // Group by line number
     std::map<uint32_t, std::vector<std::string_view>> missing_by_line;
     for (const auto& token : missing) {
       auto location =
@@ -425,22 +424,26 @@ void SemanticIndex::ValidateSymbolCoverage(
       missing_by_line[line_number].push_back(token.valueText());
     }
 
-    logger_->trace(
-        "File {} has {} identifiers without definitions on {} lines:",
-        file_name, missing.size(), missing_by_line.size());
+    std::string message = fmt::format(
+        "File {} has {} identifiers without definitions on {} lines", file_name,
+        missing.size(), missing_by_line.size());
 
-    for (const auto& [line, symbols] : missing_by_line) {
-      // Join symbols with commas
-      std::string symbols_str;
-      for (size_t i = 0; i < symbols.size(); ++i) {
-        if (i > 0) {
-          symbols_str += ", ";
+    if (strict) {
+      for (const auto& [line, symbols] : missing_by_line) {
+        std::string symbols_str;
+        for (size_t i = 0; i < symbols.size(); ++i) {
+          if (i > 0) {
+            symbols_str += ", ";
+          }
+          symbols_str += symbols[i];
         }
-        symbols_str += symbols[i];
+        message += fmt::format("\n  Line {}: {}", line, symbols_str);
       }
-      logger_->trace("  Line {}: {}", line, symbols_str);
     }
+    return std::unexpected(message);
   }
+
+  return {};
 }
 
 }  // namespace slangd::semantic
