@@ -82,9 +82,6 @@ class LanguageServiceBase {
   // Called when document is closed in editor
   virtual auto OnDocumentClosed(std::string uri) -> void = 0;
 
-  // Called when external file changes are detected
-  virtual auto OnDocumentsChanged(std::vector<std::string> uris) -> void = 0;
-
   // Check if document is currently open in editor (synchronous)
   virtual auto IsDocumentOpen(const std::string& uri) const -> bool = 0;
 };

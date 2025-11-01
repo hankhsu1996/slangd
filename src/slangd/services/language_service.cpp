@@ -532,13 +532,6 @@ auto LanguageService::OnDocumentClosed(std::string uri) -> void {
   session_manager_->ScheduleCleanup(uri);
 }
 
-auto LanguageService::OnDocumentsChanged(std::vector<std::string> /*uris*/)
-    -> void {
-  // Reserved for future use - currently no external callers
-  // Sessions are managed through OnDocumentOpened/Changed/Saved/Closed
-  // lifecycle
-}
-
 auto LanguageService::IsDocumentOpen(const std::string& uri) const -> bool {
   return open_tracker_->Contains(uri);
 }

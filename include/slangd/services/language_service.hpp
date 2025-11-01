@@ -60,8 +60,6 @@ class LanguageService : public LanguageServiceBase {
 
   auto OnDocumentClosed(std::string uri) -> void override;
 
-  auto OnDocumentsChanged(std::vector<std::string> uris) -> void override;
-
   auto IsDocumentOpen(const std::string& uri) const -> bool override;
 
   // Set callback for publishing diagnostics to LSP client
