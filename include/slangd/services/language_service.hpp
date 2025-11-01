@@ -83,6 +83,10 @@ class LanguageService : public LanguageServiceBase {
   auto RebuildPreambleAndSessions() -> asio::awaitable<void>;
   auto ScheduleDebouncedPreambleRebuild() -> void;
 
+  // Session rebuild helpers
+  auto RebuildSessionWithDiagnostics(std::string uri) -> asio::awaitable<void>;
+  auto ScheduleDebouncedSessionRebuild(std::string uri) -> void;
+
   // Core dependencies
   std::shared_ptr<ProjectLayoutService> layout_service_;
   std::shared_ptr<const PreambleManager> preamble_manager_;
@@ -126,6 +130,12 @@ class LanguageService : public LanguageServiceBase {
   static constexpr auto kPreambleDebounceDelay = std::chrono::milliseconds(500);
   bool preamble_rebuild_in_progress_ = false;
   bool preamble_rebuild_pending_ = false;
+
+  // Session rebuild debouncing and concurrency protection (per-URI)
+  enum class RebuildState { kIdle, kInProgress, kPendingNext };
+  std::map<std::string, asio::steady_timer> session_rebuild_timers_;
+  std::map<std::string, RebuildState> session_rebuild_state_;
+  static constexpr auto kSessionDebounceDelay = std::chrono::milliseconds(500);
 };
 
 }  // namespace slangd::services

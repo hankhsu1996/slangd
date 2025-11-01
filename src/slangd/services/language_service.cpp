@@ -394,14 +394,96 @@ auto LanguageService::OnDocumentChanged(
   // Wait for workspace initialization to complete
   co_await workspace_ready_.AsyncWait(asio::use_awaitable);
 
-  // Store document state only (no session rebuild - typing is fast!)
+  // Store document state
   co_await doc_state_.Update(uri, content, version);
+
+  // Schedule debounced session rebuild with diagnostics
+  ScheduleDebouncedSessionRebuild(uri);
+}
+
+auto LanguageService::RebuildSessionWithDiagnostics(std::string uri)
+    -> asio::awaitable<void> {
+  // Protection: Don't start if already rebuilding
+  if (session_rebuild_state_[uri] != RebuildState::kIdle) {
+    session_rebuild_state_[uri] = RebuildState::kPendingNext;
+    logger_->debug(
+        "Session rebuild in progress for {}, marked as pending", uri);
+    co_return;
+  }
+
+  session_rebuild_state_[uri] = RebuildState::kInProgress;
+
+  // Get current document state
+  auto doc_state = co_await doc_state_.Get(uri);
+  if (!doc_state) {
+    logger_->debug("RebuildSessionWithDiagnostics: document not open: {}", uri);
+    session_rebuild_state_[uri] = RebuildState::kIdle;
+    co_return;
+  }
+
+  // Rebuild session with diagnostic hook
+  co_await session_manager_->UpdateSession(
+      uri, doc_state->content, doc_state->version,
+      CreateDiagnosticHook(uri, doc_state->version));
+
+  // Check if more changes happened during rebuild
+  if (session_rebuild_state_[uri] == RebuildState::kPendingNext) {
+    session_rebuild_state_[uri] = RebuildState::kIdle;
+    logger_->debug(
+        "More changes happened during rebuild for {}, rebuilding immediately",
+        uri);
+    // Rebuild immediately - debounce already happened when timer fired
+    asio::co_spawn(
+        executor_,
+        [this, uri]() -> asio::awaitable<void> {
+          co_await RebuildSessionWithDiagnostics(uri);
+        },
+        asio::detached);
+  } else {
+    session_rebuild_state_[uri] = RebuildState::kIdle;
+  }
+}
+
+auto LanguageService::ScheduleDebouncedSessionRebuild(std::string uri) -> void {
+  logger_->debug(
+      "Scheduling debounced session rebuild for {} ({}ms delay)", uri,
+      kSessionDebounceDelay.count());
+
+  // Cancel existing timer if any
+  auto it = session_rebuild_timers_.find(uri);
+  if (it != session_rebuild_timers_.end()) {
+    it->second.cancel();
+    session_rebuild_timers_.erase(it);
+  }
+
+  // Create new timer with executor
+  auto [timer_it, inserted] =
+      session_rebuild_timers_.try_emplace(uri, executor_);
+  timer_it->second.expires_after(kSessionDebounceDelay);
+  timer_it->second.async_wait([this, uri](std::error_code ec) {
+    if (!ec) {
+      logger_->debug(
+          "Session debounce timer expired for {}, triggering rebuild", uri);
+      asio::co_spawn(
+          executor_,
+          [this, uri]() -> asio::awaitable<void> {
+            co_await RebuildSessionWithDiagnostics(uri);
+          },
+          asio::detached);
+    }
+  });
 }
 
 auto LanguageService::OnDocumentSaved(std::string uri)
     -> asio::awaitable<void> {
   // Wait for workspace initialization to complete
   co_await workspace_ready_.AsyncWait(asio::use_awaitable);
+
+  // Cancel any pending debounced rebuild for this file (save takes priority)
+  auto timer_it = session_rebuild_timers_.find(uri);
+  if (timer_it != session_rebuild_timers_.end()) {
+    timer_it->second.cancel();
+  }
 
   // Get document state
   auto doc_state = co_await doc_state_.Get(uri);
@@ -421,6 +503,16 @@ auto LanguageService::OnDocumentClosed(std::string uri) -> void {
   if (!workspace_ready_.IsSet()) {
     return;
   }
+
+  // Cancel pending debounced rebuild
+  auto timer_it = session_rebuild_timers_.find(uri);
+  if (timer_it != session_rebuild_timers_.end()) {
+    timer_it->second.cancel();
+    session_rebuild_timers_.erase(timer_it);
+  }
+
+  // Clean up rebuild state
+  session_rebuild_state_.erase(uri);
 
   // Cancel pending compilation to prevent unbounded memory accumulation
   // (preview mode spam defense - see docs/SESSION_MANAGEMENT.md)
