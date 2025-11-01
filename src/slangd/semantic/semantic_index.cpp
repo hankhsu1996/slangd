@@ -1,5 +1,7 @@
 #include "slangd/semantic/semantic_index.hpp"
 
+#include <set>
+
 #include <fmt/format.h>
 #include <slang/ast/Compilation.h>
 #include <slang/ast/HierarchicalReference.h>
@@ -149,11 +151,19 @@ auto SemanticIndex::FromCompilation(
 
       // Force elaboration to populate diagMap with semantic diagnostics
       // and cache symbol resolutions (visitInstances=false for file-scoped)
-      compilation.forceElaborate(instance.body);
+      {
+        utils::ScopedTimer elab_timer(
+            fmt::format("Elaboration for {}", definition.name), logger);
+        compilation.forceElaborate(instance.body);
+      }
 
       // Traverse the instance body to index all members
       // (uses cached symbol resolutions from forceElaborate)
-      instance.body.visit(visitor);
+      {
+        utils::ScopedTimer traversal_timer(
+            fmt::format("Traversal for {}", definition.name), logger);
+        instance.body.visit(visitor);
+      }
     }
   }
 
@@ -286,6 +296,8 @@ auto SemanticIndex::LookupDefinitionAt(
 
 auto SemanticIndex::ValidateNoRangeOverlaps(bool strict) const
     -> std::expected<void, std::string> {
+  utils::ScopedTimer timer("ValidateNoRangeOverlaps", logger_);
+
   if (semantic_entries_.empty()) {
     return {};
   }
@@ -330,6 +342,8 @@ auto SemanticIndex::ValidateNoRangeOverlaps(bool strict) const
 
 auto SemanticIndex::ValidateCoordinates() const
     -> std::expected<void, std::string> {
+  utils::ScopedTimer timer("ValidateCoordinates", logger_);
+
   // Always fatal - invalid coordinates (line == -1) crash go-to-definition
   size_t invalid_count = 0;
   std::string first_invalid_symbol;
@@ -359,6 +373,8 @@ auto SemanticIndex::ValidateCoordinates() const
 auto SemanticIndex::ValidateSymbolCoverage(
     slang::ast::Compilation& compilation, const std::string& current_file_uri,
     bool strict) const -> std::expected<void, std::string> {
+  utils::ScopedTimer timer("ValidateSymbolCoverage", logger_);
+
   struct IdentifierCollector {
     std::vector<slang::parsing::Token> identifiers;
 
@@ -394,6 +410,13 @@ auto SemanticIndex::ValidateSymbolCoverage(
     break;
   }
 
+  // Build position set from semantic_entries_ for O(log n) lookup
+  std::set<std::pair<int, int>> indexed_positions;
+  for (const auto& entry : semantic_entries_) {
+    indexed_positions.emplace(
+        entry.ref_range.start.line, entry.ref_range.start.character);
+  }
+
   std::vector<slang::parsing::Token> missing;
   for (const auto& token : collector.identifiers) {
     // Skip built-in enum methods
@@ -403,11 +426,8 @@ auto SemanticIndex::ValidateSymbolCoverage(
       continue;
     }
 
-    auto lsp_loc = ToLspLocation(token.location(), source_manager_.get());
     auto lsp_pos = ToLspPosition(token.location(), source_manager_.get());
-
-    auto result = LookupDefinitionAt(lsp_loc.uri, lsp_pos);
-    if (!result) {
+    if (!indexed_positions.contains({lsp_pos.line, lsp_pos.character})) {
       missing.push_back(token);
     }
   }

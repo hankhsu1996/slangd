@@ -118,7 +118,7 @@ auto OverlaySession::BuildCompilation(
     -> std::tuple<
         std::shared_ptr<slang::SourceManager>,
         std::unique_ptr<slang::ast::Compilation>, slang::BufferID> {
-  utils::ScopedTimer timer("Compilation", logger);
+  utils::ScopedTimer timer("Syntax tree parsing", logger);
 
   // Create fresh source manager
   auto source_manager = std::make_shared<slang::SourceManager>();
