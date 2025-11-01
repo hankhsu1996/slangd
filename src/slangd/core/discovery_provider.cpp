@@ -22,6 +22,11 @@ auto FilelistProvider::DiscoverFiles(
   // Add individual files specified in config
   const auto& config_files = config.GetFiles();
   for (const auto& file : config_files) {
+    if (!std::filesystem::exists(file.Path())) {
+      logger_->error(
+          "File specified in .slangd does not exist: {}", file.String());
+      continue;
+    }
     all_files.push_back(file);
   }
 
