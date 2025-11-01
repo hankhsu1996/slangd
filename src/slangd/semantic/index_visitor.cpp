@@ -173,6 +173,9 @@ void IndexVisitor::TraverseType(const slang::ast::Type& type) {
     case slang::ast::SymbolKind::AssociativeArrayType: {
       const auto& assoc_array = type.as<slang::ast::AssociativeArrayType>();
       TraverseType(assoc_array.elementType);
+      if (assoc_array.indexType != nullptr) {
+        TraverseType(*assoc_array.indexType);
+      }
       break;
     }
     case slang::ast::SymbolKind::TypeAlias: {
