@@ -72,14 +72,18 @@ class SemanticTestFixture {
     }
 
     auto index = std::move(*result);
+
+    // Strict validation for tests (skips coverage if errors exist)
+    ValidateIndexStrict(
+        *index, *compilation, *source_manager, test_uri, buffer_id,
+        "BuildIndex");
+
+    // Extract diagnostics for test assertions
     auto parse_diags = semantic::DiagnosticConverter::ExtractParseDiagnostics(
         *compilation, *source_manager, buffer_id);
-
     auto semantic_diags =
         semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
             *compilation, *source_manager, buffer_id);
-
-    // Combine diagnostics
     std::vector<lsp::Diagnostic> diagnostics;
     diagnostics.reserve(parse_diags.size() + semantic_diags.size());
     diagnostics.insert(
@@ -254,6 +258,52 @@ class SemanticTestFixture {
               "AssertGoToDefinition: definition length mismatch for symbol "
               "'{}'. Expected length {}, got {}",
               symbol_name, symbol_name.length(), actual_length));
+    }
+  }
+
+  // Validation helper - performs strict validation with error checking
+  // Skips coverage validation if errors exist (unreliable when code has errors)
+  static void ValidateIndexStrict(
+      SemanticIndex& index, slang::ast::Compilation& compilation,
+      const slang::SourceManager& source_manager, const std::string& uri,
+      slang::BufferID buffer_id, const std::string& context_name) {
+    // Extract diagnostics to check for errors
+    auto parse_diags = semantic::DiagnosticConverter::ExtractParseDiagnostics(
+        compilation, source_manager, buffer_id);
+    auto semantic_diags =
+        semantic::DiagnosticConverter::ExtractCollectedDiagnostics(
+            compilation, source_manager, buffer_id);
+    std::vector<lsp::Diagnostic> diagnostics;
+    diagnostics.reserve(parse_diags.size() + semantic_diags.size());
+    diagnostics.insert(
+        diagnostics.end(), parse_diags.begin(), parse_diags.end());
+    diagnostics.insert(
+        diagnostics.end(), semantic_diags.begin(), semantic_diags.end());
+
+    // Overlap validation (always)
+    auto overlap_result = index.ValidateNoRangeOverlaps(true);
+    if (!overlap_result) {
+      throw std::runtime_error(
+          fmt::format(
+              "{}: Range overlap validation failed: {}", context_name,
+              overlap_result.error()));
+    }
+
+    // Coverage validation (skip if errors exist - unreliable when code has
+    // errors)
+    bool has_errors = std::ranges::any_of(diagnostics, [](const auto& diag) {
+      return diag.severity == lsp::DiagnosticSeverity::kError;
+    });
+
+    if (!has_errors) {
+      auto coverage_result =
+          index.ValidateSymbolCoverage(compilation, uri, true);
+      if (!coverage_result) {
+        throw std::runtime_error(
+            fmt::format(
+                "{}: Symbol coverage validation failed: {}", context_name,
+                coverage_result.error()));
+      }
     }
   }
 
