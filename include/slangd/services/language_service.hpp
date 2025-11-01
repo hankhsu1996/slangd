@@ -79,13 +79,13 @@ class LanguageService : public LanguageServiceBase {
   auto CreateDiagnosticHook(std::string uri, int version)
       -> std::function<void(const CompilationState&)>;
 
-  // Preamble rebuild helpers
-  auto RebuildPreambleAndSessions() -> asio::awaitable<void>;
-  auto ScheduleDebouncedPreambleRebuild() -> void;
+  // Workspace rebuild helpers (preamble + overlays on file change)
+  auto RebuildWorkspace() -> asio::awaitable<void>;
+  auto ScheduleWorkspaceRebuild() -> void;
 
-  // Session rebuild helpers
+  // Session rebuild helpers (per-document on typing)
   auto RebuildSessionWithDiagnostics(std::string uri) -> asio::awaitable<void>;
-  auto ScheduleDebouncedSessionRebuild(std::string uri) -> void;
+  auto ScheduleSessionRebuild(std::string uri) -> void;
 
   // Core dependencies
   std::shared_ptr<ProjectLayoutService> layout_service_;
@@ -125,14 +125,16 @@ class LanguageService : public LanguageServiceBase {
   // Callback for publishing status updates (set by LSP server layer)
   StatusPublisher status_publisher_;
 
-  // Preamble rebuild debouncing and concurrency protection
-  std::optional<asio::steady_timer> preamble_rebuild_timer_;
-  static constexpr auto kPreambleDebounceDelay = std::chrono::milliseconds(500);
-  bool preamble_rebuild_in_progress_ = false;
-  bool preamble_rebuild_pending_ = false;
+  // Rebuild state for concurrency control
+  enum class RebuildState { kIdle, kInProgress, kPendingNext };
+
+  // Workspace rebuild debouncing and concurrency protection
+  std::optional<asio::steady_timer> workspace_rebuild_timer_;
+  RebuildState workspace_rebuild_state_ = RebuildState::kIdle;
+  static constexpr auto kWorkspaceDebounceDelay =
+      std::chrono::milliseconds(500);
 
   // Session rebuild debouncing and concurrency protection (per-URI)
-  enum class RebuildState { kIdle, kInProgress, kPendingNext };
   std::map<std::string, asio::steady_timer> session_rebuild_timers_;
   std::map<std::string, RebuildState> session_rebuild_state_;
   static constexpr auto kSessionDebounceDelay = std::chrono::milliseconds(500);

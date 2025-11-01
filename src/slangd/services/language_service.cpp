@@ -229,24 +229,32 @@ auto LanguageService::GetDocumentSymbols(std::string uri) -> asio::awaitable<
   co_return visitor.GetResult();
 }
 
-auto LanguageService::RebuildPreambleAndSessions() -> asio::awaitable<void> {
+auto LanguageService::RebuildWorkspace() -> asio::awaitable<void> {
   // Protection: Don't start if already rebuilding
-  if (preamble_rebuild_in_progress_) {
-    preamble_rebuild_pending_ = true;
-    logger_->debug("Preamble rebuild in progress, marked as pending");
+  if (workspace_rebuild_state_ != RebuildState::kIdle) {
+    workspace_rebuild_state_ = RebuildState::kPendingNext;
+    logger_->debug("Workspace rebuild in progress, marked as pending");
     co_return;
   }
 
-  preamble_rebuild_in_progress_ = true;
-  preamble_rebuild_pending_ = false;  // Clear before rebuild
+  workspace_rebuild_state_ = RebuildState::kInProgress;
+
+  // Rebuild overlays first for fast feedback (with current preamble)
+  logger_->debug("Rebuilding overlays for fast feedback");
+  auto open_uris = co_await doc_state_.GetAllUris();
+  for (const auto& uri : open_uris) {
+    auto state = co_await doc_state_.Get(uri);
+    if (state) {
+      co_await session_manager_->UpdateSession(
+          uri, state->content, state->version,
+          CreateDiagnosticHook(uri, state->version));
+    }
+  }
 
   // Notify status: indexing started
   if (status_publisher_) {
     status_publisher_("indexing");
   }
-
-  // Layout is maintained incrementally by HandleSourceFileChange
-  // Config changes rebuild layout via HandleConfigFileChange
 
   // Rebuild PreambleManager with current configuration
   auto preamble_result = co_await PreambleManager::CreateFromProjectLayout(
@@ -274,9 +282,7 @@ auto LanguageService::RebuildPreambleAndSessions() -> asio::awaitable<void> {
 
   // Rebuild sessions to republish diagnostics (server-push)
   // Client doesn't know preamble was rebuilt, so we must push updates
-  auto open_uris = co_await doc_state_.GetAllUris();
-
-  for (const auto& uri : open_uris) {
+  for (const auto& uri : co_await doc_state_.GetAllUris()) {
     auto state = co_await doc_state_.Get(uri);
     if (state) {
       co_await session_manager_->UpdateSession(
@@ -285,23 +291,22 @@ auto LanguageService::RebuildPreambleAndSessions() -> asio::awaitable<void> {
     }
   }
 
-  logger_->info("LanguageService completed preamble rebuild");
+  logger_->info("LanguageService completed workspace rebuild");
 
   // Notify status: indexing completed
   if (status_publisher_) {
     status_publisher_("idle");
   }
 
-  // If more saves happened during rebuild, schedule next rebuild
-  // Use debounce delay to allow session tasks to complete (avoid overlap)
-  if (preamble_rebuild_pending_) {
+  // If more changes happened during rebuild, schedule next rebuild
+  if (workspace_rebuild_state_ == RebuildState::kPendingNext) {
+    workspace_rebuild_state_ = RebuildState::kIdle;
     logger_->debug(
-        "More saves happened during rebuild, scheduling next rebuild");
-    preamble_rebuild_pending_ = false;
-    ScheduleDebouncedPreambleRebuild();
+        "More changes happened during rebuild, scheduling next rebuild");
+    ScheduleWorkspaceRebuild();
+  } else {
+    workspace_rebuild_state_ = RebuildState::kIdle;
   }
-
-  preamble_rebuild_in_progress_ = false;
 }
 
 auto LanguageService::HandleConfigChange() -> asio::awaitable<void> {
@@ -311,33 +316,29 @@ auto LanguageService::HandleConfigChange() -> asio::awaitable<void> {
   auto config_path = workspace_root_ / ".slangd";
   co_await layout_service_->HandleConfigFileChange(config_path);
 
-  // Rebuild preamble with new config (layout already rebuilt)
-  co_await RebuildPreambleAndSessions();
+  // Rebuild workspace with new config (layout already rebuilt)
+  co_await RebuildWorkspace();
 }
 
-auto LanguageService::ScheduleDebouncedPreambleRebuild() -> void {
+auto LanguageService::ScheduleWorkspaceRebuild() -> void {
   logger_->debug(
-      "LanguageService: Scheduling debounced preamble rebuild ({}ms delay)",
-      kPreambleDebounceDelay.count());
+      "Scheduling workspace rebuild ({}ms delay)",
+      kWorkspaceDebounceDelay.count());
 
   // Cancel existing timer if any
-  if (preamble_rebuild_timer_) {
-    preamble_rebuild_timer_->cancel();
+  if (workspace_rebuild_timer_) {
+    workspace_rebuild_timer_->cancel();
   }
 
   // Create new timer
-  preamble_rebuild_timer_ =
-      asio::steady_timer(executor_, kPreambleDebounceDelay);
-  preamble_rebuild_timer_->async_wait([this](std::error_code ec) {
+  workspace_rebuild_timer_ =
+      asio::steady_timer(executor_, kWorkspaceDebounceDelay);
+  workspace_rebuild_timer_->async_wait([this](std::error_code ec) {
     if (!ec) {
-      logger_->debug(
-          "LanguageService: Preamble debounce timer expired, triggering "
-          "rebuild");
+      logger_->debug("Workspace timer expired, triggering rebuild");
       asio::co_spawn(
           executor_,
-          [this]() -> asio::awaitable<void> {
-            co_await RebuildPreambleAndSessions();
-          },
+          [this]() -> asio::awaitable<void> { co_await RebuildWorkspace(); },
           asio::detached);
     }
   });
@@ -369,8 +370,9 @@ auto LanguageService::HandleSourceFileChange(
       break;
   }
 
-  // All changes may affect preamble (packages, interfaces)
-  ScheduleDebouncedPreambleRebuild();
+  // Schedule workspace rebuild (debounced for rapid git operations)
+  // Rebuilds overlays first for fast feedback, then preamble
+  ScheduleWorkspaceRebuild();
 }
 
 // Document lifecycle events (protocol-level API)
@@ -398,7 +400,7 @@ auto LanguageService::OnDocumentChanged(
   co_await doc_state_.Update(uri, content, version);
 
   // Schedule debounced session rebuild with diagnostics
-  ScheduleDebouncedSessionRebuild(uri);
+  ScheduleSessionRebuild(uri);
 }
 
 auto LanguageService::RebuildSessionWithDiagnostics(std::string uri)
@@ -444,9 +446,9 @@ auto LanguageService::RebuildSessionWithDiagnostics(std::string uri)
   }
 }
 
-auto LanguageService::ScheduleDebouncedSessionRebuild(std::string uri) -> void {
+auto LanguageService::ScheduleSessionRebuild(std::string uri) -> void {
   logger_->debug(
-      "Scheduling debounced session rebuild for {} ({}ms delay)", uri,
+      "Scheduling session rebuild for {} ({}ms delay)", uri,
       kSessionDebounceDelay.count());
 
   // Cancel existing timer if any
@@ -462,8 +464,7 @@ auto LanguageService::ScheduleDebouncedSessionRebuild(std::string uri) -> void {
   timer_it->second.expires_after(kSessionDebounceDelay);
   timer_it->second.async_wait([this, uri](std::error_code ec) {
     if (!ec) {
-      logger_->debug(
-          "Session debounce timer expired for {}, triggering rebuild", uri);
+      logger_->debug("Session timer expired for {}, triggering rebuild", uri);
       asio::co_spawn(
           executor_,
           [this, uri]() -> asio::awaitable<void> {
