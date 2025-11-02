@@ -3,6 +3,7 @@
 build:clang --action_env=CC=clang
 build:clang --action_env=CXX=clang++
 build:clang --cxxopt='-std=c++23'
+build:clang --linkopt='-lstdc++exp'
 
 # Standard configuration uses clang
 build --config=clang
