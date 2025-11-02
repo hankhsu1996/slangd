@@ -1,72 +1,34 @@
 #include "app/crash_handler.hpp"
 
-#ifdef __linux__
-#include <algorithm>
-#include <array>
-#include <csignal>
-#include <cxxabi.h>
-#include <dlfcn.h>
-#include <execinfo.h>
-#include <memory>
-#include <span>
-#include <string_view>
-#include <unistd.h>
-
-#include <fmt/format.h>
-#endif
-
 #include <cstdlib>
+
+#ifdef __linux__
+#include <csignal>
+#include <iostream>
+#include <stacktrace>
+#include <unistd.h>
+#endif
 
 namespace app {
 
 #ifdef __linux__
-static void PrintFuncNames(int skip = 1, int max_frames = 32) noexcept {
-  std::array<void*, 128> frames{};
-  const int n = ::backtrace(frames.data(), static_cast<int>(frames.size()));
-  if (n <= 0) {
-    return;
-  }
-
-  constexpr std::string_view kHdr = "Fatal signal received\n";
-  (void)(::write(STDERR_FILENO, kHdr.data(), kHdr.size()) == 0);
-
-  const int begin = std::clamp(skip, 0, n);
-  const int count = std::max(0, std::min(max_frames, n - begin));
-  auto used =
-      std::span<void*>{frames}
-          .first(static_cast<size_t>(n))
-          .subspan(static_cast<size_t>(begin), static_cast<size_t>(count));
-
-  size_t idx = 0;
-  for (void* addr : used) {
-    Dl_info info{};
-    if (::dladdr(addr, &info) != 0 && info.dli_sname != nullptr) {
-      // Try to demangle into a preallocated buffer to avoid heap allocs.
-      std::array<char, 1024> dem_buf{};
-      size_t dem_size = dem_buf.size();
-      int status = 0;
-      char* raw = abi::__cxa_demangle(
-          info.dli_sname, dem_buf.data(), &dem_size, &status);
-      // Own only if __cxa_demangle allocated a new buffer.
-      std::unique_ptr<char, void (*)(void*)> guard(
-          ((raw != nullptr) && raw != dem_buf.data()) ? raw : nullptr,
-          std::free);
-      const char* name =
-          (status == 0 && (raw != nullptr)) ? raw : info.dli_sname;
-
-      auto formatted = fmt::format("  [{}] {}\n", idx, name);
-      (void)(::write(STDERR_FILENO, formatted.data(), formatted.size()) == 0);
-    } else {
-      auto formatted = fmt::format("  [{}] ??\n", idx);
-      (void)(::write(STDERR_FILENO, formatted.data(), formatted.size()) == 0);
-    }
-    ++idx;
-  }
-}
-
-static void HandleSegfault(int sig) noexcept {
+static void HandleFatalSignal(int sig) noexcept {
   std::signal(sig, SIG_DFL);
-  PrintFuncNames(1, 24);
+
+  // Print stack trace using C++23 std::stacktrace
+  std::cerr << "\nFatal signal received\n";
+  std::cerr << "Signal: " << sig << "\n";
+  std::cerr << "Stack trace:\n";
+
+  try {
+    auto trace = std::stacktrace::current();
+    std::cerr << trace << "\n";
+  } catch (...) {
+    std::cerr << "(Failed to capture stack trace)\n";
+  }
+
+  std::cerr.flush();
+
   ::raise(sig);
 }
 #endif
@@ -74,10 +36,10 @@ static void HandleSegfault(int sig) noexcept {
 void InitializeCrashHandlers() {
 #ifdef __linux__
   // Install crash handlers for various fatal signals
-  std::signal(SIGSEGV, HandleSegfault);  // Segmentation fault
-  std::signal(SIGFPE, HandleSegfault);   // Floating point exception
-  std::signal(SIGILL, HandleSegfault);   // Illegal instruction
-  std::signal(SIGBUS, HandleSegfault);   // Bus error
+  std::signal(SIGSEGV, HandleFatalSignal);  // Segmentation fault
+  std::signal(SIGFPE, HandleFatalSignal);   // Floating point exception
+  std::signal(SIGILL, HandleFatalSignal);   // Illegal instruction
+  std::signal(SIGBUS, HandleFatalSignal);   // Bus error
 #endif
   // On non-Linux platforms, crash handlers are not implemented
 }

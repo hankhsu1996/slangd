@@ -109,9 +109,9 @@ SystemVerilog LSP server with modular design:
 
 **Requirements:**
 
-- Clang 20+ with libc++ 20+ (configured in `.bazelrc` with `-stdlib=libc++`)
-- Required for full C++23 standard library support (e.g., `std::ranges::contains`)
-- Ubuntu: `sudo apt install clang-20 libc++-20-dev libc++abi-20-dev`
+- Clang 20+ for C++23 support (configured in `.bazelrc`)
+- Uses default libstdc++ standard library
+- Ubuntu: `sudo apt install clang-20`
 
 **Coding Standards:**
 
