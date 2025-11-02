@@ -25,7 +25,7 @@ Slangd is a SystemVerilog language server implementing the [Language Server Prot
 ### Requirements
 
 - Bazel 7.0+ for bzlmod support
-- Clang 20+ with libc++ 20+ for full C++23 standard library support
+- Clang 20+ for C++23 support
 
 ### Building and Testing
 
