@@ -1,7 +1,7 @@
 {
   "name": "slangd",
   "displayName": "Slangd",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.1",
   "description": "SystemVerilog language support",
   "categories": [
     "Programming Languages"
@@ -34,7 +34,7 @@
     "compile": "webpack",
     "copy-binary": "cd ../.. && bazel build --config=static-debug //:slangd && cd editor/vscode && mkdir -p ./bin && cp -f ../../bazel-bin/slangd ./bin/",
     "lint": "eslint src --ext ts",
-    "package": "npm run copy-binary && npm run compile && npx @vscode/vsce package",
+    "package": "npm run copy-binary && npm run compile && cp -f ../../CHANGELOG.md . && npx @vscode/vsce package",
     "sort": "sort-package-json",
     "test": "node ./out/test/runTest.js",
     "vscode:prepublish": "webpack --mode production",
