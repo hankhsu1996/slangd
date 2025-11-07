@@ -170,8 +170,18 @@ ProjectLayoutService maintains the list of source files for preamble compilation
 | Config change    | Full rebuild  | Rebuild         | Invalidate + rebuild open | Config affects compilation settings (macros, search paths) |
 | SV file created  | AddFile()     | Rebuild         | Invalidate all            | New file may contain package/interface/module              |
 | SV file deleted  | RemoveFile()  | Rebuild         | Invalidate all            | Removed file may have contained package/interface/module   |
-| SV file modified | No change     | Rebuild         | Invalidate all            | File list unchanged, content changed                       |
-| Open file change | No change     | No change       | Invalidate one            | Handled by text sync (didChange/didSave)                   |
+| SV file modified | No change     | Rebuild         | Invalidate all            | File list unchanged, content changed (includes open files) |
+
+**Two-phase feedback on file save:**
+
+When saving an open file, two LSP events occur:
+- textDocument/didSave → overlay rebuild with old preamble (fast feedback)
+- workspace/didChangeWatchedFiles → preamble rebuild (slow, debounced)
+- After preamble done → overlay rebuild with new preamble (accurate feedback)
+
+Separation of concerns: textDocument events handle overlay, workspace events handle preamble.
+
+Why not rebuild overlays before preamble? Overlays use content from DocumentStateManager (editor buffer). For open files, didSave already provides fast feedback. For closed files modified externally (AI writes, git pull), LSP server doesn't have content until VSCode reloads the file and sends didChange event.
 
 **Debouncing:** Preamble rebuilds use 500ms debounce to batch rapid changes (e.g., git operations). Pending flag prevents rebuild storms by limiting to max 2 rebuilds during rapid changes.
 
@@ -197,7 +207,7 @@ SlangdLspServer (protocol layer - thin delegates)
   │   │
   │   └─ OnDidClose(uri) → LanguageService.OnDocumentClosed()
   │
-  ├─ File Watcher Events (external changes)
+  ├─ File Watcher Events (all file system changes)
   │   └─ OnDidChangeWatchedFiles(changes[])
   │       ├─ Config changes → HandleConfigChange()
   │       │   └─ Reload config + rebuild layout + rebuild preamble
@@ -205,6 +215,8 @@ SlangdLspServer (protocol layer - thin delegates)
   │           ├─ Created → AddFile() + debounced preamble rebuild (500ms)
   │           ├─ Deleted → RemoveFile() + debounced preamble rebuild (500ms)
   │           └─ Modified → debounced preamble rebuild (500ms, no layout change)
+  │               Note: Includes open files - triggers preamble rebuild even for files
+  │               being edited, ensuring packages/interfaces/modules stay current
   │
   └─ LSP Feature Handlers (requests from client - respond with data)
       ├─ OnDocumentSymbols(uri) → LanguageService.GetDocumentSymbols(uri)
@@ -220,6 +232,8 @@ LanguageService (domain layer - state management + feature implementations)
   │   ├─ OnDocumentOpened → doc_state_.Update() + SessionManager.UpdateSession(diagnostic_hook)
   │   ├─ OnDocumentChanged → doc_state_.Update() (no session rebuild - typing is fast!)
   │   ├─ OnDocumentSaved → doc_state_.Get() + SessionManager.UpdateSession(diagnostic_hook)
+  │   │   Separation of concerns: textDocument events handle overlay only
+  │   │   File watcher (workspace event) handles preamble rebuild separately
   │   ├─ OnDocumentClosed → doc_state_.Remove() (lazy session removal)
   │   └─ OnDocumentsChanged → SessionManager.InvalidateSessions()
   │

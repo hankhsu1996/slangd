@@ -239,18 +239,6 @@ auto LanguageService::RebuildWorkspace() -> asio::awaitable<void> {
 
   workspace_rebuild_state_ = RebuildState::kInProgress;
 
-  // Rebuild overlays first for fast feedback (with current preamble)
-  logger_->debug("Rebuilding overlays for fast feedback");
-  auto open_uris = co_await doc_state_.GetAllUris();
-  for (const auto& uri : open_uris) {
-    auto state = co_await doc_state_.Get(uri);
-    if (state) {
-      co_await session_manager_->UpdateSession(
-          uri, state->content, state->version,
-          CreateDiagnosticHook(uri, state->version));
-    }
-  }
-
   // Notify status: indexing started
   if (status_publisher_) {
     status_publisher_("indexing");
@@ -280,7 +268,7 @@ auto LanguageService::RebuildWorkspace() -> asio::awaitable<void> {
     co_await session_manager_->InvalidateAllSessions();
   }
 
-  // Rebuild sessions to republish diagnostics (server-push)
+  // Rebuild overlays with new preamble for accurate diagnostics
   // Client doesn't know preamble was rebuilt, so we must push updates
   for (const auto& uri : co_await doc_state_.GetAllUris()) {
     auto state = co_await doc_state_.Get(uri);
