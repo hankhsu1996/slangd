@@ -17,7 +17,7 @@ using lsp::Ok;
 
 namespace {
 
-constexpr std::string_view kServerVersion = "0.1.0";
+constexpr std::string_view kServerVersion = "0.1.0-alpha.2-dev";
 constexpr std::string_view kFileWatcherId = "slangd-file-system-watcher";
 constexpr std::string_view kDidChangeWatchedFilesMethod =
     "workspace/didChangeWatchedFiles";

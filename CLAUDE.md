@@ -100,6 +100,7 @@ SystemVerilog LSP server with modular design:
 
 **Documentation Guidelines:**
 
+- **No project-specific metrics**: Never include specific timing numbers, file counts, or performance metrics in documentation (e.g., "100ms", "1308 files", "4.8s to 1.9s"). Users have different projects with different characteristics. Use relative terms like "fast", "slow", "large projects" instead.
 - **No emojis**: Never use emojis in documentation files (including warning symbols, checkmarks, X marks)
 - **Concise**: Keep architecture docs under 300 lines; focus on critical decisions and constraints
 - **Focus**: Document nuances, edge cases, and "why" over "what"
