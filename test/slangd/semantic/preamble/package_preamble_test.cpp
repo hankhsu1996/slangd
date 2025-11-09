@@ -373,6 +373,52 @@ TEST_CASE(
 }
 
 TEST_CASE(
+    "Enum values in parameterized covergroup with preamble",
+    "[package][preamble][enum][covergroup][parameterized]") {
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    Fixture fixture;
+
+    const std::string def = R"(
+      package state_pkg;
+        typedef enum logic [1:0] {
+          STATE_A = 2'b00,
+          STATE_B = 2'b01,
+          STATE_C = 2'b10
+        } state_t;
+      endpackage
+    )";
+
+    const std::string ref = R"(
+      module dut;
+        import state_pkg::*;
+        logic clk, reset;
+        state_t current_state[2][2];
+
+        covergroup cg(int i, int j) @ (posedge clk iff (~reset));
+          coverpoint current_state[i][j] {
+            bins STATE_A = {STATE_A};
+            bins STATE_B = {STATE_B};
+            bins STATE_C = {STATE_C};
+          }
+        endgroup
+      endmodule
+    )";
+
+    fixture.CreateBufferIDOffset();
+    fixture.CreateFile("state_pkg.sv", def);
+    fixture.CreateFile("dut.sv", ref);
+
+    auto session = co_await fixture.BuildSession("dut.sv", executor);
+    Fixture::AssertNoErrors(*session);
+    Fixture::AssertCrossFileDef(*session, ref, def, "STATE_A", 1, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "STATE_B", 1, 0);
+    Fixture::AssertCrossFileDef(*session, ref, def, "STATE_C", 1, 0);
+
+    co_return;
+  });
+}
+
+TEST_CASE(
     "String ref parameter type matching with cross-file preamble",
     "[package][preamble][string][ref]") {
   RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
