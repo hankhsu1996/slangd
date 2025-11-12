@@ -145,8 +145,12 @@ auto SlangdLspServer::OnInitialized(lsp::InitializedParams /*unused*/)
             .pattern = "**/.slangd",
         }};
 
+    // Make registration ID unique per workspace to avoid conflicts
+    std::string registration_id =
+        std::string(kFileWatcherId) + "-" + workspace_folder_->uri;
+
     auto registration = lsp::Registration{
-        .id = std::string(kFileWatcherId),
+        .id = registration_id,
         .method = std::string(kDidChangeWatchedFilesMethod),
         .registerOptions =
             lsp::DidChangeWatchedFilesRegistrationOptions{
