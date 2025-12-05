@@ -291,3 +291,44 @@ TEST_CASE("BroadcastEvent stress test with many waiters", "[broadcast_event]") {
     co_return;
   });
 }
+
+TEST_CASE(
+    "BroadcastEvent survives destruction while work pending",
+    "[broadcast_event]") {
+  // This test verifies the fix for use-after-free when BroadcastEvent is
+  // destroyed while Set() or AsyncWait() lambdas are still pending on strand.
+  //
+  // The bug: Set() posts a lambda that captures raw 'this'. If BroadcastEvent
+  // is destroyed before the lambda runs, the lambda accesses freed memory.
+  //
+  // The fix: Lambdas capture shared_ptr<State>, keeping State alive until
+  // all pending work completes.
+  RunAsyncTest([](asio::any_io_executor executor) -> asio::awaitable<void> {
+    // Test 1: Destroy immediately after Set() with no waiters
+    {
+      BroadcastEvent event(executor);
+      event.Set();  // Posts lambda to strand
+      // event destroyed here, but lambda hasn't run yet
+    }
+
+    // Give time for Set()'s lambda to run (should not crash)
+    asio::steady_timer timer(executor);
+    timer.expires_after(std::chrono::milliseconds(50));
+    co_await timer.async_wait(asio::use_awaitable);
+
+    // Test 2: Destroy while AsyncWait lambda might be pending
+    {
+      auto event = std::make_unique<BroadcastEvent>(executor);
+      // Start an async wait (posts lambda to strand)
+      auto wait_task = event->AsyncWait(asio::use_awaitable);
+      event->Set();
+      // Destroy event before awaiting
+      event.reset();
+
+      // The wait should still complete because State survives
+      co_await std::move(wait_task);
+    }
+
+    co_return;
+  });
+}
