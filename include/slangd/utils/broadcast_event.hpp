@@ -29,10 +29,14 @@ namespace slangd::utils {
 //
 // This design eliminates convoy effects at strand serialization points by
 // avoiding large data transfers through the event mechanism itself.
+//
+// Lifetime safety: Internal state is held via shared_ptr, ensuring lambdas
+// posted to the strand can safely access state even if BroadcastEvent is
+// destroyed before they execute.
 class BroadcastEvent {
  public:
   explicit BroadcastEvent(asio::any_io_executor executor)
-      : executor_(executor), strand_(asio::make_strand(executor)) {
+      : state_(std::make_shared<State>(executor)) {
   }
 
   ~BroadcastEvent() = default;
@@ -62,14 +66,14 @@ class BroadcastEvent {
   template <typename CompletionToken>
   auto AsyncWait(CompletionToken&& token) {
     return asio::async_initiate<CompletionToken, void()>(
-        [this](auto handler) {
-          asio::post(strand_, [this, h = std::move(handler)]() mutable {
-            if (ready_) {
+        [state = state_](auto handler) {
+          asio::post(state->strand, [state, h = std::move(handler)]() mutable {
+            if (state->ready) {
               // Already signaled, complete immediately
-              asio::post(executor_, std::move(h));
+              asio::post(state->executor, std::move(h));
             } else {
               // Not ready yet, queue handler for later notification
-              waiters_.push_back(
+              state->waiters.push_back(
                   std::make_unique<ConcreteHandler<decltype(h)>>(std::move(h)));
             }
           });
@@ -85,20 +89,21 @@ class BroadcastEvent {
   // Thread-safe: Can be called from any thread.
   // Idempotent: Multiple calls have no additional effect.
   auto Set() -> void {
-    asio::post(strand_, [this]() {
-      if (ready_) {
+    asio::post(state_->strand, [state = state_]() {
+      if (state->ready) {
         return;  // Already set, nothing to do
       }
 
-      ready_ = true;
+      state->ready = true;
 
       // Wake all waiters by posting their handlers to executor
-      auto waiters = std::move(waiters_);
-      waiters_.clear();
+      auto waiters = std::move(state->waiters);
+      state->waiters.clear();
 
       for (auto& handler : waiters) {
-        asio::post(
-            executor_, [h = std::move(handler)]() mutable { h->Invoke(); });
+        asio::post(state->executor, [h = std::move(handler)]() mutable {
+          h->Invoke();
+        });
       }
     });
   }
@@ -109,7 +114,7 @@ class BroadcastEvent {
   // This method is primarily useful for testing and diagnostics.
   [[nodiscard]] auto IsSet() const -> bool {
     // Note: This is racy by design - only use for non-critical checks
-    return ready_;
+    return state_->ready;
   }
 
  private:
@@ -134,10 +139,21 @@ class BroadcastEvent {
     F func;
   };
 
-  asio::any_io_executor executor_;
-  asio::strand<asio::any_io_executor> strand_;  // Protects ready_ and waiters_
-  bool ready_ = false;
-  std::vector<std::unique_ptr<Handler>> waiters_;
+  // Internal state held via shared_ptr to ensure lifetime safety
+  // Lambdas capture shared_ptr copies, keeping state alive until all
+  // pending operations complete
+  struct State {
+    explicit State(asio::any_io_executor exec)
+        : executor(exec), strand(asio::make_strand(exec)) {
+    }
+
+    asio::any_io_executor executor;
+    asio::strand<asio::any_io_executor> strand;  // Protects ready and waiters
+    bool ready = false;
+    std::vector<std::unique_ptr<Handler>> waiters;
+  };
+
+  std::shared_ptr<State> state_;
 };
 
 }  // namespace slangd::utils
