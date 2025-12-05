@@ -69,7 +69,7 @@ Key principle: Work with the system's design, not against it. Complexity is ofte
 **Pre-commit:**
 
 1. Format code, check build/test pass
-2. Use `feature/`, `bugfix/`, `refactor/` branch prefixes
+2. Use `feature/`, `bugfix/`, `refactor/`, `chore/` branch prefixes
 3. Commit messages: Short summary + bullet points using '-' in details, no Claude attribution, focus on 'what' changed not process/phase/step
 
 ## Architecture

@@ -29,7 +29,7 @@ bazel_dep(name = "jsonrpc", version = "0.0.0")
 git_override(
     module_name = "jsonrpc",
     remote = "https://github.com/hankhsu1996/jsonrpc-cpp-lib.git",
-    commit = "448d507",
+    commit = "9ec8a96",
 )
 
 # LLVM
