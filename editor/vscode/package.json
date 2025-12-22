@@ -1,7 +1,7 @@
 {
   "name": "slangd",
   "displayName": "Slangd",
-  "version": "0.1.0-alpha.2-dev",
+  "version": "0.1.0-beta.1",
   "description": "SystemVerilog language support",
   "categories": [
     "Programming Languages"
